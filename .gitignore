@@ -43,6 +43,7 @@ npm-debug.log*
 .trae/
 .mcp.json
 opencode.jsonc
+.brooks-lint-history.json
 
 # 技术文档类 md（参考文档，不纳入版本控制）
 参考资料/
