@@ -191,6 +191,7 @@ public class ApArticle implements Serializable {
      * PUBLISHED（已发布）
      */
     public enum Status {
+        DRAFT((byte) 0),
         SUBMIT((byte) 1),
         FAIL((byte) 2),
         PUBLISHED((byte) 9);
@@ -198,6 +199,36 @@ public class ApArticle implements Serializable {
         byte code;
         Status(byte code) { this.code = code; }
         public byte getCode() { return code; }
+    }
+
+    // ==================== 辅助方法 ====================
+
+    /**
+     * 是否为已发布状态
+     */
+    public boolean isPublished() {
+        return Status.PUBLISHED.getCode() == this.status;
+    }
+
+    /**
+     * 是否为草稿状态
+     */
+    public boolean isDraft() {
+        return this.status == null || Status.DRAFT.getCode() == this.status;
+    }
+
+    /**
+     * 是否为审核中状态
+     */
+    public boolean isInReview() {
+        return Status.SUBMIT.getCode() == this.status;
+    }
+
+    /**
+     * 是否已删除
+     */
+    public boolean isDeletedArticle() {
+        return Boolean.TRUE.equals(this.isDeleted);
     }
 
     /**
