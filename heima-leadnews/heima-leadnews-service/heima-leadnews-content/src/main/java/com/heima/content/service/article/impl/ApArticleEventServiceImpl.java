@@ -45,7 +45,7 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
                 && event.getRetryCount() >= event.getMaxRetryCount()) {
                 log.error("文章事件超过最大重试次数，标记为死信, articleId={}, retryCount={}, maxRetryCount={}",
                     event.getArticleId(), event.getRetryCount(), event.getMaxRetryCount());
-                success_list.add(event.getArticleId());
+//                success_list.add(event.getArticleId());
                 continue;
             }
 
@@ -79,8 +79,6 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
             }
 
             // MinIO 上传重试
-            // MinIO 上传已在 buildHTMLAndSend() 中完成，此处无法注入 MinioUtil 实际重试上传
-            // 记录日志并标记为不再重试
             if (event.getMinioStatus() != null && event.getMinioStatus() == 1 && isBackward) {
                 try {
                     String objectName = minioUtil.builderFilePath("articles", String.valueOf(searchArticleVo.getId()));
