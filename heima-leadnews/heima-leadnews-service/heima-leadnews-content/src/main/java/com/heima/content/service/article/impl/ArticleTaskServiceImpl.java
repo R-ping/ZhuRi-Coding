@@ -1,5 +1,6 @@
 package com.heima.content.service.article.impl;
 
+import com.heima.common.constants.ArticleConstants;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.schedule.service.TaskService;
 import com.heima.content.service.article.ArticleTaskService;
@@ -37,12 +38,12 @@ public class ArticleTaskServiceImpl implements ArticleTaskService {
         if (executeTimeInterval <= 0) {
             executeTimeInterval = 0;
             firstTimeInterval = 0;
-        } else if (executeTimeInterval <= 5 * 60 * 1000) {
+        } else if (executeTimeInterval <= ArticleConstants.DELAY_5_MIN_MS) {
             firstTimeInterval = 0;
-        } else if (executeTimeInterval <= 15 * 60 * 1000) {
-            firstTimeInterval = executeTimeInterval - 2 * 60 * 1000;
+        } else if (executeTimeInterval <= ArticleConstants.DELAY_15_MIN_MS) {
+            firstTimeInterval = executeTimeInterval - ArticleConstants.DELAY_2_MIN_MS;
         } else {
-            long delay = (long) (Math.random() * 5 + 5);
+            long delay = (long) (Math.random() * ArticleConstants.RANDOM_DELAY_RANGE_MIN + ArticleConstants.RANDOM_DELAY_BASE_MIN);
             delay = delay * 60 * 1000;
             firstTimeInterval = executeTimeInterval - delay;
         }

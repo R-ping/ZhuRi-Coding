@@ -56,11 +56,6 @@ public class ApUser implements Serializable {
     @TableId(value = "id", type = IdType.ASSIGN_ID)
     private Integer id;
     /**
-     * 密码盐
-     */
-//    @TableField("salt")
-//    private String salt;
-    /**
      * 昵称
      */
     @TableField("nickname")

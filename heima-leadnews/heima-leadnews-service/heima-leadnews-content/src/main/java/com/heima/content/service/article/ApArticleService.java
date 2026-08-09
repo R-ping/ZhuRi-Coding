@@ -7,7 +7,6 @@ import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.mess.ArticleVisitStreamMess;
 import com.heima.model.mess.UpdateArticleMess;
-import com.heima.model.schedule.dtos.Task;
 import java.util.List;
 import java.util.Map;
 
@@ -21,15 +20,7 @@ public interface ApArticleService extends IService<ApArticle> {
      */
     public ResponseResult load(ArticleHomeDto dto,Short type);
 
-    /**
-     * 保存app端相关文章
-     * @param dto
-     * @return
-     */
-    public ResponseResult saveArticle(ArticleDto dto,long lastTime);
-
-
-    boolean generateArticleEvent(ApArticle article, Task task, long lastExecuteInterval);
+    boolean generateArticleEvent(ApArticle article, Long taskId, long lastExecuteInterval);
 
     public void updateScore(ArticleVisitStreamMess message);
 

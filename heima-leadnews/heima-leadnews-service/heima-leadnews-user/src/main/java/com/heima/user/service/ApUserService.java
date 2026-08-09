@@ -7,11 +7,10 @@ import com.heima.model.user.pojos.ApUser;
 
 public interface ApUserService extends IService<ApUser> {
     /**
-     * app端登录功能
-     * @param dto
-     * @return
+     * app端统一登录认证（支持多种登录方式）
+     * @param dto 登录参数
+     * @param tag 登录方式标识
+     * @return 登录结果
      */
-//    public ResponseResult login(LoginDto dto);
-
     ResponseResult allLoginAuth(LoginDto dto, String tag);
 }

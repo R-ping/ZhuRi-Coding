@@ -16,12 +16,6 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class IArticleClientFallback implements IArticleClient {
 
-
-//    @Override
-//    public ResponseResult saveArticle(ArticleDto dto, long executeTime) {
-//        return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR,"文章保存异常");
-//    }
-
     @Override
     public void eventUpdate(ArticleEvent event) {
         log.error("远程更新article操作事件失败, eventId={}", event != null ? event.getId() : null);

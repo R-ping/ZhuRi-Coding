@@ -1,9 +1,9 @@
 minio:
-  accessKey: minio
-  secretKey: minio123
-  bucket: leadnews
-  endPoint: http://localhost:9005
-  readPath: http://localhost:9005
+  accessKey: ${MINIO_ACCESS_KEY:minio}
+  secretKey: ${MINIO_SECRET_KEY:minio123}
+  bucket: ${MINIO_BUCKET:leadnews}
+  endPoint: ${MINIO_ENDPOINT:http://localhost:9005}
+  readPath: ${MINIO_READ_PATH:http://localhost:9005}
 #spring:
 #  rabbitmq:
 #    host: 47.104.68.187

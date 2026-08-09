@@ -1,11 +1,11 @@
 package com.heima.content.service.article.impl;
 
-import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.heima.apis.search.ISearchClient;
+import com.heima.common.constants.ArticleConstants;
+import com.heima.content.event.ArticleBuildCompleteEvent;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleEventMapper;
-import com.heima.content.schedule.listener.RedissonDelayQueue;
 import com.heima.content.service.article.ArticleFreemarkerService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.file.config.MinIOConfig;
@@ -13,16 +13,15 @@ import com.heima.file.utils.MinioUtil;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleContent;
 import com.heima.model.article.pojos.ArticleEvent;
-import com.heima.model.schedule.dtos.Task;
 import com.heima.model.search.vos.SearchArticleVo;
 import com.heima.model.search.vos.TocItem;
-import com.heima.utils.common.ProtostuffUtil;
 import java.util.Date;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +30,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 @Transactional(rollbackFor = Exception.class)
 public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
-
 
     @Autowired
     private MinioUtil minioUtil;
@@ -44,19 +42,15 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
     @Autowired
     private ApArticleEventMapper apArticleEventMapper;
     @Autowired
-    private RedissonDelayQueue redissonDelayQueue;
+    private ApplicationEventPublisher eventPublisher;
 
     /**
      * 生成静态文件上传到minIO中
+     * 构建完成后发布 ArticleBuildCompleteEvent，由监听器处理后续的发布或延迟任务逻辑
      */
     @Async
     @Override
-    public void buildHTMLAndSend(ApArticle apArticle, String content, Task task, long lastExecuteInterval) {
-        boolean isHasDelay = false;// 文章通常不做延迟发布
-        if (lastExecuteInterval > 0) {// 大于0，说明有延迟发布时间
-            isHasDelay = true;
-            addLastDelayTask(apArticle.getId(), lastExecuteInterval);
-        }
+    public void buildHTMLAndSend(ApArticle apArticle, String content, Long taskId, long lastExecuteInterval) {
         //已知文章的id
         SearchArticleVo vo = new SearchArticleVo();
         BeanUtils.copyProperties(apArticle, vo);
@@ -85,11 +79,9 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
             log.error("文章HTML上传MinIO失败, articleId={}", apArticle.getId(), e);
             updateArticleEventStatus(apArticle.getId(), "minio", (byte) 1);
         }
-        if (!isHasDelay) {//
-            // 如果没有延迟发布时间，则立即更新文章状态，不用再redisson等待了，
-            // 当delay interval为0时是立即执行，从结果上看一样，但少经过一回redis，更稳定，逻辑上更清晰
-            redissonDelayQueue.lastDone(task, apArticle);
-        }
+        // 发布事件，由监听器处理后续逻辑（立即发布或添加延迟任务）
+        eventPublisher.publishEvent(new ArticleBuildCompleteEvent(
+            apArticle.getId(), taskId, lastExecuteInterval));
     }
 
     /**
@@ -113,19 +105,6 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
         String htmlContent = MarkdownUtils.injectHeadingAnchors(rawHtml);
         vo.setHtmlContent(htmlContent);
         vo.setTocList(tocList);
-    }
-
-    /**
-     * 添加最终延迟发布任务（使用Redisson延迟队列替代RabbitMQ）
-     */
-    private void addLastDelayTask(Long articleId, long lastExecuteInterval) {
-        ApArticle apArticle = new ApArticle();
-        apArticle.setId(articleId);
-        Task task = new Task();
-        task.setParameters(ProtostuffUtil.serialize(apArticle));
-        String lastTaskJson = JSON.toJSONString(task);
-        redissonDelayQueue.addTask("TASK_LAST_EXECUTE_DELAY_QUEUE", lastTaskJson, lastExecuteInterval);
-        log.info("延迟任务添加成功, articleId={}, delay={}ms", articleId, lastExecuteInterval);
     }
 
     private void buildFileNameAndPath(ApArticle apArticle, SearchArticleVo vo) {
@@ -155,7 +134,7 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
                     event.setEsStatus(status);
                 }
                 if (status == 1) { // 待重试
-                    event.setRetryTime(new Date(System.currentTimeMillis() + 5000)); // 5秒后重试
+                    event.setRetryTime(new Date(System.currentTimeMillis() + ArticleConstants.RETRY_INTERVAL_MS));
                 }
                 apArticleEventMapper.updateArticleEvent(event);
             }

@@ -2,30 +2,23 @@ package com.heima.content.service.article.impl;
 
 import cn.hutool.json.JSONUtil;
 import com.alibaba.fastjson.JSON;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.content.mapper.article.ApArticleConfigMapper;
-import com.heima.content.mapper.article.ApArticleContentMapper;
+import com.heima.apis.search.ISearchClient;
+import com.heima.common.constants.ArticleConstants;
 import com.heima.content.mapper.article.ApArticleEventMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ApArticleService;
 import com.heima.content.service.article.ArticleFreemarkerService;
-import com.heima.common.constants.ArticleConstants;
 import com.heima.model.article.dtos.ArticleDto;
 import com.heima.model.article.dtos.ArticleHomeDto;
 import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleConfig;
-import com.heima.model.article.pojos.ApArticleContent;
-import com.heima.model.article.pojos.ArticleEvent;
 import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.apis.search.ISearchClient;
+import com.heima.model.article.pojos.ArticleEvent;
 import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.mess.ArticleVisitStreamMess;
 import com.heima.model.mess.UpdateArticleMess;
-import com.heima.model.schedule.dtos.Task;
 import com.heima.model.search.vos.SearchArticleVo;
 import java.util.Date;
 import java.util.List;
@@ -33,7 +26,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,10 +39,6 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     private ApArticleMapper apArticleMapper;
 
     private final static short MAX_PAGE_SIZE = 50;
-    @Autowired
-    private ApArticleConfigMapper apArticleConfigMapper;
-    @Autowired
-    private ApArticleContentMapper apArticleContentMapper;
     @Autowired
     private ArticleFreemarkerService articleFreemarkerService;
     @Autowired
@@ -97,56 +85,10 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     }
 
     /**
-     *
-     */
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public ResponseResult saveArticle(ArticleDto dto, long executeTimeInterval) {
-        //1.检查参数
-        if (dto == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
-        }
-        ApArticle apArticle = new ApArticle();
-        BeanUtils.copyProperties(dto, apArticle);
-        try {
-            //2.判断是否存在id
-            if (dto.getId() == null) {
-                //2.1 不存在id  保存  文章  文章配置  文章内容
-                save(apArticle);
-                ApArticleConfig apArticleConfig = new ApArticleConfig(apArticle.getId());
-                ApArticleContent apArticleContent = new ApArticleContent();
-                apArticleContent.setArticleId(apArticle.getId());
-                apArticleContent.setContent(dto.getContent());
-                apArticleConfigMapper.insert(apArticleConfig);
-                apArticleContentMapper.insert(apArticleContent);
-            } else {
-                //2.2 存在id   修改  文章  文章内容
-                updateById(apArticle);
-                ApArticleContent apArticleContent = new ApArticleContent();
-                apArticleContent.setContent(dto.getContent());
-                apArticleContentMapper.update(apArticleContent,
-                    new QueryWrapper<ApArticleContent>().eq("article_id", apArticle.getId()));
-            }
-            // 本地消息表入库（事务内）
-            ArticleEvent event = buildArticleEvent();
-            event.setArticleId(apArticle.getId());
-            apArticleEventMapper.insertArticleEvent(event);
-        } catch (Exception e) {
-            log.error("文章保存失败", e);
-            throw new RuntimeException(e);
-        }
-        // 异步操作移到事务提交后，避免事务边界问题
-//        articleFreemarkerService.buildHTMLAndSend(apArticle, "", executeTimeInterval);
-        // 结果返回 文章的id
-        return ResponseResult.okResult(apArticle.getId());
-    }
-
-
-    /**
      * 根据文章id生成文章事件,后续进行mq异步处理
      */
     @Override
-    public boolean generateArticleEvent(ApArticle article, Task task, long lastExecuteInterval) {
+    public boolean generateArticleEvent(ApArticle article, Long taskId, long lastExecuteInterval) {
         //1.检查参数
         if (article == null) {
             log.error("文章保存失败，参数为空");
@@ -170,7 +112,7 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
             return false;
         }
         // 异步操作移到事务提交后，避免事务边界问题
-        articleFreemarkerService.buildHTMLAndSend(article, "", task,lastExecuteInterval);
+        articleFreemarkerService.buildHTMLAndSend(article, "", taskId, lastExecuteInterval);
         return true;
     }
 
@@ -193,7 +135,7 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
         apArticle1.setComment(message.getComment());
         apArticle1.setLikes(message.getLike());
         apArticle1.setViews(message.getView());
-        int newScore = computeScore(apArticle1) * 3;
+        int newScore = computeScore(apArticle1) * ArticleConstants.HOT_ARTICLE_SCORE_MULTIPLIER;
         ApArticle apArticle2 = getById(message.getArticleId());
         if (apArticle2 == null) {
             log.warn("updateScore: article not found, id={}", message.getArticleId());
@@ -307,7 +249,7 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
                     event.setPubStatus((byte) 2); // 成功
                 } else {
                     event.setPubStatus((byte) 1); // 待重试
-                    event.setRetryTime(new Date(System.currentTimeMillis() + 5000));
+                    event.setRetryTime(new Date(System.currentTimeMillis() + ArticleConstants.RETRY_INTERVAL_MS));
                 }
                 event.setUpdateTime(new Date());
                 apArticleEventMapper.updateById(event);

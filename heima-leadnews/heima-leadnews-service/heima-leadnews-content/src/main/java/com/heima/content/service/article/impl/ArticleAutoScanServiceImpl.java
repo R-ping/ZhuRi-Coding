@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.apis.notification.INotificationClient;
 import com.heima.common.aliyun.GreenImageScanPlus;
-import com.heima.common.aliyun.GreenTextScanPlus;
+import com.heima.common.constants.ArticleConstants;
 import com.heima.content.behavior.service.BehaviorEventBus;
 import com.heima.content.mapper.article.ApArticleAuditRecordMapper;
 import com.heima.content.mapper.article.ApArticleConfigMapper;
@@ -53,9 +53,6 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
 
     @Autowired
     private GreenImageScanPlus greenImageScan;
-
-    @Autowired
-    private GreenTextScanPlus greenTextScan;
 
     @Autowired
     private BailianAiService bailianAiService;
@@ -213,15 +210,16 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
     }
 
     /**
-     * 根据AI质量评分计算逐力值加成 80分以上+3，60-79分+1，60分以下+0
+     * 根据AI质量评分计算逐力值加成
+     * 优秀（≥80分）+3，合格（60-79分）+1，不合格（<60分）+0
      */
     private void calculatePowerBonus(ApArticle article, Integer qualityScore) {
         try {
             int powerBonus = 0;
-            if (qualityScore >= 80) {
-                powerBonus = 3;
-            } else if (qualityScore >= 60) {
-                powerBonus = 1;
+            if (qualityScore >= ArticleConstants.QUALITY_SCORE_EXCELLENT) {
+                powerBonus = ArticleConstants.POWER_BONUS_EXCELLENT;
+            } else if (qualityScore >= ArticleConstants.QUALITY_SCORE_PASS) {
+                powerBonus = ArticleConstants.POWER_BONUS_PASS;
             }
 
             if (powerBonus > 0 && article.getAuthorId() != null) {
@@ -232,16 +230,17 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
                     log.info("AI质量评分逐力值加成, articleId={}, authorId={}, qualityScore={}, powerBonus={}",
                         article.getId(), article.getAuthorId(), qualityScore, powerBonus);
 
-                    // 质量优秀（>=80分），发送首页推荐通知
-                    if (qualityScore >= 80) {
+                    // 质量优秀，发送首页推荐通知
+                    if (qualityScore >= ArticleConstants.QUALITY_SCORE_EXCELLENT) {
                         sendQualityRecommendNotification(article, qualityScore);
                     }
 
-                    // 检查是否达到4级，自动推荐到首页
+                    // 检查是否达到自动推荐等级
                     Integer newLevel = (Integer) powerResult.get("newLevel");
-                    if (newLevel != null && newLevel >= 4) {
+                    if (newLevel != null && newLevel >= ArticleConstants.POWER_LEVEL_AUTO_RECOMMEND) {
                         updateArticleConfig(article.getId(), true);
-                        log.info("作者逐力值达到4级，文章自动推荐到首页, articleId={}, authorId={}, level={}",
+                        log.info("作者逐力值达到{}级，文章自动推荐到首页, articleId={}, authorId={}, level={}",
+                            ArticleConstants.POWER_LEVEL_AUTO_RECOMMEND,
                             article.getId(), article.getAuthorId(), newLevel);
                     }
                 }
@@ -302,36 +301,6 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
     }
 
     /**
-     * 审核纯文本内容
-     */
-    private boolean handleTextMsg(String title, String content, ApArticle article) {
-        boolean flag = true;
-        String textToScan = (title != null ? title : "") + "-" + (content != null ? content : "");
-        if (textToScan.length() <= 1) {
-            return flag;
-        }
-        try {
-            Map map = greenTextScan.greeTextScan(textToScan);
-            if (map == null) {
-                return false;
-            }
-            if ("high".equals(map.get("level"))) {
-                flag = false;
-                updateArticle(article, Status.FAIL.getCode(), "当前文章中的内容存在违规内容");
-            }
-
-            if ("medium".equals(map.get("level"))) {
-                flag = false;
-                updateArticle(article, Status.FAIL.getCode(), "当前文章中的内容存在不确定内容");
-            }
-        } catch (Exception e) {
-            flag = false;
-            log.error("文本审核异常", e);
-        }
-        return flag;
-    }
-
-    /**
      * 更新文章状态
      * FAIL状态：设置reason，写审计记录，发送通知（不软删除，保留用于申诉）
      * PUBLISHED状态：仅设置status
@@ -364,7 +333,7 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
             record.setTitle(article.getTitle() != null ? article.getTitle() : "");
             record.setReason(reason != null ? reason : "");
             record.setAuditType("text"); // 默认文本审核，图片审核时可在调用方指定
-            record.setStatus(2); // 失败
+            record.setStatus(ArticleConstants.AUDIT_STATUS_FAIL);
             record.setCreatedAt(java.time.LocalDateTime.now());
 
             // 获取文章内容
@@ -412,7 +381,7 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
             // 构建请求参数
             Map<String, Object> params = new HashMap<>();
             params.put("userId", article.getAuthorId());
-            params.put("type", 4); // 系统通知
+            params.put("type", ArticleConstants.NOTIFICATION_TYPE_SYSTEM);
             params.put("sourceId", String.valueOf(article.getId()));
             params.put("content", contentJson);
 
@@ -429,7 +398,6 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
 
     /**
      * 发送质量优秀推荐通知
-     * 通知模板："恭喜！你的文章《{article_title}》因内容质量优秀，已被推荐至首页。"
      */
     private void sendQualityRecommendNotification(ApArticle article, Integer qualityScore) {
         try {
@@ -463,7 +431,7 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
             // 构建请求参数
             Map<String, Object> params = new HashMap<>();
             params.put("userId", article.getAuthorId());
-            params.put("type", 4); // 系统通知
+            params.put("type", ArticleConstants.NOTIFICATION_TYPE_SYSTEM);
             params.put("sourceId", String.valueOf(article.getId()));
             params.put("content", contentJson);
 

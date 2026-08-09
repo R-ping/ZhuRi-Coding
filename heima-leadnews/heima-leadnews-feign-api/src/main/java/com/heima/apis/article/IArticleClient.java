@@ -16,9 +16,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 @FeignClient(value = "leadnews-content", contextId = "leadnews-content-articleClient", fallback = IArticleClientFallback.class)
 public interface IArticleClient {
 
-//    @PostMapping("/api/v1/article/save")
-//    public ResponseResult saveArticle(@RequestBody ArticleDto dto, @RequestParam("executeTime") long executeTime);
-
     @PostMapping("/api/v1/article/event")
     public void eventUpdate(@RequestBody ArticleEvent event);
 

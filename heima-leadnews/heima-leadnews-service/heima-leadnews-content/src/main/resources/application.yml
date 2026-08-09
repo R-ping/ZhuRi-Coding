@@ -30,8 +30,8 @@ spring:
     host: 192.168.44.128
     port: 5672
     virtual-host: /
-    username: admin
-    password: admin
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:admin}
     listener:
       simple:
         prefetch: 1

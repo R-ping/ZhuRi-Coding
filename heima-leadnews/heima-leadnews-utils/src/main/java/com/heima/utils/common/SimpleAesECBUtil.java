@@ -6,8 +6,8 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 
 public class SimpleAesECBUtil {
-    // 全局密钥16位
-    private static final String secretKey = "abc1234567890xyz";
+    // 全局密钥16位（从环境变量读取，默认值仅用于开发环境）
+    private static final String secretKey = System.getenv("AES_SECRET_KEY") != null ? System.getenv("AES_SECRET_KEY") : "abc1234567890xyz";
     private static final String TRANSFORM = "AES/ECB/PKCS5Padding";
 
     public static String encrypt(String content) {

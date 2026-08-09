@@ -1,11 +1,6 @@
 package com.heima.content.schedule.listener;
 
-import com.alibaba.fastjson.JSON;
-import com.heima.content.schedule.service.TaskService;
-import com.heima.content.service.article.ApArticleService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.schedule.dtos.Task;
-import com.heima.utils.common.ProtostuffUtil;
+import com.heima.content.event.RedissonDelayTaskEvent;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
@@ -19,7 +14,7 @@ import org.redisson.api.RBlockingQueue;
 import org.redisson.api.RDelayedQueue;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -28,12 +23,9 @@ public class RedissonDelayQueue {
 
     @Autowired
     private RedissonClient redissonClient;
+
     @Autowired
-    @Lazy
-    private ApArticleService apArticleService;
-    @Lazy
-    @Autowired
-    private TaskService taskService;
+    private ApplicationEventPublisher eventPublisher;
 
     private final ExecutorService executorService;
     // 管理多个队列，key=queueName
@@ -93,6 +85,8 @@ public class RedissonDelayQueue {
 
     /**
      * 启动队列消费者线程
+     * 消费到任务后发布 RedissonDelayTaskEvent，由监听器处理具体业务逻辑，
+     * 从而与 ApArticleService、TaskService 解耦，打破循环依赖。
      */
     private void startConsumer(String queueName) {
         ensureQueue(queueName);
@@ -103,22 +97,9 @@ public class RedissonDelayQueue {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     String taskJson = blockingQueue.take();
-                    Task task = JSON.parseObject(taskJson, Task.class);
-                    ApArticle article = ProtostuffUtil.deserialize(task.getParameters(), ApArticle.class);
-
-                    if (queueName.equals("TASK_FIRST_EXECUTE_DELAY_QUEUE")) {
-                        log.info("消费延迟任务，taskId={}, articleId={}", task.getTaskId(), article.getId());
-                        long lastExecInterval = task.getObjExecInterval() - task.getFirstExecInterval();
-                        boolean isArticleEventBuilt = apArticleService.generateArticleEvent(article, task ,lastExecInterval);
-                        if (isArticleEventBuilt) {
-                            taskService.consumerTask(task.getTaskId());
-                        } else {
-                            taskService.failTask(task.getTaskId());
-                        }
-                        log.info("延迟任务消费成功，taskId={}", task.getTaskId());
-                    } else if (queueName.equals("TASK_LAST_EXECUTE_DELAY_QUEUE")) {
-                        lastDone(task, article);
-                    }
+                    log.info("消费延迟任务，queueName={}", queueName);
+                    // 发布事件，由监听器异步处理
+                    eventPublisher.publishEvent(new RedissonDelayTaskEvent(queueName, taskJson));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -128,22 +109,6 @@ public class RedissonDelayQueue {
             }
         });
         log.info("RedissonDelayQueue consumer started for: {}", queueName);
-    }
-
-    public void lastDone(Task task, ApArticle article) {
-        log.info("延迟任务的最终消费，taskId={}, articleId={}", task.getTaskId(), article.getId());
-        try {
-            apArticleService.updateArticleStatus(article.getId());
-            taskService.consumerTask(task.getTaskId());
-            log.info("延迟任务最终消费成功，taskId={}, articleId={}", task.getTaskId(), article.getId());
-        } catch (Exception e) {
-            log.error("延迟任务最终消费异常，taskId={}, articleId={}", task.getTaskId(), article.getId(), e);
-            try {
-                taskService.failTask(task.getTaskId());
-            } catch (Exception ex) {
-                log.error("更新任务日志失败，taskId={}", task.getTaskId(), ex);
-            }
-        }
     }
 
     /**

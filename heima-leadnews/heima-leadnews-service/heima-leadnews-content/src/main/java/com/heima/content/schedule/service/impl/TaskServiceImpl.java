@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.heima.common.constants.ScheduleConstants;
 import com.heima.common.redis.CacheService;
 import com.heima.content.mapper.article.ApArticleMapper;
+import com.heima.common.constants.ArticleConstants;
 import com.heima.content.schedule.listener.RedissonDelayQueue;
 import com.heima.content.schedule.mapper.TaskinfoLogsMapper;
 import com.heima.content.schedule.service.TaskService;
@@ -58,9 +59,6 @@ public class TaskServiceImpl implements TaskService {
         } else if (objExecInterval <= 60 * 60 * 1000) {
             delay = task.getFirstExecInterval();
         }
-        // 使用Redisson延迟队列发送延迟消息
-//        RBlockingQueue<String> blockingQueue = redissonClient.getBlockingQueue("TASK_DELAY_QUEUE");
-//        RDelayedQueue<String> delayedQueue = redissonClient.getDelayedQueue(blockingQueue);
         String taskJson = JSON.toJSONString(task);
         redissonDelayQueue.addTask("TASK_FIRST_EXECUTE_DELAY_QUEUE", taskJson, delay);
         log.info("Redisson延迟消息已发送，taskId={}, delay={}ms", task.getTaskId(), delay);
@@ -91,7 +89,7 @@ public class TaskServiceImpl implements TaskService {
             //保存任务日志数据
             TaskinfoLogs taskinfoLogs = new TaskinfoLogs();
             BeanUtils.copyProperties(task, taskinfoLogs);
-            if (task.getObjExecInterval() <= 60 * 60 * 1000) {
+            if (task.getObjExecInterval() <= ArticleConstants.DELAY_1_HOUR_MS) {
                 taskinfoLogs.setInOneHour(true);
             }
             taskinfoLogs.setStatus(ScheduleConstants.EXECUTED);

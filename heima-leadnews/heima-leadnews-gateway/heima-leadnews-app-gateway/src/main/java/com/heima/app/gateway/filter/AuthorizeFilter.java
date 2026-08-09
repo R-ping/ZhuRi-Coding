@@ -39,7 +39,6 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/topics/")
             || path.startsWith("/content/api/v1/content/recommend")
             || path.startsWith("/content/api/v1/article/recommend")) {
-//        if(true){
             //放行
             return chain.filter(exchange);
         }
