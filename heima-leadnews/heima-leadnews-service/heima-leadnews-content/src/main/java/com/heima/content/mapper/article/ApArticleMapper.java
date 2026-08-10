@@ -20,4 +20,16 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
 
     List<ApArticle> selectRecommendCandidates(@Param("channelId") Integer channelId, @Param("maxCandidates") int maxCandidates, @Param("tagName") String tagName);
 
+    /**
+     * 更新文章评论数（原子递增）
+     * @param articleId 文章ID
+     * @param increment 增量（+1 或 -1）
+     */
+    void updateCommentCount(@Param("articleId") Long articleId, @Param("increment") int increment);
+
+    /**
+     * 查询推荐文章列表（is_recommend=1），需关联 ap_article_config 表
+     */
+    List<ApArticle> selectRecommendArticles(@Param("excludeId") Long excludeId, @Param("cursor") Long cursor, @Param("size") int size);
+
 }

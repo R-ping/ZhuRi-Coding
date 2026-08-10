@@ -2,9 +2,11 @@ package com.heima.content.service.comment.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.comment.ApCommentLikeMapper;
 import com.heima.content.mapper.comment.ApCommentMapper;
 import com.heima.content.service.comment.ApCommentService;
+import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.comment.dtos.CommentDto;
 import com.heima.model.comment.pojos.ApComment;
 import com.heima.model.comment.pojos.ApCommentLike;
@@ -31,6 +33,9 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
 
     @Autowired
     private CommentAuditService commentAuditService;
+
+    @Autowired
+    private ApArticleMapper apArticleMapper;
 
     @Override
     public ResponseResult getCommentList(CommentDto dto) {
@@ -250,6 +255,290 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         result.put("replyCount", comment.getReplyCount() != null ? comment.getReplyCount() : 0);
         result.put("createdTime", comment.getCreatedTime());
         return ResponseResult.okResult(result);
+    }
+
+    @Override
+    public ResponseResult getArticleComments(Long articleId, Long cursor, Integer size) {
+        if (articleId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+        if (size == null || size <= 0) {
+            size = 10;
+        }
+
+        // 查询一级评论：article_id = ? AND parent_id IS NULL，按createdTime降序，游标分页
+        LambdaQueryWrapper<ApComment> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ApComment::getArticleId, articleId)
+               .isNull(ApComment::getParentId)
+               .orderByDesc(ApComment::getCreatedTime);
+
+        // 游标分页：WHERE id < cursor
+        if (cursor != null && cursor > 0) {
+            // 先找到cursor对应的createdTime，用时间戳做游标更准确
+            ApComment cursorComment = getById(cursor);
+            if (cursorComment != null) {
+                wrapper.lt(ApComment::getCreatedTime, cursorComment.getCreatedTime());
+            } else {
+                wrapper.lt(ApComment::getId, cursor);
+            }
+        }
+
+        // 多查一条判断是否有更多
+        wrapper.last("LIMIT " + (size + 1));
+
+        List<ApComment> topComments = list(wrapper);
+
+        // 判断是否有更多
+        boolean hasMore = topComments.size() > size;
+        if (hasMore) {
+            topComments = topComments.subList(0, size);
+        }
+
+        if (topComments.isEmpty()) {
+            Map<String, Object> emptyResult = new HashMap<>();
+            emptyResult.put("list", Collections.emptyList());
+            emptyResult.put("cursor", 0);
+            emptyResult.put("has_more", false);
+            return ResponseResult.okResult(emptyResult);
+        }
+
+        // 获取当前用户ID
+        Integer currentUserId = getCurrentUserId();
+
+        // 查询每个一级评论的子回复（最多2条）
+        List<Long> parentIds = topComments.stream().map(ApComment::getId).collect(Collectors.toList());
+        LambdaQueryWrapper<ApComment> childWrapper = new LambdaQueryWrapper<>();
+        childWrapper.in(ApComment::getParentId, parentIds)
+                    .orderByAsc(ApComment::getCreatedTime);
+        List<ApComment> allChildren = list(childWrapper);
+
+        // 按 parentId 分组，每组最多2条
+        Map<Long, List<ApComment>> childrenMap = new HashMap<>();
+        for (ApComment child : allChildren) {
+            childrenMap.computeIfAbsent(child.getParentId(), k -> new ArrayList<>()).add(child);
+        }
+        childrenMap.forEach((pid, children) -> {
+            if (children.size() > 2) {
+                childrenMap.put(pid, children.subList(0, 2));
+            }
+        });
+
+        // 构建返回结果
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (ApComment top : topComments) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("commentId", top.getId());
+            item.put("content", top.getContent() != null ? top.getContent() : "");
+            item.put("diggCount", top.getLikeCount() != null ? top.getLikeCount() : 0);
+            item.put("replyCount", top.getReplyCount() != null ? top.getReplyCount() : 0);
+            item.put("ctime", top.getCreatedTime());
+
+            // 用户信息
+            Map<String, Object> userInfo = new HashMap<>();
+            userInfo.put("userName", top.getUserName() != null ? top.getUserName() : "");
+            userInfo.put("avatarLarge", top.getUserAvatar() != null ? top.getUserAvatar() : "");
+            item.put("userInfo", userInfo);
+
+            // 是否点赞
+            item.put("isDigg", isLiked(top.getId(), currentUserId));
+
+            // 子回复列表
+            List<ApComment> children = childrenMap.getOrDefault(top.getId(), Collections.emptyList());
+            List<Map<String, Object>> replyInfos = children.stream().map(child -> {
+                Map<String, Object> reply = new HashMap<>();
+                reply.put("commentId", child.getId());
+                reply.put("content", child.getContent() != null ? child.getContent() : "");
+                reply.put("diggCount", child.getLikeCount() != null ? child.getLikeCount() : 0);
+                reply.put("ctime", child.getCreatedTime());
+
+                Map<String, Object> replyUserInfo = new HashMap<>();
+                replyUserInfo.put("userName", child.getUserName() != null ? child.getUserName() : "");
+                replyUserInfo.put("avatarLarge", child.getUserAvatar() != null ? child.getUserAvatar() : "");
+                reply.put("userInfo", replyUserInfo);
+
+                reply.put("isDigg", isLiked(child.getId(), currentUserId));
+                return reply;
+            }).collect(Collectors.toList());
+            item.put("replyInfos", replyInfos);
+
+            list.add(item);
+        }
+
+        // 计算下一游标（最后一条评论的ID）
+        long nextCursor = topComments.get(topComments.size() - 1).getId();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", list);
+        result.put("cursor", nextCursor);
+        result.put("has_more", hasMore);
+        return ResponseResult.okResult(result);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult addArticleComment(Long articleId, String content) {
+        if (articleId == null || content == null || content.trim().isEmpty()) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "请输入评论内容");
+        }
+        if (content.length() > 1000) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "评论内容不能超过1000字");
+        }
+
+        ApUser user = getCurrentUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+
+        // 创建评论
+        ApComment comment = new ApComment();
+        comment.setArticleId(articleId);
+        comment.setUserId(user.getId());
+        comment.setUserName(user.getNickname() != null ? user.getNickname() : "用户");
+        comment.setUserAvatar(user.getImage() != null ? user.getImage() : "");
+        comment.setParentId(null);
+        comment.setRootId(null);
+        comment.setContent(content.trim());
+        comment.setLikeCount(0);
+        comment.setReplyCount(0);
+        comment.setCreatedTime(new Date());
+        save(comment);
+
+        // 更新文章评论数+1
+        apArticleMapper.updateCommentCount(articleId, 1);
+
+        // 异步审核评论
+        if (comment.getId() != null) {
+            try {
+                AuditContext auditContext = new AuditContext(AuditEntityType.COMMENT, comment.getId(), user.getId().longValue());
+                auditContext.withTitle("")
+                    .withContent(comment.getContent())
+                    .withAuthorName(comment.getUserName())
+                    .withUserId(user.getId())
+                    .withTargetType(1)
+                    .withTargetId(articleId);
+                commentAuditService.asyncAuditComment(auditContext);
+                log.info("评论已加入异步审核队列, commentId={}", comment.getId());
+            } catch (Exception e) {
+                log.error("触发评论异步审核异常, commentId={}", comment.getId(), e);
+            }
+        }
+
+        // 构建返回
+        Map<String, Object> result = new HashMap<>();
+        result.put("commentId", comment.getId());
+        result.put("content", comment.getContent() != null ? comment.getContent() : "");
+        result.put("diggCount", 0);
+        result.put("replyCount", 0);
+        result.put("ctime", comment.getCreatedTime());
+
+        Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("userName", comment.getUserName() != null ? comment.getUserName() : "");
+        userInfo.put("avatarLarge", comment.getUserAvatar() != null ? comment.getUserAvatar() : "");
+        result.put("userInfo", userInfo);
+
+        result.put("isDigg", false);
+        result.put("replyInfos", Collections.emptyList());
+
+        return ResponseResult.okResult(result);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult replyComment(Long commentId, String content, Long rootId) {
+        if (commentId == null || content == null || content.trim().isEmpty()) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "请输入回复内容");
+        }
+        if (content.length() > 1000) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "回复内容不能超过1000字");
+        }
+
+        ApUser user = getCurrentUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+
+        // 查找父评论
+        ApComment parentComment = getById(commentId);
+        if (parentComment == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "被回复的评论不存在");
+        }
+
+        // 创建回复
+        ApComment reply = new ApComment();
+        reply.setArticleId(parentComment.getArticleId());
+        reply.setUserId(user.getId());
+        reply.setUserName(user.getNickname() != null ? user.getNickname() : "用户");
+        reply.setUserAvatar(user.getImage() != null ? user.getImage() : "");
+        reply.setParentId(commentId);
+        reply.setRootId(rootId);
+        reply.setContent(content.trim());
+        reply.setLikeCount(0);
+        reply.setReplyCount(0);
+        reply.setCreatedTime(new Date());
+        save(reply);
+
+        // 更新父评论的回复数+1
+        parentComment.setReplyCount((parentComment.getReplyCount() != null ? parentComment.getReplyCount() : 0) + 1);
+        updateById(parentComment);
+
+        // 构建返回
+        Map<String, Object> result = new HashMap<>();
+        result.put("commentId", reply.getId());
+        result.put("content", reply.getContent() != null ? reply.getContent() : "");
+        result.put("diggCount", 0);
+        result.put("replyCount", 0);
+        result.put("ctime", reply.getCreatedTime());
+
+        Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("userName", reply.getUserName() != null ? reply.getUserName() : "");
+        userInfo.put("avatarLarge", reply.getUserAvatar() != null ? reply.getUserAvatar() : "");
+        result.put("userInfo", userInfo);
+
+        result.put("isDigg", false);
+
+        return ResponseResult.okResult(result);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult diggComment(Long commentId) {
+        if (commentId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        ApUser user = getCurrentUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+
+        ApComment comment = getById(commentId);
+        if (comment == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "评论不存在");
+        }
+
+        // 检查是否已点赞
+        LambdaQueryWrapper<ApCommentLike> likeWrapper = new LambdaQueryWrapper<>();
+        likeWrapper.eq(ApCommentLike::getCommentId, commentId)
+                   .eq(ApCommentLike::getUserId, user.getId());
+        ApCommentLike existingLike = apCommentLikeMapper.selectOne(likeWrapper);
+
+        if (existingLike != null) {
+            // 已点赞，取消点赞
+            apCommentLikeMapper.deleteById(existingLike.getId());
+            comment.setLikeCount(Math.max(0, (comment.getLikeCount() != null ? comment.getLikeCount() : 1) - 1));
+            updateById(comment);
+            return ResponseResult.okResult(Map.of("liked", false, "likeCount", comment.getLikeCount()));
+        } else {
+            // 点赞
+            ApCommentLike like = new ApCommentLike();
+            like.setCommentId(commentId);
+            like.setUserId(user.getId());
+            like.setCreatedTime(new Date());
+            apCommentLikeMapper.insert(like);
+            comment.setLikeCount((comment.getLikeCount() != null ? comment.getLikeCount() : 0) + 1);
+            updateById(comment);
+            return ResponseResult.okResult(Map.of("liked", true, "likeCount", comment.getLikeCount()));
+        }
     }
 
     private boolean isLiked(Long commentId, Integer userId) {

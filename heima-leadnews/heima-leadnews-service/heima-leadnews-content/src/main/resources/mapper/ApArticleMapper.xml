@@ -74,4 +74,30 @@
         LIMIT #{maxCandidates}
     </select>
 
+<update id="updateCommentCount">
+        UPDATE ap_article
+        SET comment = COALESCE(comment, 0) + #{increment}
+        WHERE id = #{articleId}
+    </update>
+
+    <select id="selectRecommendArticles" resultMap="resultMap">
+        SELECT
+            aa.*
+        FROM
+            `ap_article` aa
+            INNER JOIN ap_article_config aac ON aa.id = aac.article_id
+        <where>
+            and aac.is_delete != 1
+            and aac.is_down != 1
+            and aac.is_recommend = 1
+            and aa.status = 9
+            and aa.id != #{excludeId}
+            <if test="cursor != null and cursor > 0">
+                and aa.id &lt; #{cursor}
+            </if>
+        </where>
+        ORDER BY aa.score DESC, aa.id DESC
+        LIMIT #{size}
+    </select>
+
 </mapper>
