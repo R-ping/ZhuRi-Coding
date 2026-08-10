@@ -24,8 +24,8 @@ spring:
 #        file-extension: yml
 
 elasticsearch:
-  host: ${ES_HOST:192.168.44.128}
-  port: ${ES_PORT:9200}
+  host: 192.168.44.128
+  port: 9200
   article:
     index: ${ES_ARTICLE_INDEX:app_info_article}
 

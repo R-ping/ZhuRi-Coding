@@ -122,7 +122,6 @@
               :loading="tagLoading"
               size="small"
               class="tag-select"
-              :disabled="selectedTags.length >= maxTags"
               @visible-change="onTagDropdownVisible"
             >
               <el-option
@@ -130,6 +129,7 @@
                 :key="item.id"
                 :label="item.name"
                 :value="item.name"
+                :disabled="selectedTags.length >= maxTags && selectedTags.indexOf(item.name) === -1"
               >
                 <span style="float: left">{{ item.name }}</span>
                 <span style="float: right; color: #8492a6; font-size: 12px">{{ item.category }}</span>
@@ -362,7 +362,7 @@
       ...mapGetters(['userInfo']),
       userAvatar() {
         if (this.userInfo && this.userInfo.avatar) {
-          return '/static/images/' + this.userInfo.avatar + '.png'
+          return this.userInfo.avatar
         }
         return ''
       },

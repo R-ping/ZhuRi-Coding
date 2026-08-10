@@ -76,7 +76,7 @@
             },
             userAvatar() {
                 if (this.userInfo && this.userInfo.avatar) {
-                    return '/static/images/' + this.userInfo.avatar + '.png'
+                    return this.userInfo.avatar
                 }
                 return ''
             },
@@ -129,7 +129,7 @@
                             const levelBaseMap = { 1: 0, 2: 150, 3: 300, 4: 500, 5: 800 }
                             const base = levelBaseMap[li.dailyLevel] || 0
                             const currentInLevel = this.levelScore - base
-                            this.levelPercent = Math.min(Math.round(currentInLevel / this.levelMax * 100), 100)
+                            this.levelPercent = Math.min(Math.round(currentInLevel / (this.levelMax - base) * 100), 100)
                         }
                     }
                 } catch (e) {

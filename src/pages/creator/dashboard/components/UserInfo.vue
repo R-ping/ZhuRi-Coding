@@ -36,7 +36,7 @@ export default {
     },
     headImg() {
       if (this.userInfo && this.userInfo.avatar) {
-        return '/static/images/' + this.userInfo.avatar + '.png'
+        return this.userInfo.avatar
       }
       return defaultAvatar
     },

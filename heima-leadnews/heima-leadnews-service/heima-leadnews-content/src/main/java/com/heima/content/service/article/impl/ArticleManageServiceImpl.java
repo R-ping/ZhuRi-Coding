@@ -4,14 +4,17 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ArticleManageService;
 import com.heima.model.article.pojos.ApArticle;
+import com.heima.model.article.pojos.ApArticleContent;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.pojos.ApUser;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +25,9 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class ArticleManageServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle> implements ArticleManageService {
+
+    @Autowired
+    private ApArticleContentMapper apArticleContentMapper;
 
     @Override
     public ResponseResult list(Long authorId, Integer page, Integer size, String status, String title) {
@@ -98,6 +104,54 @@ public class ArticleManageServiceImpl extends ServiceImpl<ApArticleMapper, ApArt
         article.setIsDeleted(true);
         updateById(article);
         return ResponseResult.okResult();
+    }
+
+    @Override
+    public ResponseResult getArticleById(Long id) {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        if (id == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "id 不能为空");
+        }
+        ApArticle article = getById(id);
+        if (article == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
+        }
+        // 查询文章内容
+        LambdaQueryWrapper<ApArticleContent> contentWrapper = new LambdaQueryWrapper<>();
+        contentWrapper.eq(ApArticleContent::getArticleId, id);
+        ApArticleContent articleContent = apArticleContentMapper.selectOne(contentWrapper);
+        String content = articleContent != null ? articleContent.getContent() : "";
+
+        // 构建返回数据（字段名与前端期望一致）
+        Map<String, Object> data = new HashMap<>();
+        data.put("id", article.getId());
+        data.put("title", article.getTitle() != null ? article.getTitle() : "");
+        data.put("authorId", article.getAuthorId() != null ? article.getAuthorId() : "");
+        data.put("authorName", article.getAuthorName() != null ? article.getAuthorName() : "");
+        data.put("channel_id", article.getChannelId() != null ? article.getChannelId() : "");
+        data.put("channelId", article.getChannelId() != null ? article.getChannelId() : "");
+        data.put("channel_name", article.getChannelName() != null ? article.getChannelName() : "");
+        data.put("channelName", article.getChannelName() != null ? article.getChannelName() : "");
+        data.put("layout", article.getLayout() != null ? article.getLayout() : "");
+        data.put("cover_image", article.getCoverImage() != null ? article.getCoverImage() : "");
+        data.put("coverImage", article.getCoverImage() != null ? article.getCoverImage() : "");
+        data.put("columnId", article.getColumnId() != null ? article.getColumnId() : "");
+        data.put("labels", article.getTags() != null ? String.join(",", article.getTags()) : "");
+        data.put("tags", article.getTags() != null ? article.getTags() : "");
+        data.put("content", content);
+        data.put("summary", "");
+        data.put("publish_time", article.getPublishTime() != null ? article.getPublishTime() : "");
+        data.put("publishTime", article.getPublishTime() != null ? article.getPublishTime() : "");
+        data.put("status", article.getStatus() != null ? article.getStatus() : "");
+        data.put("reason", article.getReason() != null ? article.getReason() : "");
+        data.put("createdTime", article.getCreatedTime() != null ? article.getCreatedTime() : "");
+        data.put("images", "");
+        data.put("type", "0");
+        data.put("topic", "");
+        return ResponseResult.okResult(data);
     }
 
     private Byte getStatusCode(String status) {

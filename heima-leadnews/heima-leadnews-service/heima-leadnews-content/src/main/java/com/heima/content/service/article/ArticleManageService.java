@@ -11,4 +11,6 @@ public interface ArticleManageService extends IService<ApArticle> {
     ResponseResult statistics(Long authorId);
 
     ResponseResult deleteArticle(Long id);
+
+    ResponseResult getArticleById(Long id);
 }

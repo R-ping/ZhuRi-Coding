@@ -44,6 +44,11 @@ public class ApArticleDraftController {
         return apArticleDraftService.listDrafts(authorId, page, size);
     }
 
+    @GetMapping("/manage/detail")
+    public ResponseResult getDraftByQuery(@RequestParam Long id) {
+        return apArticleDraftService.getDraftById(id);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseResult deleteDraft(@PathVariable Long id) {
         return apArticleDraftService.deleteDraft(id);
