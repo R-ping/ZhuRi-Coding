@@ -33,6 +33,10 @@ public class ApComment implements Serializable {
     @TableField("parent_id")
     private Long parentId;
 
+    /** 根评论ID（一级评论的ID，用于层级关系） */
+    @TableField("root_id")
+    private Long rootId;
+
     @TableField("content")
     private String content;
 

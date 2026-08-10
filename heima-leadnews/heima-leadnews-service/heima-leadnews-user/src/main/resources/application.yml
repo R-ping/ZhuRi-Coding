@@ -16,11 +16,11 @@ spring:
       port: 6379
       host: localhost
   # FreeMarker 模板引擎配置
-  freemarker:
-    charset: UTF-8
-    suffix: .ftl
-    content-type: text/html
-    template-loader-path: classpath:/templates/
+#  freemarker:
+#    charset: UTF-8
+#    suffix: .ftl
+#    content-type: text/html
+#    template-loader-path: classpath:/templates/
 # 设置Mapper接口所对应的XML文件位置，如果你在Mapper接口中有自定义方法，需要进行该配置
 mybatis-plus:
   configuration:

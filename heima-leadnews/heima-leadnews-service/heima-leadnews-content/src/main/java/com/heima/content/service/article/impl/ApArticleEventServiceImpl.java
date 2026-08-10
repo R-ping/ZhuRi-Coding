@@ -89,6 +89,10 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
                     apArticleEventMapper.updateArticleEvent(event);
                     log.info("MinIO重试处理成功, articleId={}", event.getArticleId());
                 } catch (Exception e) {
+                    event.setMinioStatus((byte) 2);
+                    event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
+                    event.setUpdateTime(new Date());
+                    apArticleEventMapper.updateArticleEvent(event);
                     log.error("MinIO重试处理异常, articleId={}", event.getArticleId(), e);
                 }
             }
