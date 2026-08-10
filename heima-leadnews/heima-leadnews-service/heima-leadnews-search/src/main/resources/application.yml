@@ -15,17 +15,11 @@ spring:
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
-#  cloud:
-#    nacos:
-#      discovery:
-#        server-addr: 192.168.200.130:8848
-#      config:
-#        server-addr: 192.168.200.130:8848
-#        file-extension: yml
-
+  elasticsearch:
+    uris: http://192.168.44.128:9200
+    connection-timeout: 10000
+    socket-timeout: 3000
 elasticsearch:
-  host: 192.168.44.128
-  port: 9200
   article:
     index: ${ES_ARTICLE_INDEX:app_info_article}
 
