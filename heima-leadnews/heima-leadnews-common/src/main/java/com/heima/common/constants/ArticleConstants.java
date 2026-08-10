@@ -54,4 +54,19 @@ public class ArticleConstants {
     // ========== 通知类型 ==========
     /** 系统通知类型 */
     public static final int NOTIFICATION_TYPE_SYSTEM = 4;
+
+    // ========== OSS 默认头像 URL ==========
+    /** OSS 默认头像 URL 数组（avatar/ 目录已设置为公共读） */
+    public static final String[] OSS_AVATAR_URLS = {
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_1.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_2.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_3.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_4.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_5.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_6.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_7.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_8.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_9.png",
+        "https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/avatar/avatar_head_10.png"
+    };
 }

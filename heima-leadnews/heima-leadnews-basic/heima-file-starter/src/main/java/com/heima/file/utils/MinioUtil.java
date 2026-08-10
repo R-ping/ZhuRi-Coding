@@ -3,9 +3,7 @@ package com.heima.file.utils;
 import cn.hutool.core.util.StrUtil;
 import com.heima.file.config.MinIOConfig;
 import com.heima.model.search.vos.SearchArticleVo;
-import com.rabbitmq.client.Channel;
 import freemarker.template.Configuration;
-import freemarker.template.Template;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -14,7 +12,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -23,12 +20,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.core.Message;
-import org.springframework.amqp.rabbit.annotation.Exchange;
-import org.springframework.amqp.rabbit.annotation.Queue;
-import org.springframework.amqp.rabbit.annotation.QueueBinding;
-import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -142,43 +133,43 @@ public class MinioUtil {
     @Autowired
     private Configuration configuration;
 
-    @Autowired
-    private RabbitTemplate rabbitTemplate;
-    @RabbitListener(bindings = @QueueBinding(
-        value = @Queue(value = "minio.queue", durable = "true"),
-        exchange = @Exchange(value = "article.exchange"),
-        key = "article.minio.*"
-    ))
-    public void uploadHtmlFile(Message message, SearchArticleVo vo, Channel channel) {
-        HashMap<String,String> resultMap=new HashMap<>();
-        resultMap.put("articleId",vo.getId().toString());
-        resultMap.put("type","minio");
-        try {
-            String fileName = vo.getFileName();// yyyy/mm/dd/articleId
-            StringWriter out = new StringWriter();
-            Template template = configuration.getTemplate("article.ftl");
-            //数据模型
-            Map<String, Object> contentDataModel = buildDataModel(vo);
-            //合成
-            template.process(contentDataModel, out);
-            // 将HTML内容转换为输入流
-            InputStream inputStream = new ByteArrayInputStream(out.toString().getBytes());
-            PutObjectArgs putObjectArgs = PutObjectArgs.builder()
-                .object(fileName)
-                .contentType("text/html")
-                .bucket(prop.getBucket()).stream(inputStream, inputStream.available(), -1)
-                .build();
-            minioClient.putObject(putObjectArgs);
-            resultMap = new HashMap<>();
-            resultMap.put("status", "success");
-            rabbitTemplate.convertAndSend("process.exchange","process.result",resultMap);
-            channel.basicAck(message.getMessageProperties().getDeliveryTag(), false);
-        } catch (Exception ex) {
-            log.error("minio put file error.", ex);
-            resultMap.put("status", "fail");
-            rabbitTemplate.convertAndSend("process.exchange","process.result",resultMap);
-        }
-    }
+//    @Autowired
+//    private RabbitTemplate rabbitTemplate;
+//    @RabbitListener(bindings = @QueueBinding(
+//        value = @Queue(value = "minio.queue", durable = "true"),
+//        exchange = @Exchange(value = "article.exchange"),
+//        key = "article.minio.*"
+//    ))
+//    public void uploadHtmlFile(Message message, SearchArticleVo vo, Channel channel) {
+//        HashMap<String,String> resultMap=new HashMap<>();
+//        resultMap.put("articleId",vo.getId().toString());
+//        resultMap.put("type","minio");
+//        try {
+//            String fileName = vo.getFileName();// yyyy/mm/dd/articleId
+//            StringWriter out = new StringWriter();
+//            Template template = configuration.getTemplate("article.ftl");
+//            //数据模型
+//            Map<String, Object> contentDataModel = buildDataModel(vo);
+//            //合成
+//            template.process(contentDataModel, out);
+//            // 将HTML内容转换为输入流
+//            InputStream inputStream = new ByteArrayInputStream(out.toString().getBytes());
+//            PutObjectArgs putObjectArgs = PutObjectArgs.builder()
+//                .object(fileName)
+//                .contentType("text/html")
+//                .bucket(prop.getBucket()).stream(inputStream, inputStream.available(), -1)
+//                .build();
+//            minioClient.putObject(putObjectArgs);
+//            resultMap = new HashMap<>();
+//            resultMap.put("status", "success");
+//            rabbitTemplate.convertAndSend("process.exchange","process.result",resultMap);
+//            channel.basicAck(message.getMessageProperties().getDeliveryTag(), false);
+//        } catch (Exception ex) {
+//            log.error("minio put file error.", ex);
+//            resultMap.put("status", "fail");
+//            rabbitTemplate.convertAndSend("process.exchange","process.result",resultMap);
+//        }
+//    }
 
     /**
      * 构建 Freemarker 数据模型

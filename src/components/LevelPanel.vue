@@ -13,7 +13,8 @@
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: dailyProgress + '%' }"></div>
         </div>
-        <div class="progress-text">距离下一级还需 {{ dailyNextLevelScore }} 分</div>
+        <div class="progress-text" v-if="levelInfo.dailyLevel < 10">距离下一级还需 {{ dailyNextLevelScore }} 分</div>
+        <div class="progress-text" v-else>已满级</div>
       </div>
       <div class="level-title-name">{{ levelInfo.dailyTitle }}</div>
     </div>
@@ -119,8 +120,8 @@ export default {
       const min = levelConfig.minScore
       const max = levelConfig.maxScore
       const current = this.levelInfo.powerValue
-      this.powerNextLevelScore = max - current + 1
-      return ((current - min) / (max - min)) * 100
+      this.powerNextLevelScore = levelConfig.level === 10 ? 0 : max - current + 1
+      return levelConfig.level === 10 ? 100 : ((current - min) / (max - min)) * 100
     }
   },
   mounted() {

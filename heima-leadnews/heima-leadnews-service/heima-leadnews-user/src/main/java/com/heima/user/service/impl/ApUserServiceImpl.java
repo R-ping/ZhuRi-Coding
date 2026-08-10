@@ -3,6 +3,7 @@ package com.heima.user.service.impl;
 import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.heima.common.constants.ArticleConstants;
 import com.heima.common.redis.CacheService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
@@ -98,7 +99,7 @@ public class ApUserServiceImpl extends ServiceImpl<ApUserMapper, ApUser> impleme
         // “用户”+6位随机数
         String nickname = "用户" + RandomUtil.randomNumbers(6);
         apUser.setNickname(nickname);
-        apUser.setImage("avatar_head_" + RandomUtil.randomInt(1, 10));
+        apUser.setImage(ArticleConstants.OSS_AVATAR_URLS[RandomUtil.randomInt(0, 10)]);
         apUser.setCreatedTime(new Date());
         return apUser;
     }

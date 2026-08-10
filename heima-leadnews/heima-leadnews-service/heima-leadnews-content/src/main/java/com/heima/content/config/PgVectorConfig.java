@@ -20,7 +20,7 @@ public class PgVectorConfig {
     public HikariConfig pgVectorHikariConfig() {
         HikariConfig config = new HikariConfig();
         config.setDriverClassName("org.postgresql.Driver");
-        config.setJdbcUrl("jdbc:postgresql://192.168.44.128:5432/leadnews_article");
+        config.setJdbcUrl("jdbc:postgresql://192.168.44.128:5432/leadnews_content");
         config.setUsername("postgres");
         config.setPassword("123456");
         config.setMaximumPoolSize(5);

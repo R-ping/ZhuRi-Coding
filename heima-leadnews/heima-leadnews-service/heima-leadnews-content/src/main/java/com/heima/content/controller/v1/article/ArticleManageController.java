@@ -23,6 +23,11 @@ public class ArticleManageController {
         return articleManageService.list(null, page, size, status, title);
     }
 
+    @GetMapping("/detail")
+    public ResponseResult detail(@RequestParam Long id) {
+        return articleManageService.getArticleById(id);
+    }
+
     @GetMapping("/statistics")
     public ResponseResult statistics() {
         return articleManageService.statistics(null);

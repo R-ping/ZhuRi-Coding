@@ -25,6 +25,11 @@
             safeTitle() {
                 return sanitizeHighlight(this.data.title || '')
             }
+        },
+        methods: {
+            formatDate: function(time) {
+                return this.$date.format13(time);
+            }
         }
     }
 </script>
