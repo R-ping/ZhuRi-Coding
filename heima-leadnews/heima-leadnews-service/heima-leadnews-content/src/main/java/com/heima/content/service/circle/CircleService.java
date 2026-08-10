@@ -46,4 +46,9 @@ public interface CircleService {
      * 我的圈子
      */
     List<CircleVO> myCircles(Integer userId);
+
+    /**
+     * 根据分类获取圈子列表（分页）
+     */
+    List<CircleVO> listByCategory(Long categoryId, int page, int size);
 }

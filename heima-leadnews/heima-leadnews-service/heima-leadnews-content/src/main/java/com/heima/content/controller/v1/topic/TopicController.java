@@ -61,4 +61,18 @@ public class TopicController {
                                  @RequestParam(defaultValue = "10") int limit) {
         return ResponseResult.okResult(topicService.search(keyword, limit));
     }
+
+    @GetMapping("/recommended")
+    public ResponseResult recommended(@RequestParam(required = false) Long excludeId,
+                                      @RequestParam(defaultValue = "6") int limit) {
+        return ResponseResult.okResult(topicService.recommendedTopics(excludeId, limit));
+    }
+
+    @GetMapping("/inspiration/topics")
+    public ResponseResult inspirationTopics(@RequestParam(defaultValue = "1") int page,
+                                            @RequestParam(defaultValue = "20") int size,
+                                            @RequestParam(defaultValue = "hot") String sort,
+                                            @RequestParam(required = false) Integer themeType) {
+        return ResponseResult.okResult(topicService.inspirationTopics(page, size, sort, themeType));
+    }
 }

@@ -120,6 +120,16 @@ let routes = [
                 path: 'growth/grade',
                 name: 'CreatorGrowthGrade',
                 component: () => import('@/pages/creator/growth/grade.vue')
+            },
+            {
+                path: 'growth/inspiration',
+                name: 'CreatorGrowthInspiration',
+                component: () => import('@/pages/creator/growth/inspiration.vue')
+            },
+            {
+                path: 'growth/topic/:id',
+                name: 'CreatorTopicDetail',
+                component: () => import('@/pages/creator/growth/topic/detail.vue')
             }
         ]
     },

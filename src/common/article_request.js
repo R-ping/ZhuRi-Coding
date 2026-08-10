@@ -14,7 +14,7 @@ const service = axios.create({
 })
 
 const isImgUpload = (config) => {
-  return config.url && config.url.indexOf('content/import') !== -1
+  return config.data instanceof FormData
 }
 
 // request interceptor

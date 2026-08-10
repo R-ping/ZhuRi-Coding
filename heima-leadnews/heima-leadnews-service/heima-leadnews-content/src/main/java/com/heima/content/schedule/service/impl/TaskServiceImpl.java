@@ -123,7 +123,7 @@ public class TaskServiceImpl implements TaskService {
             taskinfoLogsMapper.updateById(taskinfoLogs);
             log.info("taskInfoLogs update success taskId={}, status={}", taskId, status);
         } catch (Exception e) {
-            log.error("task cancel exception taskId={}", taskId);
+            log.error("task cancel exception taskId={}", taskId,e);
         }
     }
 

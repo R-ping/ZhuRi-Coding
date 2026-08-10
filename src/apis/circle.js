@@ -39,3 +39,13 @@ export const getCircleFeed = (id, params = {}) => {
 export const getMyCircles = () => {
   return request.get('/api/v1/circle/my')
 }
+
+// 获取圈子分类列表
+export const getCircleCategories = () => {
+  return request.get('/api/v1/circle/categories')
+}
+
+// 获取分类下圈子
+export const getCirclesByCategory = (categoryId, page = 1, size = 20) => {
+  return request.get(`/api/v1/circle/categories/${categoryId}/circles`, { params: { page, size } })
+}

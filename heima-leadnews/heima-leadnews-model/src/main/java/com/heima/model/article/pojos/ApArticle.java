@@ -79,6 +79,12 @@ public class ApArticle implements Serializable {
     private String coverImage;
 
     /**
+     * 专栏ID
+     */
+    @TableField("column_id")
+    private Long columnId;
+
+    /**
      * 标签
      * 前端给 labels:["标签1","标签2"]
      * 数据库存 labels:"标签1,标签2"
@@ -245,6 +251,7 @@ public class ApArticle implements Serializable {
         map.put("layout", this.layout != null ? this.layout : "");
         map.put("flag", this.flag != null ? this.flag : "");
         map.put("coverImage", nullSafe(this.coverImage));
+        map.put("columnId", this.columnId != null ? this.columnId : "");
         map.put("tags", this.tags != null ? this.tags : "");
         map.put("likes", this.likes != null ? this.likes : "");
         map.put("collection", this.collection != null ? this.collection : "");

@@ -86,7 +86,31 @@
           </div>
 
           <div class="drawer-section">
-            <label class="section-label">添加标签 <span class="tag-limit">最多{{ maxTags }}个</span></label>
+            <label class="section-label">文章封面</label>
+            <div class="cover-upload-wrapper">
+              <div v-if="FormData.cover_image" class="cover-preview">
+                <img :src="coverPreview" class="cover-img" @click="previewCover" />
+                <i class="el-icon-close cover-remove" @click="removeCover"></i>
+              </div>
+              <el-upload
+                v-else
+                :show-file-list="false"
+                :before-upload="beforeCoverUpload"
+                :http-request="handleCoverUpload"
+                accept="image/*"
+                class="cover-uploader"
+              >
+                <div class="cover-upload-btn">
+                  <i class="el-icon-plus"></i>
+                  <span>上传封面</span>
+                </div>
+              </el-upload>
+              <p class="cover-tip">建议尺寸：192*128px (封面仅展示在首页信息流中)</p>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <label class="section-label">添加标签 <span class="required">*</span> <span class="tag-limit">最多{{ maxTags }}个</span></label>
             <el-select
               v-model="selectedTags"
               multiple
@@ -111,6 +135,9 @@
                 <span style="float: right; color: #8492a6; font-size: 12px">{{ item.category }}</span>
               </el-option>
             </el-select>
+            <div class="tag-remaining-tip" v-if="selectedTags.length > 0 || maxTags > 0">
+              你还能添加 <span class="remaining-count">{{ remainingTags }}</span> 个标签
+            </div>
           </div>
 
           <div class="drawer-section" v-if="canSchedulePublish">
@@ -152,7 +179,27 @@
           </div>
 
           <div class="drawer-section">
-            <label class="section-label">编辑摘要</label>
+            <label class="section-label">收录至专栏</label>
+            <el-select
+              v-model="FormData.column_id"
+              clearable
+              filterable
+              placeholder="请搜索添加专栏"
+              size="small"
+              class="column-select"
+              @visible-change="onColumnDropdownVisible"
+            >
+              <el-option
+                v-for="item in columnOptions"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+              ></el-option>
+            </el-select>
+          </div>
+
+          <div class="drawer-section">
+            <label class="section-label">编辑摘要 <span class="required">*</span></label>
             <div class="summary-wrapper">
               <el-input
                 v-model="FormData.summary"
@@ -212,7 +259,7 @@
 
 <script>
   import ByteMdEditor from "@/pages/creator/components/editor/ByteMdEditor.vue";
-  import { getArticleById, getDraftById } from "@/apis/creator/content";
+  import { getArticleById, getDraftById, getColumnList } from "@/apis/creator/content";
   import {
     getChannels,
     getTagList,
@@ -237,8 +284,10 @@
           topic: "",
           publish_time: "",
           channel_id: null,
+          column_id: null,
           content: "",
-          summary: ""
+          summary: "",
+          cover_image: ""
         },
         maxTags: 1,
         canAddVideo: false,
@@ -257,6 +306,10 @@
         // 话题相关
         topicOptions: [],
         topicLoading: false,
+        // 专栏相关
+        columnList: [],
+        columnLoading: false,
+        columnOptions: [],
         // 文档导入
         importDialogVisible: false,
         importFileList: [],
@@ -267,7 +320,8 @@
         draftSaving: false,
         draftContent: '',
         draftHash: '',
-        saveStatus: '' // idle | saving | saved | error
+        saveStatus: '',
+        coverPreview: null
       };
     },
     watch: {
@@ -291,10 +345,16 @@
       'FormData.topic': {
         handler() { this.saveStatus = ''; this.scheduleDraftSave() }
       },
+      'FormData.column_id': {
+        handler() { this.saveStatus = ''; this.scheduleDraftSave() }
+      },
       'FormData.summary': {
         handler() { this.saveStatus = ''; this.scheduleDraftSave() }
       },
       'FormData.publish_time': {
+        handler() { this.saveStatus = ''; this.scheduleDraftSave() }
+      },
+      'FormData.cover_image': {
         handler() { this.saveStatus = ''; this.scheduleDraftSave() }
       }
     },
@@ -308,6 +368,10 @@
       },
       userName() {
         return this.userInfo ? (this.userInfo.nickName || '') : ''
+      },
+      remainingTags() {
+        const remaining = this.maxTags - this.selectedTags.length;
+        return remaining > 0 ? remaining : 0;
       }
     },
     beforeMount() {
@@ -437,7 +501,7 @@
           getTopicList(query).then(res => {
             this.topicLoading = false
             if (res && res.code === 200) {
-              this.topicOptions = res.data || []
+              this.topicOptions = res.data?.list || []
             }
           }).catch(() => {
             this.topicLoading = false
@@ -453,12 +517,77 @@
           getTopicList('').then(res => {
             this.topicLoading = false
             if (res && res.code === 200) {
-              this.topicOptions = res.data || []
+              this.topicOptions = res.data?.list || []
             }
           }).catch(() => {
             this.topicLoading = false
           })
         }
+      },
+      // 获取专栏列表
+      async loadColumnList() {
+        this.columnLoading = true
+        try {
+          const result = await getColumnList()
+          if (result && result.code === 200) {
+            const list = result.data?.records || result.data?.list || result.data || []
+            this.columnList = list
+            this.columnOptions = list.map(item => ({
+              id: item.id,
+              name: item.name
+            }))
+          }
+        } catch (e) {
+          // 专栏加载失败不阻塞发布
+        } finally {
+          this.columnLoading = false
+        }
+      },
+      // 专栏下拉框显示时加载数据
+      async onColumnDropdownVisible(visible) {
+        if (visible && this.columnOptions.length === 0) {
+          await this.loadColumnList()
+        }
+      },
+      // 封面上传前校验
+      beforeCoverUpload(file) {
+        const isImage = file.type.startsWith('image/')
+        const isLt5M = file.size / 1024 / 1024 < 5
+        if (!isImage) {
+          this.$message.error('只能上传图片文件')
+          return false
+        }
+        if (!isLt5M) {
+          this.$message.error('图片大小不能超过 5MB')
+          return false
+        }
+        return true
+      },
+      // 封面上传处理（使用 OSS 直传）
+      async handleCoverUpload({ file }) {
+        try {
+          const { uploadFile } = await import('@/common/oss_upload')
+          const url = await uploadFile(file)
+          if (url) {
+            this.FormData.cover_image = url
+            this.coverPreview = url
+            this.saveStatus = ''
+            this.scheduleDraftSave()
+          }
+        } catch (e) {
+          this.$message.error('封面上传失败')
+        }
+      },
+      // 移除封面
+      removeCover() {
+        this.FormData.cover_image = ''
+        this.coverPreview = null
+      },
+      // 预览封面
+      previewCover() {
+        this.$alert('<img src="' + this.coverPreview + '" style="max-width:100%">', '封面预览', {
+          dangerouslyUseHTMLString: true
+        })
       },
       async getChannels() {
         let result = await getChannels();
@@ -480,7 +609,8 @@
           this.FormData.labels || '',
           this.FormData.topic || '',
           this.FormData.summary || '',
-          this.FormData.publish_time || ''
+          this.FormData.publish_time || '',
+          this.FormData.cover_image || ''
         ]
         return parts.join('|||')
       },
@@ -499,12 +629,14 @@
             title: this.FormData.title,
             content: this.FormData.content,
             channelId: this.FormData.channel_id,
+            columnId: this.FormData.column_id || null,
             images: '',
             labels: this.FormData.labels,
             topic: this.FormData.topic,
             summary: this.FormData.summary,
             publishTime: this.FormData.publish_time,
-            layout: 0
+            layout: 0,
+            coverImage: this.FormData.cover_image || ''
           }
 
           let result
@@ -534,13 +666,16 @@
           id: result.data.id,
           title: result.data.title,
           channel_id: result.data.channel_id,
+          column_id: result.data.columnId || null,
           labels: result.data.labels,
           topic: result.data.topic || "",
           type: "" + result.data.type,
           publish_time: result.data.publish_time,
           content: result.data.content || "",
-          summary: result.data.summary || this.generateSummary(result.data.content || "")
+          summary: result.data.summary || this.generateSummary(result.data.content || ""),
+          cover_image: result.data.cover_image || ""
         }
+        this.coverPreview = result.data.cover_image || null
         this.selectedTags = (result.data.labels || "").split(",").map(item => item.trim()).filter(item => item.length > 0);
         this.host = result.host
         this.transImages(this.FormData.type, result.data.images);
@@ -554,13 +689,16 @@
             id: result.data.id,
             title: result.data.title || '',
             channel_id: result.data.channelId || result.data.channel_id || null,
+            column_id: result.data.columnId || null,
             labels: result.data.labels || '',
             topic: result.data.topic || "",
             type: "0",
             publish_time: result.data.publishTime || result.data.publish_time || '',
             content: result.data.content || "",
-            summary: result.data.summary || this.generateSummary(result.data.content || "")
+            summary: result.data.summary || this.generateSummary(result.data.content || ""),
+            cover_image: result.data.coverImage || result.data.cover_image || ""
           }
+          this.coverPreview = result.data.coverImage || result.data.cover_image || null
           this.selectedTags = ((result.data.labels || result.data.labels) || "").split(",").map(item => item.trim()).filter(item => item.length > 0);
           this.host = result.host || ''
           this.transImages("0", result.data.images || result.data.image);
@@ -602,6 +740,7 @@
         if (!this.FormData.summary) {
           this.FormData.summary = this.generateSummary(this.FormData.content);
         }
+        this.loadColumnList();
         this.publishDrawerVisible = true;
       },
       backToTop() {
@@ -635,8 +774,24 @@
         this.FormData.labels = this.selectedTags.join(',');
 
         // 校验
-        if (!this.FormData.title || this.FormData.title.length < 5 || this.FormData.title.length > 32) {
+        if (!this.FormData.title || this.FormData.title.length < 5 || this.FormData.title.length > 64) {
           this.$message({ type: "warning", message: "文章标题不能小于5个字符或大于32个字符" });
+          return;
+        }
+        if (!this.FormData.channel_id) {
+          this.$message({ type: "warning", message: "请选择文章分类" });
+          return;
+        }
+        if (!this.selectedTags || this.selectedTags.length === 0) {
+          this.$message({ type: "warning", message: "请添加至少一个标签" });
+          return;
+        }
+        if (this.selectedTags.length > this.maxTags) {
+          this.$message({ type: "warning", message: `最多只能添加${this.maxTags}个标签` });
+          return;
+        }
+        if (!this.FormData.summary || this.FormData.summary.trim().length === 0) {
+          this.$message({ type: "warning", message: "请填写文章摘要" });
           return;
         }
         if (!this.FormData.labels || this.FormData.labels.length > 20) {
@@ -645,10 +800,6 @@
         }
         if (!this.FormData.content) {
           this.$message({ type: "warning", message: "文章内容不能为空" });
-          return;
-        }
-        if (!this.FormData.channel_id) {
-          this.$message({ type: "warning", message: "文章频道不能为空" });
           return;
         }
         if (!this.draftId) {
@@ -911,6 +1062,76 @@
     }
   }
 
+  .cover-upload-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .cover-uploader {
+    display: inline-block;
+  }
+
+  .cover-upload-btn {
+    width: 120px;
+    height: 80px;
+    border: 1px dashed #d9d9d9;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #8c8c8c;
+    font-size: 12px;
+    transition: border-color 0.3s;
+
+    &:hover {
+      border-color: #409eff;
+      color: #409eff;
+    }
+
+    .el-icon-plus {
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+  }
+
+  .cover-preview {
+    position: relative;
+    display: inline-block;
+
+    .cover-img {
+      width: 120px;
+      height: 80px;
+      object-fit: cover;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .cover-remove {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 20px;
+      height: 20px;
+      background: #ff4d4f;
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+    }
+  }
+
+  .cover-tip {
+    font-size: 12px;
+    color: #999;
+    margin: 0;
+  }
+
   .datetime-picker {
     width: 100%;
   }
@@ -948,6 +1169,21 @@
   }
 
   .tag-select, .topic-select {
+    width: 100%;
+  }
+
+  .tag-remaining-tip {
+    font-size: 12px;
+    color: #8492a6;
+    margin-top: 4px;
+  }
+
+  .remaining-count {
+    color: #409eff;
+    font-weight: 600;
+  }
+
+  .column-select {
     width: 100%;
   }
 

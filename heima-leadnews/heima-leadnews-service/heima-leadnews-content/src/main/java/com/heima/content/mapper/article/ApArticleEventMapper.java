@@ -15,7 +15,7 @@ public interface ApArticleEventMapper extends BaseMapper<ArticleEvent> {
 
     public void updateArticleEvent(@Param("articleEvent") ArticleEvent articleEvent);
 
-    @Select("select * from article_event")
+    @Select("select * from article_event where retry_count <2")
     public List<ArticleEvent> loadArticleEvent();
 
     // 批量删除

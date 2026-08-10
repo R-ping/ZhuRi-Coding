@@ -1,5 +1,18 @@
 package com.heima.content.service.article.impl;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ArticleTaskService;
@@ -13,9 +26,10 @@ import com.heima.content.service.article.processor.SimilarityProcessor;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticle.Status;
 import com.heima.model.article.pojos.ApArticleContent;
+import java.util.Date;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -23,13 +37,6 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Date;
-import java.util.concurrent.CompletableFuture;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 /**
  * ArticleAutoScanServiceImpl 单元测试
@@ -73,7 +80,7 @@ class ArticleAutoScanServiceImplTest {
 
     private ApArticle normalArticle;
     private ApArticleContent articleContent;
-    private static final Long TEST_ARTICLE_ID = 10001L;
+    private static final Long TEST_ARTICLE_ID = 2086414899941933058L;
     private static final Long TEST_AUTHOR_ID = 20001L;
     private static final String TEST_CONTENT = "# 测试文章内容\n这是一篇用于单元测试的文章。";
 

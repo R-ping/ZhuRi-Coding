@@ -22,13 +22,18 @@
                     <h2 class="section-title">圈子广场</h2>
                     <div class="circles-tabs">
                         <div 
-                            class="tab-item active"
-                        >推荐圈子</div>
+                            class="tab-item"
+                            v-for="cat in categories"
+                            :key="cat.id"
+                            :class="{ 'active': activeCategoryId === cat.id }"
+                            @click="fetchCategoryCircles(cat.id)"
+                        >{{ cat.name }}</div>
                     </div>
 
-                    <div class="circles-grid">
+                    <div class="circles-loading" v-if="categoryLoading">加载中...</div>
+                    <div class="circles-grid" v-else>
                         <CircleCard
-                            v-for="circle in filteredCircles"
+                            v-for="circle in categoryCircles"
                             :key="circle.id"
                             :circle="circle"
                             :joined="isJoined(circle.id)"
@@ -36,6 +41,7 @@
                             @toggle-join="toggleJoin"
                             @click.native="goToCircleDetail(circle)"
                         />
+                        <div class="empty-state" v-if="categoryCircles.length === 0 && !categoryLoading">暂无圈子</div>
                     </div>
                 </div>
             </div>
@@ -66,7 +72,7 @@ import Utils from '@/utils/env'
 import { toast } from '@/utils/toast'
 import CircleCard from './components/CircleCard.vue'
 import PopularCircleItem from './components/PopularCircleItem.vue'
-import { getMyCircles, getSquareCircles, getHotCircles, joinCircle, leaveCircle } from '@/apis/circle'
+import { getMyCircles, getSquareCircles, getHotCircles, joinCircle, leaveCircle, getCircleCategories, getCirclesByCategory } from '@/apis/circle'
 
 export default {
     name: 'Circles',
@@ -74,14 +80,18 @@ export default {
     data() {
         return {
             activeTab: 'recommend',
+            activeCategoryId: null,
             myCircles: [],
             allCircles: [],
+            categories: [],
+            categoryCircles: [],
             popularCircles: [],
             joinedCircleIds: [],
             squarePage: 1,
             squareSize: 20,
             hasMore: true,
-            loading: false
+            loading: false,
+            categoryLoading: false
         }
     },
     computed: {
@@ -96,6 +106,7 @@ export default {
         this.fetchMyCircles()
         this.fetchSquareCircles()
         this.fetchHotCircles()
+        this.fetchCategories()
     },
     methods: {
         async fetchMyCircles() {
@@ -129,6 +140,33 @@ export default {
                     this.popularCircles = res.data
                 }
             } catch (e) {}
+        },
+        async fetchCategories() {
+            try {
+                const res = await getCircleCategories()
+                if (res && res.code === 200 && res.data) {
+                    this.categories = res.data
+                    if (res.data.length > 0 && !this.activeCategoryId) {
+                        this.activeCategoryId = res.data[0].id
+                        this.fetchCategoryCircles(res.data[0].id)
+                    }
+                }
+            } catch (e) {}
+        },
+        async fetchCategoryCircles(categoryId) {
+            if (!categoryId) return
+            this.activeCategoryId = categoryId
+            this.categoryLoading = true
+            try {
+                const res = await getCirclesByCategory(categoryId, 1, 50)
+                if (res && res.code === 200 && res.data) {
+                    this.categoryCircles = res.data.list || res.data || []
+                }
+            } catch (e) {
+                this.categoryCircles = []
+            } finally {
+                this.categoryLoading = false
+            }
         },
         isJoined(circleId) {
             return this.joinedCircleIds.includes(circleId)
@@ -245,6 +283,19 @@ export default {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 12px;
+}
+
+.circles-loading {
+    text-align: center;
+    padding: 40px;
+    color: #c2c8d1;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #c2c8d1;
+    grid-column: 1 / -1;
 }
 
 /* 侧边栏 */

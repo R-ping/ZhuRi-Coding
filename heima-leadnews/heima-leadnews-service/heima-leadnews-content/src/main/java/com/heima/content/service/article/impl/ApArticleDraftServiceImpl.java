@@ -24,6 +24,8 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @Slf4j
@@ -102,11 +104,21 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
         log.info("从草稿发布文章成功, draftId: {}, articleId: {}", draftId, article.getId());
 
         // 删除草稿
-        removeById(draftId);
+        try {
+            removeById(draftId);
+        } catch (Exception e) {
+            log.error("删除草稿失败, draftId: {}", draftId, e);
+            throw new RuntimeException("删除草稿失败", e);
+        }
 
-        // 异步提交审核
-        articleAutoScanService.autoScanArticle(article.getId());
-        log.info("文章已提交审核（异步）, articleId: {}", article.getId());
+        // 事务提交后异步提交审核（避免异步线程在事务未提交时查不到数据）
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                articleAutoScanService.autoScanArticle(article.getId());
+                log.info("文章已提交审核（异步）, articleId: {}", article.getId());
+            }
+        });
 
         return ResponseResult.okResult(article);
     }

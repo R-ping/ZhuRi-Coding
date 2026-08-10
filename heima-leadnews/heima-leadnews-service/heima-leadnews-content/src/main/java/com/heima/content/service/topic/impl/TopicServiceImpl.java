@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.heima.content.mapper.circle.ApCircleMapper;
 import com.heima.content.mapper.pins.ApPinsMapper;
 import com.heima.content.mapper.topic.TopicCircleRelationMapper;
 import com.heima.content.mapper.topic.TopicMapper;
@@ -11,6 +12,7 @@ import com.heima.content.mapper.topic.TopicRelationMapper;
 import com.heima.content.mapper.topic.UserTopicPostMapper;
 import com.heima.content.service.topic.TopicService;
 import com.heima.common.redis.CacheService;
+import com.heima.model.circle.pojos.ApCircle;
 import com.heima.model.topic.dtos.TopicSquareDto;
 import com.heima.model.pins.pojos.ApPins;
 import com.heima.model.topic.pojos.ApTopic;
@@ -45,6 +47,9 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
 
     @Autowired
     private TopicCircleRelationMapper topicCircleRelationMapper;
+
+    @Autowired
+    private ApCircleMapper apCircleMapper;
 
     @Autowired
     private ApPinsMapper apPinsMapper;
@@ -173,7 +178,9 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
         for (TopicCircleRelation rel : relations) {
             TopicDetailVO.TopicCircleInfo info = new TopicDetailVO.TopicCircleInfo();
             info.setCircleId(rel.getCircleId());
-            info.setCircleName(""); // 圈子名称需要查 circle 表，先留空
+            // 查询圈子名称
+            ApCircle circle = apCircleMapper.selectById(rel.getCircleId());
+            info.setCircleName(circle != null ? circle.getName() : "");
             circleInfos.add(info);
         }
         vo.setCircleInfo(circleInfos);
@@ -276,6 +283,57 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
         IPage<ApTopic> pageResult = topicMapper.selectPage(pageParam, wrapper);
         List<ApTopic> topics = pageResult.getRecords();
         return topics.stream().map(t -> {
+            TopicRecommendVO vo = new TopicRecommendVO();
+            vo.setId(t.getId());
+            vo.setName(t.getName());
+            vo.setBadge(t.getBadge() != null ? t.getBadge() : "");
+            vo.setParticipantCount(t.getParticipantCount() != null ? t.getParticipantCount() : 0L);
+            vo.setViewCount(t.getViewCount() != null ? t.getViewCount() : 0L);
+            return vo;
+        }).collect(Collectors.toList());
+    }
+
+    @Override
+    public Map<String, Object> inspirationTopics(int page, int size, String sort, Integer themeType) {
+        LambdaQueryWrapper<ApTopic> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ApTopic::getStatus, 1);
+        if (themeType != null) {
+            wrapper.eq(ApTopic::getThemeType, themeType);
+        }
+        if ("participants".equals(sort)) {
+            wrapper.orderByDesc(ApTopic::getParticipantCount);
+        } else {
+            wrapper.orderByDesc(ApTopic::getViewCount);
+        }
+        Page<ApTopic> pageParam = new Page<>(page, size);
+        IPage<ApTopic> pageResult = topicMapper.selectPage(pageParam, wrapper);
+        List<TopicRecommendVO> voList = pageResult.getRecords().stream().map(t -> {
+            TopicRecommendVO vo = new TopicRecommendVO();
+            vo.setId(t.getId());
+            vo.setName(t.getName());
+            vo.setBadge(t.getBadge() != null ? t.getBadge() : "");
+            vo.setParticipantCount(t.getParticipantCount() != null ? t.getParticipantCount() : 0L);
+            vo.setViewCount(t.getViewCount() != null ? t.getViewCount() : 0L);
+            return vo;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", voList);
+        result.put("total", pageResult.getTotal());
+        result.put("page", page);
+        result.put("size", size);
+        return result;
+    }
+
+    @Override
+    public List<TopicRecommendVO> recommendedTopics(Long excludeId, int limit) {
+        LambdaQueryWrapper<ApTopic> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ApTopic::getStatus, 1)
+               .ne(excludeId != null, ApTopic::getId, excludeId)
+               .orderByDesc(ApTopic::getViewCount);
+        Page<ApTopic> pageParam = new Page<>(1, limit);
+        IPage<ApTopic> pageResult = topicMapper.selectPage(pageParam, wrapper);
+        return pageResult.getRecords().stream().map(t -> {
             TopicRecommendVO vo = new TopicRecommendVO();
             vo.setId(t.getId());
             vo.setName(t.getName());

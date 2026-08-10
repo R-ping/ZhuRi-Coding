@@ -232,6 +232,21 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
         return item;
     }
 
+    @Override
+    public List<CircleVO> listByCategory(Long categoryId, int page, int size) {
+        LambdaQueryWrapper<ApCircle> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ApCircle::getCategoryId, categoryId);
+        wrapper.orderByAsc(ApCircle::getSortOrder);
+
+        Page<ApCircle> circlePage = new Page<>(page, size);
+        IPage<ApCircle> pageResult = apCircleMapper.selectPage(circlePage, wrapper);
+
+        Integer userId = getCurrentUserId();
+        return pageResult.getRecords().stream()
+                .map(c -> convertToVO(c, userId))
+                .collect(Collectors.toList());
+    }
+
     private Integer getCurrentUserId() {
         try {
             return AppThreadLocalUtil.getUser().getId();
