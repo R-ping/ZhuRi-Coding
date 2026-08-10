@@ -16,7 +16,7 @@ public class ArticleEvent {
     private Long articleId;
 
     private Byte retryCount; // 重试次数，默认0，理想情况minio、es都可重试1次
-    private Byte maxRetryCount = 2; // 最大重试次数
+    private Byte maxRetryCount; // 最大重试次数
     private Date retryTime; // 重试时间
 
     private Byte minioStatus; // minio状态，0初始化，1为还未成功，2已成功

@@ -126,4 +126,41 @@ public class ApUser implements Serializable {
     @TableField("created_time")
     private Date createdTime;
 
+    // ==================== 辅助方法 ====================
+
+    /**
+     * 账户是否正常（未锁定）
+     */
+    public boolean isActive() {
+        return Boolean.TRUE.equals(this.status);
+    }
+
+    /**
+     * 账户是否已锁定
+     */
+    public boolean isLocked() {
+        return !Boolean.TRUE.equals(this.status);
+    }
+
+    /**
+     * 是否为普通用户
+     */
+    public boolean isNormalUser() {
+        return this.flag == null || this.flag == 0;
+    }
+
+    /**
+     * 是否为自媒体人
+     */
+    public boolean isMediaUser() {
+        return this.flag != null && this.flag == 1;
+    }
+
+    /**
+     * 是否为大V用户
+     */
+    public boolean isVipUser() {
+        return this.flag != null && this.flag == 2;
+    }
+
 }

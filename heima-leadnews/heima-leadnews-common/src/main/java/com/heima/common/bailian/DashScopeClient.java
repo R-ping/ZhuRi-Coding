@@ -3,7 +3,11 @@ package com.heima.common.bailian;
 import com.alibaba.dashscope.aigc.generation.Generation;
 import com.alibaba.dashscope.aigc.generation.GenerationParam;
 import com.alibaba.dashscope.aigc.generation.GenerationResult;
+import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversation;
+import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationParam;
+import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationResult;
 import com.alibaba.dashscope.common.Message;
+import com.alibaba.dashscope.common.MultiModalMessage;
 import com.alibaba.dashscope.common.Role;
 import com.alibaba.dashscope.embeddings.TextEmbedding;
 import com.alibaba.dashscope.embeddings.TextEmbeddingParam;
@@ -11,13 +15,16 @@ import com.alibaba.dashscope.embeddings.TextEmbeddingResult;
 import com.alibaba.dashscope.exception.ApiException;
 import com.alibaba.dashscope.exception.InputRequiredException;
 import com.alibaba.dashscope.exception.NoApiKeyException;
+import com.alibaba.dashscope.exception.UploadFileException;
 import com.alibaba.dashscope.utils.Constants;
 import jakarta.annotation.PostConstruct;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -60,7 +67,9 @@ public class DashScopeClient {
     public void init() {
         if (bailianConfig.getApiKey() != null && !bailianConfig.getApiKey().isEmpty()) {
             Constants.apiKey = bailianConfig.getApiKey();
-            log.info("DashScope API Key configured successfully");
+            Constants.baseHttpApiUrl = bailianConfig.getApiHost();
+            log.info("DashScope API Key configured successfully, baseHttpApiUrl={}", bailianConfig.getApiHost());
+            log.info("DashScope API Key configured successfully, apiKey={}", bailianConfig.getApiKey());
         } else {
             log.warn("DASH_SCOPE_API_KEY environment variable is not set. AI analysis will be disabled.");
         }
@@ -83,27 +92,7 @@ public class DashScopeClient {
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                Generation gen = new Generation();
-                
-                Message systemMsg = Message.builder()
-                        .role(Role.SYSTEM.getValue())
-                        .content(systemPrompt)
-                        .build();
-                Message userMsg = Message.builder()
-                        .role(Role.USER.getValue())
-                        .content(userMessage)
-                        .build();
-
-                GenerationParam param = GenerationParam.builder()
-                        .apiKey(bailianConfig.getApiKey())
-                        .model(bailianConfig.getModel())
-                        .messages(Arrays.asList(systemMsg, userMsg))
-                        .resultFormat(GenerationParam.ResultFormat.MESSAGE)
-                        .topP(0.8)
-                        .temperature(0.3f)
-                        .build();
-
-                GenerationResult result = gen.call(param);
+                GenerationResult result = callTextGenerationResult(systemPrompt, userMessage);
                 String response = result.getOutput().getChoices().get(0).getMessage().getContent();
                 
                 // Layer 3: 输出护栏 —— 检查响应是否包含顺从短语
@@ -146,6 +135,65 @@ public class DashScopeClient {
         return null;
     }
 
+    /**
+     * qwen3.7-max、qwen3.7-max-2026-05-20 和 qwen3.6-max-preview 仅支持文本接口
+     * @param systemPrompt
+     * @param userMessage
+     * @return
+     * @throws NoApiKeyException
+     * @throws InputRequiredException
+     */
+    @NotNull
+    private GenerationResult callTextGenerationResult(String systemPrompt, String userMessage)
+        throws NoApiKeyException, InputRequiredException {
+        Generation gen = new Generation();
+
+        Message systemMsg = Message.builder()
+                .role(Role.SYSTEM.getValue())
+                .content(systemPrompt)
+                .build();
+        Message userMsg = Message.builder()
+                .role(Role.USER.getValue())
+                .content(userMessage)
+                .build();
+
+        GenerationParam param = GenerationParam.builder()
+                .apiKey(bailianConfig.getApiKey())
+                .model(bailianConfig.getModel())
+                .messages(Arrays.asList(systemMsg, userMsg))
+                .resultFormat(GenerationParam.ResultFormat.MESSAGE)
+                .topP(0.8)
+                .temperature(0.3f)
+                .build();
+
+        GenerationResult result = gen.call(param);
+        return result;
+    }
+
+    /**
+     * qwen3.8-max、qwen3.7-max-2026-06-08、Qwen3.6 和 Qwen3.5 系列的 DashScope API均需使用多模态接口。直接运行以下示例会提示 url error 错误。
+     * @param systemPrompt
+     * @param userMessage
+     * @return
+     * @throws ApiException
+     * @throws NoApiKeyException
+     * @throws InputRequiredException
+     */
+    public void MultiRoundConversationCall(String systemPrompt, String userMessage) throws ApiException, NoApiKeyException, UploadFileException {
+        MultiModalConversation conv = new MultiModalConversation();
+        MultiModalMessage userMessageObj = MultiModalMessage.builder().role(Role.USER.getValue())
+            .content(Arrays.asList(Collections.singletonMap("image", "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20251031/ownrof/f26d201b1e3f4e62ab4a1fc82dd5c9bb.png"),
+                Collections.singletonMap("text", "请问图片展现了有哪些商品？"))).build();
+        List<MultiModalMessage> messages = new ArrayList<>();
+        messages.add(userMessageObj);
+        MultiModalConversationParam param = MultiModalConversationParam.builder()
+            .apiKey(bailianConfig.getApiKey())
+            .model(bailianConfig.getModel())
+            .messages(messages)
+            .build();
+        MultiModalConversationResult result = conv.call(param);
+        System.out.println(result.getOutput().getChoices().get(0).getMessage().getContent().get(0).get("text"));        // add the result to conversation
+    }
     /**
      * 调用文本向量模型生成向量嵌入
      * @param text 文本内容

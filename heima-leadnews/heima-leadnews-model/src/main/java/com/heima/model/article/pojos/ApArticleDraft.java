@@ -35,6 +35,9 @@ public class ApArticleDraft implements Serializable {
 
     private String coverImage;
 
+    @TableField("column_id")
+    private Long columnId;
+
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> tags;
 

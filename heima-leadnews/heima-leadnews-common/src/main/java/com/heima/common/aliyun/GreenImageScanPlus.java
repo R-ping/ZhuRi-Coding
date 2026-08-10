@@ -78,7 +78,7 @@ public class GreenImageScanPlus {
         return response;
     }
 
-    public Map imageScan(String url) throws Exception {
+    public static Map imageScan(String url) throws Exception {
 
         // 时间
         long start = System.currentTimeMillis();
@@ -93,10 +93,10 @@ public class GreenImageScanPlus {
          *     获取RAM用户AccessKey ID：System.getProperty("ALIBABA_CLOUD_ACCESS_KEY_ID");
          *     获取RAM用户AccessKey Secret：System.getProperty("ALIBABA_CLOUD_ACCESS_KEY_SECRET");
          */
-        String accessKeyId = System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID");
-        String accessKeySecret = System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET");
+        String accessKeyId = System.getenv("ALIBABA_RAM_ACCESS_KEY");
+        String accessKeySecret = System.getenv("ALIBABA_RAM_ACCESS_SECRET");
         // 接入区域和地址请根据实际情况修改。
-        ImageModerationResponse response = invokeFunction(accessKeyId, accessKeySecret, "green-cip.cn-shanghai.aliyuncs.com");
+        ImageModerationResponse response =  invokeFunction(accessKeyId, accessKeySecret, "green-cip.cn-beijing.aliyuncs.com");
         try {
             // 自动路由。
             if (response != null) {
@@ -135,5 +135,10 @@ public class GreenImageScanPlus {
         return null;
     }
 
+    public static void main(String[] args) throws Exception {
+        Map map = imageScan("https://p6-xtjj-sign.byteimg.com/tos-cn-i-73owjymdk6/255a0b6438bb4e75b3ee7d19098cf807~tplv-73owjymdk6-jj-mark-v1:0:0:0:0:5o6Y6YeR5oqA5pyv56S-5Yy6IEAgTWFjcm9aaGVuZw==:q75.awebp?rk3s=f64ab15b&x-expires=1786623891&x-signature=vibKchsg3T2c0J0JaoCEJxJ7sxY%3D");
+//        Map map = imageScan("https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/1786279550620_1t9tyj.jpg?Expires=1786286784&OSSAccessKeyId=TMP.3KuDPsHxtiD4XioLuRvz382KmMmH597GmpkvLiHz5ePgedDLCdvkfNkcojChDqE6LaSuv1y61PnNp12uiS3tJXUMBUfVBS&Signature=kaIHRHYuccoLcQ5GL9htqEmi%2FSQ%3D");
+        System.out.println("图片检测结果："+map);
+    }
 
 }

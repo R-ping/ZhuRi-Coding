@@ -146,7 +146,7 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
      DB_PORT=3306
      DB_USER=root
      DB_PASSWORD=123456（仅限开发环境）
-     DB_NAME=leadnews_article(内容库)、leadnews_reward、leadnews_notification（系统通知数据库）、leadnews_user（用户数据库）
+     DB_NAME=leadnews_article(内容库,包括文章、沸点帖、话题、圈子、评论、专栏、课程、逐友等级和逐日值等级等)、leadnews_reward、leadnews_notification（系统通知数据库）、leadnews_user（用户数据库）
      ```
 
      

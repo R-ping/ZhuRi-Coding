@@ -23,9 +23,9 @@ export const getTagList = (keyword) => {
 
 export const getTopicList = (keyword) => {
   return request({
-    url: '/api/v1/topic/list',
+    url: '/api/v1/inspiration/topics',
     method: 'get',
-    params: { keyword }
+    params: { keyword, themeType: 1, page: 1, size: 20, sort: 'hot' }
   })
 }
 
@@ -33,7 +33,7 @@ export const importMarkdown = (file) => {
   const formData = new FormData()
   formData.append('file', file)
   return request({
-    url: '/api/v1/content/import',
+    url: '/api/v1/article/import',
     method: 'post',
     data: formData
   })

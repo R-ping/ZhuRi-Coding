@@ -73,4 +73,11 @@ public class CircleController {
         Integer userId = AppThreadLocalUtil.getUser().getId();
         return ResponseResult.okResult(circleService.myCircles(userId));
     }
+
+    @GetMapping("/categories/{categoryId}/circles")
+    public ResponseResult listByCategory(@PathVariable Long categoryId,
+                                         @RequestParam(defaultValue = "1") int page,
+                                         @RequestParam(defaultValue = "20") int size) {
+        return ResponseResult.okResult(circleService.listByCategory(categoryId, page, size));
+    }
 }

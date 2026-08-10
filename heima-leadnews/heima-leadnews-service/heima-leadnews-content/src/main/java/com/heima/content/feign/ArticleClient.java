@@ -2,7 +2,7 @@ package com.heima.content.feign;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.heima.apis.article.IArticleClient;
-import com.heima.content.service.article.ApArticleContentService;
+import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.service.article.ApArticleEventService;
 import com.heima.content.service.article.ApArticleService;
 import com.heima.content.service.article.ArticleStatisticsService;
@@ -28,7 +28,7 @@ public class ArticleClient implements IArticleClient {
     @Autowired
     private ApArticleService apArticleService;
     @Autowired
-    private ApArticleContentService apArticleContentService;
+    private ApArticleContentMapper apArticleContentMapper;
 
     @Autowired
     private ApArticleEventService apArticleEventService;
@@ -46,7 +46,7 @@ public class ArticleClient implements IArticleClient {
 
     @GetMapping("/api/v1/article/content")
     public ResponseResult getContent(@RequestParam("articleId") Long articleId) {
-        ApArticleContent articleContent = apArticleContentService.getOne(
+        ApArticleContent articleContent = apArticleContentMapper.selectOne(
             new QueryWrapper<ApArticleContent>().eq("article_id", articleId));
         if (articleContent == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);

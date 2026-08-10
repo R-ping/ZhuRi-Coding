@@ -38,4 +38,14 @@ public interface TopicService {
      * 搜索话题
      */
     List<TopicRecommendVO> search(String keyword, int limit);
+
+    /**
+     * 灵感话题列表（分页，支持 themeType 过滤）
+     */
+    Map<String, Object> inspirationTopics(int page, int size, String sort, Integer themeType);
+
+    /**
+     * 推荐话题列表（排除指定话题，按阅读量排序）
+     */
+    List<TopicRecommendVO> recommendedTopics(Long excludeId, int limit);
 }

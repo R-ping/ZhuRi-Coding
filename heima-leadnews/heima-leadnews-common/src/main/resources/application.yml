@@ -1,18 +1,19 @@
 #全局端口定义server:
 # 全局字符集设置
 spring:
-  http:
-    encoding:
-      force: true
-      charset: utf-8
-      enabled: true
   aop:
     proxy-target-class: true
 server:
   tomcat:
     uri-encoding: utf-8
-bailian:
-  dashscope:
-    api-key: ${DASH_SCOPE_API_KEY}
-    api-host: ${DASH_SCOPE_API_HOST}
+  servlet:
+    encoding:
+      force: true
+      charset: utf-8
+      enabled: true
+aliyun:
+  oss:
+    scan:
+      endpoint: oss-cn-beijing.aliyuncs.com
+      bucket: zhuri-leadnews
 

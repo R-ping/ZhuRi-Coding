@@ -48,6 +48,9 @@ public class ApTopic implements Serializable {
     @TableField("badge")
     private String badge = "";
 
+    @TableField("theme_type")
+    private Integer themeType = 1;
+
     @TableField("status")
     private Integer status;
 

@@ -36,6 +36,9 @@ public class ApCircle implements Serializable {
     @TableField("pins_count")
     private Integer pinsCount;
 
+    @TableField("category_id")
+    private Long categoryId;
+
     @TableField("sort_order")
     private Integer sortOrder;
 
