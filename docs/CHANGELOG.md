@@ -1,5 +1,93 @@
 # CHANGELOG
 
+## 2026-08-11 — 修复圈子选择弹框数据模型错误
+
+### 问题描述
+沸点页发布框中"选择圈子"弹框显示有误：左侧本应显示圈子分类（技术、职场等），却错误地显示了具体圈子名称。
+
+### 根因分析
+后端 `PinsQueryService.circles()` 方法使用了错误的数据模型：
+- 错误地将 `parent_id` 作为父子关系来区分"分类"和"圈子"
+- 查询 `parent_id IS NULL` 的记录作为"分类"，`parent_id IS NOT NULL` 的记录作为"具体圈子"
+- 但实际数据模型是：`ap_circle_category` 存储分类，`ap_circle` 通过 `category_id` 关联分类
+
+### 修复方案
+修改 `PinsQueryService.circles()` 方法：
+1. 查询 `ap_circle_category` 表获取所有分类（按 `sort_order` 排序）
+2. 查询 `ap_circle` 表获取所有圈子（`category_id IS NOT NULL`）
+3. 按 `category_id` 分组，将圈子归入对应分类
+4. 返回正确的数据结构：`[{ id, name, circles: [{ id, name, icon, memberCount, pinsCount }] }]`
+
+### 变更文件
+- 修改：`PinsQueryService.java`（添加 `ApCircleCategoryMapper` 注入，重写 `circles()` 方法）
+
+## 2026-08-11 — 圈子数据初始化（已更正）
+
+### 功能变更
+- **重要更正**：首次初始化时误将圈子数据插入到 `ap_topic`（话题表），现已回滚并更正插入到 `ap_circle`（圈子表）
+- 新增"推荐圈子"分类（ID: 13）
+- 初始化 47 个圈子数据到 `ap_circle` 表，覆盖所有分类：
+  - **推荐圈子**：鸿蒙开发者社区、源码共读、逐友请回答、掘金官方、反馈&建议（5个）
+  - **技术**：鸿蒙开发者社区、源码共读、VibeLaunch、Vibe编程交流圈、数据标注专家社区（5个）
+  - **互动交流**：逐友请回答、上班摸鱼、青训营-快乐出发、AI 聊天室、Coze 交流群、飞书项目开发者社区（6个）
+  - **职场**：内推招聘广场、打工人的日常（2个）
+  - **吃喝玩乐**：下班去哪儿玩、舌尖上的沸点、什么值得买、活动推荐、游戏玩家俱乐部（5个）
+  - **资讯**：应用安利、今日新鲜事、科技交流圈（3个）
+  - **理财**：理财交流圈（1个）
+  - **书影音**：读书会、好文推荐、一起看片、值得收藏的歌曲（4个）
+  - **生活**：照片展览馆、今天学到了、萌宠报道、体育运动俱乐部（4个）
+  - **搞笑**：搞笑段子、沙雕表情包（2个）
+  - **许愿池**：定个小目标（1个）
+  - **情感**：逐日相亲角、树洞一下、情感互助协会（3个）
+  - **掘金一下**：反馈&建议、掘金官方、我&掘金、沸点福利、程序员搬砖人生、掘金公益角（6个）
+- 圈子通过 `category_id` 字段直接关联分类
+- `member_count`（逐友数）和 `pins_count`（沸点帖数）均初始化为 0
+
+### 数据模型说明
+- `ap_topic` 表：存储**话题**（如"每日精选"、"AI编程"等可关联多篇沸点帖的主题）
+- `ap_circle` 表：存储**圈子**（用户加入的社群，包含成员数、沸点帖数等属性）
+- `ap_circle_category` 表：存储圈子分类（技术、职场等）
+- `topic_circle_relation` 表：话题与圈子的多对多关系（标记某个话题属于哪个圈子）
+
+## 2026-08-11 — 文章评论接口端到端集成测试
+
+### 功能变更
+- 新增端到端集成测试 `ArticleCommentE2ETest`（5 个用例）：`@SpringBootTest + @AutoConfigureMockMvc` 加载完整上下文，通过真实 HTTP 请求走 Controller → Service → Mapper → MySQL 全链路，并校验数据库真实落库
+- 覆盖：发表→回复→点赞→查询列表→取消点赞全链路、未登录拦截、空内容校验、回复/点赞不存在的评论
+- 隔离策略：登录态经请求头 userId/nickName 注入（匹配 ContentTokenInterceptor）；`@MockBean` 屏蔽 `CommentAuditService` 异步审核以隔离 AI/行为上报/站内信副作用；独立测试文章ID与用户ID，`@AfterEach` 清理测试数据
+- 至此评论接口具备完整三层测试：Service 单测（13）+ Controller 层（10）+ 端到端集成（5）
+
+## 2026-08-11 — 文章评论接口分层测试
+
+### 功能变更
+- 新增控制器层测试 `ArticleCommentControllerTest`（10 个用例）：覆盖评论列表游标分页参数绑定、发表评论、回复评论、点赞评论的 HTTP 路由绑定、请求体解析及登录态拦截
+- 与既有 Service 层单测 `ApCommentServiceImplTest`（13 个用例）共同构成评论接口的分层测试（Controller 层 + Service 层）
+
+## 2026-08-11 — 文章详情页 FTL 服务端渲染（方案②）
+
+### 功能变更
+- 文章详情页由 Vue SPA 改为 **FreeMarker 服务端渲染**（方案②），正文 HTML 由服务端渲染，利于 SEO 与首屏速度
+- 新增 `ArticlePageController`（MVC），读取正文 Markdown 并渲染为 HTML、提取目录 TOC，填充 `article.ftl` 模板
+- `article.ftl` 集成与主页一致的顶栏与登录弹窗（混合方案），顶部栏与登录功能与 Vue SPA 保持一致
+- 移除每篇文章重复上传共用 JS 到 MinIO 的冗余逻辑，`article-static.js` 作为内容服务静态资源由网关 `/content/article-static.js` 统一提供
+
+### 修复问题
+- **详情 API 交互状态恒为 false**：网关 `AuthorizeFilter` 对公开只读路径（文章详情等）不再静默放行，改为一并有有效 accToken 时解析并注入 `userId`/`nickName` 头，使下游详情服务能识别登录用户、正确返回 `isDigg/isCollect/isFollow`。需重建并重启网关生效
+- **文章 ID 带千分位逗号**：`article.ftl` 中 `window.ARTICLE_ID` 使用 FreeMarker `?c` 强制计算机格式输出，避免大整数渲染为 `2,087,071,...` 导致 API URL 失效
+- **Token 读取与请求头不匹配**：`article-static.js` 统一从 `localStorage.ACCESS_TOKEN` 读取并在 `accToken` 头携带，保证与 Vue SPA 及后端一致
+- **日期显示 NaN**：`article-static.js` 的 `formatTime` 兼容 10 位/13 位时间戳并做校验
+- **未登录交互无反馈**：点赞/收藏/关注/评论输入在未登录时唤起登录弹窗而非无效操作
+
+### 变更文件
+- `heima-leadnews-content/.../controller/page/ArticlePageController.java`（新增）
+- `heima-leadnews-content/src/main/resources/templates/article.ftl`（修改）
+- `heima-leadnews-content/src/main/resources/static/article-static.js`（修改）
+- `heima-leadnews-content/.../service/article/impl/ArticleFreemarkerServiceImpl.java`（修改，移除冗余 JS 上传）
+- `heima-leadnews-app-gateway/.../filter/AuthorizeFilter.java`（修改，公开路径注入用户上下文）
+- `docs/qa_test_report_ftl_article_detail_20260811.md`（新增，测试报告）
+
+---
+
 ## 2026-08-01 — 后端服务架构重构
 
 ### 架构变更
