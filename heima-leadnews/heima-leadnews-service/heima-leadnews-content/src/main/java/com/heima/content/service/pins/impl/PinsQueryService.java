@@ -3,6 +3,7 @@ package com.heima.content.service.pins.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.heima.content.mapper.circle.ApCircleCategoryMapper;
 import com.heima.content.mapper.circle.ApCircleMapper;
 import com.heima.content.mapper.circle.ApUserCircleMapper;
 import com.heima.content.mapper.follow.ApFollowMapper;
@@ -21,6 +22,7 @@ import com.heima.model.pins.vos.PinsLinkPreviewVO;
 import com.heima.model.pins.vos.PinsSidebarVO;
 import com.heima.model.pins.vos.PinsVO;
 import com.heima.model.circle.pojos.ApCircle;
+import com.heima.model.circle.pojos.ApCircleCategory;
 import com.heima.model.circle.pojos.ApUserCircle;
 import com.heima.model.topic.pojos.ApTopic;
 import com.heima.model.topic.vos.TopicRecommendVO;
@@ -59,6 +61,9 @@ public class PinsQueryService {
 
     @Autowired
     private ApCircleMapper apCircleMapper;
+
+    @Autowired
+    private ApCircleCategoryMapper apCircleCategoryMapper;
 
     @Autowired
     private TopicMapper topicMapper;
@@ -159,7 +164,7 @@ public class PinsQueryService {
     public int calcHotScore(ApPins pin, Map<Long, ApUserLevel> levelMap) {
         int likes = pin.getLikes() != null ? pin.getLikes() : 0;
         int comment = pin.getComment() != null ? pin.getComment() : 0;
-        int share = pin.getShare() != null ? pin.getShare() : 0;
+        int share = pin.getShareCount() != null ? pin.getShareCount() : 0;
         int dailyLevel = 0;
         int powerLevel = 0;
         ApUserLevel level = levelMap.get(pin.getAuthorId());
@@ -338,42 +343,47 @@ public class PinsQueryService {
 
     // ========== 圈子列表 ==========
 
+    /**
+     * 获取所有圈子（按类别分组）
+     * 数据模型：ap_circle_category 存储分类，ap_circle 通过 category_id 关联分类
+     */
     public ResponseResult circles() {
-        // 查询所有一级圈子（parent_id为null）
-        LambdaQueryWrapper<ApCircle> parentWrapper = new LambdaQueryWrapper<>();
-        parentWrapper.isNull(ApCircle::getParentId);
-        parentWrapper.orderByAsc(ApCircle::getSortOrder);
-        List<ApCircle> parentCircles = apCircleMapper.selectList(parentWrapper);
+        // 1. 查询所有分类（按 sort_order 排序）
+        LambdaQueryWrapper<ApCircleCategory> categoryWrapper = new LambdaQueryWrapper<>();
+        categoryWrapper.orderByAsc(ApCircleCategory::getSortOrder);
+        List<ApCircleCategory> categories = apCircleCategoryMapper.selectList(categoryWrapper);
 
-        // 查询所有二级圈子
-        LambdaQueryWrapper<ApCircle> childWrapper = new LambdaQueryWrapper<>();
-        childWrapper.isNotNull(ApCircle::getParentId);
-        childWrapper.orderByAsc(ApCircle::getSortOrder);
-        List<ApCircle> childCircles = apCircleMapper.selectList(childWrapper);
+        // 2. 查询所有圈子（关联分类）
+        LambdaQueryWrapper<ApCircle> circleWrapper = new LambdaQueryWrapper<>();
+        circleWrapper.isNotNull(ApCircle::getCategoryId);
+        circleWrapper.orderByAsc(ApCircle::getSortOrder);
+        List<ApCircle> allCircles = apCircleMapper.selectList(circleWrapper);
 
-        // 按parentId分组
-        Map<Long, List<ApCircle>> childrenMap = childCircles.stream()
-                .collect(Collectors.groupingBy(ApCircle::getParentId));
+        // 3. 按 category_id 分组
+        Map<Long, List<ApCircle>> circlesByCategory = allCircles.stream()
+                .collect(Collectors.groupingBy(ApCircle::getCategoryId));
 
-        // 构建返回数据
+        // 4. 构建返回数据：分类 + 该分类下的圈子列表
         List<Map<String, Object>> result = new ArrayList<>();
-        for (ApCircle parent : parentCircles) {
-            Map<String, Object> category = new HashMap<>();
-            category.put("id", parent.getId());
-            category.put("name", parent.getName() != null ? parent.getName() : "");
-            List<Map<String, Object>> items = new ArrayList<>();
-            List<ApCircle> children = childrenMap.getOrDefault(parent.getId(), new ArrayList<>());
-            for (ApCircle child : children) {
-                Map<String, Object> item = new HashMap<>();
-                item.put("id", child.getId());
-                item.put("name", child.getName() != null ? child.getName() : "");
-                item.put("icon", child.getIcon() != null ? child.getIcon() : "");
-                item.put("memberCount", child.getMemberCount() != null ? child.getMemberCount() : 0);
-                item.put("pinsCount", child.getPinsCount() != null ? child.getPinsCount() : 0);
-                items.add(item);
+        for (ApCircleCategory category : categories) {
+            Map<String, Object> categoryMap = new HashMap<>();
+            categoryMap.put("id", category.getId());
+            categoryMap.put("name", category.getName() != null ? category.getName() : "");
+
+            // 获取该分类下的圈子
+            List<ApCircle> circles = circlesByCategory.getOrDefault(category.getId(), new ArrayList<>());
+            List<Map<String, Object>> circleList = new ArrayList<>();
+            for (ApCircle circle : circles) {
+                Map<String, Object> circleMap = new HashMap<>();
+                circleMap.put("id", circle.getId());
+                circleMap.put("name", circle.getName() != null ? circle.getName() : "");
+                circleMap.put("icon", circle.getIcon() != null ? circle.getIcon() : "");
+                circleMap.put("memberCount", circle.getMemberCount() != null ? circle.getMemberCount() : 0);
+                circleMap.put("pinsCount", circle.getPinsCount() != null ? circle.getPinsCount() : 0);
+                circleList.add(circleMap);
             }
-            category.put("circles", items);
-            result.add(category);
+            categoryMap.put("circles", circleList);
+            result.add(categoryMap);
         }
         return ResponseResult.okResult(result);
     }
@@ -442,7 +452,7 @@ public class PinsQueryService {
         vo.setLinkTitle(pin.getLinkTitle() != null ? pin.getLinkTitle() : "");
         vo.setLikeCount(pin.getLikes() != null ? pin.getLikes() : 0);
         vo.setCommentCount(pin.getComment() != null ? pin.getComment() : 0);
-        vo.setShareCount(pin.getShare() != null ? pin.getShare() : 0);
+        vo.setShareCount(pin.getShareCount() != null ? pin.getShareCount() : 0);
         vo.setLiked(likedPinsIds != null && likedPinsIds.contains(pin.getId()));
         vo.setCreatedTime(pin.getCreatedTime());
         vo.setPublishTime(pin.getPublishTime());
