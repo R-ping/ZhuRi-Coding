@@ -90,7 +90,7 @@
 
 <script>
 import { getTopicDetail, getTopicFeed, getRecommendedTopics, incrTopicView } from '@/apis/creator/topicDetail'
-import defaultAvatar from '@/static/images/creator/avatar.jpg'
+const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 
 export default {
   name: 'TopicDetail',

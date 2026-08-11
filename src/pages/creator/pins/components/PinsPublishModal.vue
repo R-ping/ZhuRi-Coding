@@ -12,7 +12,6 @@
           :selectedCircle="selectedCircle"
           :selectedTopic="selectedTopic"
           :publishing="publishing"
-          :isCreatorMode="true"
           @select-circle="$emit('select-circle')"
           @select-topic="$emit('select-topic')"
           @publish="handlePublish"
@@ -58,7 +57,7 @@ export default {
 
 <style lang="less" scoped>
 .modal-overlay {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;

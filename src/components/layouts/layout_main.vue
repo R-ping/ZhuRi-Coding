@@ -633,8 +633,12 @@
                         this.currentCategory = cat
                     }
                     this.currentNav = 'home'
-                } else if (path.indexOf('/pins') === 0 || path.indexOf('/pin/') === 0) {
+                } else if (path === '/pins') {
+                    // 沸点广场：保持"沸点"指示
                     this.currentNav = 'pins'
+                } else if (path.indexOf('/pins/circle') === 0 || path.indexOf('/pin/topic') === 0) {
+                    // 话题广场、话题详情、圈子广场、圈子详情、标签页：不指示上边栏"首页/沸点"选项
+                    this.currentNav = ''
                 } else if (path.indexOf('/course') === 0) {
                     this.currentNav = 'course'
                 }

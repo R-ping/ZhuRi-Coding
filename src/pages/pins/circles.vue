@@ -7,14 +7,18 @@
                 <!-- 我的圈子 -->
                 <div class="section">
                     <h2 class="section-title">我的圈子</h2>
-                    <div class="my-circles">
+                    <div class="circles-grid" v-if="myCircles.length > 0">
                         <CircleCard
                             v-for="circle in myCircles"
                             :key="circle.id"
                             :circle="circle"
-                            mode="my"
+                            :joined="true"
+                            :show-desc="true"
+                            @toggle-join="toggleJoin"
+                            @click.native="goToCircleDetail(circle)"
                         />
                     </div>
+                    <div class="empty-state" v-else>暂无圈子</div>
                 </div>
 
                 <!-- 圈子广场 -->
@@ -179,12 +183,14 @@ export default {
                     if (res && res.code === 200) {
                         this.joinedCircleIds = this.joinedCircleIds.filter(id => id !== circle.id)
                         toast('已退出圈子', 2)
+                        this.fetchMyCircles()
                     }
                 } else {
                     const res = await joinCircle(circle.id)
                     if (res && res.code === 200) {
                         this.joinedCircleIds.push(circle.id)
                         toast('加入成功', 2)
+                        this.fetchMyCircles()
                     }
                 }
             } catch (e) {
@@ -237,13 +243,6 @@ export default {
     font-weight: 600;
     color: #252933;
     margin-bottom: 16px;
-}
-
-/* 我的圈子 */
-.my-circles {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 12px;
 }
 
 /* 圈子广场 */
@@ -333,7 +332,7 @@ export default {
     .circles-sidebar {
         width: 100%;
     }
-    .my-circles, .circles-grid {
+    .circles-grid {
         grid-template-columns: 1fr;
     }
 }

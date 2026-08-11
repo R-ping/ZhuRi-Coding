@@ -8,8 +8,9 @@ import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleEventMapper;
 import com.heima.content.service.article.ArticleFreemarkerService;
 import com.heima.content.utils.MarkdownUtils;
-import com.heima.file.config.MinIOConfig;
-import com.heima.file.utils.MinioUtil;
+// MinIO 已移除，文章详情页改为 MVC 服务端渲染，不再依赖 MinIO 静态 HTML 文件
+// import com.heima.file.config.MinIOConfig;
+// import com.heima.file.utils.MinioUtil;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleContent;
 import com.heima.model.article.pojos.ArticleEvent;
@@ -31,10 +32,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(rollbackFor = Exception.class)
 public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
 
-    @Autowired
-    private MinioUtil minioUtil;
-    @Autowired
-    private MinIOConfig prop;
+    // MinIO 已移除，文章详情页改为 MVC 服务端渲染，不再依赖 MinIO 静态 HTML 文件
+    // @Autowired
+    // private MinioUtil minioUtil;
+    // @Autowired
+    // private MinIOConfig prop;
     @Autowired
     private ApArticleContentMapper apArticleContentMapper;
     @Autowired
@@ -57,7 +59,7 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
         String markdown = resolveContent(apArticle.getId(), content);
         vo.setContent(markdown);
         buildHtmlContent(vo, markdown);
-        buildFileNameAndPath(apArticle, vo);
+        // buildFileNameAndPath(apArticle, vo); // MinIO 已移除，文章详情页改为 MVC 服务端渲染
         try {
             // 同步文章到ES
             searchClient.syncArticle(vo);
@@ -67,18 +69,18 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
             log.error("文章同步到ES失败, articleId={}", apArticle.getId(), e);
             updateArticleEventStatus(apArticle.getId(), "es", (byte) 1);
         }
-        // 上传 HTML 到 MinIO
-        try {
-            String htmlContent = vo.getHtmlContent();
-            if (StringUtils.isNotBlank(htmlContent)) {
-                minioUtil.uploadString(htmlContent, vo.getFileName(), "text/html");
-                log.info("文章HTML上传MinIO成功, articleId={}", apArticle.getId());
-                updateArticleEventStatus(apArticle.getId(), "minio", (byte) 2);
-            }
-        } catch (Exception e) {
-            log.error("文章HTML上传MinIO失败, articleId={}", apArticle.getId(), e);
-            updateArticleEventStatus(apArticle.getId(), "minio", (byte) 1);
-        }
+        // 上传 HTML 到 MinIO（MinIO 已移除，文章详情页改为 MVC 服务端渲染）
+        // try {
+        //     String htmlContent = vo.getHtmlContent();
+        //     if (StringUtils.isNotBlank(htmlContent)) {
+        //         minioUtil.uploadString(htmlContent, vo.getFileName(), "text/html");
+        //         log.info("文章HTML上传MinIO成功, articleId={}", apArticle.getId());
+        //         updateArticleEventStatus(apArticle.getId(), "minio", (byte) 2);
+        //     }
+        // } catch (Exception e) {
+        //     log.error("文章HTML上传MinIO失败, articleId={}", apArticle.getId(), e);
+        //     updateArticleEventStatus(apArticle.getId(), "minio", (byte) 1);
+        // }
         // 上传 JS 到 MinIO
         // 方案②（FTL 服务端渲染）：article-static.js 为共用交互脚本，
         // 已作为内容服务静态资源（classpath:/static/article-static.js）由网关 /content/article-static.js 统一提供，
@@ -111,14 +113,15 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
         vo.setTocList(tocList);
     }
 
-    private void buildFileNameAndPath(ApArticle apArticle, SearchArticleVo vo) {
-        // "yyyy/MM/dd/articleId"
-        String objectName = minioUtil.builderFilePath("articles", String.valueOf(apArticle.getId()));
-        vo.setFileName(objectName);
-        // path http://xx:9000/bucketName/2020/08/05/articleId
-        String path = prop.getReadPath() + "/" + prop.getBucket() + "/" + objectName;
-        vo.setStaticUrl(path);
-    }
+    // MinIO 已移除，文章详情页改为 MVC 服务端渲染，不再依赖 MinIO 静态 HTML 文件
+    // private void buildFileNameAndPath(ApArticle apArticle, SearchArticleVo vo) {
+    //     // "yyyy/MM/dd/articleId"
+    //     String objectName = minioUtil.builderFilePath("articles", String.valueOf(apArticle.getId()));
+    //     vo.setFileName(objectName);
+    //     // path http://xx:9000/bucketName/2020/08/05/articleId
+    //     String path = prop.getReadPath() + "/" + prop.getBucket() + "/" + objectName;
+    //     vo.setStaticUrl(path);
+    // }
 
     /**
      * 更新本地消息表中指定操作的状态
@@ -132,9 +135,11 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
             ArticleEvent event = apArticleEventMapper.selectOne(
                 Wrappers.<ArticleEvent>lambdaQuery().eq(ArticleEvent::getArticleId, articleId));
             if (event != null) {
-                if ("minio".equals(type)) {
-                    event.setMinioStatus(status);
-                } else if ("es".equals(type)) {
+                // MinIO 已移除，文章详情页改为 MVC 服务端渲染，不再依赖 MinIO 静态 HTML 文件
+                // if ("minio".equals(type)) {
+                //     event.setMinioStatus(status);
+                // } else if ("es".equals(type)) {
+                if ("es".equals(type)) {
                     event.setEsStatus(status);
                 }
                 if (status == 1) { // 待重试

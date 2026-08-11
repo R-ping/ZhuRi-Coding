@@ -1,10 +1,7 @@
 package com.heima.file.config;
 
-import io.minio.MinioClient;
 import lombok.Data;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 
@@ -19,13 +16,13 @@ public class MinIOConfig {
     private String endPoint;
     private String readPath;
 
-    @Bean
-    @ConditionalOnProperty(prefix = "minio", name = "endpoint")
-    public MinioClient minioClient() {
-        System.out.println("====================minIOConfig=================:"+this);
-        return MinioClient.builder()
-            .endpoint(endPoint)
-            .credentials(accessKey, secretKey)
-            .build();
-    }
+//    @Bean
+//    @ConditionalOnProperty(prefix = "minio", name = "endpoint")
+//    public MinioClient minioClient() {
+//        System.out.println("====================minIOConfig=================:"+this);
+//        return MinioClient.builder()
+//            .endpoint(endPoint)
+//            .credentials(accessKey, secretKey)
+//            .build();
+//    }
 }

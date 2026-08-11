@@ -79,13 +79,7 @@ export default {
         const res = await getRecommendTopics(this.page, this.size)
         if (res && res.code === 200) {
           const data = res.data
-          let list = Array.isArray(data) ? data : (data && data.list ? data.list : [])
-          if (this.excludeId != null && this.excludeId !== '') {
-            list = list.filter(t => {
-              const id = Number(t.id)
-              return !(id === Number(this.excludeId))
-            })
-          }
+          const list = Array.isArray(data) ? data : (data && data.list ? data.list : [])
           this.topics = list
         }
       } catch (e) {
@@ -98,10 +92,10 @@ export default {
       this.loadRecommend()
     },
     goTopic(topic) {
-      this.$router.push(`/pin/topic/${topic.id}`)
+      window.open(`/pin/topic/${topic.id}`, '_blank')
     },
     goMore() {
-      this.$router.push(this.moreTarget)
+      window.open(this.moreTarget, '_blank')
     },
     formatCount(count) {
       if (!count) return '0'

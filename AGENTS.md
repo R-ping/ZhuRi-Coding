@@ -43,6 +43,8 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 本项目中，等级体系包含两种等级，由于命名不规范，逐日等级就是逐友等级，另一是逐力值等级
 
+给你的参考数据，若你需要用到头像、icon图标资源，就将其上传到oss上，你可以用已有的web直传方案——/post_signature，prefix由你决定，格式通常: {prefix}/{yyyy/MM/dd}/{uuid}。
+
 ------
 
 ### 1. Git 版本管理（强制）

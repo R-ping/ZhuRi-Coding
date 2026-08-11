@@ -204,18 +204,45 @@
 
                                 <!-- 评论输入框 -->
                                 <div class="comment-input-area">
-                                    <input 
-                                        type="text" 
+                                    <textarea
                                         class="comment-input"
                                         :placeholder="replyingComment ? '回复 ' + escapeHtml(replyingComment.userName) : '平等表达，友善交流'"
                                         v-model="commentInput"
-                                        @keyup.enter="submitComment(pins)"
-                                    >
-                                    <button 
-                                        class="comment-submit-btn"
-                                        :disabled="!commentInput.trim()"
-                                        @click="submitComment(pins)"
-                                    >发送</button>
+                                        maxlength="1000"
+                                        @keydown.ctrl.enter="submitComment(pins)"
+                                    ></textarea>
+                                    <div class="comment-toolbar">
+                                        <div class="comment-tool-actions">
+                                            <button class="comment-tool-btn" @click="toggleCommentEmoji" title="表情">
+                                                <span>&#xf118;</span>
+                                            </button>
+                                            <button class="comment-tool-btn" @click="triggerCommentImage" title="图片">
+                                                <span>&#xf03e;</span>
+                                            </button>
+                                            <input
+                                                type="file"
+                                                ref="commentImageInput"
+                                                accept="image/*"
+                                                style="display:none"
+                                                @change="handleCommentImage"
+                                            >
+                                            <span class="comment-count">{{ commentInput.length }}/1000</span>
+                                        </div>
+                                        <button
+                                            class="comment-submit-btn"
+                                            :disabled="!commentInput.trim()"
+                                            @click="submitComment(pins)"
+                                        >发送</button>
+                                    </div>
+                                    <!-- 表情弹窗 -->
+                                    <div class="comment-emoji-picker" v-if="commentEmojiPicker">
+                                        <span
+                                            class="comment-emoji-item"
+                                            v-for="emoji in commentEmojiList"
+                                            :key="emoji"
+                                            @click="insertCommentEmoji(emoji)"
+                                        >{{ emoji }}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -278,22 +305,9 @@
                     </div>
                 </div>
 
-                <!-- 推荐话题 -->
-                <div class="right-section topics-section">
-                    <div class="right-section-title">
-                        <span>推荐话题</span>
-                        <span class="topics-refresh" @click="refreshTopics">换一换</span>
-                    </div>
-                    <div 
-                        class="topic-tag-item"
-                        v-for="topic in sidebarData.recommendedTopics || []"
-                        :key="topic.id"
-                        @click="selectSidebarTopic(topic)"
-                    >
-                        <span class="topic-tag-name">#{{ escapeHtml(topic.name) }}#</span>
-                        <span class="topic-tag-count">{{ topic.postCount || 0 }} 沸点</span>
-                    </div>
-                    <div class="topic-more" @click="showTopicSelector = true">查看更多</div>
+                <!-- 推荐话题（公共组件） -->
+                <div class="right-section">
+                    <recommend-topics />
                 </div>
             </div>
         </div>
@@ -413,7 +427,7 @@
 <script>
 import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
-import defaultAvatar from '@/static/images/creator/avatar.jpg'
+const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
 import { getMyCircles, getRecommendCircles } from '@/apis/circle'
 import {
@@ -423,15 +437,16 @@ import {
     likePins,
     createComment,
     getComments,
-    sharePins as sharePinsApi,
     getTopics,
     getAllCircles
 } from '@/apis/pins'
 import PinsPublishBox from './components/PinsPublishBox.vue'
+import RecommendTopics from '@/components/RecommendTopics.vue'
+import { uploadFile } from '@/common/oss_upload'
 
 export default {
     name: 'Pins',
-    components: { HomeBar, PinsPublishBox },
+    components: { HomeBar, PinsPublishBox, RecommendTopics },
     data() {
         return {
             activeTab: 'latest',
@@ -442,6 +457,14 @@ export default {
             publishContent: '',
             commentInput: '',
             replyingComment: null,
+            commentEmojiPicker: false,
+            commentEmojiList: [
+                '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂',
+                '😉', '😍', '🥰', '😘', '😋', '😛', '😜', '🤪', '😝', '🤑',
+                '🤗', '🤭', '🤔', '🤐', '🤨', '😐', '😏', '😒', '🙄', '😬',
+                '😭', '😤', '😡', '🤯', '😴', '👍', '👎', '👏', '🙌', '💪',
+                '🎉', '🎊', '✨', '🌟', '🔥', '💯', '❤️', '💙', '💚', '💜'
+            ],
             circleSearchKeyword: '',
             topicSearchKeyword: '',
             topicSearchTimer: null,
@@ -482,8 +505,7 @@ export default {
                 circleCount: 0,
                 followingCount: 0,
                 followersCount: 0,
-                featuredPins: [],
-                recommendedTopics: []
+                featuredPins: []
             }
         }
     },
@@ -607,7 +629,7 @@ export default {
             }
         },
         selectCircle(circle) {
-            this.$router.push('/pins/circle/' + circle.id)
+            window.open('/pins/circle/' + circle.id, '_blank')
         },
         selectCircleFromMyCircles(circle) {
             this.activeCircle = circle.id
@@ -624,12 +646,6 @@ export default {
             } catch (e) {
                 toast('加载侧边栏数据失败', 2)
             }
-        },
-        refreshTopics() {
-            this.fetchSidebar()
-        },
-        selectSidebarTopic(topic) {
-            this.selectedTopic = topic
         },
 
         // ============== 沸点列表 ==============
@@ -777,27 +793,27 @@ export default {
         },
         async toggleComments(pins) {
             if (pins.showComments) {
-                pins.showComments = false
+                this.$set(pins, 'showComments', false)
                 return
             }
-            pins.showComments = true
-            pins.commentsLoading = true
-            pins.comments = pins.comments || []
+            this.$set(pins, 'showComments', true)
+            this.$set(pins, 'commentsLoading', true)
+            this.$set(pins, 'comments', pins.comments || [])
             this.replyingComment = null
             this.commentInput = ''
             try {
                 const res = await getComments({ pinsId: pins.id, page: 1, size: 10 })
                 if (res && res.code === 200 && res.data) {
-                    pins.comments = (res.data.list || res.data || []).map(c => ({
+                    this.$set(pins, 'comments', (res.data.list || res.data || []).map(c => ({
                         ...c,
                         liked: c.liked || false,
                         replies: c.replies || []
-                    }))
+                    })))
                 }
             } catch (e) {
-                pins.comments = []
+                this.$set(pins, 'comments', [])
             } finally {
-                pins.commentsLoading = false
+                this.$set(pins, 'commentsLoading', false)
             }
         },
         async submitComment(pins) {
@@ -818,23 +834,23 @@ export default {
                         this.replyingComment = null
                         this.commentInput = ''
                         await this.toggleComments(pins)
-                        pins.showComments = true
+                        this.$set(pins, 'showComments', true)
                     } else {
                         // 新评论：清除输入并重新拉取评论列表
                         this.commentInput = ''
-                        pins.commentsLoading = true
+                        this.$set(pins, 'commentsLoading', true)
                         try {
                             const refreshRes = await getComments({ pinsId: pins.id, page: 1, size: 10 })
                             if (refreshRes && refreshRes.code === 200 && refreshRes.data) {
-                                pins.comments = (refreshRes.data.list || refreshRes.data || []).map(c => ({
+                                this.$set(pins, 'comments', (refreshRes.data.list || refreshRes.data || []).map(c => ({
                                     ...c,
                                     liked: c.liked || false,
                                     replies: c.replies || []
-                                }))
+                                })))
                             }
-                            pins.commentCount = (pins.commentCount || 0) + 1
+                            this.$set(pins, 'commentCount', (pins.commentCount || 0) + 1)
                         } finally {
-                            pins.commentsLoading = false
+                            this.$set(pins, 'commentsLoading', false)
                         }
                     }
                 } else {
@@ -846,6 +862,29 @@ export default {
         },
         replyComment(pins, comment) {
             this.replyingComment = comment
+        },
+        toggleCommentEmoji() {
+            this.commentEmojiPicker = !this.commentEmojiPicker
+        },
+        insertCommentEmoji(emoji) {
+            this.commentInput += emoji
+            this.commentEmojiPicker = false
+        },
+        triggerCommentImage() {
+            this.$refs.commentImageInput.click()
+        },
+        async handleCommentImage(e) {
+            const file = e.target.files[0]
+            if (!file) return
+            try {
+                const url = await uploadFile(file)
+                // 将图片地址以 URL 形式插入评论内容
+                this.commentInput += (this.commentInput ? ' ' : '') + url
+            } catch (err) {
+                toast('图片上传失败', 2)
+            } finally {
+                this.$refs.commentImageInput.value = ''
+            }
         },
         async toggleCommentLike(pins, comment) {
             const newLiked = !comment.liked
@@ -861,15 +900,7 @@ export default {
             }
         },
         async sharePins(pins) {
-            try {
-                const res = await sharePinsApi({ pinsId: pins.id })
-                if (res && res.code === 200) {
-                    pins.shareCount = (pins.shareCount || 0) + 1
-                    toast('分享成功', 2)
-                }
-            } catch (e) {
-                toast('分享失败', 2)
-            }
+            toast('分享功能正在努力开发中~', 2)
         },
         openLink(url) {
             if (url) {
@@ -1129,6 +1160,10 @@ export default {
     border-radius: 4px;
 }
 
+.action-icon {
+    font-family: fontawesome;
+}
+
 .pins-actions {
     display: flex;
     align-items: center;
@@ -1276,29 +1311,69 @@ export default {
 
 /* 评论输入框 */
 .comment-input-area {
-    display: flex;
-    gap: 12px;
+    position: relative;
 }
 
 .comment-input {
-    flex: 1;
+    width: 100%;
     padding: 10px 14px;
     border: 1px solid #e4e6eb;
-    border-radius: 20px;
+    border-radius: 8px;
     font-size: 14px;
+    line-height: 1.6;
     outline: none;
+    resize: none;
+    box-sizing: border-box;
     &:focus {
         border-color: #1e80ff;
     }
 }
 
-.comment-submit-btn {
-    padding: 10px 24px;
+.comment-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+}
+
+.comment-tool-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.comment-tool-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
     border: none;
-    border-radius: 20px;
+    background: transparent;
+    font-family: fontawesome;
+    font-size: 16px;
+    color: #8a919f;
+    cursor: pointer;
+    border-radius: 4px;
+    &:hover {
+        color: #1e80ff;
+        background: #f0f5ff;
+    }
+}
+
+.comment-count {
+    font-size: 12px;
+    color: #c4c9d1;
+    margin-left: 4px;
+}
+
+.comment-submit-btn {
+    padding: 6px 20px;
+    border: none;
+    border-radius: 16px;
     background: #1e80ff;
     color: #fff;
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
     &:hover {
         background: #4096ff;
@@ -1306,6 +1381,38 @@ export default {
     &:disabled {
         background: #c4c9d1;
         cursor: not-allowed;
+    }
+}
+
+/* 评论表情弹窗 */
+.comment-emoji-picker {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 6px;
+    background: #fff;
+    border: 1px solid #e4e6eb;
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    z-index: 100;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    width: 260px;
+}
+
+.comment-emoji-item {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    cursor: pointer;
+    border-radius: 4px;
+    &:hover {
+        background: #f0f5ff;
     }
 }
 

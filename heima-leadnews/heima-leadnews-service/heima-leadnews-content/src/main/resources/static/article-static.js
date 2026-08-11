@@ -593,12 +593,12 @@
                 var prevLink = document.getElementById('prevArticleLink');
                 var nextLink = document.getElementById('nextArticleLink');
                 if (data.prevArticleId) {
-                    prevLink.href = '/article/' + data.prevArticleId;
+                    prevLink.href = '/content/article/' + data.prevArticleId;
                     prevLink.classList.remove('disabled');
                     prevLink.textContent = '← ' + (data.prevArticleTitle || '上一篇');
                 }
                 if (data.nextArticleId) {
-                    nextLink.href = '/article/' + data.nextArticleId;
+                    nextLink.href = '/content/article/' + data.nextArticleId;
                     nextLink.classList.remove('disabled');
                     nextLink.textContent = (data.nextArticleTitle || '下一篇') + ' →';
                 }
@@ -904,7 +904,7 @@
                     if (item.categoryName) {
                         tags += '<span class="category-tag">' + escapeHtml(item.categoryName) + '</span>';
                     }
-                    li.innerHTML = '<div class="recommend-item-title"><a href="/article/' + item.articleId + '" target="_blank">' + escapeHtml(item.title) + '</a></div>' +
+                    li.innerHTML = '<div class="recommend-item-title"><a href="/content/article/' + item.articleId + '" target="_blank">' + escapeHtml(item.title) + '</a></div>' +
                         '<div class="recommend-item-meta">' +
                         '<span>' + escapeHtml(item.authorName || '') + '</span>' +
                         '<span class="meta-sep">·</span>' +
@@ -946,7 +946,7 @@
                 list.forEach(function(item) {
                     var li = document.createElement('li');
                     li.className = 'sidebar-recommend-item';
-                    li.innerHTML = '<a href="/article/' + item.articleId + '" class="sidebar-recommend-link" target="_blank">' +
+                    li.innerHTML = '<a href="/content/article/' + item.articleId + '" class="sidebar-recommend-link" target="_blank">' +
                         '<span class="sidebar-recommend-link-title">' + escapeHtml(item.title) + '</span>' +
                         '<span class="sidebar-recommend-link-meta">' + escapeHtml(item.authorName || '') + ' · ' + formatTime(item.publishTime) + '</span>' +
                         '</a>';
@@ -976,7 +976,7 @@
                 list.forEach(function(item) {
                     var li = document.createElement('li');
                     li.className = 'sidebar-recommend-item';
-                    li.innerHTML = '<a href="/article/' + item.articleId + '" class="sidebar-recommend-link" target="_blank">' +
+                    li.innerHTML = '<a href="/content/article/' + item.articleId + '" class="sidebar-recommend-link" target="_blank">' +
                         '<span class="sidebar-recommend-link-title">' + escapeHtml(item.title) + '</span>' +
                         '<span class="sidebar-recommend-link-meta">' + escapeHtml(item.authorName || '') + ' · ' + formatTime(item.publishTime) + '</span>' +
                         '</a>';
