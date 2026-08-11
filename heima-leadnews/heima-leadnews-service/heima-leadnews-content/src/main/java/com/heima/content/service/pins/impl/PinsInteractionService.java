@@ -1,9 +1,12 @@
 package com.heima.content.service.pins.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.heima.content.behavior.service.BehaviorEventBus;
 import com.heima.content.mapper.pins.ApPinsCommentMapper;
 import com.heima.content.mapper.pins.ApPinsLikeMapper;
 import com.heima.content.mapper.pins.ApPinsMapper;
+import com.heima.model.behavior.BehaviorContext;
+import com.heima.model.behavior.BehaviorType;
 import com.heima.model.pins.dtos.PinsCommentDTO;
 import com.heima.model.pins.dtos.PinsShareDTO;
 import com.heima.model.pins.pojos.ApPins;
@@ -32,6 +35,9 @@ public class PinsInteractionService {
 
     @Autowired
     private ApPinsCommentMapper apPinsCommentMapper;
+
+    @Autowired(required = false)
+    private BehaviorEventBus behaviorEventBus;
 
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult like(Long pinsId) {
@@ -63,6 +69,22 @@ public class PinsInteractionService {
         if (pins != null) {
             pins.setLikes((pins.getLikes() != null ? pins.getLikes() : 0) + 1);
             apPinsMapper.updateById(pins);
+
+            // 跨用户点赞时，触发行为事件（等级分、通知）
+            if (behaviorEventBus != null && pins.getAuthorId() != null
+                    && !pins.getAuthorId().equals(user.getId().longValue())) {
+                try {
+                    BehaviorContext behaviorContext = new BehaviorContext(BehaviorType.LIKE_PIN, user.getId());
+                    behaviorContext.withTarget(2, pinsId)
+                            .withTargetUser(pins.getAuthorId().intValue())
+                            .withUserInfo(user.getNickname(), user.getImage());
+                    behaviorEventBus.execute(behaviorContext);
+                    log.info("沸点点赞行为事件已触发, pinsId={}, fromUser={}, toUser={}",
+                            pinsId, user.getId(), pins.getAuthorId());
+                } catch (Exception e) {
+                    log.error("沸点点赞行为事件处理失败, pinsId={}", pinsId, e);
+                }
+            }
         }
         return ResponseResult.okResult();
     }
@@ -134,6 +156,24 @@ public class PinsInteractionService {
             if (parentComment != null) {
                 parentComment.setReplyCount((parentComment.getReplyCount() != null ? parentComment.getReplyCount() : 0) + 1);
                 apPinsCommentMapper.updateById(parentComment);
+            }
+        }
+
+        // 跨用户评论时，触发行为事件（等级分、通知）
+        if (behaviorEventBus != null && pins != null && pins.getAuthorId() != null
+                && !pins.getAuthorId().equals(user.getId().longValue())) {
+            try {
+                BehaviorContext behaviorContext = new BehaviorContext(BehaviorType.COMMENT_PIN, user.getId());
+                behaviorContext.withTarget(2, dto.getPinsId())
+                        .withTargetUser(pins.getAuthorId().intValue())
+                        .withUserInfo(user.getNickname(), user.getImage())
+                        .withExtra("commentId", comment.getId())
+                        .withExtra("commentContent", dto.getContent());
+                behaviorEventBus.execute(behaviorContext);
+                log.info("沸点评论行为事件已触发, pinsId={}, fromUser={}, toUser={}",
+                        dto.getPinsId(), user.getId(), pins.getAuthorId());
+            } catch (Exception e) {
+                log.error("沸点评论行为事件处理失败, pinsId={}", dto.getPinsId(), e);
             }
         }
 

@@ -102,7 +102,7 @@ public class PinsPublishService {
         pins.setStatus(ApPins.Status.SUBMIT.getCode());
         pins.setLikes(0);
         pins.setComment(0);
-        pins.setShare(0);
+        pins.setShareCount(0);
         pins.setIsDeleted(false);
         pins.setCreatedTime(new Date());
         pins.setPublishTime(new Date());

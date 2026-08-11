@@ -187,18 +187,9 @@
                         </div>
                     </div>
 
-                    <!-- 推荐话题 -->
-                    <div class="aside-card topic-card">
-                        <div class="aside-title">推荐话题</div>
-                        <div class="topic-list" v-if="recommendTopics.length > 0">
-                            <div class="topic-item" v-for="topic in recommendTopics" :key="topic.id" @click="goToTopic(topic.id)">
-                                <span class="topic-name">{{ topic.name }}</span>
-                                <span class="topic-count">{{ formatTopicCount(topic.postCount || topic.count || topic.participantCount || 0) }} 讨论</span>
-                            </div>
-                        </div>
-                        <div class="topic-empty" v-else>
-                            <span>暂无推荐话题</span>
-                        </div>
+                    <!-- 推荐话题（公共组件） -->
+                    <div class="aside-card">
+                        <recommend-topics />
                     </div>
 
                     <div class="aside-footer">
@@ -227,11 +218,11 @@
     import SearchApi from '@/apis/search/api'
     import { sanitizeHighlight } from '@/utils/sanitize'
     import { getUserStatistics } from '@/apis/user'
-    import { getRecommendTopics } from '@/apis/topic'
     import { getTodayStatus, doSignCheckin } from '@/apis/checkin'
     import UserDropdown from '@/components/bars/UserDropdown.vue'
     import NotificationBell from '@/components/bars/NotificationBell.vue'
     import CreatorDropdown from './CreatorDropdown.vue'
+    import RecommendTopics from '@/components/RecommendTopics.vue'
     import conf from '@/common/conf'
     import request from '@/common/request'
 
@@ -287,7 +278,7 @@
 
     export default {
         name: "HeiMaLayoutMain",
-        components: { UserDropdown, NotificationBell, CreatorDropdown },
+        components: { UserDropdown, NotificationBell, CreatorDropdown, RecommendTopics },
         data() {
             return {
                 showUserDropdown: false,
@@ -317,7 +308,6 @@
                     consecutiveDays: 0,
                     totalOre: 0
                 },
-                recommendTopics: [],
                 unreadCount: 0,
                 unreadTimer: null
             }
@@ -407,7 +397,6 @@
             }
             document.addEventListener('click', this.closeDropdown)
             this.searchHistory = getSearchHistory()
-            this.loadRecommendTopics()
             this.loadCheckinStatus()
             this.fetchUnreadCount()
             this.unreadTimer = setInterval(() => this.fetchUnreadCount(), 30000)
@@ -418,7 +407,6 @@
                 // 回到首页时刷新签到状态，确保"已签到/去签到"按钮与最新签到状态一致
                 if (newPath === '/home' || newPath === '/') {
                     this.loadCheckinStatus()
-                    this.loadRecommendTopics()
                     this.fetchUnreadCount()
                 }
             },
@@ -587,7 +575,6 @@
                 this.searchKeyword = ''
                 this.$router.push('/home')
                 this.$nextTick(() => {
-                    this.loadRecommendTopics()
                     this.loadCheckinStatus()
                     this.fetchUnreadCount()
                 })
@@ -736,17 +723,6 @@
                 this.searchSuggestions = []
                 this.$router.push({ name: 'search_result', query: { keyword: keyword } })
             },
-            async loadRecommendTopics() {
-                try {
-                    const res = await getRecommendTopics()
-                    if (res && res.code === 200) {
-                        const data = res.data
-                        this.recommendTopics = Array.isArray(data) ? data : (data && data.list ? data.list : [])
-                    }
-                } catch (e) {
-                    console.error('加载推荐话题失败', e)
-                }
-            },
             async loadCheckinStatus() {
                 if (!this.isLoggedIn) {
                     this.checkinTodayStatus = { isSignedIn: false, consecutiveDays: 0, totalOre: 0 }
@@ -767,16 +743,6 @@
                     return
                 }
                 this.$router.push('/user/center/checkin')
-            },
-            formatTopicCount(count) {
-                if (!count) return '0'
-                if (count >= 1000) {
-                    return (count / 1000).toFixed(1) + 'k'
-                }
-                return String(count)
-            },
-            goToTopic(topicId) {
-                this.$router.push('/topic/' + topicId)
             },
             goToNotification(type = 'comment') {
                 this.$router.push('/notification?tab=' + type)
@@ -1426,47 +1392,6 @@
         .ore-text {
             font-size: 12PX;
             color: #999;
-        }
-
-        /* ===== 推荐话题卡片 ===== */
-        .topic-card {
-            padding: 16PX 20PX;
-        }
-        .topic-list {
-            display: flex;
-            flex-direction: column;
-        }
-        .topic-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8PX 0;
-            cursor: pointer;
-            transition: color 0.2s;
-        }
-        .topic-item:hover .topic-name {
-            color: #1E80FF;
-        }
-        .topic-name {
-            font-size: 14PX;
-            color: #333;
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            transition: color 0.2s;
-        }
-        .topic-count {
-            font-size: 12PX;
-            color: #999;
-            flex-shrink: 0;
-            margin-left: 10PX;
-        }
-        .topic-empty {
-            text-align: center;
-            padding: 20PX 0;
-            font-size: 13PX;
-            color: #c0c4cc;
         }
 
         .aside-footer {
