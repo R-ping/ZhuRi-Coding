@@ -22,6 +22,6 @@ public interface ApPinsMapper extends BaseMapper<ApPins> {
     int incrementComment(@Param("id") Long id);
 
     /** 原子递增分享数 */
-    @Update("UPDATE ap_pins SET share = share + 1 WHERE id = #{id}")
+    @Update("UPDATE ap_pins SET share_count = share_count + 1 WHERE id = #{id}")
     int incrementShare(@Param("id") Long id);
 }

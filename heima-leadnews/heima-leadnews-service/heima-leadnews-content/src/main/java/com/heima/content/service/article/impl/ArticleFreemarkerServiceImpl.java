@@ -79,6 +79,10 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
             log.error("文章HTML上传MinIO失败, articleId={}", apArticle.getId(), e);
             updateArticleEventStatus(apArticle.getId(), "minio", (byte) 1);
         }
+        // 上传 JS 到 MinIO
+        // 方案②（FTL 服务端渲染）：article-static.js 为共用交互脚本，
+        // 已作为内容服务静态资源（classpath:/static/article-static.js）由网关 /content/article-static.js 统一提供，
+        // 无需再为每篇文章重复上传，此处移除冗余上传逻辑。
         // 发布事件，由监听器处理后续逻辑（立即发布或添加延迟任务）
         eventPublisher.publishEvent(new ArticleBuildCompleteEvent(
             apArticle.getId(), taskId, lastExecuteInterval));

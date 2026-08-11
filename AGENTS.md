@@ -41,6 +41,8 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 # 全局固定规则（必须严格遵守）
 
+本项目中，等级体系包含两种等级，由于命名不规范，逐日等级就是逐友等级，另一是逐力值等级
+
 ------
 
 ### 1. Git 版本管理（强制）

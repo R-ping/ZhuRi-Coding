@@ -106,6 +106,24 @@ public class MinioUtil {
             throw new RuntimeException("上传文件失败");
         }
     }
+    public void uploadJsFile(String prefix, String filename, InputStream inputStream){
+        String filePath = builderFilePath(prefix, filename);
+        try {
+            PutObjectArgs putObjectArgs = PutObjectArgs.builder()
+                .object(filePath)
+                .contentType("application/javascript")
+                .bucket(prop.getBucket()).stream(inputStream, inputStream.available(), -1)
+                .build();
+            minioClient.putObject(putObjectArgs);
+//            return prop.getReadPath() + separator + prop.getBucket()
+//                + separator
+//                + filePath;
+        } catch (Exception ex) {
+            log.error("minio put file error.", ex);
+            log.error("异常信息", ex);
+            throw new RuntimeException("上传文件失败");
+        }
+    }
 
     /**
      * 上传字符串内容到 MinIO

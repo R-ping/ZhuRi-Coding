@@ -4,16 +4,23 @@
     var headings = Array.from(document.querySelectorAll('.article-body h1, .article-body h2, .article-body h3'));
 
     // ========== 工具函数 ==========
+    // 与 Vue SPA 共享登录态：Token 存于 localStorage 的 ACCESS_TOKEN，请求头使用 accToken
     function getToken() {
-        return localStorage.getItem('token') || localStorage.getItem('user_token') || '';
+        return localStorage.getItem('ACCESS_TOKEN') || '';
+    }
+
+    function getUserInfoCache() {
+        try {
+            var str = localStorage.getItem('USER_INFO');
+            return str ? JSON.parse(str) : null;
+        } catch (e) { return null; }
     }
 
     function getHeaders() {
-        var headers = { 'Content-Type': 'application/json' };
+        var headers = { 'Content-Type': 'application/json; charset=UTF-8' };
         var token = getToken();
         if (token) {
-            headers['X-Token'] = token;
-            headers['Authorization'] = 'Bearer ' + token;
+            headers['accToken'] = token;
         }
         return headers;
     }
@@ -24,9 +31,15 @@
 
     function formatTime(ts) {
         if (!ts) return '';
-        var d = new Date(ts);
+        // 兼容秒级(10位)与毫秒级(13位)时间戳
+        var num = Number(ts);
+        if (isNaN(num)) return '';
+        if (num < 1e12) num = num * 1000;
+        var d = new Date(num);
+        if (isNaN(d.getTime())) return '';
         var now = new Date();
         var diff = Math.floor((now - d) / 1000);
+        if (diff < 0) diff = 0;
         if (diff < 60) return '刚刚';
         if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
         if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
@@ -56,6 +69,240 @@
             headers: getHeaders(),
             body: body ? JSON.stringify(body) : undefined
         }).then(function(r) { return r.json(); });
+    }
+
+    // ========== 轻提示 ==========
+    var toastTimer = null;
+    function showToast(msg) {
+        var el = document.getElementById('loginToast');
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.add('show');
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function() { el.classList.remove('show'); }, 2000);
+    }
+
+    // ========== 顶栏用户状态同步（与主页 Web 端顶栏保持一致） ==========
+    function syncTopBar() {
+        var loginBtn = document.getElementById('topLoginBtn');
+        var userInfo = document.getElementById('topUserInfo');
+        var writeBtn = document.getElementById('topWriteBtn');
+        var avatar = document.getElementById('topAvatar');
+        var userName = document.getElementById('topUserName');
+        if (isLoggedIn()) {
+            loginBtn.style.display = 'none';
+            userInfo.style.display = 'flex';
+            writeBtn.style.display = 'inline-block';
+            var info = getUserInfoCache() || {};
+            avatar.src = info.avatar || '';
+            userName.textContent = info.nickName || '用户';
+        } else {
+            loginBtn.style.display = 'inline-block';
+            userInfo.style.display = 'none';
+            writeBtn.style.display = 'none';
+        }
+    }
+
+    function initTopBar() {
+        syncTopBar();
+        // 品牌 → 首页
+        var brand = document.getElementById('topBrandLink');
+        if (brand) brand.addEventListener('click', function() { window.location.href = '/home'; });
+        // 主导航
+        document.querySelectorAll('.nav-link[data-nav]').forEach(function(link) {
+            link.addEventListener('click', function() {
+                var nav = this.getAttribute('data-nav');
+                if (nav === 'home') window.location.href = '/home';
+                else if (nav === 'pins') window.location.href = '/pins';
+                else if (nav === 'course') window.location.href = '/course';
+            });
+        });
+        // 搜索
+        var searchInput = document.getElementById('topSearchInput');
+        var searchBtn = document.getElementById('topSearchBtn');
+        function doSearch() {
+            var kw = searchInput.value.trim();
+            if (!kw) return;
+            window.location.href = '/search_result?keyword=' + encodeURIComponent(kw);
+        }
+        if (searchBtn) searchBtn.addEventListener('click', doSearch);
+        if (searchInput) searchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') doSearch(); });
+        // 写文章
+        var writeBtn = document.getElementById('topWriteBtn');
+        if (writeBtn) {
+            writeBtn.addEventListener('click', function() {
+                if (!isLoggedIn()) { openLoginModal(); return; }
+                window.location.href = '/creator/dashboard';
+            });
+        }
+        // 用户信息 → 个人主页
+        var userInfo = document.getElementById('topUserInfo');
+        if (userInfo) {
+            userInfo.addEventListener('click', function() {
+                var info = getUserInfoCache();
+                var userId = info && info.userId;
+                if (userId) window.location.href = '/user/' + userId;
+            });
+        }
+        // 登录按钮
+        var loginBtn = document.getElementById('topLoginBtn');
+        if (loginBtn) loginBtn.addEventListener('click', openLoginModal);
+    }
+
+    // ========== 登录弹窗交互（验证码/密码两种模式） ==========
+    function openLoginModal() {
+        var overlay = document.getElementById('loginOverlay');
+        if (overlay) overlay.classList.add('open');
+    }
+    function closeLoginModal() {
+        var overlay = document.getElementById('loginOverlay');
+        if (overlay) overlay.classList.remove('open');
+    }
+
+    function toggleLoginMode() {
+        var codeArea = document.getElementById('codeLoginArea');
+        var pwdArea = document.getElementById('passwordLoginArea');
+        var subtitle = document.getElementById('loginSubtitle');
+        var toggleBtn = document.getElementById('loginToggleMode');
+        var isPwd = codeArea.style.display === 'none';
+        if (isPwd) {
+            codeArea.style.display = '';
+            pwdArea.style.display = 'none';
+            subtitle.textContent = '验证码登录';
+            toggleBtn.textContent = '密码登录';
+        } else {
+            codeArea.style.display = 'none';
+            pwdArea.style.display = '';
+            subtitle.textContent = '手机号或邮箱登录';
+            toggleBtn.textContent = '验证码登录';
+        }
+    }
+
+    function getLoginCode() {
+        var phone = document.getElementById('loginPhone').value.trim();
+        if (!(/^1[3-9]\d{9}$/.test(phone))) {
+            showToast('请输入正确的手机号');
+            return;
+        }
+        var btn = document.getElementById('loginGetCode');
+        btn.disabled = true;
+        btn.classList.add('disabled');
+        var countdown = 60;
+        btn.textContent = countdown + 's后重试';
+        var timer = setInterval(function() {
+            countdown--;
+            if (countdown <= 0) {
+                clearInterval(timer);
+                btn.disabled = false;
+                btn.classList.remove('disabled');
+                btn.textContent = '获取验证码';
+            } else {
+                btn.textContent = countdown + 's后重试';
+            }
+        }, 1000);
+        var url = '/user/api/v1/login/code?phone=' + encodeURIComponent(phone) + '&platform=app&tag=login';
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8' } })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                if (res && res.code === 200) {
+                    if (res.data) {
+                        document.getElementById('loginCode').value = String(res.data);
+                        showToast('验证码已自动填充');
+                    } else {
+                        showToast('验证码已发送');
+                    }
+                } else {
+                    showToast((res && (res.message || res.errorMessage)) || '获取验证码失败');
+                }
+            })
+            .catch(function() { showToast('获取验证码失败'); });
+    }
+
+    function loginByCode() {
+        var phone = document.getElementById('loginPhone').value.trim();
+        var code = document.getElementById('loginCode').value.trim();
+        if (!phone || phone.length < 11) { showToast('请输入正确的手机号'); return; }
+        if (!code) { showToast('请输入验证码'); return; }
+        doLogin({ phoneOrEmail: phone, code: code, platform: 'app' });
+    }
+
+    function loginByPassword() {
+        var account = document.getElementById('loginAccount').value.trim();
+        var pwd = document.getElementById('loginPassword').value.trim();
+        if (!account) { showToast('请输入手机号或邮箱'); return; }
+        if (!pwd) { showToast('请输入密码'); return; }
+        doLogin({ phoneOrEmail: account, password: pwd, platform: 'app' });
+    }
+
+    function doLogin(body) {
+        apiPost('/user/api/v1/login/login_auth', body).then(function(res) {
+            if (res && res.code === 200 && res.data) {
+                var data = res.data;
+                if (data.accessToken) localStorage.setItem('ACCESS_TOKEN', data.accessToken);
+                if (data.refreshToken) localStorage.setItem('REFRESH_TOKEN', data.refreshToken);
+                if (data.userId || data.nickName) {
+                    localStorage.setItem('USER_INFO', JSON.stringify({
+                        userId: data.userId || '',
+                        nickName: data.nickName || '',
+                        avatar: data.avatar || '',
+                        phone: data.phone || ''
+                    }));
+                }
+                closeLoginModal();
+                syncTopBar();
+                showToast('登录成功');
+                // 登录后刷新评论输入框与文章交互状态
+                checkCommentLogin();
+                loadArticleDetail();
+            } else {
+                showToast((res && (res.message || res.errorMessage)) || '登录失败');
+            }
+        }).catch(function() { showToast('登录失败，请重试'); });
+    }
+
+    function socialLogin(platform) {
+        if (platform === 'wechat') {
+            showToast('请使用微信扫码登录');
+            return;
+        }
+        var redirect = encodeURIComponent('https://195b7e5b.r40.cpolar.top/oauth/callback');
+        var urls = {
+            weibo: 'https://api.weibo.com/oauth2/authorize?client_id=3770872274&redirect_uri=' + redirect + '&response_type=code&state=weibo',
+            github: 'https://github.com/login/oauth/authorize?client_id=Ov23liBlhpjPoc6XKPbf&redirect_uri=' + redirect + '&scope=user&response_type=code&state=github'
+        };
+        if (urls[platform]) window.location.href = urls[platform];
+    }
+
+    function initLoginModal() {
+        var overlay = document.getElementById('loginOverlay');
+        var closeBtn = document.getElementById('loginCloseBtn');
+        var toggleBtn = document.getElementById('loginToggleMode');
+        var getCodeBtn = document.getElementById('loginGetCode');
+        var codeSubmit = document.getElementById('loginSubmitBtn');
+        var pwdSubmit = document.getElementById('pwdLoginSubmitBtn');
+        if (closeBtn) closeBtn.addEventListener('click', closeLoginModal);
+        if (overlay) {
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) closeLoginModal();
+            });
+        }
+        if (toggleBtn) toggleBtn.addEventListener('click', toggleLoginMode);
+        if (getCodeBtn) getCodeBtn.addEventListener('click', getLoginCode);
+        if (codeSubmit) codeSubmit.addEventListener('click', loginByCode);
+        if (pwdSubmit) pwdSubmit.addEventListener('click', loginByPassword);
+        // 社交登录
+        document.querySelectorAll('.login-social-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                socialLogin(this.getAttribute('data-social'));
+            });
+        });
+        // 忘记密码
+        var forgetLink = document.getElementById('loginForgetLink');
+        if (forgetLink) {
+            forgetLink.addEventListener('click', function() {
+                showToast('请联系管理员重置密码');
+            });
+        }
     }
 
     // ========== 平滑滚动 ==========
@@ -168,32 +415,6 @@
         if (e.key === 'Escape') closeLightbox();
     });
 
-    // ========== 文章内容加载（从 MinIO CDN） ==========
-    function loadArticleContent() {
-        var staticUrl = window.ARTICLE_STATIC_URL;
-        if (!staticUrl) return;
-
-        var contentDiv = document.getElementById('articleContent');
-        if (!contentDiv) return;
-
-        fetch(staticUrl)
-            .then(function(response) {
-                if (!response.ok) throw new Error('HTTP ' + response.status);
-                return response.text();
-            })
-            .then(function(html) {
-                contentDiv.innerHTML = html;
-                // 重新绑定图片灯箱事件
-                bindImageLightbox();
-                // 重新绑定目录
-                rebindToc();
-            })
-            .catch(function(err) {
-                console.error('加载文章内容失败:', err);
-                contentDiv.innerHTML = '<p style="color:#999;text-align:center;padding:40px;">文章内容加载失败，请稍后重试</p>';
-            });
-    }
-
     // ========== 文章详情加载 ==========
     var detailData = null;
     var diggCount = 0;
@@ -223,6 +444,7 @@
         if (sideLikeCount) sideLikeCount.textContent = diggCount;
         if (sideCollectCount) sideCollectCount.textContent = collectCount;
         if (sideCommentCount) sideCommentCount.textContent = commentCount;
+        updateCommentTitleCount(commentCount);
     }
 
     function updateActionButtons() {
@@ -258,6 +480,7 @@
     var likeBtn = document.getElementById('likeBtn');
     if (likeBtn) {
         likeBtn.addEventListener('click', function() {
+            if (!isLoggedIn()) { openLoginModal(); return; }
             var btn = this;
             apiPost('/content/api/v1/article/' + articleId + '/like').then(function(res) {
                 if (res && res.code === 200 && res.data) {
@@ -275,6 +498,7 @@
     var collectBtn = document.getElementById('collectBtn');
     if (collectBtn) {
         collectBtn.addEventListener('click', function() {
+            if (!isLoggedIn()) { openLoginModal(); return; }
             var btn = this;
             // 打开收藏集选择弹窗
             if (typeof openCollectModal === 'function') {
@@ -295,6 +519,7 @@
     }
 
     function handleFollow() {
+        if (!isLoggedIn()) { openLoginModal(); return; }
         apiPost('/content/api/v1/article/' + articleId + '/follow').then(function(res) {
             if (res && res.code === 200 && res.data) {
                 var followed = res.data.followed;
@@ -517,7 +742,7 @@
         var btn = e.currentTarget;
         var commentId = btn.getAttribute('data-comment-id');
         if (!isLoggedIn()) {
-            alert('请先登录');
+            openLoginModal();
             return;
         }
         apiPost('/content/api/v1/comment/comment/' + commentId + '/like').then(function(res) {
@@ -535,7 +760,7 @@
         var btn = e.currentTarget;
         var commentId = btn.getAttribute('data-comment-id');
         if (!isLoggedIn()) {
-            alert('请先登录');
+            openLoginModal();
             return;
         }
         // 移除已有的回复输入框
@@ -606,7 +831,7 @@
     if (commentSubmitBtn) {
         commentSubmitBtn.addEventListener('click', function() {
             if (!isLoggedIn()) {
-                alert('请先登录');
+                openLoginModal();
                 return;
             }
             var textarea = document.getElementById('commentTextarea');
@@ -639,11 +864,12 @@
         });
     }
 
-    // 登录链接点击
+    // 评论区"登录"链接 → 打开登录弹窗
     var loginLink = document.getElementById('loginLink');
     if (loginLink) {
-        loginLink.addEventListener('click', function() {
-            alert('请先登录后操作');
+        loginLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            openLoginModal();
         });
     }
 
@@ -765,8 +991,117 @@
         });
     }
 
+    // ========== TOC 折叠/展开 ==========
+    var tocCollapseBtn = document.getElementById('tocCollapseBtn');
+    var tocList = document.getElementById('tocList');
+    if (tocCollapseBtn && tocList) {
+        tocCollapseBtn.addEventListener('click', function() {
+            var collapsed = tocList.classList.toggle('collapsed');
+            tocCollapseBtn.textContent = collapsed ? '展开' : '收起';
+            tocCollapseBtn.title = collapsed ? '展开' : '收起';
+        });
+    }
+
+    // ========== 收藏集弹窗 ==========
+    function openCollectModal() {
+        var overlay = document.getElementById('collectModalOverlay');
+        if (overlay) overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeCollectModal() {
+        var overlay = document.getElementById('collectModalOverlay');
+        if (overlay) overlay.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+    var closeCollectBtn = document.getElementById('closeCollectModal');
+    var collectModalOverlay = document.getElementById('collectModalOverlay');
+    var collectConfirmBtn = document.getElementById('collectConfirmBtn');
+    if (closeCollectBtn) closeCollectBtn.addEventListener('click', closeCollectModal);
+    if (collectModalOverlay) {
+        collectModalOverlay.addEventListener('click', function(e) {
+            if (e.target === collectModalOverlay) closeCollectModal();
+        });
+    }
+    if (collectConfirmBtn) {
+        collectConfirmBtn.addEventListener('click', function() {
+            alert('收藏成功！');
+            closeCollectModal();
+        });
+    }
+
+    // ========== 举报弹窗 ==========
+    var selectedReportReason = '';
+    function openReportModal() {
+        var overlay = document.getElementById('reportModalOverlay');
+        if (overlay) overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeReportModal() {
+        var overlay = document.getElementById('reportModalOverlay');
+        if (overlay) overlay.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+    var closeReportBtn = document.getElementById('closeReportModal');
+    var reportModalOverlay = document.getElementById('reportModalOverlay');
+    var cancelReportBtn = document.getElementById('cancelReportBtn');
+    var confirmReportBtn = document.getElementById('confirmReportBtn');
+    if (closeReportBtn) closeReportBtn.addEventListener('click', closeReportModal);
+    if (cancelReportBtn) cancelReportBtn.addEventListener('click', closeReportModal);
+    if (reportModalOverlay) {
+        reportModalOverlay.addEventListener('click', function(e) {
+            if (e.target === reportModalOverlay) closeReportModal();
+        });
+    }
+    if (confirmReportBtn) {
+        confirmReportBtn.addEventListener('click', function() {
+            if (!selectedReportReason) {
+                alert('请选择举报原因');
+                return;
+            }
+            alert('举报已提交，感谢您的反馈！');
+            closeReportModal();
+        });
+    }
+
+    // 举报原因选择
+    document.querySelectorAll('.report-option-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            // 同一组内取消其他选择
+            var group = this.parentNode;
+            group.querySelectorAll('.report-option-btn').forEach(function(b) {
+                b.classList.remove('selected');
+            });
+            this.classList.add('selected');
+            selectedReportReason = this.getAttribute('data-reason');
+        });
+    });
+
+    // 举报补充说明字数统计
+    var reportTextarea = document.getElementById('reportTextarea');
+    var reportCharCount = document.getElementById('reportCharCount');
+    if (reportTextarea && reportCharCount) {
+        reportTextarea.addEventListener('input', function() {
+            reportCharCount.textContent = this.value.length;
+        });
+    }
+
+    // 侧边栏举报按钮
+    var sideReportBtn = document.getElementById('sideReportBtn');
+    if (sideReportBtn) {
+        sideReportBtn.addEventListener('click', function() {
+            openReportModal();
+        });
+    }
+
+    // 更新评论标题计数
+    function updateCommentTitleCount(count) {
+        var countEl = document.getElementById('commentTitleCount');
+        if (countEl) countEl.textContent = count || 0;
+    }
+
     // ========== 初始化加载 ==========
-    loadArticleContent();
+    initTopBar();
+    initLoginModal();
     loadArticleDetail();
     loadColumn();
     loadComments(false);

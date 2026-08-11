@@ -66,8 +66,8 @@ export default {
           cursor: this.cursor,
           size: 20
         })
-        if (res.data && res.data.code === 200) {
-          const data = res.data.data
+        if (res && res.code === 200) {
+          const data = res.data || {}
           this.topics = reset ? (data.list || []) : [...this.topics, ...(data.list || [])]
           this.cursor = data.cursor || this.cursor
           this.hasMore = data.has_more !== false

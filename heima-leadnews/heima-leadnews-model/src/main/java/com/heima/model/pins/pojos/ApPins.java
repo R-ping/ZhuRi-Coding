@@ -60,7 +60,7 @@ public class ApPins implements Serializable {
     private Integer comment = 0;
 
     @TableField("share_count")
-    private Integer share = 0;
+    private Integer shareCount = 0;
 
     private Byte status;
 

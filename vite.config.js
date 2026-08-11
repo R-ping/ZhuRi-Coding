@@ -66,7 +66,7 @@ export default defineConfig({
         bypass(req) {
           // 前端路由 /search、/search_result 由 SPA 处理，不代理到后端
           // 但 /search/api/* 的 API 请求需要代理到后端
-          if (req.url && (req.url === '/search' || req.url === '/search_result' || req.url.startsWith('/search_result?'))) {
+          if (req.url && (req.url === '/search' || req.url === '/search_result' || req.url.startsWith('/search_result?') || req.url.startsWith('/search_result/'))) {
             return req.url;
           }
         }

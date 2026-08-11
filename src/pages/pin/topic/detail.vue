@@ -64,14 +64,7 @@
         </div>
         <!-- 推荐话题 -->
         <div class="sidebar-section">
-          <div class="section-header">
-            <h3>推荐话题</h3>
-            <span class="refresh-btn" @click="refreshRecommend">换一换</span>
-          </div>
-          <div class="recommend-item" v-for="rt in recommendTopics" :key="rt.id" @click="goTopic(rt)">
-            <span class="rec-name">#{{ rt.name }}#</span>
-            <span class="rec-count">{{ rt.participantCount }}参与</span>
-          </div>
+          <recommend-topics :exclude-id="Number(topicId)" />
         </div>
       </div>
     </div>
@@ -85,10 +78,12 @@
 </template>
 
 <script>
-import { getTopicDetail, getTopicFeed, incrTopicView, getRecommendTopics } from '@/apis/topic'
+import { getTopicDetail, getTopicFeed, incrTopicView } from '@/apis/topic'
+import RecommendTopics from '@/components/RecommendTopics.vue'
 
 export default {
   name: 'TopicDetail',
+  components: { RecommendTopics },
   data() {
     return {
       topic: { type: 1, circleInfo: [] },
@@ -97,8 +92,6 @@ export default {
       feedCursor: 0,
       feedHasMore: true,
       feedLoading: false,
-      recommendTopics: [],
-      recommendPage: 0,
       defaultAvatar: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
     }
   },
@@ -112,7 +105,6 @@ export default {
   },
   mounted() {
     this.loadDetail()
-    this.loadRecommend()
     incrTopicView(this.topicId).catch(() => {})
     window.addEventListener('scroll', this.handleScroll)
     // 如果 URL 带 publish=1，自动弹出发布框
@@ -127,8 +119,8 @@ export default {
     async loadDetail() {
       try {
         const res = await getTopicDetail(this.topicId)
-        if (res.data && res.data.code === 200) {
-          this.topic = res.data.data || this.topic
+        if (res && res.code === 200) {
+          this.topic = res.data || this.topic
           if (this.activeTab === 'article' && !this.availableTabs.includes('article')) {
             this.activeTab = 'hot'
           }
@@ -152,8 +144,8 @@ export default {
           cursor: this.feedCursor,
           size: 20
         })
-        if (res.data && res.data.code === 200) {
-          const data = res.data.data
+        if (res && res.code === 200) {
+          const data = res.data || {}
           this.feedList = reset ? (data.list || []) : [...this.feedList, ...(data.list || [])]
           this.feedCursor = data.cursor || this.feedCursor
           this.feedHasMore = data.has_more !== false
@@ -163,21 +155,6 @@ export default {
       } finally {
         this.feedLoading = false
       }
-    },
-    async loadRecommend() {
-      try {
-        const res = await getRecommendTopics(this.recommendPage, 5)
-        if (res.data && res.data.code === 200) {
-          const list = (res.data.data.list || []).filter(t => t.id !== Number(this.topicId))
-          this.recommendTopics = list
-        }
-      } catch (e) {
-        console.error('加载推荐话题失败:', e)
-      }
-    },
-    refreshRecommend() {
-      this.recommendPage++
-      this.loadRecommend()
     },
     switchTab(tab) {
       this.activeTab = tab
@@ -216,9 +193,6 @@ export default {
     },
     writeArticle() {
       this.$router.push('/creator/article/edit')
-    },
-    goTopic(topic) {
-      this.$router.push(`/pin/topic/${topic.id}`)
     }
   }
 }
@@ -364,20 +338,6 @@ export default {
       margin-bottom: 12px;
     }
 
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      h3 { margin-bottom: 0; }
-      .refresh-btn {
-        font-size: 13px;
-        color: #1e80ff;
-        cursor: pointer;
-        &:hover { opacity: 0.8; }
-      }
-    }
-
     .circle-item {
       display: flex;
       justify-content: space-between;
@@ -387,17 +347,6 @@ export default {
       &:last-child { border-bottom: none; }
       .circle-name { color: #252933; }
       .circle-members { color: #86909c; }
-    }
-
-    .recommend-item {
-      display: flex;
-      justify-content: space-between;
-      padding: 8px 0;
-      cursor: pointer;
-      font-size: 14px;
-      &:hover .rec-name { color: #1e80ff; }
-      .rec-name { color: #1e80ff; }
-      .rec-count { color: #86909c; }
     }
   }
 
