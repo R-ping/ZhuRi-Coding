@@ -5,7 +5,7 @@ import com.heima.apis.search.ISearchClient;
 import com.heima.content.mapper.article.ApArticleEventMapper;
 import com.heima.content.service.article.ApArticleEventService;
 import com.heima.content.service.article.ApArticleService;
-import com.heima.file.utils.MinioUtil;
+// import com.heima.file.utils.MinioUtil; // MinIO 已移除，文章详情页改为 MVC（FreeMarker）服务端渲染
 import com.heima.model.article.pojos.ArticleEvent;
 import com.heima.model.search.vos.SearchArticleVo;
 import java.util.ArrayList;
@@ -27,8 +27,8 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
 
     @Autowired
     private ApArticleService apArticleService;
-    @Autowired
-    private MinioUtil minioUtil;
+    // @Autowired
+    // private MinioUtil minioUtil; // MinIO 已移除，文章详情页改为 MVC（FreeMarker）服务端渲染
 
     @Override
     public void updateEvent(ArticleEvent event) {
@@ -49,9 +49,8 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
                 continue;
             }
 
-            // 所有状态都成功，从本地消息表删除
-            if (event.getMinioStatus() != null && event.getMinioStatus() == 2
-                && event.getEsStatus() != null && event.getEsStatus() == 2
+            // 所有状态都成功（MinIO 已移除，仅保留 ES 与发布状态判定），从本地消息表删除
+            if (event.getEsStatus() != null && event.getEsStatus() == 2
                 && event.getPubStatus() != null && event.getPubStatus() == 2) {
                 success_list.add(event.getArticleId());
                 continue;
@@ -78,24 +77,24 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
                 }
             }
 
-            // MinIO 上传重试
-            if (event.getMinioStatus() != null && event.getMinioStatus() == 1 && isBackward) {
-                try {
-                    String objectName = minioUtil.builderFilePath("articles", String.valueOf(searchArticleVo.getId()));
-                    minioUtil.uploadString(searchArticleVo.getHtmlContent(), objectName, "text/html");
-                    event.setMinioStatus((byte) 2);
-                    event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
-                    event.setUpdateTime(new Date());
-                    apArticleEventMapper.updateArticleEvent(event);
-                    log.info("MinIO重试处理成功, articleId={}", event.getArticleId());
-                } catch (Exception e) {
-                    event.setMinioStatus((byte) 2);
-                    event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
-                    event.setUpdateTime(new Date());
-                    apArticleEventMapper.updateArticleEvent(event);
-                    log.error("MinIO重试处理异常, articleId={}", event.getArticleId(), e);
-                }
-            }
+            // MinIO 上传重试（已移除，文章详情页改为 MVC-FreeMarker 服务端渲染，不再依赖 MinIO 静态 HTML）
+            // if (event.getMinioStatus() != null && event.getMinioStatus() == 1 && isBackward) {
+                // try {
+                    // String objectName = minioUtil.builderFilePath("articles", String.valueOf(searchArticleVo.getId()));
+                    // minioUtil.uploadString(searchArticleVo.getHtmlContent(), objectName, "text/html");
+                    // event.setMinioStatus((byte) 2);
+                    // event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
+                    // event.setUpdateTime(new Date());
+                    // apArticleEventMapper.updateArticleEvent(event);
+                    // log.info("MinIO重试处理成功, articleId={}", event.getArticleId());
+                // } catch (Exception e) {
+                    // event.setMinioStatus((byte) 2);
+                    // event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
+                    // event.setUpdateTime(new Date());
+                    // apArticleEventMapper.updateArticleEvent(event);
+                    // log.error("MinIO重试处理异常, articleId={}", event.getArticleId(), e);
+                // }
+            // }
 
             // 发布状态重试：调用 apArticleService.updateArticleStatus()
             // 该方法会更新 DB 文章状态为 PUBLISHED，并 Feign 调用 ES 更新状态

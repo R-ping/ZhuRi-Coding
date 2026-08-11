@@ -180,7 +180,8 @@ export default {
             } else if (type === 4) {
                 this.$router.push('/column/' + articleId)
             } else {
-                this.$router.push('/article/' + articleId)
+                // 文章详情统一走 FTL SSR 页面
+                window.open('/content/article/' + articleId, '_blank')
             }
         },
         goHome() {

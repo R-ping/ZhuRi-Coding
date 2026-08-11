@@ -300,7 +300,8 @@ export default {
     },
     goToArticle(id) {
       if (!id) return
-      this.$router.push('/article/' + id)
+      // 文章详情统一走 FTL SSR 页面
+      window.open('/content/article/' + id, '_blank')
     },
     goToUserProfile(userId) {
       if (!userId) return

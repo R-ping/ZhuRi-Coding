@@ -344,16 +344,13 @@
             },
             // 评论跳转
             onComment(articleId) {
-                this.$router.push({
-                    path: '/article/' + articleId,
-                    query: { focus: 'comment' }
-                })
+                // 文章详情统一走 FTL SSR 页面
+                window.open('/content/article/' + articleId, '_blank')
             },
             // 标题点击
             onTitleClick(articleId) {
-                this.$router.push({
-                    path: '/article/' + articleId
-                })
+                // 文章详情统一走 FTL SSR 页面
+                window.open('/content/article/' + articleId, '_blank')
             },
             // 标签点击
             onTagClick(tagId, tagName) {

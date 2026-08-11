@@ -247,13 +247,8 @@
       },
       wxcPanItemClicked(item) {
         if (!item || !item.id) return
-        if (this.isDesktop && item.staticUrl) {
-          window.open(item.staticUrl, '_blank')
-          return
-        }
-        this.$router.push({
-          path: '/article/' + item.id
-        })
+        // 文章详情统一走 FTL SSR 页面
+        window.open('/content/article/' + item.id, '_blank')
       },
       toggleTagDropdown(index) {
         if (this.tagDropdownOpen === index) {

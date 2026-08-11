@@ -3,7 +3,6 @@
 import Layout from '@/components/layouts/layout_main'
 // 路由组件全部使用动态导入，实现按需加载
 const Home = () => import('@/pages/home/index')
-const Article = () => import('@/pages/article/index')
 const Search = () => import('@/pages/search/index')
 const Screen = () => import('@/pages/load_screen/index')
 const SearchResult = () => import('@/pages/search_result/index')
@@ -158,10 +157,6 @@ let routes = [
         path:'/screen',
         name: 'screen',
         component:Screen
-    },{
-        path:'/article/:id',
-        name:'article-info',
-        component:Article
     },{
         path:'/search',
         name:'search',

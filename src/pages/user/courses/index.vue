@@ -239,7 +239,8 @@ export default {
             const type = item.targetType || item.type
             const targetId = item.targetId || item.id
             if (type === 1 || type === '1') {
-                this.$router.push('/article/' + targetId)
+                // 文章详情统一走 FTL SSR 页面
+                window.open('/content/article/' + targetId, '_blank')
             } else if (type === 2 || type === '2') {
                 this.$router.push('/pins/' + targetId)
             } else if (type === 3 || type === '3') {
