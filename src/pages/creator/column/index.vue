@@ -101,7 +101,7 @@
 </template>
 
 <script>
-import avatar from '@/static/images/creator/avatar.jpg'
+const avatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { getColumnList, getColumnStatistics, createColumn, deleteColumn } from '@/apis/creator/content'
 import { uploadFile } from '@/common/oss_upload'
 

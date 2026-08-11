@@ -21,6 +21,8 @@ const isImgUpload = (config) => {
 service.interceptors.request.use(
   config => {
     const accessToken = store.state.accessToken
+    // 记录本次请求是否使用了有效用户 token（用于 401 时决定是否弹登录框）
+    config._usedUserToken = !!accessToken
     if (accessToken) {
       if (!isImgUpload(config)) {
         config.headers['Content-Type'] = 'application/json'
@@ -48,10 +50,13 @@ service.interceptors.response.use(
     return data
   },
   error => {
-    // 401未授权 — 清除过期token后弹出登录弹窗
+    // 401未授权 — 仅当本次请求携带了有效用户 token 时，才清除过期 token 并弹出登录弹窗；
+    // 匿名/游客请求（请求头无 accToken 或非用户 token）返回 401 时静默 reject，不弹登录框
     if (error.response && error.response.status === 401) {
-      store.dispatch('logout')
-      store.dispatch('showLogin')
+      if (error.config && error.config._usedUserToken) {
+        store.dispatch('logout')
+        store.dispatch('showLogin')
+      }
       return Promise.reject(error)
     }
     // 403权限不足

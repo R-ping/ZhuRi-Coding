@@ -35,9 +35,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class SocialLoginServiceImpl extends ServiceImpl<ApUserSocialMapper, ApUserSocial>
     implements SocialLoginService {
 
-    /**
-     * 临时凭证有效期：10分钟
-     */
     @Autowired
     private ApUserSocialMapper apUserSocialMapper;
     @Autowired

@@ -486,7 +486,7 @@
 <script>
 import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
-import defaultAvatar from '@/static/images/creator/avatar.jpg'
+const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { getUserProfile, updateUserProfile, uploadAvatar, getBindings, updatePassword, deleteAccount, updatePrivacyMessage, getBlocks, removeBlock, getTagsDiscover, getFollowedTags, followTag, unfollowTag } from '@/apis/user'
 import { toast } from '@/utils/toast'
 

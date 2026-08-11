@@ -4,7 +4,7 @@
         
         <div class="detail-content">
             <div class="detail-main">
-                <!-- 圈子信息 -->
+                <!-- 圈子信息（白底卡片） -->
                 <div class="circle-info-card">
                     <div class="circle-icon">{{ circleInfo.icon || '📌' }}</div>
                     <div class="circle-info-body">
@@ -21,11 +21,20 @@
                     </button>
                 </div>
 
-                <!-- 发沸点区域 -->
-                <div class="publish-area" @click="showPublishBox = true">
-                    <div class="publish-placeholder">快和掘友一起分享新鲜事！发布沸点时添加圈子和话题会被更多掘友看到哦~</div>
-                    <button class="publish-btn">发布</button>
+                <!-- 发布入口（深色卡片，固定文案），点击弹发布框 -->
+                <div class="publish-entry" @click="openPublishModal">
+                    <span class="entry-text">快和逐友一起分享新鲜事！</span>
                 </div>
+
+                <!-- 发布弹窗（复用公共组件） -->
+                <PinsPublishModal
+                    v-if="showPublishModal"
+                    v-model="publishContent"
+                    :selectedCircle="selectedCircle"
+                    :publishing="publishing"
+                    @close="closePublishModal"
+                    @publish="handleCirclePublish"
+                />
 
                 <!-- Tab 切换 -->
                 <div class="feed-tabs">
@@ -46,7 +55,7 @@
                     >精选</div>
                 </div>
 
-                <!-- 沸点列表 -->
+                <!-- 沸点列表（白底卡片） -->
                 <div class="feed-list">
                     <div class="feed-card" v-for="pin in feedList" :key="pin.id">
                         <div class="feed-header">
@@ -68,29 +77,11 @@
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- 发沸点弹窗 -->
-        <div class="modal-overlay" v-if="showPublishBox" @click="showPublishBox = false">
-            <div class="publish-modal" @click.stop>
-                <div class="modal-header">
-                    <span class="modal-title">发布沸点</span>
-                    <button class="modal-close" @click="showPublishBox = false">✕</button>
-                </div>
-                <div class="publish-body">
-                    <textarea 
-                        class="publish-textarea" 
-                        placeholder="快和掘友一起分享新鲜事！"
-                        v-model="publishContent"
-                    ></textarea>
-                    <div class="publish-tag">
-                        <span class="tag-label">圈子：</span>
-                        <span class="tag-value">{{ circleInfo.name }}</span>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="cancel-btn" @click="showPublishBox = false">取消</button>
-                    <button class="confirm-btn" @click="doPublish">发布</button>
+            <!-- 右侧边栏 -->
+            <div class="detail-sidebar">
+                <div class="sidebar-card">
+                    <recommend-topics />
                 </div>
             </div>
         </div>
@@ -100,13 +91,16 @@
 <script>
 import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
-import defaultAvatar from '@/static/images/creator/avatar.jpg'
+const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
+import RecommendTopics from '@/components/RecommendTopics.vue'
+import PinsPublishModal from '@/pages/creator/pins/components/PinsPublishModal.vue'
+import { publishPins } from '@/apis/pins'
 import { getCircleDetail, joinCircle, leaveCircle, getCircleFeed } from '@/apis/circle'
 
 export default {
     name: 'CircleDetail',
-    components: { HomeBar },
+    components: { HomeBar, RecommendTopics, PinsPublishModal },
     data() {
         return {
             circleInfo: {
@@ -124,8 +118,10 @@ export default {
             feedSize: 20,
             hasMore: true,
             loading: false,
-            showPublishBox: false,
-            publishContent: ''
+            showPublishModal: false,
+            publishContent: '',
+            publishing: false,
+            selectedCircle: null
         }
     },
     computed: {
@@ -202,14 +198,38 @@ export default {
                 toast('操作失败，请重试', 2)
             }
         },
-        doPublish() {
-            if (!this.publishContent.trim()) {
-                toast('请输入内容', 2)
-                return
+        openPublishModal() {
+            // 预填当前圈子
+            this.selectedCircle = {
+                id: this.circleId,
+                name: this.circleInfo.name
             }
-            toast('发布成功！', 2)
+            this.showPublishModal = true
+        },
+        closePublishModal() {
+            this.showPublishModal = false
             this.publishContent = ''
-            this.showPublishBox = false
+        },
+        async handleCirclePublish(data) {
+            try {
+                this.publishing = true
+                const res = await publishPins(data)
+                if (res && res.code === 200) {
+                    toast('发布成功！', 2)
+                    this.closePublishModal()
+                    // 重置第一页刷新沸点列表
+                    this.feedPage = 1
+                    this.feedList = []
+                    this.hasMore = true
+                    this.fetchFeed()
+                } else {
+                    toast(res && res.message ? res.message : '发布失败，请重试', 2)
+                }
+            } catch (e) {
+                toast('发布失败，请重试', 2)
+            } finally {
+                this.publishing = false
+            }
         },
         formatTime(timestamp) {
             if (!timestamp) return ''
@@ -237,12 +257,16 @@ export default {
 }
 
 .detail-content {
-    max-width: 800px;
+    max-width: 1100px;
     margin: 0 auto;
     padding: 24px;
+    display: flex;
+    gap: 24px;
 }
 
 .detail-main {
+    flex: 1;
+    min-width: 0;
     background: #fff;
     border-radius: 8px;
     padding: 24px;
@@ -315,39 +339,28 @@ export default {
     }
 }
 
-.publish-area {
+/* 发布入口：灰色卡片，固定文案，点击弹发布框 */
+.publish-entry {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: #f7f8fa;
+    padding: 16px 20px;
+    background: #86909c;
     border-radius: 8px;
-    border: 1px solid #e4e6eb;
     cursor: pointer;
     margin-bottom: 20px;
-    transition: border-color 0.2s;
+    transition: background-color 0.2s;
     &:hover {
-        border-color: #1e80ff;
+        background: #6b7785;
     }
-}
-
-.publish-placeholder {
-    flex: 1;
-    font-size: 14px;
-    color: #8a919f;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.publish-btn {
-    padding: 6px 20px;
-    border: none;
-    border-radius: 4px;
-    background: #1e80ff;
-    color: #fff;
-    font-size: 13px;
-    cursor: pointer;
+    .entry-text {
+        flex: 1;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 }
 
 .feed-tabs {
@@ -437,112 +450,27 @@ export default {
     color: #8a919f;
 }
 
-/* 弹窗样式 */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
+/* 右侧边栏 */
+.detail-sidebar {
+    width: 300px;
+    flex-shrink: 0;
 }
 
-.publish-modal {
-    width: 500px;
+.sidebar-card {
     background: #fff;
     border-radius: 8px;
-    overflow: hidden;
+    padding: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
-.modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 20px;
-    border-bottom: 1px solid #e4e6eb;
-}
-
-.modal-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #252933;
-}
-
-.modal-close {
-    border: none;
-    background: none;
-    font-size: 18px;
-    color: #8a919f;
-    cursor: pointer;
-}
-
-.publish-body {
-    padding: 16px 20px;
-}
-
-.publish-textarea {
-    width: 100%;
-    min-height: 120px;
-    border: 1px solid #e4e6eb;
-    border-radius: 6px;
-    padding: 12px;
-    font-size: 14px;
-    resize: vertical;
-    outline: none;
-    &:focus {
-        border-color: #1e80ff;
+/* 响应式 */
+@media screen and (max-width: 768px) {
+    .detail-content {
+        flex-direction: column;
+        padding: 12px;
     }
-}
-
-.publish-tag {
-    margin-top: 12px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.tag-label {
-    font-size: 13px;
-    color: #8a919f;
-}
-
-.tag-value {
-    font-size: 13px;
-    color: #1e80ff;
-    background: #eaf2ff;
-    padding: 2px 8px;
-    border-radius: 4px;
-}
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding: 16px 20px;
-    border-top: 1px solid #e4e6eb;
-}
-
-.cancel-btn {
-    padding: 8px 20px;
-    border: 1px solid #e4e6eb;
-    border-radius: 4px;
-    background: #fff;
-    color: #515767;
-    font-size: 14px;
-    cursor: pointer;
-}
-
-.confirm-btn {
-    padding: 8px 20px;
-    border: none;
-    border-radius: 4px;
-    background: #1e80ff;
-    color: #fff;
-    font-size: 14px;
-    cursor: pointer;
+    .detail-sidebar {
+        width: 100%;
+    }
 }
 </style>
