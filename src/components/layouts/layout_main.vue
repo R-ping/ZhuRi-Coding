@@ -84,7 +84,7 @@
                             />
                         </div>
                         <span v-if="!isLoggedIn" class="header-btn login-btn" @click="showLogin">登录</span>
-                        <NotificationBell v-if="isLoggedIn" :unreadCount="unreadCount" @go-to-notification="goToNotification" />
+                        <NotificationBell v-if="isLoggedIn" :unreadTotal="unreadCount" :unreadCounts="unreadCounts" @go-to-notification="goToNotification" />
                         <div v-if="isLoggedIn" class="header-user" @click="toggleUserDropdown">
                             <img v-if="userAvatar" class="header-avatar" :src="userAvatar" alt="头像"/>
                             <span v-else class="header-avatar-default">&#xf007;</span>
@@ -309,6 +309,7 @@
                     totalOre: 0
                 },
                 unreadCount: 0,
+                unreadCounts: { comment: 0, digg: 0, follow: 0, system: 0 },
                 unreadTimer: null
             }
         },
@@ -756,6 +757,12 @@
                 request.get(conf.urls.get('notifications_unread'), {}).then(d => {
                     if (d && d.code === 200 && d.data) {
                         this.unreadCount = d.data.total || 0
+                        this.unreadCounts = {
+                            comment: d.data.comment || 0,
+                            digg: d.data.digg || 0,
+                            follow: d.data.follow || 0,
+                            system: d.data.system || 0
+                        }
                     }
                 }).catch(() => {})
             }

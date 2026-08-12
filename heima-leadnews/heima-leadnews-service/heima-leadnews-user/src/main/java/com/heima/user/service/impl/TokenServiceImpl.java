@@ -33,6 +33,7 @@ public class TokenServiceImpl implements TokenService {
         // 1. 生成 JWT access_token（1小时有效期）
         Map<String, Object> extraClaims = new HashMap<>();
         extraClaims.put("nickName", nickName);
+        extraClaims.put("image", image);
 //        extraClaims.put("phone", phone != null ? phone : "");
         String accessToken = AppJwtUtil.getToken(userId.longValue(), extraClaims);
         // 2. 生成 UUID refresh_token

@@ -74,6 +74,7 @@
       :selected="selectedCircle"
       @close="showCircleSelector = false"
       @select="selectCircle"
+      @confirm="onCircleConfirm"
     />
 
     <PinsTopicSelector
@@ -182,6 +183,12 @@ export default {
     },
     selectCircle(circle) {
       this.selectedCircle = circle
+    },
+    onCircleConfirm(circle) {
+      if (circle) {
+        this.selectedCircle = circle
+      }
+      this.showCircleSelector = false
     },
     selectTopic(topic) {
       this.selectedTopic = topic

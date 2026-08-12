@@ -14,6 +14,11 @@ public interface PinsPublicService {
     ResponseResult list(String tab, Integer page, Integer size);
 
     /**
+     * 沸点详情
+     */
+    ResponseResult detail(Long pinsId);
+
+    /**
      * 侧边栏
      */
     ResponseResult sidebar();
@@ -41,7 +46,7 @@ public interface PinsPublicService {
     /**
      * 评论列表
      */
-    ResponseResult commentList(Long pinsId, Integer page, Integer size);
+    ResponseResult commentList(Long pinsId, Integer page, Integer size, String sort);
 
     /**
      * 分享

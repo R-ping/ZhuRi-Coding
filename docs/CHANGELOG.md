@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## 2026-08-12 — 沸点详情页：发布浏览、评论交互与推荐侧边栏
+
+### 功能变更
+- **沸点详情页（新增 `detail.vue`）**：进入 `/pins/detail/:id`，左侧展示沸点原文卡片（作者头像/昵称/发布时间/内容/图片/链接/标签/操作栏），右侧展示「推荐沸点」侧边栏
+- **评论区**：支持「最新 | 热门」分栏切换（默认最新）；评论输入框悬浮背景加深、点击展开多行输入区与「发送」按钮、点击页外自动折叠；支持评论点赞与二级回复展示、加载更多
+- **推荐沸点侧边栏**：从沸点页「热门」分栏取前 3 条（排除当前沸点），鼠标悬浮约 300ms 后弹出完整内容悬浮框（头像/昵称/完整内容/图片/点赞评论数），移开即关闭，点击可跳转对应详情
+- **沸点列表页时间跳转**：沸点卡片上的「时间」文字悬浮高亮（变蓝加下划线），点击跳转到对应沸点详情页
+- **后端接口**：新增 `GET /api/v1/pins/{pinsId}` 沸点详情接口；评论列表接口 `GET /api/v1/pins/comment/list` 支持 `sort=latest|hot` 排序分页
+- **网关放行**：将沸点详情 `/pins/{pinsId}` 与评论列表 `/pins/comment/list` 只读接口加入公开白名单（利于 SEO 与未登录浏览），写接口（发布/点赞/发评论/分享）仍须登录
+
+### 修复
+- 修复「点击评论框不展开」：`.comment-input-wrap` 原缺少点击展开事件，新增 `@click="expandCommentBox"` 与 `expandCommentBox`/`focusCommentTextarea` 方法
+- 修复内容服务启动时 `NoSuchMethodError: ApPins.getShareCount()`：本地仓 model jar 过期，重新 `install` 模型模块后生效
+
+### 变更文件
+- 新增：`src/pages/pins/detail.vue`（沸点详情页）
+- 修改：`src/pages/pins/index.vue`（时间悬浮高亮与点击跳转）
+- 修改：`src/apis/pins.js`（新增 `getPinsDetail`）
+- 修改：`src/routers/home.js`（注册 `/pins/detail/:id` 路由）
+- 修改：`PinsPublicController.java` / `PinsPublicService.java` / `PinsPublicServiceImpl.java` / `PinsQueryService.java`（详情接口、评论排序）
+- 修改：`AuthorizeFilter.java`（网关放行沸点详情/评论列表只读接口）
+
+## 2026-08-12 — 修复沸点发布 topicTags 类型不匹配
+
+### 问题描述
+沸点发布失败，报 `HttpMessageNotReadableException: Cannot deserialize value of type java.lang.String from Array value`，链路为 `PinsPublishDTO["topicTags"]`。
+
+### 根因分析
+前端 `PinsPublishBox.vue` 发送的 `topicTags` 是数组（`[topicDisplayName]`），而后端 `PinsPublishDTO.topicTags` 声明为 `String`，导致 JSON 反序列化失败。
+
+### 修复方案
+- `PinsPublishDTO.topicTags` 由 `String` 改为 `List<String>`（标签语义为数组，与 `PinsVO.topicTags` 一致）
+- `PinsPublishService.getApPins` 中改为 `String.join(",", dto.getTopicTags())` 逗号拼接入库，与读取端 `parseStringList`（逗号拆分）一致
+
+### 变更文件
+- 修改：`PinsPublishDTO.java`（`topicTags` 改为 `List<String>`）
+- 修改：`PinsPublishService.java`（逗号拼接入库）
+
+## 2026-08-12 — 文章推荐服务重构：全局公平 + 多样性配额
+
+### 功能变更
+- **推荐策略重构**：从「质量排序 + 随机洗牌」改为「全局公平 + 多样性配额」——不做个性化，所有用户在同一频道/标签下看到一致、横向覆盖多技术栈的推荐
+- **候选池策略**：`selectRecommendCandidates` 增加时间窗口（默认最近 7 天），排序改为 `score DESC, publish_time DESC`，让优质内容优先进入候选，老优质内容不再被「最新 500 篇」排除
+- **全局配额贪心算法**：对评分降序候选做一次遍历，同一标签累计最多 `max-per-tag`（默认 2）篇、同一作者累计最多 `max-per-author`（默认 3）篇，配额计数跨页累计，避免「本页与下页同标签」；标签过集中时按评分追加补齐，保证列表可填满
+- **对数归一化**：`views/likes/comment/collection` 由「池内最大值线性归一化」改为「对数归一化 `log(1+x)/log(1+max)`」，弱化爆款压制，让长尾内容有生存空间
+- **确定分页**：同 seed + 稳定候选池 → 同一推荐序列 → 翻页稳定，解决原有跨页重复/遗漏
+- **可配置**：新增 `recommend.*` 配置段（`max-candidates`/`window-days`/`max-per-tag`/`max-per-author`/`untagged-bucket`），调参无需改代码
+
+### 变更文件
+- 修改：`ApArticleRecommendServiceImpl.java`（配额贪心、对数归一化、配置读取，替换随机洗牌）
+- 修改：`ApArticleMapper.java`（`selectRecommendCandidates` 增加 `windowDays` 参数）
+- 修改：`ApArticleMapper.xml`（时间窗口 + 评分排序）
+- 修改：`application.yml`（新增 `recommend.*` 配置段）
+- 新增（此前）：`参考资料/文章推荐服务——全局公平与多样性配额设计方案.md`（设计依据，不入版本控制）
+
 ## 2026-08-12 — 话题/圈子详情页交互与布局优化
 
 ### 功能变更

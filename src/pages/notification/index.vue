@@ -191,12 +191,23 @@
                     <div class="notification-list" v-else>
                         <div class="notification-item" v-for="item in systemList" :key="item.id">
                             <div class="notify-content system-content">
-                                <div class="notify-header">
-                                    <span class="system-type-tag" :class="'tag-' + (item.notificationType || 'system')">{{ getSystemTypeLabel(item.notificationType) }}</span>
-                                    <span class="notify-time">{{ formatTime(item.time) }}</span>
+                                <!-- 左侧产品/系统图标 -->
+                                <div class="system-icon-wrap">
+                                    <span class="system-icon">{{ getSystemIcon(item.notificationType) }}</span>
                                 </div>
-                                <div class="notify-text">{{ item.content }}</div>
-                                <a v-if="item.link" :href="item.link" class="notify-link" target="_blank">查看详情</a>
+                                <!-- 中间主体内容 -->
+                                <div class="system-main">
+                                    <div class="notify-header">
+                                        <span class="system-type-tag" :class="'tag-' + (item.notificationType || 'system')">{{ getSystemTypeLabel(item.notificationType) }}</span>
+                                    </div>
+                                    <div class="notify-text">{{ item.content }}</div>
+                                    <div class="notify-time">{{ formatTime(item.time) }}</div>
+                                </div>
+                                <!-- 右侧沸点概览 -->
+                                <div class="system-preview" v-if="item.preview">
+                                    <span class="preview-text">{{ item.preview.substring(0, 12) }}{{ item.preview.length > 12 ? '...' : '' }}</span>
+                                    <span class="preview-tag">沸点</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -345,6 +356,7 @@ export default {
                 userName: (item.trigger_user && item.trigger_user.name) || '用户',
                 action: item.action_type || '',
                 content: item.message || item.content_preview || '',
+                preview: item.preview || '',
                 articleTitle: item.target_title || item.title || '',
                 time: item.created_at ? new Date(item.created_at).getTime() : Date.now(),
                 isLiked: item.is_liked_by_me || false,
@@ -354,7 +366,7 @@ export default {
                 targetType: item.target_type,
                 targetId: item.target_id,
                 isRead: item.is_read,
-                notificationType: item.notification_type || '',
+                notificationType: item.notification_type || item.type || '',
                 link: item.link || ''
             }
         },
@@ -563,6 +575,11 @@ export default {
                 'system': '系统'
             }
             return labels[type] || '系统'
+        },
+        getSystemIcon(type) {
+            // 返回 FontAwesome 图标类名
+            if (type === 'activity') return 'fa-bullhorn'
+            return 'fa-bell'
         }
     }
 }
@@ -999,6 +1016,62 @@ export default {
 
 .system-content {
     padding-left: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.system-icon-wrap {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #4096ff 0%, #1e80ff 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.system-icon {
+    color: #fff;
+    font-size: 20px;
+}
+
+.system-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.system-preview {
+    flex-shrink: 0;
+    width: 140px;
+    padding: 8px 10px;
+    background: #f5f7fa;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.preview-text {
+    font-size: 13px;
+    color: #515767;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.preview-tag {
+    font-size: 11px;
+    color: #1e80ff;
+    background: #e8f3ff;
+    padding: 1px 6px;
+    border-radius: 3px;
+    align-self: flex-start;
 }
 
 .system-type-tag {

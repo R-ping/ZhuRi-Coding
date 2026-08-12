@@ -20,6 +20,7 @@ const UserHistory = () => import('@/pages/user/history/index')
 const Notification = () => import('@/pages/notification/index')
 const Pins = () => import('@/pages/pins/index.vue')
 const PinsCircles = () => import('@/pages/pins/circles.vue')
+const PinsDetail = () => import('@/pages/pins/detail.vue')
 const Course = () => import('@/pages/course/index.vue')
 const CourseDetail = () => import('@/pages/course/detail.vue')
 const CourseRead = () => import('@/pages/course/read.vue')
@@ -107,6 +108,11 @@ let routes = [
                 path:'/pins',
                 name:'pins',
                 component:Pins
+            },
+            {
+                path:'/pins/detail/:id',
+                name:'pins-detail',
+                component:PinsDetail
             },
             {
                 path:'/pins/circles',

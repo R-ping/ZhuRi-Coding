@@ -28,7 +28,7 @@ public class ApArticleConfig implements Serializable {
         this.isDown = false;
         this.isForward = true;
         this.isComment = true;
-        this.isRecommend = true;
+        this.isRecommend = false;
     }
 
 

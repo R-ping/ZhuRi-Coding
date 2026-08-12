@@ -50,6 +50,15 @@ public class PinsPublicController {
     }
 
     /**
+     * 沸点详情
+     */
+    @GetMapping("/{pinsId}")
+    public ResponseResult detail(@PathVariable Long pinsId) {
+        log.info("获取沸点详情, pinsId={}", pinsId);
+        return pinsPublicService.detail(pinsId);
+    }
+
+    /**
      * 侧边栏
      */
     @GetMapping("/sidebar")
@@ -129,12 +138,13 @@ public class PinsPublicController {
     @GetMapping("/comment/list")
     public ResponseResult commentList(
             @RequestParam Long pinsId,
+            @RequestParam(defaultValue = "latest") String sort,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
         if (page < 1) page = 1;
         if (size < 1 || size > 50) size = 10;
-        log.info("获取沸点评论列表, pinsId={}, page={}, size={}", pinsId, page, size);
-        return pinsPublicService.commentList(pinsId, page, size);
+        log.info("获取沸点评论列表, pinsId={}, sort={}, page={}, size={}", pinsId, sort, page, size);
+        return pinsPublicService.commentList(pinsId, page, size, sort);
     }
 
     /**

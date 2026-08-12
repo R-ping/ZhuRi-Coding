@@ -3,6 +3,9 @@ package com.heima.model.pins.dtos;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 发布沸点请求 DTO
  */
@@ -14,7 +17,7 @@ public class PinsPublishDTO {
 
     private String imageUrls = "";
 
-    private String topicTags = "";
+    private List<String> topicTags = new ArrayList<>();
 
     private Long topicId;
 

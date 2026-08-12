@@ -8,31 +8,45 @@
       <div class="circle-search">
         <input type="text" class="search-input" placeholder="搜索圈子名称" v-model="searchKeyword">
       </div>
-      <div class="circle-list">
+      <!-- 分类标签页 -->
+      <div class="circle-tabs">
+        <div
+          class="circle-tab"
+          v-for="cat in categories"
+          :key="cat.id"
+          :class="{ 'active': activeCategory === cat.id }"
+          @click="switchCategory(cat.id)"
+        >{{ cat.name }}</div>
+      </div>
+      <div class="circle-list" ref="circleListRef">
+        <div class="loading-tip" v-if="loading">{{ loadingText }}</div>
         <div
           class="circle-card"
           v-for="circle in filteredCircles"
           :key="circle.id"
           :class="{ 'selected': selected && selected.id === circle.id }"
-          @click="$emit('select', circle)"
+          @click="handleSelect(circle)"
         >
           <div class="circle-icon">{{ circle.icon || '📌' }}</div>
           <div class="circle-info">
             <div class="circle-name">{{ circle.name }}</div>
-            <div class="circle-stats">{{ circle.memberCount }} 掘友 · {{ circle.pinsCount }} 沸点</div>
+            <div class="circle-stats">{{ circle.memberCount || 0 }} 掘友 · {{ circle.pinsCount || 0 }} 沸点</div>
           </div>
           <div class="circle-check" v-if="selected && selected.id === circle.id">&#xf00c;</div>
         </div>
+        <div class="empty-tip" v-if="!loading && filteredCircles.length === 0">暂无圈子</div>
       </div>
       <div class="modal-footer">
         <button class="cancel-btn" @click="$emit('close')">不选择圈子</button>
-        <button class="confirm-btn" @click="$emit('close')">确认</button>
+        <button class="confirm-btn" @click="handleConfirm">确认</button>
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import request from '@/common/article_request'
+
 export default {
   name: 'PinsCircleSelector',
   props: {
@@ -40,12 +54,93 @@ export default {
     selected: { type: Object, default: null }
   },
   data() {
-    return { searchKeyword: '' }
+    return {
+      searchKeyword: '',
+      loading: false,
+      loadingText: '加载中...',
+      activeCategory: 'recommend',
+      categories: [
+        { id: 'recommend', name: '推荐圈子' },
+        { id: 'hot', name: '人气圈子' },
+        { id: 'my', name: '我的圈子' }
+      ],
+      circleMap: {
+        recommend: [],
+        hot: [],
+        my: []
+      },
+      localSelected: null
+    }
   },
   computed: {
     filteredCircles() {
-      if (!this.searchKeyword) return this.circles
-      return this.circles.filter(c => c.name.includes(this.searchKeyword))
+      var list = this.circleMap[this.activeCategory] || this.circles
+      if (!this.searchKeyword) return list
+      var kw = this.searchKeyword.toLowerCase()
+      return list.filter(function(c) { return c.name && c.name.toLowerCase().includes(kw) })
+    }
+  },
+  created() {
+    this.localSelected = this.selected || null
+    this.loadCategories()
+  },
+  methods: {
+    async loadCategories() {
+      await this.loadCategory('recommend', '/api/v1/circle/recommend')
+      await this.loadCategory('hot', '/api/v1/circle/hot')
+      await this.loadCategory('my', '/api/v1/circle/my')
+    },
+    async loadCategory(key, url) {
+      this.loading = true
+      this.loadingText = '加载中...'
+      try {
+        var res = await request.get(url)
+        if (res && (res.code === 200 || res.code === 0)) {
+          var data = res.data
+          var list = []
+          if (Array.isArray(data)) {
+            list = data
+          } else if (data && Array.isArray(data.records)) {
+            list = data.records
+          } else if (data && Array.isArray(data.list)) {
+            list = data.list
+          } else if (data && Array.isArray(data.circles)) {
+            list = data.circles
+          }
+          this.circleMap[key] = this.normalizeCircles(list)
+        } else {
+          this.circleMap[key] = this.circles.length > 0 ? this.circles : []
+        }
+      } catch (e) {
+        this.circleMap[key] = this.circles.length > 0 ? this.circles : []
+      } finally {
+        this.loading = false
+      }
+    },
+    normalizeCircles(list) {
+      var self = this
+      return (list || []).map(function(c) {
+        return {
+          id: c.id || c.circleId,
+          name: c.name || c.circleName || '',
+          icon: c.icon || c.cover || '',
+          memberCount: c.memberCount || c.member_count || 0,
+          pinsCount: c.pinsCount || c.pins_count || c.postCount || 0
+        }
+      })
+    },
+    switchCategory(catId) {
+      if (this.activeCategory === catId) return
+      this.activeCategory = catId
+      this.searchKeyword = ''
+    },
+    handleSelect(circle) {
+      this.localSelected = circle
+      this.$emit('select', circle)
+    },
+    handleConfirm() {
+      this.$emit('confirm', this.localSelected)
+      this.$emit('close')
     }
   }
 }
@@ -107,6 +202,28 @@ export default {
   padding: 12px 20px;
 }
 
+.circle-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid #f2f3f5;
+}
+
+.circle-tab {
+  padding: 10px 16px;
+  font-size: 14px;
+  color: #515767;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  &:hover { color: #252933; }
+  &.active {
+    color: #1e80ff;
+    border-bottom-color: #1e80ff;
+    font-weight: 500;
+  }
+}
+
 .search-input {
   width: 100%;
   padding: 10px 14px;
@@ -121,6 +238,14 @@ export default {
   padding: 12px 20px;
   max-height: 300px;
   overflow-y: auto;
+}
+
+.loading-tip,
+.empty-tip {
+  text-align: center;
+  padding: 40px 0;
+  color: #8a919f;
+  font-size: 14px;
 }
 
 .circle-card {
