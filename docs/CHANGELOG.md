@@ -1,5 +1,71 @@
 # CHANGELOG
 
+## 2026-08-12 — 登录态修复：刷新失败不再强制登出
+
+### Bug 修复
+- **频繁掉登录**：`src/common/tokenManager.js` 刷新逻辑重构。此前网络超时/服务 5xx/瞬时异常都会触发 `logout`，导致 access_token 每次过期刷新时若服务重启即被踢下线。现调整为：
+  - 仅当服务器**明确返回 token 无效**（如 refresh_token 已失效）时才登出并弹窗；
+  - 网络异常/超时/5xx 做**有限重试（2 次，间隔 800ms）**，仍失败仅驳回当前请求、**保留登录态**，由下次请求再触发刷新。
+
+### 变更文件
+- 前端：`src/common/tokenManager.js`
+
+## 2026-08-12 — 沸点列表增强：圈子显示、定时刷新、话题/圈子跳转
+
+### 功能变更
+- **圈子名称显示**：`PinsVO` 新增 `circleId` / `circleName` / `topicId` 字段；`PinsQueryService.convertToVO` 通过 `ap_circle` 批量查询圈子名称（避免 N+1），前端列表与详情页可正常展示所选圈子
+- **15s 定时轮询**：新增前端定时刷新（15s），对「最新」分栏静默拉取第一页并将新沸点插入顶部、按 id 去重，不打断滚动加载；发布成功（异步审核）后亦触发一次轮询，审核通过的沸点会自动出现，他人沸点帖无需手动刷新
+- **话题 / 圈子点击跳转**：列表与详情页的圈子标签、话题标签均可点击，分别跳转 `/pins/circle/:id` 与 `/pin/topic/:id` 详情页
+
+### Bug 修复
+- 沸点列表 `pins-circle` 标签由 `v-if="pins.circleName"` 改为 `v-if="pins.circleId"`，避免仅凭名称判断导致跳转链接缺失
+
+### 变更文件
+- 后端 model：`PinsVO.java`
+- 后端 content：`PinsQueryService.java`
+- 前端：`src/pages/pins/index.vue`、`src/pages/pins/detail.vue`
+
+## 2026-08-12 — 沸点发布图片上传报错修复
+
+### Bug 修复
+- **沸点发布附带图片报错**：前端发布沸点时 `imageUrls` 以数组（`List<String>`）提交，但 `PinsPublishDTO` 中该字段为 `String`，导致 Jackson 反序列化失败（`HttpMessageNotReadableException: Cannot deserialize value of type java.lang.String from Array value`）。修复：将 `PinsPublishDTO.imageUrls` 改为 `List<String>`，发布服务入库时以逗号拼接（与 `topicTags` 一致），数据库仍存逗号分隔字符串，查询/审核拆分逻辑不变
+
+### 变更文件
+- 修改：`PinsPublishDTO.java`（`imageUrls` `String` → `List<String>`）
+- 修改：`PinsPublishService.java`（`getApPins` 中 `String.join(",", dto.getImageUrls())` 入库）
+
+## 2026-08-12 — 评论站内信 / 文章评论 / 圈子弹窗 / 站内信计数 / 文章列表 / 网关编码
+
+### 功能变更
+- **评论站内信对齐**：`NotificationProcessor` 生成的评论通知 content 与前端对接，字段统一为 `trigger_user{name,avatar}`、`action_type`、`message`（评论摘要）、`target_title`、`target_type`、`target_id`、`comment_id`；`ApCommentServiceImpl` 文章评论/回复三处补齐触发 `COMMENT_ARTICLE` 行为事件（含自评论过滤），沸点评论触发 `COMMENT_PIN` 正常，目标用户均能收到「评论」站内信
+- **文章评论增强**（`article-static.js` / `article.ftl`）：二级回复入口、评论可发图片/表情（复用 OSS `post_signature` 直传）、字数限制 1000、时间分钟级显示
+- **站内信按类型清除计数**：新增 `POST /api/v1/notifications/mark-type-read?type=...`，将指定类型未读置为已读并从 Redis 总未读计数扣除；前端进入某类型通知页时调用，不影响其他类型计数
+- **圈子弹窗修复**：左侧分类去重（不再重复出现「推荐圈子」）；选中圈子高亮 + 勾选标识；「不选择圈子」清除已选并关闭弹窗（父组件同步清空）
+- **首页文章列表**：推荐分栏不显示时间、最新分栏显示分钟级时间；卡片右侧补封面区、展示阅读计数与发布关联标签
+- **网关请求头中文编码**：网关写 nickName 时 `URLEncoder.encode`，各服务拦截器（content/user/notification/search）读取时 `URLDecoder.decode`，解决中文昵称乱码
+
+### 变更文件
+- 后端 content：`NotificationProcessor.java`、`ApCommentServiceImpl.java`（文章评论行为触发）
+- 后端 notification：`NotificationController.java`、`NotificationServiceImpl.java`、`NotificationService.java`、`NotificationMapper.java`、`NotificationMapper.xml`（按类型清除计数）
+- 网关/拦截器：`AuthorizeFilter.java`（编码）、content/user/notification/search 四服务 `*TokenInterceptor.java`（解码）
+- 前端：`src/pages/pins/detail.vue`、`src/pages/creator/pins/components/PinsCircleSelector.vue`、`src/pages/creator/pins/index.vue`、`src/pages/notification/index.vue`、`src/components/layouts/layout_main.vue`、`src/components/bars/home_bar.vue`、`src/common/conf.js`、`src/pages/home/index.vue`、`src/pages/home/mixins/feedMixin.js`、`src/components/cells/article_0/1/3.vue`
+
+## 2026-08-12 — 沸点评论功能增强（二级回复、图片/表情、1000字、分钟级时间）
+
+### 功能变更
+- **二级评论继续回复**：每条二级回复项新增「回复」按钮，点击进入回复该二级回复状态；提交时 `parentId` 指向其所属顶级评论，并携带 `replyToUserId`/`replyToUserName` 用于「回复 @xxx」样式展示；评论框顶部显示回复目标提示栏，可取消
+- **评论发图片/表情**：评论输入框新增表情选择面板与图片上传按钮，图片复用阿里云 OSS 直传方案（`oss_upload.js` 的 `uploadFile`），图片 URL 以 `imageUrls` 列表随评论提交，评论与回复内容均可展示图片
+- **字数限制 1000 字**：前端评论框 `maxlength=1000` 并实时字数统计（超限变红提醒），后端 `createComment` 校验内容长度 ≤1000（超限返回参数错误）
+- **分钟级时间**：新增分钟级 `formatTime`（1分钟内「刚刚」，向下取整到 59 分钟为「X分钟前」，满 1 小时「X小时前」，满 1 天「X天前」，满 1 月「X个月前」），评论列表与二级回复项统一使用
+- **后端模型**：`ap_pins_comment` 表新增 `image_urls`、`reply_to_user_id`、`reply_to_user_name` 三列，关联实体/ DTO / VO 同步扩展
+
+### 变更文件
+- 修改：`src/pages/pins/detail.vue`（二级回复、图片/表情上传、1000字、分钟级时间）
+- 修改：`PinsInteractionService.java`（createComment 校验 1000 字、图片/回复字段写入）
+- 修改：`PinsQueryService.java`（convertCommentToVO 输出 imageUrls / replyTo 字段）
+- 修改：`ApPinsComment.java` / `PinsCommentDTO.java` / `PinsCommentVO.java`（新增字段）
+- 新增：`docs/alter_ap_pins_comment_add_image_reply.sql`（表结构变更脚本）
+
 ## 2026-08-12 — 沸点详情页：发布浏览、评论交互与推荐侧边栏
 
 ### 功能变更

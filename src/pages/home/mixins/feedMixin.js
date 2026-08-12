@@ -149,6 +149,11 @@ export default {
               ims = imagesStr
             }
           }
+          // 无多图时，用单张封面作为卡片右侧封面
+          var coverImage = item.coverImage || ''
+          if (ims.length === 0 && coverImage) {
+            ims = [coverImage]
+          }
           var pubTime = item.publishTime
           if (pubTime) {
             if (typeof pubTime === 'string') {
@@ -164,11 +169,14 @@ export default {
             id: item.id,
             title: item.title || '',
             comment: item.comment || 0,
+            views: item.views || 0,
             authorId: item.authorId,
             source: item.authorName || '',
             date: pubTime,
             type: articleType,
             image: ims,
+            coverImage: coverImage,
+            tags: item.tags || [],
             icon: '\uf06d',
             staticUrl: item.staticUrl || ''
           }

@@ -21,6 +21,9 @@ public class PinsCommentVO {
     private String userAvatar = "";
     private Long parentId;
     private String content = "";
+    private List<String> imageUrls = new ArrayList<>();
+    private Integer replyToUserId;
+    private String replyToUserName = "";
     private Integer likeCount = 0;
     private Integer replyCount = 0;
     private List<PinsCommentVO> replies = new ArrayList<>();

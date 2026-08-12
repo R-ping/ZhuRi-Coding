@@ -15,7 +15,7 @@ public class PinsPublishDTO {
 
     private String content = "";
 
-    private String imageUrls = "";
+    private List<String> imageUrls = new ArrayList<>();
 
     private List<String> topicTags = new ArrayList<>();
 

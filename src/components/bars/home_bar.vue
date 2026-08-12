@@ -219,11 +219,17 @@
             }
             document.addEventListener('click', this.closeDropdown)
             document.addEventListener('keydown', this.escClose)
+            // 站内信按类型清除未读后，立即刷新顶部铃铛总未读数
+            this.onUnreadCleared = () => this.fetchUnreadCount()
+            window.addEventListener('notification-unread-cleared', this.onUnreadCleared)
         },
         beforeDestroy() {
             if (this.unreadTimer) {
                 clearInterval(this.unreadTimer)
                 this.unreadTimer = null
+            }
+            if (this.onUnreadCleared) {
+                window.removeEventListener('notification-unread-cleared', this.onUnreadCleared)
             }
             document.removeEventListener('click', this.closeDropdown)
             document.removeEventListener('keydown', this.escClose)

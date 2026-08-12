@@ -13,7 +13,9 @@ public class AppThreadLocalUtil {
 
     //从线程中获取
     public static ApUser getUser(){
-        return WM_USER_THREAD_LOCAL.get();
+        ApUser apUser = WM_USER_THREAD_LOCAL.get();
+//        System.out.println("线程中的用户信息："+apUser);
+        return apUser;
     }
 
     //清理

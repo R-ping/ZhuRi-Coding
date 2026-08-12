@@ -43,13 +43,7 @@
         if (diff < 60) return '刚刚';
         if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
         if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
-        if (diff < 172800) return '昨天';
-        var m = (d.getMonth() + 1);
-        var day = d.getDate();
-        if (d.getFullYear() === now.getFullYear()) {
-            return m + '-' + day;
-        }
-        return d.getFullYear() + '-' + m + '-' + day;
+        return Math.floor(diff / 86400) + '天前';
     }
 
     function escapeHtml(text) {
@@ -57,6 +51,23 @@
         var div = document.createElement('div');
         div.appendChild(document.createTextNode(text));
         return div.innerHTML;
+    }
+
+    // 渲染评论内容：将 ![alt](url) 图片语法渲染为 <img>，其余内容转义
+    function renderContent(content) {
+        if (!content) return '';
+        var parts = String(content).split(/!\[([^\]]*)\]\(([^)]+)\)/);
+        var html = '';
+        for (var i = 0; i < parts.length; i++) {
+            if (i % 3 === 1) continue; // alt 文本
+            if (i % 3 === 2) {
+                var url = parts[i].trim();
+                html += '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(parts[i - 1]) + '" class="comment-image">';
+                continue;
+            }
+            html += escapeHtml(parts[i]);
+        }
+        return html;
     }
 
     function apiGet(url) {
@@ -614,6 +625,8 @@
     var commentLoading = false;
     var replyToCommentId = null;
     var replyToRootId = null;
+    var commentImages = [];   // 主评论框待提交图片
+    var replyImages = [];     // 回复框待提交图片
 
     // 检查登录状态
     function checkCommentLogin() {
@@ -621,18 +634,24 @@
         var submitBtn = document.getElementById('commentSubmitBtn');
         var loginTip = document.getElementById('loginTip');
         var avatar = document.getElementById('commentUserAvatar');
+        var emojiBtn = document.getElementById('commentEmojiBtn');
+        var imageBtn = document.getElementById('commentImageBtn');
         if (isLoggedIn()) {
             textarea.disabled = false;
             textarea.placeholder = '写下你的评论...';
             submitBtn.disabled = false;
             loginTip.style.display = 'none';
             avatar.src = '';
+            if (emojiBtn) emojiBtn.disabled = false;
+            if (imageBtn) imageBtn.disabled = false;
         } else {
             textarea.disabled = true;
             textarea.placeholder = '登录后参与评论';
             submitBtn.disabled = true;
             loginTip.style.display = 'block';
             avatar.src = '';
+            if (emojiBtn) emojiBtn.disabled = true;
+            if (imageBtn) imageBtn.disabled = true;
         }
     }
     checkCommentLogin();
@@ -650,13 +669,13 @@
         html += '<span class="comment-user-name">' + escapeHtml(userName) + '</span>';
         html += '<span class="comment-user-time">' + formatTime(comment.ctime) + '</span>';
         html += '</div>';
-        html += '<div class="comment-content">' + escapeHtml(comment.content) + '</div>';
+        html += '<div class="comment-content">' + renderContent(comment.content) + '</div>';
         html += '<div class="comment-actions">';
         html += '<button class="comment-action-btn comment-like-btn' + (comment.isDigg ? ' active' : '') + '" data-comment-id="' + comment.commentId + '">';
         html += '<svg viewBox="0 0 24 24"><path d="M2 20h2v-9H2v9zm20-9c0-1.1-.9-2-2-2h-3.17c-.53-1.4-1.53-2.56-2.83-3.09V4c0-1.66-1.34-3-3-3S8 2.34 8 4v1.91C5.94 6.56 4.5 8.69 4.5 11v6.17l-1.83 1.83L4.17 20h12.5c1.66 0 3.08-1.03 3.65-2.5H22v-6.5z"/></svg>';
         html += '<span>' + (comment.diggCount || 0) + '</span>';
         html += '</button>';
-        html += '<button class="comment-action-btn comment-reply-btn" data-comment-id="' + comment.commentId + '">';
+        html += '<button class="comment-action-btn comment-reply-btn" data-comment-id="' + comment.commentId + '" data-root-id="' + comment.commentId + '">';
         html += '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
         html += '<span>回复</span>';
         html += '</button>';
@@ -670,7 +689,12 @@
             html += '<div class="reply-list">';
             showReplies.forEach(function(reply) {
                 var replyUser = reply.userInfo || {};
-                html += '<div class="reply-item"><span class="reply-user">' + escapeHtml(replyUser.userName || '匿名') + '：</span>' + escapeHtml(reply.content) + '</div>';
+                // 二级回复项：支持继续回复，携带 parentId(reply.commentId) 与 rootId(一级评论ID)
+                html += '<div class="reply-item" data-comment-id="' + reply.commentId + '">';
+                html += '<span class="reply-user">' + escapeHtml(replyUser.userName || '匿名') + '：</span>';
+                html += renderContent(reply.content);
+                html += '<button class="reply-action-btn comment-reply-btn" data-comment-id="' + reply.commentId + '" data-root-id="' + comment.commentId + '">回复</button>';
+                html += '</div>';
             });
             html += '</div>';
             if (hasMoreReplies) {
@@ -735,6 +759,16 @@
             btn.removeEventListener('click', handleShowMoreReplies);
             btn.addEventListener('click', handleShowMoreReplies);
         });
+        // 评论图片点击 → 灯箱放大
+        document.querySelectorAll('.comment-image').forEach(function(img) {
+            if (img._lbBound) return;
+            img._lbBound = true;
+            img.addEventListener('click', function() {
+                lightboxImage.src = this.src;
+                imageLightbox.classList.add('open');
+                document.body.style.overflow = 'hidden';
+            });
+        });
     }
 
     function handleCommentLike(e) {
@@ -759,6 +793,8 @@
         e.stopPropagation();
         var btn = e.currentTarget;
         var commentId = btn.getAttribute('data-comment-id');
+        // 二级评论继续回复时，root 为一级评论ID；一级评论回复时 root 即自身
+        var rootId = btn.getAttribute('data-root-id') || commentId;
         if (!isLoggedIn()) {
             openLoginModal();
             return;
@@ -767,28 +803,70 @@
         var existing = document.querySelector('.reply-input-area');
         if (existing) existing.remove();
         replyToCommentId = commentId;
-        replyToRootId = commentId;
+        replyToRootId = rootId;
+        replyImages = [];
         var area = document.createElement('div');
         area.className = 'reply-input-area';
-        area.innerHTML = '<input type="text" placeholder="写下你的回复..." id="replyInput">' +
-            '<button class="reply-send-btn" id="replySendBtn">发送</button>' +
-            '<button class="reply-cancel-btn" id="replyCancelBtn">取消</button>';
-        btn.parentNode.parentNode.appendChild(area);
-        document.getElementById('replyInput').focus();
-        document.getElementById('replySendBtn').addEventListener('click', function() {
-            sendReply();
-        });
+        area.innerHTML =
+            '<textarea id="replyInput" placeholder="写下你的回复..." maxlength="1000"></textarea>' +
+            '<div class="reply-image-preview" id="replyImagePreview"></div>' +
+            '<div class="reply-input-footer">' +
+            '<button type="button" class="comment-tool-btn reply-emoji-btn" title="表情">😊</button>' +
+            '<button type="button" class="comment-tool-btn reply-image-btn" title="图片">图片</button>' +
+            '<input type="file" class="reply-image-input" accept="image/*" style="display:none;">' +
+            '<span class="comment-char-count"><span class="reply-char-count">0</span>/1000</span>' +
+            '<button type="button" class="reply-send-btn" id="replySendBtn">发送</button>' +
+            '<button type="button" class="reply-cancel-btn" id="replyCancelBtn">取消</button>' +
+            '</div>';
+        (btn.closest('.comment-item') || btn.parentNode.parentNode).appendChild(area);
+        var replyInput = document.getElementById('replyInput');
+        replyInput.focus();
+        document.getElementById('replySendBtn').addEventListener('click', sendReply);
         document.getElementById('replyCancelBtn').addEventListener('click', function() {
             area.remove();
             replyToCommentId = null;
             replyToRootId = null;
+            replyImages = [];
         });
-        document.getElementById('replyInput').addEventListener('keydown', function(ev) {
-            if (ev.key === 'Enter') {
+        replyInput.addEventListener('keydown', function(ev) {
+            if (ev.key === 'Enter' && !ev.shiftKey) {
                 ev.preventDefault();
                 sendReply();
             }
         });
+        // 字数统计
+        replyInput.addEventListener('input', function() {
+            var countEl = area.querySelector('.reply-char-count');
+            if (countEl) countEl.textContent = replyInput.value.length;
+        });
+        // 表情
+        var emojiBtn = area.querySelector('.reply-emoji-btn');
+        if (emojiBtn) {
+            emojiBtn.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                openEmojiPicker(emojiBtn, replyInput);
+            });
+        }
+        // 图片
+        var imgBtn = area.querySelector('.reply-image-btn');
+        var imgInput = area.querySelector('.reply-image-input');
+        if (imgBtn) {
+            imgBtn.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                imgInput.click();
+            });
+        }
+        if (imgInput) {
+            imgInput.addEventListener('change', function() {
+                var file = imgInput.files[0];
+                if (!file) return;
+                imgInput.value = '';
+                uploadCommentImage(file, function(url) {
+                    replyImages.push(url);
+                    renderImagePreview(area.querySelector('#replyImagePreview'), replyImages);
+                });
+            });
+        }
     }
 
     function handleShowMoreReplies(e) {
@@ -802,7 +880,7 @@
 
     function sendReply() {
         var input = document.getElementById('replyInput');
-        var content = input.value.trim();
+        var content = buildCommentContent(input.value.trim(), replyImages);
         if (!content) return;
         if (!replyToCommentId) return;
         var body = { content: content };
@@ -817,6 +895,7 @@
                 if (area) area.remove();
                 replyToCommentId = null;
                 replyToRootId = null;
+                replyImages = [];
                 // 重新加载评论
                 commentCursor = '';
                 loadComments(false);
@@ -835,7 +914,7 @@
                 return;
             }
             var textarea = document.getElementById('commentTextarea');
-            var content = textarea.value.trim();
+            var content = buildCommentContent(textarea.value.trim(), commentImages);
             if (!content) {
                 alert('请输入评论内容');
                 return;
@@ -848,6 +927,9 @@
                 btn.textContent = '发表评论';
                 if (res && res.code === 200) {
                     textarea.value = '';
+                    commentImages = [];
+                    renderImagePreview(document.getElementById('commentImagePreview'), commentImages);
+                    updateCommentCharCount();
                     commentCursor = '';
                     loadComments(false);
                     commentCount++;
@@ -860,6 +942,174 @@
                 btn.textContent = '发表评论';
                 console.error('评论失败:', err);
                 alert('评论失败，请稍后重试');
+            });
+        });
+    }
+
+    // ========== 评论图片（OSS web 直传）/ 表情 ==========
+    var emojiList = [
+        '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂',
+        '😉', '😌', '😍', '🥰', '😘', '😗', '😋', '😛', '😜', '🤪',
+        '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐', '😑',
+        '😶', '😏', '😒', '🙄', '😬', '😪', '😮', '🤯', '😴', '🤤',
+        '😭', '😤', '😡', '🤬', '😈', '💀', '💩', '🤡', '👻', '👽',
+        '🤖', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾',
+        '🙈', '🙉', '🙊', '💋', '💌', '💘', '💝', '💖', '💗', '💓',
+        '💞', '💕', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍',
+        '💯', '🔥', '⭐', '👍', '👎', '👏', '🙌', '🤝', '💪', '✍️',
+        '🎉', '🎊', '🎈', '✨', '🌟', '💥', '☀️', '🌙', '⚡', '💧'
+    ];
+    var commentEmojiPicker = null;
+    var activeEmojiTextarea = null;
+
+    // 构建评论提交内容：文本 + 图片（![image](url) 语法）
+    function buildCommentContent(text, images) {
+        var content = text;
+        if (images && images.length > 0) {
+            if (content) content += '\n';
+            content += images.map(function(u) { return '![image](' + u + ')'; }).join('\n');
+        }
+        return content;
+    }
+
+    // OSS web 直传：复用 /content/api/v1/media/oss/post_signature 签名方案
+    function uploadCommentImage(file, onDone) {
+        if (!file) return;
+        apiGet('/content/api/v1/media/oss/post_signature').then(function(res) {
+            if (!res || res.code !== 200 || !res.data) {
+                throw new Error('获取上传签名失败');
+            }
+            var data = res.data;
+            var ext = file.name.substring(file.name.lastIndexOf('.'));
+            var objectKey = data.dir + Date.now() + '_' + Math.random().toString(36).substring(2, 8) + ext;
+            var formData = new FormData();
+            formData.append('name', file.name);
+            formData.append('key', objectKey);
+            formData.append('policy', data.policy);
+            formData.append('OSSAccessKeyId', data.ossAccessKeyId);
+            formData.append('success_action_status', '200');
+            formData.append('signature', data.signature);
+            formData.append('file', file);
+            return fetch(data.host, { method: 'POST', body: formData, mode: 'no-cors' }).then(function() {
+                return { host: data.host, objectKey: objectKey };
+            });
+        }).then(function(info) {
+            // 获取可访问 URL（优先签名URL，失败则回落 host+key）
+            return apiGet('/content/api/v1/media/oss/presigned_url?key=' + encodeURIComponent(info.objectKey)).then(function(pres) {
+                if (pres && pres.code === 200 && pres.data && pres.data.url) {
+                    onDone(pres.data.url);
+                } else {
+                    onDone(info.host + '/' + info.objectKey);
+                }
+            });
+        }).catch(function(err) {
+            console.error('评论图片上传失败:', err);
+            alert('图片上传失败，请重试');
+        });
+    }
+
+    // 渲染图片预览缩略图（带删除）
+    function renderImagePreview(previewEl, images) {
+        if (!previewEl) return;
+        previewEl.innerHTML = '';
+        (images || []).forEach(function(url, idx) {
+            var item = document.createElement('div');
+            item.className = 'preview-item';
+            var img = document.createElement('img');
+            img.src = url;
+            img.alt = '预览';
+            var rm = document.createElement('span');
+            rm.className = 'preview-remove';
+            rm.textContent = '×';
+            rm.addEventListener('click', function() {
+                images.splice(idx, 1);
+                renderImagePreview(previewEl, images);
+            });
+            item.appendChild(img);
+            item.appendChild(rm);
+            previewEl.appendChild(item);
+        });
+    }
+
+    // 初始化全局表情选择器
+    function ensureEmojiPicker() {
+        if (commentEmojiPicker) return;
+        commentEmojiPicker = document.createElement('div');
+        commentEmojiPicker.className = 'comment-emoji-picker';
+        var grid = document.createElement('div');
+        grid.className = 'comment-emoji-grid';
+        emojiList.forEach(function(emo) {
+            var s = document.createElement('span');
+            s.className = 'comment-emoji-item';
+            s.textContent = emo;
+            s.addEventListener('click', function() {
+                insertEmoji(emo);
+            });
+            grid.appendChild(s);
+        });
+        commentEmojiPicker.appendChild(grid);
+        document.body.appendChild(commentEmojiPicker);
+        document.addEventListener('click', function(ev) {
+            if (commentEmojiPicker && !commentEmojiPicker.contains(ev.target)) {
+                commentEmojiPicker.style.display = 'none';
+            }
+        });
+    }
+
+    // 打开表情选择器（锚定在按钮下方）
+    function openEmojiPicker(anchorEl, textareaEl) {
+        ensureEmojiPicker();
+        activeEmojiTextarea = textareaEl;
+        var rect = anchorEl.getBoundingClientRect();
+        var left = rect.left;
+        if (left + 320 > window.innerWidth) left = window.innerWidth - 320;
+        commentEmojiPicker.style.top = (rect.bottom + 4) + 'px';
+        commentEmojiPicker.style.left = left + 'px';
+        commentEmojiPicker.style.display = 'block';
+    }
+
+    // 插入表情到活动输入框
+    function insertEmoji(emo) {
+        var ta = activeEmojiTextarea;
+        if (!ta) return;
+        var start = ta.selectionStart;
+        var end = ta.selectionEnd;
+        ta.value = ta.value.substring(0, start) + emo + ta.value.substring(end);
+        ta.selectionStart = ta.selectionEnd = start + emo.length;
+        ta.focus();
+        if (commentEmojiPicker) commentEmojiPicker.style.display = 'none';
+    }
+
+    // 主评论框表情/图片/字数
+    function updateCommentCharCount() {
+        var textarea = document.getElementById('commentTextarea');
+        var countEl = document.getElementById('commentCharCount');
+        if (textarea && countEl) countEl.textContent = textarea.value.length;
+    }
+    var commentTextarea = document.getElementById('commentTextarea');
+    if (commentTextarea) {
+        commentTextarea.addEventListener('input', updateCommentCharCount);
+    }
+    var commentEmojiBtn = document.getElementById('commentEmojiBtn');
+    if (commentEmojiBtn) {
+        commentEmojiBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            openEmojiPicker(this, document.getElementById('commentTextarea'));
+        });
+    }
+    var commentImageBtn = document.getElementById('commentImageBtn');
+    var commentImageInput = document.getElementById('commentImageInput');
+    if (commentImageBtn && commentImageInput) {
+        commentImageBtn.addEventListener('click', function() {
+            commentImageInput.click();
+        });
+        commentImageInput.addEventListener('change', function() {
+            var file = commentImageInput.files[0];
+            if (!file) return;
+            commentImageInput.value = '';
+            uploadCommentImage(file, function(url) {
+                commentImages.push(url);
+                renderImagePreview(document.getElementById('commentImagePreview'), commentImages);
             });
         });
     }

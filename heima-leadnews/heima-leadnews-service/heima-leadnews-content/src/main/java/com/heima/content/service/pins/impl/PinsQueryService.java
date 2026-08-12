@@ -457,11 +457,41 @@ public class PinsQueryService {
             likedPinsIds = likedList.stream().map(ApPinsLike::getPinsId).collect(Collectors.toSet());
         }
 
+        // 批量查询圈子名称，避免 N+1 查询
+        Map<Long, String> circleNameMap = loadCircleNameMap(pinsList);
+
         Set<Long> finalLikedPinsIds = likedPinsIds;
-        return pinsList.stream().map(pin -> convertToVO(pin, finalLikedPinsIds)).collect(Collectors.toList());
+        return pinsList.stream().map(pin -> convertToVO(pin, finalLikedPinsIds, circleNameMap)).collect(Collectors.toList());
+    }
+
+    /**
+     * 批量加载圈子ID -> 圈子名称映射
+     */
+    private Map<Long, String> loadCircleNameMap(List<ApPins> pinsList) {
+        Map<Long, String> circleNameMap = new HashMap<>();
+        Set<Long> circleIds = pinsList.stream()
+                .map(ApPins::getCircleId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (circleIds.isEmpty()) {
+            return circleNameMap;
+        }
+        List<ApCircle> circles = apCircleMapper.selectBatchIds(circleIds);
+        if (circles != null) {
+            for (ApCircle circle : circles) {
+                if (circle.getId() != null && circle.getName() != null) {
+                    circleNameMap.put(circle.getId(), circle.getName());
+                }
+            }
+        }
+        return circleNameMap;
     }
 
     public PinsVO convertToVO(ApPins pin, Set<Long> likedPinsIds) {
+        return convertToVO(pin, likedPinsIds, loadCircleNameMap(Collections.singletonList(pin)));
+    }
+
+    public PinsVO convertToVO(ApPins pin, Set<Long> likedPinsIds, Map<Long, String> circleNameMap) {
         PinsVO vo = new PinsVO();
         vo.setId(pin.getId());
         vo.setUserId(pin.getUserId());
@@ -473,6 +503,10 @@ public class PinsQueryService {
         vo.setContent(pin.getContent() != null ? pin.getContent() : "");
         vo.setImageUrls(parseStringList(pin.getImageUrls()));
         vo.setTopicTags(parseStringList(pin.getTopicTags()));
+        vo.setTopicId(pin.getTopicId());
+        vo.setCircleId(pin.getCircleId());
+        String circleName = circleNameMap != null ? circleNameMap.get(pin.getCircleId()) : null;
+        vo.setCircleName(circleName != null ? circleName : "");
         vo.setLinkUrl(pin.getLinkUrl() != null ? pin.getLinkUrl() : "");
         vo.setLinkTitle(pin.getLinkTitle() != null ? pin.getLinkTitle() : "");
         vo.setLikeCount(pin.getLikes() != null ? pin.getLikes() : 0);
@@ -504,6 +538,9 @@ public class PinsQueryService {
         vo.setUserAvatar(comment.getUserAvatar() != null ? comment.getUserAvatar() : "");
         vo.setParentId(comment.getParentId() != null ? comment.getParentId() : 0L);
         vo.setContent(comment.getContent() != null ? comment.getContent() : "");
+        vo.setImageUrls(parseStringList(comment.getImageUrls()));
+        vo.setReplyToUserId(comment.getReplyToUserId());
+        vo.setReplyToUserName(comment.getReplyToUserName() != null ? comment.getReplyToUserName() : "");
         vo.setLikeCount(comment.getLikeCount() != null ? comment.getLikeCount() : 0);
         vo.setReplyCount(comment.getReplyCount() != null ? comment.getReplyCount() : 0);
         vo.setReplies(new ArrayList<>());

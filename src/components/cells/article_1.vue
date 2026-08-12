@@ -3,15 +3,21 @@
         <div class="list-lr">
             <div class="item-l">
                 <span class="title" v-html="displayTitle"></span>
+                <div class="tag-list" v-if="data.tags && data.tags.length">
+                    <span class="tag-item" v-for="tag in data.tags" :key="tag">{{tag}}</span>
+                </div>
                 <div class="tags">
                     <span class="tags-text tags-icon">{{data.icon}}</span>
                     <span class="tags-text">{{data.source}}</span>
                     <span class="meta-sep">·</span>
                     <span class="tags-text meta-comment">{{data.comment}} 评论</span>
+                    <span class="meta-sep">·</span>
+                    <span class="tags-text meta-comment">{{data.views}} 阅读</span>
+                    <span class="tags-text date" v-if="showTime">{{formatTime(data.date)}}</span>
                 </div>
             </div>
-            <div class="item-r">
-                <img class="image" :src="data.image[0]"/>
+            <div class="item-r" v-if="data.coverImage">
+                <img class="image" :src="data.coverImage"/>
             </div>
         </div>
     </div>
@@ -25,6 +31,11 @@
         props:{
             data:{
                 type:Object
+            },
+            // 是否显示发布时间（最新分栏为 true，推荐分栏为 false）
+            showTime:{
+                type:Boolean,
+                default:false
             }
         },
         computed: {
@@ -33,9 +44,22 @@
             }
         },
         methods : {
-            formatDate:function(time){
-                return this.$date.format13(time);
-            },formatTitle:function(title){
+            formatTime:function(time){
+                if (!time) return ''
+                var diff = Date.now() - time
+                if (diff < 0) return '刚刚'
+                var minutes = Math.floor(diff / 60000)
+                var hours = Math.floor(diff / 3600000)
+                var days = Math.floor(diff / 86400000)
+                var months = Math.floor(diff / 2592000000)
+                if (minutes < 1) return '刚刚'
+                if (minutes < 60) return minutes + '分钟前'
+                if (hours < 24) return hours + '小时前'
+                if (days < 30) return days + '天前'
+                if (months < 12) return months + '个月前'
+                return Math.floor(months / 12) + '年前'
+            },
+            formatTitle:function(title){
                 if (!title) return ''
                 if (title.indexOf('<') >= 0) {
                     return title;
@@ -88,5 +112,19 @@
     }
     .meta-comment {
         color: #b0b5c0;
+    }
+    .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 6px 0 0;
+    }
+    .tag-item {
+        font-size: 12px;
+        color: #1E80FF;
+        background: rgba(30, 128, 255, 0.08);
+        border-radius: 4px;
+        padding: 2px 8px;
+        line-height: 1.4;
     }
 </style>

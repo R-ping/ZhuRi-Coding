@@ -4,6 +4,8 @@ package com.heima.app.gateway.filter;
 import com.heima.app.gateway.util.AppJwtUtil;
 import io.jsonwebtoken.Claims;
 import io.micrometer.common.util.StringUtils;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -45,7 +47,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
                         String image = (String) claimsBody.get("image");
                         ServerHttpRequest serverHttpRequest = request.mutate().headers(httpHeaders -> {
                             httpHeaders.add("userId", userId.toString());
-                            httpHeaders.add("nickName", nickName != null ? nickName : "");
+                            httpHeaders.add("nickName", encodeNickName(nickName));
                             httpHeaders.add("image", image != null ? image : "");
                         }).build();
                         exchange = exchange.mutate().request(serverHttpRequest).build();
@@ -81,7 +83,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             //存储header中
             ServerHttpRequest serverHttpRequest = request.mutate().headers(httpHeaders -> {
                 httpHeaders.add("userId", userId.toString());
-                httpHeaders.add("nickName", nickName != null ? nickName : "");
+                httpHeaders.add("nickName", encodeNickName(nickName));
                 httpHeaders.add("image", image != null ? image : "");
             }).build();
             //重置请求
@@ -93,6 +95,17 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
         }
         //6.放行
         return chain.filter(exchange);
+    }
+
+    /**
+     * 对写入请求头的 nickName 进行 URL 编码，避免中文等非 ASCII 字符在 HTTP 请求头中乱码。
+     * 为 null 时返回空字符串，保持原有的空值逻辑；编码失败时回退为原始值。
+     */
+    private String encodeNickName(String nickName) {
+        if (nickName == null) {
+            return "";
+        }
+        return URLEncoder.encode(nickName, StandardCharsets.UTF_8);
     }
 
     /**

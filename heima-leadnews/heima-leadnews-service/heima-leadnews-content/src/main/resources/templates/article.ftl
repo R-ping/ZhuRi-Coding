@@ -606,9 +606,19 @@
         }
         .comment-input-wrap .comment-input-footer {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
             align-items: center;
             gap: 8px;
+        }
+        .comment-footer-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .comment-footer-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
         .comment-input-wrap .login-tip {
             font-size: 13px;
@@ -617,6 +627,103 @@
         .comment-input-wrap .login-tip a {
             color: #1e80ff;
             cursor: pointer;
+        }
+        .comment-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .comment-tool-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: none;
+            border-radius: 4px;
+            background: transparent;
+            font-size: 16px;
+            color: #8a919f;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+        .comment-tool-btn:hover {
+            background: #f0f5ff;
+            color: #1e80ff;
+        }
+        .comment-char-count {
+            font-size: 12px;
+            color: #c4c9d1;
+        }
+        .comment-image-preview, .reply-image-preview {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .comment-image-preview .preview-item, .reply-image-preview .preview-item {
+            position: relative;
+            width: 72px;
+            height: 72px;
+        }
+        .preview-item img {
+            width: 72px;
+            height: 72px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        .preview-item .preview-remove {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 18px;
+            height: 18px;
+            background: #ff4d4f;
+            color: #fff;
+            font-size: 12px;
+            line-height: 18px;
+            text-align: center;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .comment-image {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 6px;
+            margin: 6px 0;
+            display: block;
+            cursor: pointer;
+        }
+        .comment-emoji-picker {
+            display: none;
+            position: fixed;
+            background: #fff;
+            border: 1px solid #e4e6eb;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            width: 320px;
+            z-index: 1000;
+        }
+        .comment-emoji-picker .comment-emoji-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .comment-emoji-picker .comment-emoji-item {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .comment-emoji-picker .comment-emoji-item:hover {
+            background: #f0f5ff;
         }
         .comment-submit-btn {
             padding: 6px 20px;
@@ -744,21 +851,37 @@
             color: #0056d6;
         }
         .reply-input-area {
-            display: flex;
-            gap: 8px;
             margin-top: 8px;
             margin-left: 40px;
-        }
-        .reply-input-area input {
-            flex: 1;
-            padding: 6px 10px;
+            background: #fff;
             border: 1px solid #e4e6eb;
             border-radius: 4px;
-            font-size: 13px;
-            outline: none;
+            padding: 8px;
         }
-        .reply-input-area input:focus {
-            border-color: #1e80ff;
+        .reply-input-area textarea {
+            width: 100%;
+            min-height: 48px;
+            border: none;
+            resize: none;
+            font-size: 13px;
+            font-family: inherit;
+            color: #252933;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .reply-input-area textarea:focus {
+            border: none;
+        }
+        .reply-input-footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid #f2f3f5;
+        }
+        .reply-input-footer .comment-char-count {
+            margin-left: auto;
         }
         .reply-input-area .reply-send-btn {
             padding: 6px 14px;
@@ -777,6 +900,18 @@
             color: #8a919f;
             font-size: 13px;
             cursor: pointer;
+        }
+        .reply-action-btn {
+            margin-left: 8px;
+            font-size: 12px;
+            color: #1e80ff;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+        .reply-action-btn:hover {
+            color: #0056d6;
         }
         .comment-empty {
             text-align: center;
@@ -1998,12 +2133,23 @@
                         <img src="" alt="avatar" id="commentUserAvatar">
                     </div>
                     <div class="comment-input-wrap">
-                        <textarea id="commentTextarea" placeholder="写下你的评论..."></textarea>
+                        <textarea id="commentTextarea" placeholder="写下你的评论..." maxlength="1000"></textarea>
+                        <div class="comment-image-preview" id="commentImagePreview"></div>
                         <div class="comment-input-footer">
-                            <span class="login-tip" id="loginTip" style="display:none;">
-                                <a id="loginLink">登录</a>后参与评论
-                            </span>
-                            <button class="comment-submit-btn" id="commentSubmitBtn">发表评论</button>
+                            <div class="comment-footer-left">
+                                <span class="login-tip" id="loginTip" style="display:none;">
+                                    <a id="loginLink">登录</a>后参与评论
+                                </span>
+                                <div class="comment-toolbar">
+                                    <button type="button" class="comment-tool-btn" id="commentEmojiBtn" title="表情">😊</button>
+                                    <button type="button" class="comment-tool-btn" id="commentImageBtn" title="插入图片">图片</button>
+                                    <input type="file" id="commentImageInput" accept="image/*" style="display:none;">
+                                </div>
+                            </div>
+                            <div class="comment-footer-right">
+                                <span class="comment-char-count"><span id="commentCharCount">0</span>/1000</span>
+                                <button class="comment-submit-btn" id="commentSubmitBtn">发表评论</button>
+                            </div>
                         </div>
                     </div>
                 </div>

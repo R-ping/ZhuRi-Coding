@@ -43,8 +43,9 @@
                         </div>
 
                         <!-- 标签 -->
-                        <div class="pin-tags" v-if="pin.topicTags && pin.topicTags.length > 0">
-                            <span class="pin-topic" v-for="(tag, idx) in pin.topicTags" :key="idx">{{ escapeHtml(tag) }}</span>
+                        <div class="pin-tags" v-if="pin.circleId || (pin.topicTags && pin.topicTags.length > 0)">
+                            <span class="pin-circle" v-if="pin.circleId" @click="goToCircle">{{ escapeHtml(pin.circleName) }}</span>
+                            <span class="pin-topic" v-for="(tag, idx) in pin.topicTags" :key="idx" @click="goToTopic">{{ escapeHtml(tag) }}</span>
                         </div>
 
                         <!-- 操作栏 -->
@@ -85,17 +86,46 @@
 
                         <!-- 评论输入框（折叠/展开） -->
                         <div class="comment-input-wrap" ref="commentInputWrap" :class="{ 'expanded': commentExpanded }" @click="expandCommentBox">
+                            <!-- 回复目标提示 -->
+                            <div class="reply-target-bar" v-if="commentExpanded && replyTarget">
+                                <span class="reply-label">回复</span>
+                                <span class="reply-target-name">@{{ escapeHtml(replyTargetName) }}</span>
+                                <span class="reply-cancel" @click.stop="cancelReply">取消</span>
+                            </div>
                             <textarea
                                 v-if="commentExpanded"
                                 ref="commentTextarea"
                                 class="comment-textarea"
-                                placeholder="平等表达，友善交流"
+                                :placeholder="replyTarget ? '回复 @' + replyTargetName : '平等表达，友善交流'"
                                 v-model="commentText"
-                                maxlength="500"
+                                maxlength="1000"
                                 @keydown.ctrl.enter="submitComment"
                             ></textarea>
+                            <!-- 已选图片预览 -->
+                            <div class="comment-images-preview" v-if="commentExpanded && uploadedImages.length">
+                                <div class="comment-preview-item" v-for="(img, idx) in uploadedImages" :key="idx">
+                                    <img :src="img" alt="图片">
+                                    <i class="preview-remove" @click.stop="removeImage(idx)">&times;</i>
+                                </div>
+                            </div>
                             <div class="comment-toolbar" v-if="commentExpanded">
-                                <button class="comment-submit-btn" :disabled="!commentText.trim() || submitting" @click="submitComment">发送</button>
+                                <div class="toolbar-left">
+                                    <span class="tool-item" title="表情" @click.stop="showEmoji = !showEmoji">
+                                        <span class="action-icon">&#xf118;</span>
+                                    </span>
+                                    <span class="tool-item" title="图片" @click.stop="triggerImageUpload">
+                                        <span class="action-icon">&#xf03e;</span>
+                                    </span>
+                                    <input ref="commentImageInput" type="file" accept="image/*" style="display:none" @change="handleImageUpload">
+                                </div>
+                                <div class="toolbar-right">
+                                    <span class="word-count" :class="{ 'limit': commentText.length >= 1000 }">{{ commentText.length }}/1000</span>
+                                    <button class="comment-submit-btn" :disabled="!canSubmit" @click="submitComment">发送</button>
+                                </div>
+                            </div>
+                            <!-- 表情面板 -->
+                            <div class="emoji-panel" v-if="commentExpanded && showEmoji" @click.stop>
+                                <span v-for="e in emojiList" :key="e" class="emoji-item" @click="insertEmoji(e)">{{ e }}</span>
                             </div>
                         </div>
 
@@ -115,6 +145,9 @@
                                         <span class="comment-time">{{ formatTime(comment.createdTime) }}</span>
                                     </div>
                                     <div class="comment-text">{{ escapeHtml(comment.content) }}</div>
+                                    <div class="comment-images" v-if="comment.imageUrls && comment.imageUrls.length">
+                                        <img v-for="(img, idx) in comment.imageUrls" :key="idx" :src="img" class="comment-image" alt="图片">
+                                    </div>
                                     <div class="comment-actions">
                                         <button class="comment-action-btn" :class="{ 'active': comment.liked }" @click="toggleCommentLike(comment)">
                                             <span class="action-icon">&#xf087;</span>
@@ -129,8 +162,22 @@
                                     <!-- 二级回复 -->
                                     <div class="reply-list" v-if="comment.replies && comment.replies.length">
                                         <div class="reply-item" v-for="reply in comment.replies" :key="reply.id">
-                                            <span class="reply-user">{{ escapeHtml(reply.userName) }}</span>
-                                            <span class="reply-text">: {{ escapeHtml(reply.content) }}</span>
+                                            <div class="reply-main">
+                                                <span class="reply-user">{{ escapeHtml(reply.userName) }}</span>
+                                                <template v-if="reply.replyToUserName">
+                                                    <span class="reply-sep">回复</span>
+                                                    <span class="reply-target-user">@{{ escapeHtml(reply.replyToUserName) }}</span>
+                                                </template>
+                                                <span class="reply-colon">:</span>
+                                                <span class="reply-text">{{ escapeHtml(reply.content) }}</span>
+                                            </div>
+                                            <div class="reply-images" v-if="reply.imageUrls && reply.imageUrls.length">
+                                                <img v-for="(img, idx) in reply.imageUrls" :key="idx" :src="img" class="reply-image" alt="图片">
+                                            </div>
+                                            <div class="reply-meta">
+                                                <span class="reply-time">{{ formatTime(reply.createdTime) }}</span>
+                                                <button class="reply-action-btn" @click="replyToSubReply(comment, reply)">回复</button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -202,6 +249,7 @@
 <script>
 import { toast } from '@/utils/toast'
 import { getPinsDetail, getPinsList, getComments, createComment, likePins } from '@/apis/pins'
+import { uploadFile } from '@/common/oss_upload'
 
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 
@@ -222,6 +270,17 @@ export default {
             commentText: '',
             commentExpanded: false,
             replyingComment: null,
+            replyTarget: null,
+            showEmoji: false,
+            uploadedImages: [],
+            emojiList: [
+                '😀', '😃', '😄', '😁', '😅', '🤣', '😂', '🙂', '😊', '😇',
+                '😍', '😩', '😘', '😗', '😚', '😋', '😛', '😜', '😪', '😝',
+                '🤑', '🤗', '🤭', '🤫', '🤔', '😐', '🤨', '😐', '😑', '😶',
+                '😏', '😒', '🙄', '🤬', '🤮', '🤯', '😲', '🤐', '😤', '😪',
+                '👍', '👎', '👏', '🙌', '🤝', '💪', '👋', '🤙', '❤️', '🔥',
+                '⭐', '🎉', '🙏', '💯', '✨', '💡', '📌', '💬', '🗨️', '📝'
+            ],
             submitting: false,
             // 推荐
             recommendList: [],
@@ -233,6 +292,14 @@ export default {
     computed: {
         defaultAvatar() {
             return defaultAvatar
+        },
+        // 回复目标昵称（兼顾未知字段）
+        replyTargetName() {
+            return (this.replyTarget && (this.replyTarget.userName || this.replyTarget.name || '用户')) || ''
+        },
+        // 可提交：文本或图片至少其一，且非提交中
+        canSubmit() {
+            return (this.commentText.trim() || this.uploadedImages.length > 0) && !this.submitting
         }
     },
     created() {
@@ -327,18 +394,30 @@ export default {
             this.fetchComments(true)
         },
         async submitComment() {
-            const content = this.commentText.trim()
-            if (!content || this.submitting) return
+            if (!this.canSubmit) return
             this.submitting = true
             try {
-                const data = { pinsId: this.pinsId, content: content }
+                const data = {
+                    pinsId: this.pinsId,
+                    content: this.commentText.trim(),
+                    imageUrls: this.uploadedImages.slice()
+                }
+                // 回复场景：parentId 指向其所属的顶级评论，保证在同一回复主题下展示
                 if (this.replyingComment) {
                     data.parentId = this.replyingComment.id
+                }
+                // 若回复的是二级回复，携带被回复者信息用于"回复 @xxx"展示
+                if (this.replyTarget) {
+                    data.replyToUserId = this.replyTarget.userId
+                    data.replyToUserName = this.replyTarget.userName || ''
                 }
                 const res = await createComment(data)
                 if (res && res.code === 200) {
                     this.commentText = ''
+                    this.uploadedImages = []
                     this.replyingComment = null
+                    this.replyTarget = null
+                    this.showEmoji = false
                     this.commentExpanded = false
                     if (this.pin) {
                         this.$set(this.pin, 'commentCount', (this.pin.commentCount || 0) + 1)
@@ -355,10 +434,52 @@ export default {
             }
         },
         replyComment(comment) {
-            // 展开评论框并聚焦
+            // 回复一级评论：展开评论框并聚焦
             this.replyingComment = comment
+            this.replyTarget = { userId: comment.userId, userName: comment.userName }
+            this.showEmoji = false
             this.commentExpanded = true
             this.focusCommentTextarea()
+        },
+        replyToSubReply(comment, reply) {
+            // 回复二级回复：父评论仍为顶级评论，回复目标为被回复的二级回复作者
+            this.replyingComment = comment
+            this.replyTarget = { userId: reply.userId, userName: reply.userName }
+            this.showEmoji = false
+            this.commentExpanded = true
+            this.focusCommentTextarea()
+        },
+        cancelReply() {
+            this.replyingComment = null
+            this.replyTarget = null
+        },
+        insertEmoji(emoji) {
+            this.commentText += emoji
+            this.showEmoji = false
+            this.focusCommentTextarea()
+        },
+        triggerImageUpload() {
+            this.$refs.commentImageInput.click()
+        },
+        async handleImageUpload(e) {
+            const file = e.target.files[0]
+            if (!file) return
+            if (!file.type.startsWith('image/')) {
+                toast('请选择图片文件', 2)
+                return
+            }
+            try {
+                const url = await uploadFile(file)
+                if (url) {
+                    this.uploadedImages.push(url)
+                }
+            } catch (err) {
+                toast('图片上传失败', 2)
+            }
+            this.$refs.commentImageInput.value = ''
+        },
+        removeImage(idx) {
+            this.uploadedImages.splice(idx, 1)
         },
         expandCommentBox() {
             // 点击折叠态评论框 -> 展开并聚焦输入区
@@ -394,6 +515,8 @@ export default {
             if (wrap && wrap.contains(e.target)) return
             this.commentExpanded = false
             this.replyingComment = null
+            this.replyTarget = null
+            this.showEmoji = false
         },
         scrollToComments() {
             if (this.$refs.commentSection) {
@@ -421,6 +544,18 @@ export default {
         },
         openLink(url) {
             if (url) window.open(url, '_blank')
+        },
+        // 点击圈子标签 -> 跳转圈子详情页
+        goToCircle() {
+            if (this.pin && this.pin.circleId) {
+                this.$router.push('/pins/circle/' + this.pin.circleId)
+            }
+        },
+        // 点击话题标签 -> 跳转话题详情页
+        goToTopic() {
+            if (this.pin && this.pin.topicId) {
+                this.$router.push('/pin/topic/' + this.pin.topicId)
+            }
         },
 
         // ============== 推荐沸点 ==============
@@ -474,10 +609,13 @@ export default {
             const t = typeof timestamp === 'string' ? new Date(timestamp).getTime() : timestamp
             if (isNaN(t)) return ''
             const diff = Date.now() - t
+            if (diff < 0) return '刚刚'
+            const minutes = Math.floor(diff / 60000)
             const hours = Math.floor(diff / 3600000)
             const days = Math.floor(diff / 86400000)
             const months = Math.floor(diff / 2592000000)
-            if (hours < 1) return '刚刚'
+            if (minutes < 1) return '刚刚'
+            if (minutes < 60) return minutes + '分钟前'
             if (hours < 24) return hours + '小时前'
             if (days < 30) return days + '天前'
             if (months < 12) return months + '个月前'
@@ -633,6 +771,24 @@ export default {
     color: #fa8c16;
     font-size: 12px;
     border-radius: 4px;
+    cursor: pointer;
+    &:hover {
+        background: #ffe7ba;
+    }
+}
+
+.pin-circle {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: #eaf2ff;
+    color: #1e80ff;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    &:hover {
+        background: #d6e4ff;
+    }
 }
 
 .action-icon {
@@ -750,8 +906,150 @@ export default {
 
 .comment-toolbar {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     margin-top: 8px;
+}
+
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.tool-item {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #515767;
+    font-size: 16px;
+    transition: background-color 0.2s;
+    &:hover {
+        background-color: #e4e6eb;
+    }
+}
+
+.word-count {
+    font-size: 12px;
+    color: #8a93a6;
+    &.limit {
+        color: #ff4d4f;
+    }
+}
+
+/* 回复目标提示 */
+.reply-target-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 2px 8px;
+    font-size: 13px;
+    color: #515767;
+    .reply-label {
+        color: #8a93a6;
+    }
+    .reply-target-name {
+        font-weight: 500;
+        color: #1e80ff;
+        flex: 1;
+    }
+    .reply-cancel {
+        cursor: pointer;
+        color: #8a93a6;
+        &:hover {
+            color: #515767;
+        }
+    }
+}
+
+/* 表情面板 */
+.emoji-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px 2px;
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.emoji-item {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    cursor: pointer;
+    border-radius: 4px;
+    &:hover {
+        background-color: #f2f3f5;
+    }
+}
+
+/* 已选图片预览 */
+.comment-images-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.comment-preview-item {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    border-radius: 6px;
+    overflow: hidden;
+    img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .preview-remove {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        width: 18px;
+        height: 18px;
+        line-height: 16px;
+        text-align: center;
+        background: #fff;
+        color: #999;
+        font-size: 14px;
+        font-style: normal;
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        &:hover {
+            color: #ff4d4f;
+        }
+    }
+}
+
+/* 评论图片展示 */
+.comment-images {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+
+.comment-image {
+    width: 80px;
+    height: 80px;
+    border-radius: 6px;
+    object-fit: cover;
+    cursor: pointer;
 }
 
 .comment-submit-btn {
@@ -861,9 +1159,13 @@ export default {
 }
 
 .reply-item {
-    padding: 4px 0;
+    padding: 6px 0;
     font-size: 13px;
     line-height: 1.5;
+}
+
+.reply-main {
+    display: inline;
 }
 
 .reply-user {
@@ -872,8 +1174,64 @@ export default {
     margin-right: 4px;
 }
 
+.reply-sep {
+    color: #8a93a6;
+    margin-right: 4px;
+}
+
+.reply-target-user {
+    color: #1e80ff;
+    font-weight: 500;
+    margin-right: 4px;
+}
+
+.reply-colon {
+    color: #515767;
+    margin-right: 4px;
+}
+
 .reply-text {
     color: #515767;
+    word-break: break-word;
+}
+
+.reply-images {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+.reply-image {
+    width: 60px;
+    height: 60px;
+    border-radius: 6px;
+    object-fit: cover;
+    cursor: pointer;
+}
+
+.reply-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.reply-time {
+    font-size: 12px;
+    color: #8a93a6;
+}
+
+.reply-action-btn {
+    padding: 0;
+    border: none;
+    background: transparent;
+    font-size: 12px;
+    color: #8a93a6;
+    cursor: pointer;
+    &:hover {
+        color: #1e80ff;
+    }
 }
 
 .comment-load-more {

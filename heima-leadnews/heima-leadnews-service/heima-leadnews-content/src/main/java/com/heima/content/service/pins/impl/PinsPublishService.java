@@ -93,7 +93,7 @@ public class PinsPublishService {
         pins.setUserName(user.getNickname() != null ? user.getNickname() : "");
         pins.setUserAvatar(user.getImage() != null ? user.getImage() : "");
         pins.setContent(dto.getContent());
-        pins.setImageUrls(dto.getImageUrls() != null ? dto.getImageUrls() : "");
+        pins.setImageUrls(dto.getImageUrls() != null ? String.join(",", dto.getImageUrls()) : "");
         pins.setTopicTags(dto.getTopicTags() != null ? String.join(",", dto.getTopicTags()) : "");
         pins.setTopicId(dto.getTopicId());
         pins.setCircleId(dto.getCircleId());

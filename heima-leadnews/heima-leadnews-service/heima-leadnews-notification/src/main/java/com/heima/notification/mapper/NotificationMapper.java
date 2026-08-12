@@ -19,4 +19,8 @@ public interface NotificationMapper extends BaseMapper<Notification> {
     java.util.List<java.util.Map<String, Object>> countUnreadGroupByType(@Param("userId") Long userId);
 
     int markAllRead(@Param("userId") Long userId);
+
+    int countUnreadByType(@Param("userId") Long userId, @Param("type") Integer type);
+
+    int markTypeRead(@Param("userId") Long userId, @Param("type") Integer type);
 }

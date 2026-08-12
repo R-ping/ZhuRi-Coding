@@ -385,8 +385,34 @@ export default {
             if (tab === 'message') {
                 this.loadSessions()
             } else {
+                this.clearTypeUnread(tab)
                 this.loadNotifications(tab)
             }
+        },
+
+        // Tab值 -> 后端通知type（comment/digg/follow/system），私信(message)走IM不在此列
+        mapTabToType(tab) {
+            var map = {
+                comment: 'comment',
+                like: 'digg',
+                follow: 'follow',
+                system: 'system'
+            }
+            return map[tab] || null
+        },
+
+        // 按类型标记已读并清除该类型未读计数，不影响其他类型
+        clearTypeUnread(tab) {
+            var type = this.mapTabToType(tab)
+            if (!type) return
+            var self = this
+            var url = self.getNotificationUrl('notifications_mark_type_read')
+            request.post(url, {}, { type: type }).then(function(d) {
+                if (d && d.code === 200) {
+                    // 通知头部/铃铛刷新未读总数与分类型计数
+                    window.dispatchEvent(new CustomEvent('notification-unread-cleared'))
+                }
+            }).catch(function() {})
         },
 
         toggleLike(item) {

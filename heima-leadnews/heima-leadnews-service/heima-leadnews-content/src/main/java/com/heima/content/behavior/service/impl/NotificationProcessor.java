@@ -3,9 +3,13 @@ package com.heima.content.behavior.service.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.apis.notification.INotificationClient;
 import com.heima.content.behavior.service.BehaviorPostProcessor;
+import com.heima.content.mapper.article.ApArticleMapper;
+import com.heima.content.mapper.pins.ApPinsMapper;
+import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.behavior.BehaviorResult;
 import com.heima.model.behavior.BehaviorType;
+import com.heima.model.pins.pojos.ApPins;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -23,6 +27,12 @@ public class NotificationProcessor implements BehaviorPostProcessor {
 
     @Autowired(required = false)
     private INotificationClient notificationClient;
+
+    @Autowired(required = false)
+    private ApArticleMapper apArticleMapper;
+
+    @Autowired(required = false)
+    private ApPinsMapper apPinsMapper;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -73,16 +83,24 @@ public class NotificationProcessor implements BehaviorPostProcessor {
 
     /**
      * 发送评论通知
+     * content JSON 字段与前端 notification/index.vue#mapNotificationItem 对齐：
+     * trigger_user{name,avatar} / action_type / message / target_title / target_type / target_id / comment_id / notification_type
      */
     private void sendCommentNotification(BehaviorContext context) {
         try {
+            Map<String, Object> triggerUser = new HashMap<>();
+            triggerUser.put("name", context.getUserName() != null ? context.getUserName() : "用户");
+            triggerUser.put("avatar", context.getUserAvatar() != null ? context.getUserAvatar() : "");
+
             Map<String, Object> contentMap = new HashMap<>();
-            contentMap.put("action_user", context.getUserName() != null ? context.getUserName() : "用户");
-            contentMap.put("action_user_id", context.getUserId());
-            contentMap.put("content", context.getExtraString("commentContent") != null
+            contentMap.put("trigger_user", triggerUser);
+            contentMap.put("action_type", "评论了你的作品");
+            contentMap.put("message", context.getExtraString("commentContent") != null
                 ? truncate(context.getExtraString("commentContent"), 20) : "");
+            contentMap.put("target_title", resolveTargetTitle(context));
             contentMap.put("target_type", context.getTargetType() == 1 ? "article" : "pin");
             contentMap.put("target_id", context.getTargetId());
+            contentMap.put("comment_id", context.getExtraLong("commentId"));
             contentMap.put("notification_type", "comment");
 
             Map<String, Object> params = new HashMap<>();
@@ -104,10 +122,14 @@ public class NotificationProcessor implements BehaviorPostProcessor {
      */
     private void sendLikeNotification(BehaviorContext context) {
         try {
+            Map<String, Object> triggerUser = new HashMap<>();
+            triggerUser.put("name", context.getUserName() != null ? context.getUserName() : "用户");
+            triggerUser.put("avatar", context.getUserAvatar() != null ? context.getUserAvatar() : "");
+
             Map<String, Object> contentMap = new HashMap<>();
-            contentMap.put("action_user", context.getUserName() != null ? context.getUserName() : "用户");
-            contentMap.put("action_user_id", context.getUserId());
-            contentMap.put("behavior", "like");
+            contentMap.put("trigger_user", triggerUser);
+            contentMap.put("action_type", "赞了你的作品");
+            contentMap.put("target_title", resolveTargetTitle(context));
             contentMap.put("target_type", context.getTargetType() == 1 ? "article" : "pin");
             contentMap.put("target_id", context.getTargetId());
             contentMap.put("notification_type", "digg");
@@ -131,10 +153,14 @@ public class NotificationProcessor implements BehaviorPostProcessor {
      */
     private void sendCollectNotification(BehaviorContext context) {
         try {
+            Map<String, Object> triggerUser = new HashMap<>();
+            triggerUser.put("name", context.getUserName() != null ? context.getUserName() : "用户");
+            triggerUser.put("avatar", context.getUserAvatar() != null ? context.getUserAvatar() : "");
+
             Map<String, Object> contentMap = new HashMap<>();
-            contentMap.put("action_user", context.getUserName() != null ? context.getUserName() : "用户");
-            contentMap.put("action_user_id", context.getUserId());
-            contentMap.put("behavior", "collect");
+            contentMap.put("trigger_user", triggerUser);
+            contentMap.put("action_type", "收藏了你的作品");
+            contentMap.put("target_title", resolveTargetTitle(context));
             contentMap.put("target_type", context.getTargetType() == 1 ? "article" : "column");
             contentMap.put("target_id", context.getTargetId());
             contentMap.put("notification_type", "digg");
@@ -158,10 +184,13 @@ public class NotificationProcessor implements BehaviorPostProcessor {
      */
     private void sendFollowNotification(BehaviorContext context) {
         try {
+            Map<String, Object> triggerUser = new HashMap<>();
+            triggerUser.put("name", context.getUserName() != null ? context.getUserName() : "用户");
+            triggerUser.put("avatar", context.getUserAvatar() != null ? context.getUserAvatar() : "");
+
             Map<String, Object> contentMap = new HashMap<>();
-            contentMap.put("action_user", context.getUserName() != null ? context.getUserName() : "用户");
-            contentMap.put("action_user_id", context.getUserId());
-            contentMap.put("avatar", context.getUserAvatar() != null ? context.getUserAvatar() : "");
+            contentMap.put("trigger_user", triggerUser);
+            contentMap.put("action_type", "关注了你");
             contentMap.put("notification_type", "follow");
 
             Map<String, Object> params = new HashMap<>();
@@ -185,5 +214,27 @@ public class NotificationProcessor implements BehaviorPostProcessor {
     private String truncate(String str, int maxLen) {
         if (str == null) return "";
         return str.length() > maxLen ? str.substring(0, maxLen) + "..." : str;
+    }
+
+    /**
+     * 解析目标标题（文章标题或沸点内容），用于通知展示
+     */
+    private String resolveTargetTitle(BehaviorContext context) {
+        try {
+            if (context.getTargetType() != null && context.getTargetType() == 1) {
+                ApArticle article = apArticleMapper != null
+                    ? apArticleMapper.selectById(context.getTargetId()) : null;
+                return article != null && article.getTitle() != null ? article.getTitle() : "";
+            } else {
+                ApPins pins = apPinsMapper != null
+                    ? apPinsMapper.selectById(context.getTargetId()) : null;
+                return pins != null && pins.getContent() != null
+                    ? truncate(pins.getContent(), 30) : "";
+            }
+        } catch (Exception e) {
+            log.warn("解析目标标题失败 targetType={}, targetId={}",
+                context.getTargetType(), context.getTargetId(), e);
+            return "";
+        }
     }
 }

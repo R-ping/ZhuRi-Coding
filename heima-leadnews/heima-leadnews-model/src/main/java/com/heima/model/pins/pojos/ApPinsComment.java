@@ -36,6 +36,18 @@ public class ApPinsComment implements Serializable {
     @TableField("content")
     private String content;
 
+    /** 评论图片URL列表，逗号分隔 */
+    @TableField("image_urls")
+    private String imageUrls = "";
+
+    /** 被回复用户ID（回复二级评论时使用） */
+    @TableField("reply_to_user_id")
+    private Integer replyToUserId;
+
+    /** 被回复用户昵称（回复二级评论时使用） */
+    @TableField("reply_to_user_name")
+    private String replyToUserName = "";
+
     @TableField("like_count")
     private Integer likeCount;
 

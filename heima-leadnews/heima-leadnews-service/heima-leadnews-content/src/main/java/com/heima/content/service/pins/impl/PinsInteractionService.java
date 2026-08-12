@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
+import java.util.List;
 
 @Component
 @Slf4j
@@ -121,14 +122,22 @@ public class PinsInteractionService {
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult createComment(PinsCommentDTO dto) {
         ApUser user = AppThreadLocalUtil.getUser();
+        log.info("评论人信息：{}",user);
         if (user == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
         }
         if (dto.getPinsId() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "pinsId不能为空");
         }
-        if (dto.getContent() == null || dto.getContent().trim().isEmpty()) {
+        // 评论支持纯文本或纯图片（表情包），两者至少有其一个
+        boolean hasContent = dto.getContent() != null && !dto.getContent().trim().isEmpty();
+        boolean hasImage = dto.getImageUrls() != null && !dto.getImageUrls().isEmpty();
+        if (!hasContent && !hasImage) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "评论内容不能为空");
+        }
+        // 字数限制：最多 1000 字
+        if (hasContent && dto.getContent().trim().length() > 1000) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "评论内容不能超过1000字");
         }
 
         ApPinsComment comment = new ApPinsComment();
@@ -137,7 +146,10 @@ public class PinsInteractionService {
         comment.setUserName(user.getNickname() != null ? user.getNickname() : "");
         comment.setUserAvatar(user.getImage() != null ? user.getImage() : "");
         comment.setParentId(dto.getParentId());
-        comment.setContent(dto.getContent());
+        comment.setContent(dto.getContent() != null ? dto.getContent() : "");
+        comment.setImageUrls(joinImageUrls(dto.getImageUrls()));
+        comment.setReplyToUserId(dto.getReplyToUserId());
+        comment.setReplyToUserName(dto.getReplyToUserName() != null ? dto.getReplyToUserName() : "");
         comment.setLikeCount(0);
         comment.setReplyCount(0);
         comment.setCreatedTime(new Date());
@@ -192,5 +204,15 @@ public class PinsInteractionService {
         // 原子递增分享数
         apPinsMapper.incrementShare(dto.getPinsId());
         return ResponseResult.okResult();
+    }
+
+    /**
+     * 将图片URL列表拼接为逗号分隔字符串，空列表返回空字符串
+     */
+    private String joinImageUrls(List<String> imageUrls) {
+        if (imageUrls == null || imageUrls.isEmpty()) {
+            return "";
+        }
+        return String.join(",", imageUrls);
     }
 }

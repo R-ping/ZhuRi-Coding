@@ -24,6 +24,12 @@ public class PinsVO {
     private String content = "";
     private List<String> imageUrls = new ArrayList<>();
     private List<String> topicTags = new ArrayList<>();
+    /** 所属话题ID（用于跳转话题详情页） */
+    private Long topicId;
+    /** 所属圈子ID（用于跳转圈子详情页） */
+    private Long circleId;
+    /** 所属圈子名称 */
+    private String circleName = "";
     private String linkUrl = "";
     private String linkTitle = "";
     private Integer likeCount = 0;

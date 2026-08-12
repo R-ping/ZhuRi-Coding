@@ -401,6 +401,9 @@
             this.loadCheckinStatus()
             this.fetchUnreadCount()
             this.unreadTimer = setInterval(() => this.fetchUnreadCount(), 30000)
+            // 站内信按类型清除未读后，立即刷新未读总数与分类型计数
+            this.onUnreadCleared = () => this.fetchUnreadCount()
+            window.addEventListener('notification-unread-cleared', this.onUnreadCleared)
         },
         watch: {
             '$route.path': function(newPath) {
@@ -424,6 +427,9 @@
         beforeDestroy() {
             window.removeEventListener('resize', this.handleResize)
             document.removeEventListener('click', this.closeDropdown)
+            if (this.onUnreadCleared) {
+                window.removeEventListener('notification-unread-cleared', this.onUnreadCleared)
+            }
             if (this.unreadTimer) {
                 clearInterval(this.unreadTimer)
                 this.unreadTimer = null

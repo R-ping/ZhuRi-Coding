@@ -2,11 +2,14 @@ package com.heima.content.service.comment.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.heima.content.behavior.service.BehaviorEventBus;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.comment.ApCommentLikeMapper;
 import com.heima.content.mapper.comment.ApCommentMapper;
 import com.heima.content.service.comment.ApCommentService;
 import com.heima.model.article.pojos.ApArticle;
+import com.heima.model.behavior.BehaviorContext;
+import com.heima.model.behavior.BehaviorType;
 import com.heima.model.comment.dtos.CommentDto;
 import com.heima.model.comment.pojos.ApComment;
 import com.heima.model.comment.pojos.ApCommentLike;
@@ -36,6 +39,9 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
 
     @Autowired
     private ApArticleMapper apArticleMapper;
+
+    @Autowired(required = false)
+    private BehaviorEventBus behaviorEventBus;
 
     @Override
     public ResponseResult getCommentList(CommentDto dto) {
@@ -177,6 +183,9 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
                 log.error("触发评论异步审核异常, commentId={}", comment.getId(), e);
             }
         }
+
+        // 跨用户评论文章时，触发行为事件（等级分、通知）
+        triggerArticleCommentBehavior(dto.getArticleId(), comment.getId(), comment.getContent(), user);
 
         Map<String, Object> result = new HashMap<>();
         result.put("id", comment.getId());
@@ -423,6 +432,9 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             }
         }
 
+        // 跨用户评论文章时，触发行为事件（等级分、通知）
+        triggerArticleCommentBehavior(articleId, comment.getId(), comment.getContent(), user);
+
         // 构建返回
         Map<String, Object> result = new HashMap<>();
         result.put("commentId", comment.getId());
@@ -480,6 +492,9 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         // 更新父评论的回复数+1
         parentComment.setReplyCount((parentComment.getReplyCount() != null ? parentComment.getReplyCount() : 0) + 1);
         updateById(parentComment);
+
+        // 跨用户回复评论时，触发行为事件（通知被回复的评论作者）
+        triggerArticleCommentBehavior(parentComment.getArticleId(), reply.getId(), reply.getContent(), user);
 
         // 构建返回
         Map<String, Object> result = new HashMap<>();
@@ -547,6 +562,42 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         wrapper.eq(ApCommentLike::getCommentId, commentId)
                .eq(ApCommentLike::getUserId, userId);
         return apCommentLikeMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
+     * 跨用户评论文章时，触发 COMMENT_ARTICLE 行为事件（等级分、评论站内信通知）
+     * 目标用户为文章作者，自评论（评论者=作者）不触发
+     *
+     * @param articleId 文章ID
+     * @param commentId 评论ID
+     * @param content   评论内容
+     * @param user      评论者
+     */
+    private void triggerArticleCommentBehavior(Long articleId, Long commentId, String content, ApUser user) {
+        if (behaviorEventBus == null || articleId == null || commentId == null || user == null) {
+            return;
+        }
+        try {
+            ApArticle article = apArticleMapper.selectById(articleId);
+            if (article == null || article.getAuthorId() == null) {
+                return;
+            }
+            // 自评论不通知
+            if (article.getAuthorId().equals(user.getId().longValue())) {
+                return;
+            }
+            BehaviorContext behaviorContext = new BehaviorContext(BehaviorType.COMMENT_ARTICLE, user.getId());
+            behaviorContext.withTarget(1, articleId)
+                    .withTargetUser(article.getAuthorId().intValue())
+                    .withUserInfo(user.getNickname(), user.getImage())
+                    .withExtra("commentId", commentId)
+                    .withExtra("commentContent", content);
+            behaviorEventBus.execute(behaviorContext);
+            log.info("文章评论行为事件已触发, articleId={}, fromUser={}, toUser={}",
+                    articleId, user.getId(), article.getAuthorId());
+        } catch (Exception e) {
+            log.error("文章评论行为事件触发失败, articleId={}", articleId, e);
+        }
     }
 
     private Integer getCurrentUserId() {
