@@ -17,6 +17,8 @@ public interface NotificationService {
 
     ResponseResult markAllRead(Long userId);
 
+    ResponseResult markTypeRead(Long userId, String type);
+
     ResponseResult createNotification(Long userId, Integer type, String sourceId, String content);
 
     void incrUnreadCache(Long userId);

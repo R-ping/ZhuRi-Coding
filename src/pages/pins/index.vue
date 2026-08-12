@@ -125,12 +125,14 @@
                             <div class="pins-tags">
                                 <span 
                                     class="pins-circle" 
-                                    v-if="pins.circleName"
+                                    v-if="pins.circleId"
+                                    @click="goToCircle(pins)"
                                 >{{ escapeHtml(pins.circleName) }}</span>
                                 <span 
                                     class="pins-topic" 
                                     v-for="(tag, idx) in pins.topicTags" 
                                     :key="idx"
+                                    @click="goToTopic(pins)"
                                 >{{ escapeHtml(tag) }}</span>
                             </div>
                             <div class="pins-actions">
@@ -336,7 +338,7 @@
                         >我的圈子</div>
                         <div 
                             class="category-item"
-                            v-for="cat in categories"
+                            v-for="cat in modalCategories"
                             :key="cat.id"
                             :class="{ 'active': circleCategory === 'cat_' + cat.id }"
                             @click="circleCategory = 'cat_' + cat.id; circleSearchKeyword = ''"
@@ -347,7 +349,7 @@
                             class="circle-card"
                             v-for="circle in modalFilteredCircles"
                             :key="circle.id"
-                            :class="{ 'selected': selectedCircle && selectedCircle.id === circle.id }"
+                            :class="{ 'selected': tempSelectedCircle && tempSelectedCircle.id === circle.id }"
                             @click="selectCircleFromModal(circle)"
                         >
                             <div class="circle-icon">{{ circle.icon || '📌' }}</div>
@@ -355,7 +357,7 @@
                                 <div class="circle-name">{{ escapeHtml(circle.name) }}</div>
                                 <div class="circle-stats">{{ circle.memberCount || 0 }} 掘友 · {{ circle.pinsCount || 0 }} 沸点</div>
                             </div>
-                            <div class="circle-check" v-if="selectedCircle && selectedCircle.id === circle.id">&#xf00c;</div>
+                            <div class="circle-check" v-if="tempSelectedCircle && tempSelectedCircle.id === circle.id">&#xf00c;</div>
                         </div>
                         <div class="circle-empty" v-if="modalFilteredCircles.length === 0">
                             <span>暂无圈子</span>
@@ -363,7 +365,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button class="cancel-btn" @click="showCircleSelector = false">不选择圈子</button>
+                    <button class="cancel-btn" @click="handleCircleCancel">不选择圈子</button>
                     <button class="confirm-btn" @click="confirmCircleSelection">确认</button>
                 </div>
             </div>
@@ -473,6 +475,8 @@ export default {
             showMyCirclesModal: false,
             publishing: false,
             scrollThrottling: false,
+            // 定时刷新定时器句柄
+            refreshTimer: null,
             
             // 圈子分类
             categories: [],
@@ -519,6 +523,10 @@ export default {
         userInfo() {
             return this.$store.state.userInfo || {}
         },
+        // 圈子分类去重：过滤掉接口返回的"推荐圈子"，避免与硬编码的"推荐圈子"重复
+        modalCategories() {
+            return (this.categories || []).filter(cat => cat.name !== '推荐圈子')
+        },
         modalFilteredCircles() {
             let result = []
             if (this.circleCategory === 'recommend') {
@@ -542,6 +550,8 @@ export default {
     watch: {
         showCircleSelector(newVal, oldVal) {
             if (newVal && !oldVal) {
+                // 打开弹窗时同步待选状态，便于回显当前已选圈子
+                this.tempSelectedCircle = this.selectedCircle
                 this.fetchRecommendCircles()
                 this.fetchMyCircles()
                 this.fetchAllCircles()
@@ -555,9 +565,11 @@ export default {
     },
     mounted() {
         this.init()
+        this.startRefreshTimer()
         window.addEventListener('scroll', this.handleScroll)
     },
     beforeDestroy() {
+        this.stopRefreshTimer()
         window.removeEventListener('scroll', this.handleScroll)
     },
     methods: {
@@ -694,6 +706,56 @@ export default {
                 this.$router.push('/pins/detail/' + pins.id)
             }
         },
+        // 点击圈子标签 -> 跳转圈子详情页
+        goToCircle(pins) {
+            if (pins && pins.circleId) {
+                this.$router.push('/pins/circle/' + pins.circleId)
+            }
+        },
+        // 点击话题标签 -> 跳转话题详情页
+        goToTopic(pins) {
+            if (pins && pins.topicId) {
+                this.$router.push('/pin/topic/' + pins.topicId)
+            }
+        },
+
+        // ============== 定时刷新 ==============
+        // 开启定时刷新，周期性拉取最新沸点并插入列表顶部（不打断滚动加载）
+        startRefreshTimer() {
+            if (this.refreshTimer) return
+            this.refreshTimer = setInterval(() => {
+                this.refreshPins()
+            }, 15000)
+        },
+        stopRefreshTimer() {
+            if (this.refreshTimer) {
+                clearInterval(this.refreshTimer)
+                this.refreshTimer = null
+            }
+        },
+        // 静默刷新：仅对“最新”分栏生效，将新出现的沸点插入列表顶部，已存在的不重复
+        async refreshPins() {
+            if (this.activeTab !== 'latest') return
+            if (this.pinsLoading) return
+            try {
+                const res = await getPinsList({ tab: 'latest', page: 1, size: this.pinsSize })
+                if (res && res.code === 200 && res.data) {
+                    const list = res.data.list || []
+                    const existingIds = new Set(this.pinsList.map(p => String(p.id)))
+                    const newItems = list.filter(p => !existingIds.has(String(p.id)))
+                    if (newItems.length > 0) {
+                        this.pinsList = [...newItems, ...this.pinsList]
+                        const total = res.data.total || 0
+                        if (this.pinsList.length >= total) {
+                            this.hasMore = false
+                            this.noMore = true
+                        }
+                    }
+                }
+            } catch (e) {
+                // 静默失败，不打断用户操作
+            }
+        },
         switchTab(tab) {
             if (this.activeTab === tab) return
             this.activeTab = tab
@@ -751,6 +813,12 @@ export default {
         selectCircleFromModal(circle) {
             this.tempSelectedCircle = circle
         },
+        // 不选择圈子：清除选中状态并关闭弹窗
+        handleCircleCancel() {
+            this.tempSelectedCircle = null
+            this.selectedCircle = null
+            this.showCircleSelector = false
+        },
         confirmCircleSelection() {
             if (this.tempSelectedCircle) {
                 this.selectedCircle = this.tempSelectedCircle
@@ -771,7 +839,8 @@ export default {
                     this.tempSelectedCircle = null
                     this.selectedTopic = null
                     this.$refs.publishBox && this.$refs.publishBox.reset()
-                    this.fetchPinsList(true)
+                    // 沸点为异步审核，审核通过后由 15s 轮询自动查出并展示
+                    this.refreshPins()
                 } else {
                     toast((res && res.message) || '发布失败', 2)
                 }

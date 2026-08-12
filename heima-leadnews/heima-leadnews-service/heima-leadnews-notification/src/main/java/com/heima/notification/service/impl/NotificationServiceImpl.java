@@ -189,6 +189,31 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    public ResponseResult markTypeRead(Long userId, String type) {
+        if (userId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        Integer typeCode = mapType(type);
+        if (typeCode == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "不支持的通知类型");
+        }
+        // 统计该类型未读数量（标记前），用于从 Redis 总未读计数中扣除
+        int count = notificationMapper.countUnreadByType(userId, typeCode);
+        if (count > 0) {
+            notificationMapper.markTypeRead(userId, typeCode);
+            // Redis 仅维护单一总未读计数，扣除该类型未读数，保持与其他类型计数的正确性
+            if (stringRedisTemplate != null) {
+                String key = REDIS_UNREAD_KEY + userId;
+                // 仅当 key 存在时扣减，避免对不存在的 key 产生负数缓存
+                if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
+                    stringRedisTemplate.opsForValue().increment(key, -count);
+                }
+            }
+        }
+        return ResponseResult.okResult(count);
+    }
+
+    @Override
     public ResponseResult createNotification(Long userId, Integer type, String sourceId, String content) {
         if (userId == null || type == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);

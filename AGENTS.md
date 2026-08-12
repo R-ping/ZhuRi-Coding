@@ -45,6 +45,10 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 给你的参考数据，若你需要用到头像、icon图标资源，就将其上传到oss上，你可以用已有的web直传方案——/post_signature，prefix由你决定，格式通常: {prefix}/{yyyy/MM/dd}/{uuid}。
 
+登录时，账号是任意11为数字，如11111111111、22222222222，验证码自动填入。
+
+在浏览器测试过程中，涉及到文章上传时，除了自己编写内容，你还可以用“参考资料”里的文档，通过import接口文档导入形式完成，尽量让每个文章内容信息有图片、有封面（路径是，C:\Users\hudong\OneDrive\图片\本机照片\素材图片，随机一张即可），文章的必填项不能遗漏。
+
 ------
 
 ### 1. Git 版本管理（强制）

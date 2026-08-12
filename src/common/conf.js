@@ -18,6 +18,7 @@ const  config = {
         notifications_list:{url:'api/v1/notifications',sv:'notification'},
         notifications_unread:{url:'api/v1/notifications/unread-count',sv:'notification'},
         notifications_mark_read:{url:'api/v1/notifications/mark-all-read',sv:'notification'},
+        notifications_mark_type_read:{url:'api/v1/notifications/mark-type-read',sv:'notification'},
         notifications_reply:{url:'api/v1/notifications/actions/reply',sv:'notification'},
         notifications_like:{url:'api/v1/notifications/actions/like',sv:'notification'},
         notifications_follow_back:{url:'api/v1/notifications/actions/follow-back',sv:'notification'},

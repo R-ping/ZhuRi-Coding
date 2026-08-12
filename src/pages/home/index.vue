@@ -49,9 +49,9 @@
           </div>
           <div v-for="(item,key) in v" class="cell" :key="item.id || key"
             @click="wxcPanItemClicked(item)">
-            <Item0 v-if="item.type === 0" :data="item"/>
-            <Item1 v-if="item.type === 1" :data="item"/>
-            <Item3 v-if="item.type === 3" :data="item"/>
+            <Item0 v-if="item.type === 0" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'"/>
+            <Item1 v-if="item.type === 1" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'"/>
+            <Item3 v-if="item.type === 3" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'"/>
           </div>
           <div class="loading" v-if="tabStates[index] && tabStates[index].loadingMore">
             <span class="loading-spinner"></span>
@@ -112,9 +112,9 @@
           </div>
           <div v-for="(item,key) in currentList" class="cell desktop-cell" :key="item.id || key"
             @click="wxcPanItemClicked(item)">
-            <Item0 v-if="item.type === 0" :data="item"/>
-            <Item1 v-if="item.type === 1" :data="item"/>
-            <Item3 v-if="item.type === 3" :data="item"/>
+            <Item0 v-if="item.type === 0" :data="item" :showTime="currentShowTime"/>
+            <Item1 v-if="item.type === 1" :data="item" :showTime="currentShowTime"/>
+            <Item3 v-if="item.type === 3" :data="item" :showTime="currentShowTime"/>
           </div>
           <div class="loading" v-if="currentState.loadingMore">
             <span class="loading-spinner"></span>
@@ -171,6 +171,10 @@
           loaded: false, loading: false, loadingMore: false,
           refreshing: false, noMore: false, error: false, errorMsg: ''
         }
+      },
+      // 当前是否处于"最新"子分栏（最新分栏显示分钟级时间，推荐分栏不显示）
+      currentShowTime: function() {
+        return !!(this.subTabStates[this.currentTab] && this.subTabStates[this.currentTab].current === 'latest')
       }
     },
     mounted() {

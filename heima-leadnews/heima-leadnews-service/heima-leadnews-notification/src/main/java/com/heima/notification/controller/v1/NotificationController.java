@@ -82,6 +82,19 @@ public class NotificationController {
     }
 
     /**
+     * 按类型标记已读并清除该类型未读计数，不影响其他类型
+     * type 取值：comment / digg / follow / system
+     */
+    @PostMapping("/mark-type-read")
+    public ResponseResult markTypeRead(@RequestParam("type") String type) {
+        Long userId = getUserId();
+        if (userId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        return notificationService.markTypeRead(userId, type);
+    }
+
+    /**
      * Feign内部接口：创建通知
      */
     @PostMapping("/feign/create")

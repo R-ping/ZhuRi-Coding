@@ -12,7 +12,7 @@
       <div class="circle-tabs">
         <div
           class="circle-tab"
-          v-for="cat in categories"
+          v-for="cat in displayCategories"
           :key="cat.id"
           :class="{ 'active': activeCategory === cat.id }"
           @click="switchCategory(cat.id)"
@@ -24,7 +24,7 @@
           class="circle-card"
           v-for="circle in filteredCircles"
           :key="circle.id"
-          :class="{ 'selected': selected && selected.id === circle.id }"
+          :class="{ 'selected': localSelected && localSelected.id === circle.id }"
           @click="handleSelect(circle)"
         >
           <div class="circle-icon">{{ circle.icon || '📌' }}</div>
@@ -32,12 +32,12 @@
             <div class="circle-name">{{ circle.name }}</div>
             <div class="circle-stats">{{ circle.memberCount || 0 }} 掘友 · {{ circle.pinsCount || 0 }} 沸点</div>
           </div>
-          <div class="circle-check" v-if="selected && selected.id === circle.id">&#xf00c;</div>
+          <div class="circle-check" v-if="localSelected && localSelected.id === circle.id">&#xf00c;</div>
         </div>
         <div class="empty-tip" v-if="!loading && filteredCircles.length === 0">暂无圈子</div>
       </div>
       <div class="modal-footer">
-        <button class="cancel-btn" @click="$emit('close')">不选择圈子</button>
+        <button class="cancel-btn" @click="handleCancel">不选择圈子</button>
         <button class="confirm-btn" @click="handleConfirm">确认</button>
       </div>
     </div>
@@ -73,6 +73,19 @@ export default {
     }
   },
   computed: {
+    // 分类列表去重，避免出现重复的"推荐圈子"分类
+    displayCategories() {
+      var seen = {}
+      var result = []
+      ;(this.categories || []).forEach(function(c) {
+        var key = c.id || c.name
+        if (!seen[key]) {
+          seen[key] = true
+          result.push(c)
+        }
+      })
+      return result
+    },
     filteredCircles() {
       var list = this.circleMap[this.activeCategory] || this.circles
       if (!this.searchKeyword) return list
@@ -83,6 +96,11 @@ export default {
   created() {
     this.localSelected = this.selected || null
     this.loadCategories()
+  },
+  watch: {
+    selected(val) {
+      this.localSelected = val || null
+    }
   },
   methods: {
     async loadCategories() {
@@ -137,6 +155,11 @@ export default {
     handleSelect(circle) {
       this.localSelected = circle
       this.$emit('select', circle)
+    },
+    // "不选择圈子"：清除已选圈子并通知父组件，同时关闭弹窗
+    handleCancel() {
+      this.localSelected = null
+      this.$emit('cancel')
     },
     handleConfirm() {
       this.$emit('confirm', this.localSelected)
@@ -254,10 +277,15 @@ export default {
   gap: 12px;
   padding: 12px;
   border-radius: 8px;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
   &:hover { background: #f7f8fa; }
-  &.selected { background: #eaf2ff; }
+  &.selected {
+    background: #eaf2ff;
+    border-color: #1e80ff;
+    box-shadow: 0 0 0 1px #1e80ff inset;
+  }
 }
 
 .circle-icon { font-size: 24px; }

@@ -75,6 +75,7 @@
       @close="showCircleSelector = false"
       @select="selectCircle"
       @confirm="onCircleConfirm"
+      @cancel="clearCircleSelection"
     />
 
     <PinsTopicSelector
@@ -188,6 +189,11 @@ export default {
       if (circle) {
         this.selectedCircle = circle
       }
+      this.showCircleSelector = false
+    },
+    // 用户点击"不选择圈子"：清除已选圈子并关闭弹窗
+    clearCircleSelection() {
+      this.selectedCircle = null
       this.showCircleSelector = false
     },
     selectTopic(topic) {

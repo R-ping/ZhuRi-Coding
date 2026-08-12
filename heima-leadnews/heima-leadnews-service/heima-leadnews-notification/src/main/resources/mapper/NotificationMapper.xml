@@ -28,4 +28,14 @@
         UPDATE notifications SET is_read = 1
         WHERE user_id = #{userId} AND is_read = 0
     </update>
+
+    <select id="countUnreadByType" resultType="int">
+        SELECT COUNT(*) FROM notifications
+        WHERE user_id = #{userId} AND type = #{type} AND is_read = 0
+    </select>
+
+    <update id="markTypeRead">
+        UPDATE notifications SET is_read = 1
+        WHERE user_id = #{userId} AND type = #{type} AND is_read = 0
+    </update>
 </mapper>
