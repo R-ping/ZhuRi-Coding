@@ -19,9 +19,27 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
 
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 50;
+    private static final String UNTAGGED = "__untagged__";
 
-    @Value("${recommend.max-candidates:500}")
+    /** 候选池上限（性能兜底） */
+    @Value("${recommend.max-candidates:2000}")
     private int maxCandidates;
+
+    /** 候选时间窗口（天），仅取最近 windowDays 天发布的文章 */
+    @Value("${recommend.window-days:7}")
+    private int windowDays;
+
+    /** 多样性配额：全局推荐序列中同一标签最多出现的篇数 */
+    @Value("${recommend.max-per-tag:2}")
+    private int maxPerTag;
+
+    /** 作者上限：全局推荐序列中同一作者最多出现的篇数，0 表示不限制 */
+    @Value("${recommend.max-per-author:3}")
+    private int maxPerAuthor;
+
+    /** 无标签文章归入的桶 */
+    @Value("${recommend.untagged-bucket:__untagged__}")
+    private String untaggedBucket;
 
     @Autowired
     private ApArticleMapper apArticleMapper;
@@ -32,24 +50,21 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
         int page = (dto.getPage() == null || dto.getPage() < 0) ? 0 : dto.getPage();
         String channel = (dto.getChannel() == null || dto.getChannel().isEmpty()) ? "__all__" : dto.getChannel();
 
-        // 生成新种子或使用已有种子
-        long seed = (dto.getSeed() != null) ? dto.getSeed() : System.nanoTime();
-        if (dto.getSeed() == null) {
-            log.info("Recommend: new seed={}, channel={}, page={}", seed, channel, page);
-        }
+        // seed 作为会话/分页锚点。配额算法为确定性输出，seed 仅用于保持前端分页协议一致
+        long seed = (dto.getSeed() != null) ? dto.getSeed() : System.currentTimeMillis();
 
-        // 1. 查询候选池
+        // 1. 查询候选池（时间窗口内，评分优先）
         Integer channelId = null;
         if (!"__all__".equals(channel)) {
             try { channelId = Integer.parseInt(channel); } catch (NumberFormatException ignored) {}
         }
-        List<ApArticle> candidates = apArticleMapper.selectRecommendCandidates(channelId, maxCandidates, dto.getTagName());
+        List<ApArticle> candidates = apArticleMapper.selectRecommendCandidates(channelId, maxCandidates, dto.getTagName(), windowDays);
         if (candidates == null || candidates.isEmpty()) {
-            log.info("Recommend: no candidates for channel={}", channel);
+            log.info("Recommend: no candidates for channel={}, windowDays={}", channel, windowDays);
             return ResponseResult.okResult(buildEmptyResponse(seed, page, size));
         }
 
-        // 2. 计算各项指标的最大值（用于归一化）—— 单次遍历
+        // 2. 计算各项指标的最大值（用于对数归一化）—— 单次遍历
         long now = System.currentTimeMillis();
         int maxViews = 0, maxLikes = 0, maxComments = 0, maxCollections = 0;
         for (ApArticle a : candidates) {
@@ -58,37 +73,26 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
             maxComments = Math.max(maxComments, a.getComment() != null ? a.getComment() : 0);
             maxCollections = Math.max(maxCollections, a.getCollection() != null ? a.getCollection() : 0);
         }
-        if (maxViews == 0) maxViews = 1;
-        if (maxLikes == 0) maxLikes = 1;
-        if (maxComments == 0) maxComments = 1;
-        if (maxCollections == 0) maxCollections = 1;
 
-        // 3. 预计算加权分数（含确定性随机噪声），存入缓存避免 Comparator 非确定性问题
-        //    使用种子确保同种子 → 同噪声 → 同排序 → 同分页结果
-        Random rng = new Random(seed);
+        // 3. 预计算加权分数（对数归一化，弱化爆款压迫），按分数降序
         Map<Long, Double> scoreCache = new HashMap<>();
         for (ApArticle article : candidates) {
-            double baseScore = computeBaseScore(article, now, maxViews, maxLikes, maxComments, maxCollections);
-            double noise = rng.nextDouble() * 0.05; // 确定性噪声，种子相同则噪声相同
-            scoreCache.put(article.getId(), baseScore + noise);
+            scoreCache.put(article.getId(), computeBaseScore(article, now, maxViews, maxLikes, maxComments, maxCollections));
         }
-
-        // 4. 按预计算分数排序（Comparator 确定性强，不再依赖 ThreadLocalRandom）
         candidates.sort((a, b) -> Double.compare(scoreCache.get(b.getId()), scoreCache.get(a.getId())));
 
-        // 5. 带权随机采样：高分段内做小范围抖动，保留排序优势同时增加非确定性
-        //    将排序后的列表按分数分成若干组，组内做种子随机洗牌
-        List<ApArticle> shuffled = groupedShuffle(candidates, scoreCache, rng);
+        // 4. 全局配额贪心：标签配额 + 作者上限，产出横向覆盖的全局序列（跨页稳定）
+        List<ApArticle> globalSequence = buildGlobalSequence(candidates);
 
-        // 6. 分页截取
+        // 5. 分页截取
         int fromIndex = page * size;
-        int toIndex = Math.min(fromIndex + size, shuffled.size());
-        boolean hasMore = toIndex < shuffled.size();
-        List<ApArticle> pageResult = fromIndex < shuffled.size()
-                ? shuffled.subList(fromIndex, toIndex)
+        int toIndex = Math.min(fromIndex + size, globalSequence.size());
+        boolean hasMore = toIndex < globalSequence.size();
+        List<ApArticle> pageResult = fromIndex < globalSequence.size()
+                ? globalSequence.subList(fromIndex, toIndex)
                 : Collections.emptyList();
 
-        // 7. 构建响应 - null-safe 处理
+        // 6. 构建响应 - null-safe 处理
         List<Map<String, Object>> safeList = pageResult.stream()
                 .map(ApArticle::nullSafeToMap).collect(Collectors.toList());
         Map<String, Object> result = new HashMap<>();
@@ -97,40 +101,74 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
         result.put("page", page);
         result.put("size", size);
         result.put("hasMore", hasMore);
-        result.put("total", shuffled.size());
+        result.put("total", globalSequence.size());
 
-        log.info("Recommend: returned {} articles, hasMore={}, seed={}, channel={}, page={}",
-                pageResult.size(), hasMore, seed, channel, page);
+        log.info("Recommend: candidates={}, seq={}, returned {} articles, hasMore={}, seed={}, channel={}, page={}",
+                candidates.size(), globalSequence.size(), pageResult.size(), hasMore, seed, channel, page);
         return ResponseResult.okResult(result);
     }
 
     /**
-     * 分组洗牌：将排序后的列表按分数区间分组，组内随机打乱。
-     * 这样既保留了加权排序的宏观优势（高分文章在前面），
-     * 又引入了组内随机性（同分段内非确定性），实现"每次刷新不同结果"。
+     * 全局配额贪心：对「评分降序」的候选做一次遍历，
+     * 同一标签累计不超过 maxPerTag、同一作者累计不超过 maxPerAuthor，
+     * 产出跨页稳定的全局推荐序列。
+     * 配额计数全局累计（跨页），保证横向覆盖，避免「本页与下页同标签」。
+     * 若严格配额后序列不足候选总数（标签过于集中），放开配额按评分追加补齐，保证列表可填满。
      */
-    private List<ApArticle> groupedShuffle(List<ApArticle> sorted, Map<Long, Double> scoreCache, Random rng) {
-        int groupSize = Math.max(sorted.size() / 5, 5); // 至少5个一组，最多分5组
-        List<ApArticle> result = new ArrayList<>(sorted.size());
+    private List<ApArticle> buildGlobalSequence(List<ApArticle> candidates) {
+        Map<String, Integer> tagCount = new HashMap<>();
+        Map<Long, Integer> authorCount = new HashMap<>();
+        List<ApArticle> seq = new ArrayList<>(candidates.size());
 
-        for (int i = 0; i < sorted.size(); i += groupSize) {
-            int end = Math.min(i + groupSize, sorted.size());
-            List<ApArticle> group = new ArrayList<>(sorted.subList(i, end));
-            Collections.shuffle(group, new Random(rng.nextLong()));
-            result.addAll(group);
+        for (ApArticle art : candidates) {
+            String mainTag = resolveMainTag(art);
+            if (tagCount.getOrDefault(mainTag, 0) >= maxPerTag) {
+                continue; // 标签配额已满 → 跳过
+            }
+            if (maxPerAuthor > 0 && art.getAuthorId() != null
+                    && authorCount.getOrDefault(art.getAuthorId(), 0) >= maxPerAuthor) {
+                continue; // 作者上限已满 → 跳过
+            }
+            seq.add(art);
+            tagCount.put(mainTag, tagCount.getOrDefault(mainTag, 0) + 1);
+            if (art.getAuthorId() != null) {
+                authorCount.put(art.getAuthorId(), authorCount.getOrDefault(art.getAuthorId(), 0) + 1);
+            }
         }
-        return result;
+
+        // 配额不足降级：候选标签集中导致序列过短，按评分追加剩余候选补齐
+        if (seq.size() < candidates.size()) {
+            Set<Long> seen = seq.stream().map(ApArticle::getId).collect(Collectors.toSet());
+            for (ApArticle art : candidates) {
+                if (!seen.contains(art.getId())) {
+                    seq.add(art);
+                }
+            }
+        }
+        return seq;
     }
 
     /**
-     * 计算基础加权推荐分数（不含随机噪声）。
+     * 取文章主标签（第一个），无标签文章归入 untaggedBucket。
+     */
+    private String resolveMainTag(ApArticle article) {
+        if (article.getTags() != null && !article.getTags().isEmpty()
+                && article.getTags().get(0) != null && !article.getTags().get(0).trim().isEmpty()) {
+            return article.getTags().get(0).trim();
+        }
+        return (untaggedBucket == null || untaggedBucket.isEmpty()) ? UNTAGGED : untaggedBucket;
+    }
+
+    /**
+     * 计算基础加权推荐分数。
      * 权重分配：
      *   score          × 0.25  — 编辑/系统设置的热度分
      *   recencyFactor  × 0.20  — 发布时间越近分越高（7天内线性衰减）
-     *   views          × 0.15  — 阅读量（归一化）
-     *   likes          × 0.15  — 点赞数（归一化）
-     *   comments       × 0.10  — 评论数（归一化）
-     *   collections    × 0.10  — 收藏数（归一化）
+     *   logViews       × 0.15  — 阅读量（对数归一化）
+     *   logLikes       × 0.15  — 点赞数（对数归一化）
+     *   logComments    × 0.10  — 评论数（对数归一化）
+     *   logCollections × 0.10  — 收藏数（对数归一化）
+     * 互动指标采用对数归一化 log(1+x)/log(1+max)，弱化爆款数值的线性压制，让长尾内容有生存空间。
      */
     private double computeBaseScore(ApArticle article, long now,
                                     int maxViews, int maxLikes, int maxComments, int maxCollections) {
@@ -145,23 +183,31 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
             recencyFactor = Math.max(0, 1.0 - daysSincePublished / 7.0);
         }
 
-        // 用户互动指标（归一化到0-1）
+        // 用户互动指标（对数归一化到0-1）
         int views = article.getViews() != null ? article.getViews() : 0;
         int likes = article.getLikes() != null ? article.getLikes() : 0;
         int comments = article.getComment() != null ? article.getComment() : 0;
         int collections = article.getCollection() != null ? article.getCollection() : 0;
 
-        double normalizedViews = maxViews > 0 ? (double) views / maxViews : 0;
-        double normalizedLikes = maxLikes > 0 ? (double) likes / maxLikes : 0;
-        double normalizedComments = maxComments > 0 ? (double) comments / maxComments : 0;
-        double normalizedCollections = maxCollections > 0 ? (double) collections / maxCollections : 0;
+        double logViews = logNorm(views, maxViews);
+        double logLikes = logNorm(likes, maxLikes);
+        double logComments = logNorm(comments, maxComments);
+        double logCollections = logNorm(collections, maxCollections);
 
         return normalizedScore * 0.25
                 + recencyFactor * 0.20
-                + normalizedViews * 0.15
-                + normalizedLikes * 0.15
-                + normalizedComments * 0.10
-                + normalizedCollections * 0.10;
+                + logViews * 0.15
+                + logLikes * 0.15
+                + logComments * 0.10
+                + logCollections * 0.10;
+    }
+
+    /**
+     * 对数归一化：log(1+x)/log(1+max)，max<=0 时返回 0。
+     */
+    private double logNorm(int value, int max) {
+        if (max <= 0) return 0;
+        return Math.log(1 + value) / Math.log(1 + max);
     }
 
     private Map<String, Object> buildEmptyResponse(long seed, int page, int size) {

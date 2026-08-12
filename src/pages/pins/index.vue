@@ -99,7 +99,7 @@
                         <div class="pins-content-area">
                             <div class="pins-header">
                                 <span class="pins-user">{{ escapeHtml(pins.userName) }}</span>
-                                <span class="pins-time">{{ formatTime(pins.createdTime) }}</span>
+                                <span class="pins-time" @mouseenter="pins.hoverTime = true" @mouseleave="pins.hoverTime = false" :class="{ 'time-hover': pins.hoverTime }" @click="goToDetail(pins)">{{ formatTime(pins.createdTime) }}</span>
                             </div>
                             <div class="pins-text">{{ escapeHtml(pins.content) }}</div>
 
@@ -689,6 +689,11 @@ export default {
                 this.pinsLoading = false
             }
         },
+        goToDetail(pins) {
+            if (pins && pins.id) {
+                this.$router.push('/pins/detail/' + pins.id)
+            }
+        },
         switchTab(tab) {
             if (this.activeTab === tab) return
             this.activeTab = tab
@@ -1066,6 +1071,12 @@ export default {
 .pins-time {
     font-size: 12px;
     color: #8a919f;
+    cursor: pointer;
+    transition: color 0.2s;
+    &.time-hover {
+        color: #1e80ff;
+        text-decoration: underline;
+    }
 }
 
 .pins-text {

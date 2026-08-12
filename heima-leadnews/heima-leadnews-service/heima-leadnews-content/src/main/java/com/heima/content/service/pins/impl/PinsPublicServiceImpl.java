@@ -34,6 +34,11 @@ public class PinsPublicServiceImpl implements PinsPublicService {
     }
 
     @Override
+    public ResponseResult detail(Long pinsId) {
+        return pinsQueryService.detail(pinsId);
+    }
+
+    @Override
     public ResponseResult sidebar() {
         return pinsQueryService.sidebar();
     }
@@ -63,8 +68,8 @@ public class PinsPublicServiceImpl implements PinsPublicService {
     }
 
     @Override
-    public ResponseResult commentList(Long pinsId, Integer page, Integer size) {
-        return pinsQueryService.commentList(pinsId, page, size);
+    public ResponseResult commentList(Long pinsId, Integer page, Integer size, String sort) {
+        return pinsQueryService.commentList(pinsId, page, size, sort);
     }
 
     @Override

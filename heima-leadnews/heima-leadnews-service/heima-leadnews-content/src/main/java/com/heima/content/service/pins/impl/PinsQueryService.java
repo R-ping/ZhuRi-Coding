@@ -210,6 +210,25 @@ public class PinsQueryService {
         return ResponseResult.okResult(data);
     }
 
+    // ========== 沸点详情 ==========
+
+    /**
+     * 获取沸点详情（单条）
+     */
+    public ResponseResult detail(Long pinsId) {
+        if (pinsId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "pinsId不能为空");
+        }
+        ApUser user = getUserOrNull();
+        ApPins pin = apPinsMapper.selectById(pinsId);
+        if (pin == null || Boolean.TRUE.equals(pin.getIsDeleted())) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
+        }
+        List<ApPins> single = Collections.singletonList(pin);
+        List<PinsVO> voList = convertToVOList(single, user);
+        return ResponseResult.okResult(voList.isEmpty() ? null : voList.get(0));
+    }
+
     // ========== 侧边栏 ==========
 
     public ResponseResult sidebar() {
@@ -270,17 +289,23 @@ public class PinsQueryService {
 
     // ========== 评论列表 ==========
 
-    public ResponseResult commentList(Long pinsId, Integer page, Integer size) {
+    public ResponseResult commentList(Long pinsId, Integer page, Integer size, String sort) {
         if (pinsId == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "pinsId不能为空");
         }
+
+        boolean hot = "hot".equalsIgnoreCase(sort);
 
         // 分页查询顶级评论
         Page<ApPinsComment> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<ApPinsComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApPinsComment::getPinsId, pinsId);
-        wrapper.isNull(ApPinsComment::getParentId).or().eq(ApPinsComment::getParentId, 0);
-        wrapper.orderByDesc(ApPinsComment::getCreatedTime);
+        wrapper.and(w -> w.isNull(ApPinsComment::getParentId).or().eq(ApPinsComment::getParentId, 0));
+        if (hot) {
+            wrapper.orderByDesc(ApPinsComment::getLikeCount).orderByDesc(ApPinsComment::getCreatedTime);
+        } else {
+            wrapper.orderByDesc(ApPinsComment::getCreatedTime);
+        }
         IPage<ApPinsComment> pageResult = apPinsCommentMapper.selectPage(pageParam, wrapper);
         List<ApPinsComment> pageComments = pageResult.getRecords();
         long total = pageResult.getTotal();

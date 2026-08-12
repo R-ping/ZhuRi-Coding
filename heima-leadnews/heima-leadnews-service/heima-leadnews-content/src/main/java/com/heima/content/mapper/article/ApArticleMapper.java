@@ -18,7 +18,7 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
      */
     public List<ApArticle> loadArticleList(ArticleHomeDto dto,Short type);
 
-    List<ApArticle> selectRecommendCandidates(@Param("channelId") Integer channelId, @Param("maxCandidates") int maxCandidates, @Param("tagName") String tagName);
+    List<ApArticle> selectRecommendCandidates(@Param("channelId") Integer channelId, @Param("maxCandidates") int maxCandidates, @Param("tagName") String tagName, @Param("windowDays") int windowDays);
 
     /**
      * 更新文章评论数（原子递增）

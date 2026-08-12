@@ -137,22 +137,44 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public ResponseResult unreadCount(Long userId) {
+        Map<String, Object> result = new HashMap<>();
+        int total = 0;
+        Map<String, Integer> typeCounts = new HashMap<>();
+        
         // 优先从Redis缓存读取
         if (stringRedisTemplate != null) {
             String cached = stringRedisTemplate.opsForValue().get(REDIS_UNREAD_KEY + userId);
             if (cached != null) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("total", Integer.parseInt(cached));
-                return ResponseResult.okResult(result);
+                total = Integer.parseInt(cached);
             }
         }
-        int count = notificationMapper.countUnread(userId);
-        // 写回缓存
-        if (stringRedisTemplate != null) {
-            stringRedisTemplate.opsForValue().set(REDIS_UNREAD_KEY + userId, String.valueOf(count), 5, TimeUnit.MINUTES);
+        
+        // 从数据库按类型分组查询
+        List<Map<String, Object>> groupResults = notificationMapper.countUnreadGroupByType(userId);
+        for (Map<String, Object> row : groupResults) {
+            Integer type = ((Number) row.get("type")).intValue();
+            Integer count = ((Number) row.get("count")).intValue();
+            total += count; // 累加（如果Redis没有的话，这里就是总数）
+            typeCounts.put(getTypeName(type), count);
         }
-        Map<String, Object> result = new HashMap<>();
-        result.put("total", count);
+        
+        // 如果 Redis 有总数，优先用 Redis 的（因为 Redis 是实时的）
+        if (stringRedisTemplate != null) {
+            String cached = stringRedisTemplate.opsForValue().get(REDIS_UNREAD_KEY + userId);
+            if (cached != null) {
+                total = Integer.parseInt(cached);
+            } else {
+                // 如果 Redis 没有缓存，则写回
+                stringRedisTemplate.opsForValue().set(REDIS_UNREAD_KEY + userId, String.valueOf(total), 5, TimeUnit.MINUTES);
+            }
+        }
+
+        result.put("total", total);
+        result.put("comment", typeCounts.getOrDefault("comment", 0));
+        result.put("digg", typeCounts.getOrDefault("digg", 0));
+        result.put("follow", typeCounts.getOrDefault("follow", 0));
+        result.put("system", typeCounts.getOrDefault("system", 0));
+        
         return ResponseResult.okResult(result);
     }
 

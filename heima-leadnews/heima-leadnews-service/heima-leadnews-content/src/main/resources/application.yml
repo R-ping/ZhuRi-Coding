@@ -83,6 +83,14 @@ bailian:
       max-attempts: 3
       backoff-delay: 1000
 
+# 文章推荐配置（全局公平 + 多样性配额）
+recommend:
+  max-candidates: 2000        # 候选池上限（性能兜底）
+  window-days: 7              # 候选时间窗口（天）
+  max-per-tag: 2              # 每 10 篇同一标签最多 N 篇
+  max-per-author: 3           # 每 10 篇同一作者最多 M 篇（0=不限制）
+  untagged-bucket: __untagged__ # 无标签文章去向
+
 # 支付宝沙箱配置（通过环境变量注入）
 alipay:
   app-id: ${ALIPAY_APP_ID:}

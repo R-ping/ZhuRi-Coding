@@ -94,7 +94,7 @@ public class PinsPublishService {
         pins.setUserAvatar(user.getImage() != null ? user.getImage() : "");
         pins.setContent(dto.getContent());
         pins.setImageUrls(dto.getImageUrls() != null ? dto.getImageUrls() : "");
-        pins.setTopicTags(dto.getTopicTags() != null ? dto.getTopicTags() : "");
+        pins.setTopicTags(dto.getTopicTags() != null ? String.join(",", dto.getTopicTags()) : "");
         pins.setTopicId(dto.getTopicId());
         pins.setCircleId(dto.getCircleId());
         pins.setLinkUrl(dto.getLinkUrl() != null ? dto.getLinkUrl() : "");
@@ -115,10 +115,11 @@ public class PinsPublishService {
                 log.warn("通知服务不可用，跳过发送沸点发布通知, pinsId={}", pins.getId());
                 return;
             }
-            String message = "你的沸点已发布，正在审核中。";
+            String message = "你的沸点已成功发布！";
             Map<String, Object> contentMap = new HashMap<>();
             contentMap.put("pinsId", String.valueOf(pins.getId()));
             contentMap.put("message", message);
+            contentMap.put("preview", pins.getContent() != null ? pins.getContent() : "");
             contentMap.put("notification_type", "system");
             String contentJson = objectMapper.writeValueAsString(contentMap);
             Map<String, Object> params = new HashMap<>();
