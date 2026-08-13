@@ -2,6 +2,7 @@ import axios from 'axios'
 import crypto from 'crypto-js'
 import store from '@/stores/store'
 import tokenManager from './tokenManager'
+import { normalizeOssUrl, normalizeResponseData } from './ossUrl'
 
 function Request() {
     this.store = null;
@@ -143,12 +144,14 @@ Request.prototype = {
             var data = response.data
             // 兼容后端直接返回字符串的情况（如文章内容）
             if (typeof data === 'string') {
-                return { code: 200, data: data }
+                return { code: 200, data: normalizeOssUrl(data) }
             }
             // 检查响应code字段，非200时视为错误，抛出带message的异常
             if (data && data.code !== undefined && data.code !== 200) {
                 return Promise.reject({ code: data.code, message: data.message || '服务器内部错误', data: data.data })
             }
+            // 规范化响应数据中的 OSS URL（去除过期签名参数）
+            data = normalizeResponseData(data)
             return data
         }).catch(function (error) {
             // 444 — accessToken过期，仅当原请求使用用户token时才尝试刷新后重放
