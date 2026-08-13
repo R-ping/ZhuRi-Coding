@@ -122,12 +122,16 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/user/api/v1/login/")
             || path.startsWith("/content/api/v1/pins/list")
             || path.startsWith("/content/api/v1/pins/circles")
+            || path.startsWith("/content/api/v1/pins/sidebar")
+            || path.startsWith("/content/api/v1/circle/recommend")
+            || path.startsWith("/content/api/v1/circle/my")
             // 沸点详情页公开只读接口（未登录也可浏览沸点详情/评论列表，利于 SEO）
             // 注意：仅放行只读查询，发布/点赞/发表评论/分享等写接口仍须登录
             || path.startsWith("/content/api/v1/pins/comment/list")
             || path.matches("/content/api/v1/pins/\\d+")
             || path.startsWith("/content/api/v1/topics/")
             || path.startsWith("/content/api/v1/article/recommend")
+            || (path.startsWith("/content/api/v1/article/")&&path.endsWith("/recommend"))
             || path.startsWith("/content/api/v1/tag/by-category")
             || path.startsWith("/content/api/v1/article/load")
             // 文章详情页（FTL 服务端渲染）浏览器导航加载，无法携带 accToken，公开访问利于 SEO
