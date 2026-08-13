@@ -163,6 +163,37 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
   3. 告诉你了数据库连接信息：*mysql -h localhost -u root -p* 123456，当需要插入表，或发生表结构变更时，由你直接操作完成，相应的.sql文件保留下来；若对某个表、表字段、字段类型不确定，可以提前查看，使你的输出更精准。
 - **禁止** 因表结构缺失而使用临时数组或假数据阻塞开发。
 
+#### 4.4 数据库脚本目录规范（db/ 文件夹）
+
+各服务连接的数据库建表/变更脚本统一归集到各自服务模块下：
+
+```
+heima-leadnews-service/heima-leadnews-{服务}/
+└── src/main/resources/db/
+    ├── schema.sql        # 全量建表 DDL 汇总（只读，勿直接改动）
+    ├── migrations/       # 增量变更脚本（按时间/用途命名，执行一次即可）
+    └── README.md         # 目录约定 + 重新生成命令
+```
+
+各服务对应数据库：
+
+- `heima-leadnews-content` → `leadnews_article`（内容库）
+- `heima-leadnews-user` → `leadnews_user`（用户库）
+- `heima-leadnews-reward` → `leadnews_reward`（打赏/奖励库）
+- `heima-leadnews-notification` → `leadnews_notification`（系统通知库）
+
+约定：
+
+- **schema.sql** 是全量建表结构汇总（由 `mysqldump --no-data` 从本地库导出），**只读、勿直接改动**；需要查看表结构时读取此文件。
+- **新增表或字段**时，先在 `migrations/` 下编写变更脚本（如 `alter_ap_pins_add_view_count.sql`）并执行，再按需重新导出更新 `schema.sql`。
+- 重新生成 schema 命令示例：
+
+  ```
+  mysqldump -h 127.0.0.1 -u root -p --no-data --skip-comments \
+    --skip-add-drop-table --default-character-set=utf8mb4 leadnews_article \
+    > src/main/resources/db/schema.sql
+  ```
+
 ------
 
 ### 5. 服务交互与微服务约束（分布式场景）
