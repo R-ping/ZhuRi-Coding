@@ -1,5 +1,7 @@
 package com.heima.notification.service.impl;
 
+import com.heima.apis.article.IFollowClient;
+import com.heima.apis.user.IUserClient;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.notification.dtos.ImMessageDto;
@@ -35,28 +37,126 @@ public class ImServiceImpl implements ImService {
     @Autowired(required = false)
     private StringRedisTemplate stringRedisTemplate;
 
+    @Autowired(required = false)
+    private IUserClient userClient;
+
+    @Autowired(required = false)
+    private IFollowClient followClient;
+
     @Override
     public ResponseResult listSessions(Long userId) {
         List<ImSession> sessions = imSessionMapper.selectByUserId(userId);
         List<Map<String, Object>> list = new ArrayList<>();
         for (ImSession s : sessions) {
+            Long peerId = s.getUser1Id().equals(userId) ? s.getUser2Id() : s.getUser1Id();
             Map<String, Object> item = new HashMap<>();
             item.put("session_id", s.getId());
             item.put("session_key", s.getSessionKey());
-            Long peerId = s.getUser1Id().equals(userId) ? s.getUser2Id() : s.getUser1Id();
             item.put("peer_id", peerId);
+            // 补充对方昵称与头像，供会话列表展示
+            Map<String, String> peer = resolvePeerInfo(peerId);
+            item.put("peer_name", peer.get("name"));
+            item.put("peer_avatar", peer.get("avatar"));
             item.put("last_message", s.getLastMessage());
             item.put("last_message_at", s.getLastMessageAt() != null ? s.getLastMessageAt().toString() : null);
             int unread = s.getUser1Id().equals(userId)
                     ? (s.getUser1UnreadCount() != null ? s.getUser1UnreadCount() : 0)
                     : (s.getUser2UnreadCount() != null ? s.getUser2UnreadCount() : 0);
             item.put("unread_count", unread);
-            item.put("is_active", s.getIsActive() == 1);
+            boolean isActive = s.getIsActive() == 1;
+            item.put("is_active", isActive);
+            // 当前用户是否能无限发送：对方已回复 或 对方关注了当前用户
+            item.put("can_send_unlimited", isActive || peerFollowsViewer(peerId, userId));
             list.add(item);
         }
         Map<String, Object> result = new HashMap<>();
         result.put("list", list);
         return ResponseResult.okResult(result);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult getOrCreateSession(Long userId, Long peerId) {
+        if (peerId == null || peerId.equals(userId)) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "目标用户无效");
+        }
+
+        String sessionKey = buildSessionKey(userId, peerId);
+        ImSession session = imSessionMapper.selectBySessionKey(sessionKey);
+        if (session == null) {
+            session = new ImSession();
+            session.setSessionKey(sessionKey);
+            session.setUser1Id(Math.min(userId, peerId));
+            session.setUser2Id(Math.max(userId, peerId));
+            session.setIsActive(0);
+            session.setUser1UnreadCount(0);
+            session.setUser2UnreadCount(0);
+            session.setCreatedAt(LocalDateTime.now());
+            imSessionMapper.insert(session);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("session_id", session.getId());
+        result.put("peer_id", peerId);
+        Map<String, String> peer = resolvePeerInfo(peerId);
+        result.put("peer_name", peer.get("name"));
+        result.put("peer_avatar", peer.get("avatar"));
+        result.put("last_message", session.getLastMessage());
+        result.put("last_message_at", session.getLastMessageAt() != null ? session.getLastMessageAt().toString() : null);
+        int unread = session.getUser1Id().equals(userId)
+                ? (session.getUser1UnreadCount() != null ? session.getUser1UnreadCount() : 0)
+                : (session.getUser2UnreadCount() != null ? session.getUser2UnreadCount() : 0);
+        result.put("unread_count", unread);
+        boolean isActive = session.getIsActive() == 1;
+        result.put("is_active", isActive);
+        // 当前用户是否能无限发送：对方已回复 或 对方关注了当前用户
+        result.put("can_send_unlimited", isActive || peerFollowsViewer(peerId, userId));
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 判断对方(peerId)是否关注了当前用户(viewerId)；关注服务不可用时返回 false
+     */
+    private boolean peerFollowsViewer(Long peerId, Long viewerId) {
+        if (peerId == null || viewerId == null || followClient == null) {
+            return false;
+        }
+        try {
+            ResponseResult res = followClient.isFollowing(peerId, viewerId);
+            if (res != null && res.getCode() == 200 && res.getData() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) res.getData();
+                Object v = data.get("isFollowing");
+                return v != null && Boolean.parseBoolean(String.valueOf(v));
+            }
+        } catch (Exception e) {
+            log.warn("查询对方关注关系失败, peerId={}, viewerId={}", peerId, viewerId, e);
+        }
+        return false;
+    }
+
+    /**
+     * 通过 Feign 调用用户服务解析对方昵称/头像，失败时返回空字符串兜底
+     */
+    private Map<String, String> resolvePeerInfo(Long peerId) {
+        Map<String, String> info = new HashMap<>();
+        info.put("name", "");
+        info.put("avatar", "");
+        if (peerId == null || userClient == null) {
+            return info;
+        }
+        try {
+            ResponseResult res = userClient.getPublicInfo(peerId);
+            if (res != null && res.getCode() == 200 && res.getData() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) res.getData();
+                info.put("name", data.get("nickname") != null ? String.valueOf(data.get("nickname")) : "");
+                info.put("avatar", data.get("avatar") != null ? String.valueOf(data.get("avatar")) : "");
+            }
+        } catch (Exception e) {
+            log.warn("解析用户信息失败, peerId={}", peerId, e);
+        }
+        return info;
     }
 
     @Override

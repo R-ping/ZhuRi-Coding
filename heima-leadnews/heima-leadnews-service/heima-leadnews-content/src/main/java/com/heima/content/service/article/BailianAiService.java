@@ -7,20 +7,15 @@ import java.util.Map;
 public interface BailianAiService {
 
     /**
-     * 对文章进行AI多维分析
+     * 对文章进行一次性综合AI审核
+     * 合并违规检测、标题相关性、内容质量、技术相关性四项审核为一次调用，降低token消耗
      * @param article 文章对象
      * @param content 文章内容
-     * @return 分析结果Map，包含各维度评分
+     * @return 审核结果Map，包含: success(Boolean), is_violation(Boolean), violation_type(String),
+     *         violation_reason(String), titleRelevanceScore(Integer), qualityScore(Integer),
+     *         isTechContent(Boolean)
      */
-    Map<String, Object> analyzeArticle(ApArticle article, String content);
-
-    /**
-     * 对文章进行AI违规内容检测
-     * @param article 文章对象
-     * @param content 文章内容
-     * @return 检测结果Map，包含: success(Boolean), is_violation(Boolean), violation_type(String), violation_reason(String)
-     */
-    Map<String, Object> checkViolation(ApArticle article, String content);
+    Map<String, Object> comprehensiveAudit(ApArticle article, String content);
 
     /**
      * 通用AI违规内容检测（不依赖ApArticle对象）

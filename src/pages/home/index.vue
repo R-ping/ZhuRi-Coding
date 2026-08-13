@@ -49,9 +49,9 @@
           </div>
           <div v-for="(item,key) in v" class="cell" :key="item.id || key"
             @click="wxcPanItemClicked(item)">
-            <Item0 v-if="item.type === 0" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'"/>
-            <Item1 v-if="item.type === 1" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'"/>
-            <Item3 v-if="item.type === 3" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'"/>
+            <Item0 v-if="item.type === 0" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
+            <Item1 v-if="item.type === 1" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
+            <Item3 v-if="item.type === 3" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
           </div>
           <div class="loading" v-if="tabStates[index] && tabStates[index].loadingMore">
             <span class="loading-spinner"></span>
@@ -112,9 +112,9 @@
           </div>
           <div v-for="(item,key) in currentList" class="cell desktop-cell" :key="item.id || key"
             @click="wxcPanItemClicked(item)">
-            <Item0 v-if="item.type === 0" :data="item" :showTime="currentShowTime"/>
-            <Item1 v-if="item.type === 1" :data="item" :showTime="currentShowTime"/>
-            <Item3 v-if="item.type === 3" :data="item" :showTime="currentShowTime"/>
+            <Item0 v-if="item.type === 0" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
+            <Item1 v-if="item.type === 1" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
+            <Item3 v-if="item.type === 3" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
           </div>
           <div class="loading" v-if="currentState.loadingMore">
             <span class="loading-spinner"></span>
@@ -132,6 +132,16 @@
         </div>
       </div>
     </div>
+
+    <!-- 作者信息悬浮卡片 -->
+    <AuthorHoverCard
+      :visible="showAuthorCard"
+      :userId="authorCardUserId"
+      :position="authorCardPosition"
+      @close="showAuthorCard = false"
+      @follow="onAuthorFollow"
+      @message="onAuthorMessage"
+    />
   </div>
 </template>
 
@@ -144,10 +154,13 @@
   import Item3 from '../../components/cells/article_3.vue'
   import Config from './config'
   import feedMixin from './mixins/feedMixin'
+  import AuthorHoverCard from '@/components/search/AuthorHoverCard.vue'
+  import { followUser } from '@/apis/follow'
+  import { toast } from '@/utils/toast'
 
   export default {
     name: 'HeiMa-Home',
-    components: { Home_Bar, WxcTabPage, Item0, Item1, Item3 },
+    components: { Home_Bar, WxcTabPage, Item0, Item1, Item3, AuthorHoverCard },
     mixins: [feedMixin],
     data: () => ({
       isDesktop: false,
@@ -158,7 +171,12 @@
       tabTitles: Config.tabTitles,
       tabStyles: Config.tabStyles,
       tabList: [...Array(Config.tabTitles.length).keys()].map(() => []),
-      tabPageHeight: 1334
+      tabPageHeight: 1334,
+      // 作者信息悬浮卡片
+      showAuthorCard: false,
+      authorCardUserId: null,
+      authorCardPosition: { top: 0, left: 0 },
+      authorCardTimer: null
     }),
     computed: {
       load_new_text: function () { return this.$lang.load_new_text },
@@ -282,6 +300,69 @@
         } else {
           this.load(tabIndex, 1)
         }
+      },
+      // ============== 作者信息悬浮卡片 ==============
+      onAuthorHover(payload) {
+        if (!payload || !payload.userId) return
+        var userId = payload.userId
+        var event = payload.event
+        if (this.authorCardTimer) {
+          clearTimeout(this.authorCardTimer)
+          this.authorCardTimer = null
+        }
+        this.authorCardUserId = userId
+        var rect = event.target.getBoundingClientRect()
+        var cardTop = rect.bottom + 8
+        var cardLeft = rect.left
+        if (cardLeft + 240 > window.innerWidth) {
+          cardLeft = window.innerWidth - 250
+        }
+        this.authorCardPosition = {
+          top: cardTop,
+          left: cardLeft,
+          arrow: 'top'
+        }
+        this.showAuthorCard = true
+      },
+      onAuthorLeave() {
+        var self = this
+        if (this.authorCardTimer) {
+          clearTimeout(this.authorCardTimer)
+        }
+        this.authorCardTimer = setTimeout(function () {
+          self.showAuthorCard = false
+        }, 300)
+      },
+      async onAuthorFollow(userId) {
+        var currentUserId = this.$store.state.userInfo && this.$store.state.userInfo.userId
+        if (!currentUserId) {
+          toast('请先登录')
+          this.$store.dispatch('showLogin')
+          return
+        }
+        try {
+          const res = await followUser(currentUserId, userId)
+          if (res && res.code === 200) {
+            toast('操作成功', 2)
+          } else {
+            toast((res && res.message) || '操作失败', 2)
+          }
+        } catch (e) {
+          toast('操作失败，请重试', 2)
+        }
+      },
+      onAuthorMessage(payload) {
+        this.showAuthorCard = false
+        if (!payload || !payload.userId) return
+        this.$router.push({
+          path: '/notification',
+          query: {
+            tab: 'message',
+            peer_id: payload.userId,
+            peer_name: payload.name || '',
+            peer_avatar: payload.avatar || ''
+          }
+        })
       }
     }
   };

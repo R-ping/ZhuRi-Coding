@@ -22,38 +22,33 @@ public class AIViolationProcessor implements ArticleAuditProcessor {
     @Override
     public boolean process(ApArticle article, String content, AuditProcessorContext context) {
         if (content == null || content.isEmpty()) {
-            log.info("文章内容为空，跳过AI违规检测, articleId={}", article.getId());
+            log.info("文章内容为空，跳过AI综合审核, articleId={}", article.getId());
             return true;
         }
 
-        // 1. AI违规内容检测
-        log.info("开始AI违规内容检测, articleId={}", article.getId());
+        // 一次性综合AI审核：违规检测 + 标题相关性 + 内容质量 + 技术相关性
+        // 相比原多次调用，仅传输一次标题与内容，显著降低token消耗
+        log.info("开始AI综合审核, articleId={}", article.getId());
         try {
-            Map<String, Object> violationResult = bailianAiService.checkViolation(article, content);
-            if (violationResult != null && Boolean.TRUE.equals(violationResult.get("is_violation"))) {
-                String violationType = (String) violationResult.getOrDefault("violation_type", "违规内容");
-                String violationReason = (String) violationResult.getOrDefault("violation_reason", "文章内容违反社区规范");
-                context.putExtra("failReason", violationType + ": " + violationReason);
-                context.putExtra("violationType", violationType);
-                context.putExtra("violationReason", violationReason);
-                log.info("AI违规检测未通过, articleId={}, type={}, reason={}", article.getId(), violationType, violationReason);
-                return false; // 终止审核流程
-            }
-            log.info("AI违规检测通过, articleId={}", article.getId());
-        } catch (Exception e) {
-            log.error("AI违规检测异常, articleId={}, 降级通过", article.getId(), e);
-        }
-
-        // 2. AI内容质量分析
-        log.info("开始AI内容分析, articleId={}", article.getId());
-        try {
-            Map<String, Object> aiResult = bailianAiService.analyzeArticle(article, content);
-            context.setAiAnalysisResult(aiResult);
-            if (aiResult != null) {
-                log.info("AI内容分析完成, articleId={}, result={}", article.getId(), aiResult);
+            Map<String, Object> auditResult = bailianAiService.comprehensiveAudit(article, content);
+            if (auditResult != null) {
+                // 违规检测不通过则终止审核流程
+                if (Boolean.TRUE.equals(auditResult.get("is_violation"))) {
+                    String violationType = (String) auditResult.getOrDefault("violation_type", "违规内容");
+                    String violationReason = (String) auditResult.getOrDefault("violation_reason", "文章内容违反社区规范");
+                    context.putExtra("failReason", violationType + ": " + violationReason);
+                    context.putExtra("violationType", violationType);
+                    context.putExtra("violationReason", violationReason);
+                    log.info("AI综合审核未通过(违规), articleId={}, type={}, reason={}", article.getId(), violationType, violationReason);
+                    return false; // 终止审核流程
+                }
+                // 审核通过，保存分析结果到上下文供后续处理器使用
+                context.setAiAnalysisResult(auditResult);
+                log.info("AI综合审核通过, articleId={}, qualityScore={}, isTech={}",
+                        article.getId(), auditResult.get("qualityScore"), auditResult.get("isTechContent"));
             }
         } catch (Exception e) {
-            log.error("AI内容分析异常, articleId={}, 将降级为仅通过内容安全审核", article.getId(), e);
+            log.error("AI综合审核异常, articleId={}, 降级通过", article.getId(), e);
         }
 
         return true;

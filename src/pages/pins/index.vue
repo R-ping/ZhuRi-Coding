@@ -95,10 +95,12 @@
                         <span>暂无内容</span>
                     </div>
                     <div class="pins-item" v-for="pins in pinsList" :key="pins.id">
-                        <img :src="pins.userAvatar || defaultAvatar" class="pins-avatar" alt="avatar">
+                        <img :src="pins.userAvatar || defaultAvatar" class="pins-avatar" alt="avatar"
+                            @mouseenter="onAuthorHover(pins.userId, $event)"
+                            @mouseleave="onAuthorLeave">
                         <div class="pins-content-area">
                             <div class="pins-header">
-                                <span class="pins-user">{{ escapeHtml(pins.userName) }}</span>
+                                <span class="pins-user" @mouseenter="onAuthorHover(pins.userId, $event)" @mouseleave="onAuthorLeave">{{ escapeHtml(pins.userName) }}</span>
                                 <span class="pins-time" @mouseenter="pins.hoverTime = true" @mouseleave="pins.hoverTime = false" :class="{ 'time-hover': pins.hoverTime }" @click="goToDetail(pins)">{{ formatTime(pins.createdTime) }}</span>
                             </div>
                             <div class="pins-text">{{ escapeHtml(pins.content) }}</div>
@@ -423,6 +425,16 @@
                 </div>
             </div>
         </div>
+
+        <!-- 作者信息悬浮卡片 -->
+        <AuthorHoverCard
+            :visible="showAuthorCard"
+            :userId="authorCardUserId"
+            :position="authorCardPosition"
+            @close="showAuthorCard = false"
+            @follow="onAuthorFollow"
+            @message="onAuthorMessage"
+        />
     </div>
 </template>
 
@@ -444,11 +456,13 @@ import {
 } from '@/apis/pins'
 import PinsPublishBox from './components/PinsPublishBox.vue'
 import RecommendTopics from '@/components/RecommendTopics.vue'
+import AuthorHoverCard from '@/components/search/AuthorHoverCard.vue'
 import { uploadFile } from '@/common/oss_upload'
+import { followUser } from '@/apis/follow'
 
 export default {
     name: 'Pins',
-    components: { HomeBar, PinsPublishBox, RecommendTopics },
+    components: { HomeBar, PinsPublishBox, RecommendTopics, AuthorHoverCard },
     data() {
         return {
             activeTab: 'latest',
@@ -502,6 +516,12 @@ export default {
             pinsLoading: false,
             hasMore: true,
             noMore: false,
+
+            // 作者信息悬浮卡片
+            showAuthorCard: false,
+            authorCardUserId: null,
+            authorCardPosition: { top: 0, left: 0 },
+            authorCardTimer: null,
             
             // 右侧边栏
             sidebarData: {
@@ -983,6 +1003,68 @@ export default {
         },
         goToCircles() {
             this.$router.push('/pins/circles')
+        },
+
+        // ============== 作者信息悬浮卡片 ==============
+        onAuthorHover(userId, event) {
+            if (!userId) return
+            if (this.authorCardTimer) {
+                clearTimeout(this.authorCardTimer)
+                this.authorCardTimer = null
+            }
+            this.authorCardUserId = userId
+            var rect = event.target.getBoundingClientRect()
+            var cardTop = rect.bottom + 8
+            var cardLeft = rect.left
+            if (cardLeft + 240 > window.innerWidth) {
+                cardLeft = window.innerWidth - 250
+            }
+            this.authorCardPosition = {
+                top: cardTop,
+                left: cardLeft,
+                arrow: 'top'
+            }
+            this.showAuthorCard = true
+        },
+        onAuthorLeave() {
+            var self = this
+            if (this.authorCardTimer) {
+                clearTimeout(this.authorCardTimer)
+            }
+            this.authorCardTimer = setTimeout(function () {
+                self.showAuthorCard = false
+            }, 300)
+        },
+        async onAuthorFollow(userId) {
+            var currentUserId = this.userInfo && this.userInfo.userId
+            if (!currentUserId) {
+                toast('请先登录')
+                this.$store.dispatch('showLogin')
+                return
+            }
+            try {
+                const res = await followUser(currentUserId, userId)
+                if (res && res.code === 200) {
+                    toast('操作成功', 2)
+                } else {
+                    toast((res && res.message) || '操作失败', 2)
+                }
+            } catch (e) {
+                toast('操作失败，请重试', 2)
+            }
+        },
+        onAuthorMessage(payload) {
+            this.showAuthorCard = false
+            if (!payload || !payload.userId) return
+            this.$router.push({
+                path: '/notification',
+                query: {
+                    tab: 'message',
+                    peer_id: payload.userId,
+                    peer_name: payload.name || '',
+                    peer_avatar: payload.avatar || ''
+                }
+            })
         }
     }
 }
@@ -1117,6 +1199,7 @@ export default {
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
+    cursor: pointer;
 }
 
 .pins-content-area {

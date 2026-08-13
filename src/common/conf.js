@@ -23,6 +23,7 @@ const  config = {
         notifications_like:{url:'api/v1/notifications/actions/like',sv:'notification'},
         notifications_follow_back:{url:'api/v1/notifications/actions/follow-back',sv:'notification'},
         im_sessions:{url:'api/v1/im/sessions',sv:'notification'},
+        im_session:{url:'api/v1/im/session',sv:'notification'},
         im_messages:{url:'api/v1/im/messages',sv:'notification'},
         im_send:{url:'api/v1/im/messages',sv:'notification'},
         im_read:{url:'api/v1/im/messages/read',sv:'notification'},

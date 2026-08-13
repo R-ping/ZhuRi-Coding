@@ -400,9 +400,18 @@
                 this.showAuthorCard = false
             },
             // 作者私信
-            onAuthorMessage(authorId) {
-                toast('私信功能开发中')
+            onAuthorMessage(payload) {
                 this.showAuthorCard = false
+                if (!payload || !payload.userId) return
+                this.$router.push({
+                    path: '/notification',
+                    query: {
+                        tab: 'message',
+                        peer_id: payload.userId,
+                        peer_name: payload.name || '',
+                        peer_avatar: payload.avatar || ''
+                    }
+                })
             }
         }
     }

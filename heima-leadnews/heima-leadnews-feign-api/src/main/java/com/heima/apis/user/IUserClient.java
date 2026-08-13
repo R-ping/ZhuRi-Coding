@@ -14,4 +14,10 @@ public interface IUserClient {
      */
     @GetMapping("/api/v1/user/feign/basic-info")
     ResponseResult getBasicInfo(@RequestParam("userId") Long userId);
+
+    /**
+     * 获取用户公开信息（昵称、头像、职位/公司/简介）
+     */
+    @GetMapping("/api/v1/user/feign/public-info")
+    ResponseResult getPublicInfo(@RequestParam("userId") Long userId);
 }
