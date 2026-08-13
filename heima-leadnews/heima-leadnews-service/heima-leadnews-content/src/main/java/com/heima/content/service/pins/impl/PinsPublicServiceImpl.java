@@ -39,6 +39,15 @@ public class PinsPublicServiceImpl implements PinsPublicService {
     }
 
     @Override
+    public ResponseResult view(Long pinsId) {
+        if (pinsId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "pinsId不能为空");
+        }
+        pinsQueryService.incrView(pinsId);
+        return ResponseResult.okResult();
+    }
+
+    @Override
     public ResponseResult sidebar() {
         return pinsQueryService.sidebar();
     }

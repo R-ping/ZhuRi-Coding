@@ -59,6 +59,15 @@ public class PinsPublicController {
     }
 
     /**
+     * 递增沸点浏览量
+     */
+    @PostMapping("/{pinsId}/view")
+    public ResponseResult view(@PathVariable Long pinsId) {
+        log.info("递增沸点浏览量, pinsId={}", pinsId);
+        return pinsPublicService.view(pinsId);
+    }
+
+    /**
      * 侧边栏
      */
     @GetMapping("/sidebar")

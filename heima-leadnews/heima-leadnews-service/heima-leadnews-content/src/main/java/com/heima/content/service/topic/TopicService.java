@@ -30,11 +30,6 @@ public interface TopicService {
     Map<String, Object> feed(Long id, String tab, long cursor, int size);
 
     /**
-     * 增加话题阅读量（防刷限流）
-     */
-    void incrView(Long topicId, Long userId);
-
-    /**
      * 搜索话题
      */
     List<TopicRecommendVO> search(String keyword, int limit);

@@ -5,7 +5,6 @@ import com.heima.model.topic.dtos.TopicSquareDto;
 import com.heima.model.topic.vos.TopicDetailVO;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.utils.thread.AppThreadLocalUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -46,13 +45,7 @@ public class TopicController {
 
     @PostMapping("/{id}/view")
     public ResponseResult view(@PathVariable Long id) {
-        Long userId = null;
-        try {
-            userId = AppThreadLocalUtil.getUser().getId().longValue();
-        } catch (Exception e) {
-            // 未登录用户也可增加阅读量，使用 IP 或随机标识
-        }
-        topicService.incrView(id, userId != null ? userId : 0L);
+        // 话题浏览数改为聚合其关联沸点/文章的浏览量总和，不再单独递增，故此处直接返回成功
         return ResponseResult.okResult();
     }
 

@@ -24,4 +24,8 @@ public interface ApPinsMapper extends BaseMapper<ApPins> {
     /** 原子递增分享数 */
     @Update("UPDATE ap_pins SET share_count = share_count + 1 WHERE id = #{id}")
     int incrementShare(@Param("id") Long id);
+
+    /** 原子递增浏览量 */
+    @Update("UPDATE ap_pins SET view_count = view_count + 1 WHERE id = #{id}")
+    int incrementViews(@Param("id") Long id);
 }
