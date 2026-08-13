@@ -1,5 +1,77 @@
 # CHANGELOG
 
+## 2026-08-13 — 优化：文章 AI 审核由 4 次调用合并为 1 次综合审核
+
+### 变更
+- 文章审核流程原先依次调用违规检测、标题相关性、内容质量、技术相关性共 **4 次** AI 调用，每次都重复传输完整标题与内容，token 消耗大
+- 现合并为 **1 次** 综合审核调用（`BailianAiService.comprehensiveAudit`），一次返回违规、标题相关性、内容质量、技术相关性 4 项结果，仅传输一次标题与内容，token 消耗降至约 1/4
+- 提示词精简：将原 4 段提示词合并精简为 1 段综合提示词（`COMPREHENSIVE_AUDIT_PROMPT`），去除大量冗余评分细则描述
+- `AIViolationProcessor` 改为只调用一次综合审核；违规仍作为硬性门槛，违规即终止审核流程；其余结果写入 `aiAnalysisResult` 供后续 `PowerBonusProcessor` 等使用（`qualityScore`/`success` 等 key 保持兼容）
+- 持久化统一为 `saveComprehensiveAudit`（先删旧记录再插入完整审核数据）
+- 保留通用 `checkViolation(Long, title, content)` 方法，供沸点/评论等其他审核流程使用，不受影响
+
+### 变更文件
+- 修改：`heima-leadnews-service/heima-leadnews-content/.../article/BailianAiService.java`
+- 修改：`heima-leadnews-service/heima-leadnews-content/.../article/impl/BailianAiServiceImpl.java`
+- 修改：`heima-leadnews-service/heima-leadnews-content/.../article/processor/AIViolationProcessor.java`
+
+## 2026-08-13 — 修复：OSS 封面/图片 URL 过期签名参数导致图片无法加载
+
+### 问题
+- 后端返回的图片 URL 携带 OSS 签名参数（`?Expires=...&OSSAccessKeyId=...&Signature=...`），签名过期（`AccessDenied: Request has expired`）导致文章列表封面图等无法显示
+
+### 修复
+- 桶内 `avatar/*` 与 `material/*` 已配置为公共读（`oss:GetObject`），签名参数不再需要。新增 `src/common/ossUrl.js` 工具，递归清洗响应数据中所有 `aliyuncs.com` URL 上的签名查询参数，仅保留可公开访问的 URL
+- `src/common/request.js`：在 `__fetch` 响应处理中调用 `normalizeResponseData`（含纯字符串响应，如文章内容中的内嵌图片 URL），全局生效，无需改动各接口/页面
+
+### 变更文件
+- 新增：`src/common/ossUrl.js`
+- 修改：`src/common/request.js`
+
+## 2026-08-13 — 私信功能：作者卡片「私信」跳转站内信私信分栏并打开聊天区
+
+### 功能变更
+- **作者卡片「私信」跳转**：沸点页、文章列表页（`home/index.vue`）、搜索结果页的作者信息悬浮卡片点击「私信」，跳转到站内信页私信分栏，自动选中该用户并打开聊天区
+- **聊天区默认提示**：新会话默认展示「由于对方并未关注你，在收到对方回复之前，你最多只能发送1条文字消息」（后端 `can_send_unlimited` 控制），并在对方未关注时限制最多发送1条文字消息；再次发送被拦截并提示
+- **发送限制规则（不对称）**：a 私信 b 时，若 **b（接收方）关注了 a（发送方）** 则 a 无限发送（与 a 是否关注 b 无关）；若 b 未关注 a，则 a 在收到回复前最多发送 1 条，再次发送被拦截；b 回复 a 后（`is_active`）a 无限发送。由 Feign `IFollowClient.isFollowing(receiver, sender)` 判定，关注服务降级时按普通 1 条限制处理
+- **会话列表补全**：私信会话列表/新开会话返回对方昵称与头像（此前仅显示「用户+ID」、头像为空）
+
+### 后端变更（notification 服务）
+- `ImService` / `ImServiceImpl`：新增 `getOrCreateSession(userId, peerId)`，对指定用户获取（不存在则创建）会话，返回昵称/头像/最后消息/未读/激活状态；`listSessions` 补充对方昵称与头像（通过 Feign `IUserClient.getPublicInfo` 解析）
+- `ImController`：新增 `GET /api/v1/im/session?peer_id=xxx`
+
+### 前端变更
+- `src/common/conf.js`：新增 `im_session` 接口地址
+- `src/components/search/AuthorHoverCard.vue`：`message` 事件携带 `{userId, name, avatar}`
+- `src/pages/notification/index.vue`：新增 `openPeerConversation`，支持按 `peer_id` 打开/新建会话并选中聊天区；挂载与路由 watcher 处理跳转；会话列表使用后端返回的昵称/头像
+- `src/pages/pins/index.vue`、`src/pages/home/index.vue`、`src/pages/search_result/index.vue`：`onAuthorMessage` 由占位提示改为跳转站内信私信分栏
+
+### 变更文件
+- 后端：`ImService.java`、`ImServiceImpl.java`、`ImController.java`、`ImStateMachine.java`、`IFollowClient.java`、`IFollowClientFallback.java`、`FollowController.java`
+- 前端：`conf.js`、`AuthorHoverCard.vue`、`notification/index.vue`、`pins/index.vue`、`home/index.vue`、`search_result/index.vue`
+
+## 2026-08-13 — 作者信息悬浮卡片：文章页 / 沸点页昵称头像悬浮展示
+
+### 功能变更
+- **作者信息悬浮卡片**：在文章列表页与沸点页，鼠标悬浮在作品项的作者昵称／头像上，弹出作者信息卡片，包含：头像、昵称、职位（无职位时显示「暂无简介」）、逐日等级、逐力值等级、关注数、粉丝数，以及「关注」「私信」按钮
+- **覆盖范围**：沸点列表页（头像 + 昵称）、文章列表页三种卡片样式（`article_0/1/3` 的作者昵称），经 `home/index.vue` 统一挂载悬浮卡片；文章详情页右侧边栏已有作者信息区，不重复处理
+
+### 后端新增
+- **user 服务**：`UserFeignController` 新增 `GET /api/v1/user/feign/public-info`，返回昵称/头像/职位/公司/简介（Feign 接口）
+- **feign-api**：`IUserClient` 新增 `getPublicInfo` 方法及降级实现
+- **content 服务**：新增 `AuthorInfoController` 聚合接口 `GET /api/v1/author/info`，一次返回作者基本信息、职位、逐日等级、逐力值等级、关注数、粉丝数、是否已关注
+
+### 前端变更
+- `src/apis/author.js`：新增 `getAuthorInfo` API 封装
+- `src/components/search/AuthorHoverCard.vue`：重构，支持按 `userId` 自动拉取聚合数据，新增职位、双等级、关注粉丝数渲染与「关注/私信」按钮、空职位「暂无简介」兜底
+- 沸点页 `src/pages/pins/index.vue`：头像 + 昵称接入悬浮卡片，实现关注/私信交互
+- 文章列表 `src/components/cells/article_0.vue`、`article_1.vue`、`article_3.vue`：作者昵称触发 `author-hover` / `author-leave` 事件
+- 首页 `src/pages/home/index.vue`：统一挂载 `AuthorHoverCard`，处理位置计算、关注与私信交互
+
+### 变更文件
+- 后端：`UserFeignController.java`、`IUserClient.java`、`IUserClientFallback.java`、`AuthorInfoController.java`（新增）
+- 前端：`src/apis/author.js`（新增）、`src/components/search/AuthorHoverCard.vue`、`src/pages/pins/index.vue`、`src/components/cells/article_0.vue`、`article_1.vue`、`article_3.vue`、`src/pages/home/index.vue`
+
 ## 2026-08-12 — 登录态修复：刷新失败不再强制登出
 
 ### Bug 修复
