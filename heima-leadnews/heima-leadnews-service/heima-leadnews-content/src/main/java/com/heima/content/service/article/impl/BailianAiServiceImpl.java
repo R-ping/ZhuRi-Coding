@@ -41,55 +41,15 @@ public class BailianAiServiceImpl implements BailianAiService {
         "你是一个专业的技术文章审核专家，负责对技术社区的文章进行多维度质量评估。请严格按照要求的JSON格式输出分析结果，不要输出任何额外的解释或markdown格式。"
         + PromptSecurityConstants.ANTI_INJECTION_INSTRUCTION;
 
-    // 标题与内容相关性分析提示词
-    private static final String TITLE_RELEVANCE_PROMPT =
-            "请分析以下文章的标题与内容的相关性，判断是否存在标题党行为。\n\n" +
-            "评分标准：\n" +
-            "- 90-100分：标题精准概括内容，无任何夸大或误导\n" +
-            "- 70-89分：标题基本反映内容，存在轻微修饰但可接受\n" +
-            "- 60-69分：标题与内容存在偏差，有一定夸大成分\n" +
-            "- 40-59分：标题明显夸大或偏离内容，存在标题党嫌疑\n" +
-            "- 0-39分：标题与内容严重不符，完全属于标题党行为\n\n" +
-            "请以JSON格式输出：\n" +
-            "{\"score\": <0-100的整数>, \"reason\": \"<判断理由，100字以内>\"}\n\n" +
-            "标题：%s\n\n内容：%s";
-
-    // 内容质量评分提示词
-    private static final String QUALITY_PROMPT =
-            "请对以下技术文章进行内容质量评估，从原创性、逻辑性、表达清晰度三个维度进行评分。\n\n" +
-            "评分标准：\n" +
-            "原创性（0-100分）：\n" +
-            "- 90-100：观点独特，内容原创性强，有深度见解\n" +
-            "- 70-89：有一定原创性，能提出独立观点\n" +
-            "- 50-69：部分原创，借鉴较多但仍有个人思考\n" +
-            "- 0-49：明显拼凑或抄袭，缺乏原创性\n\n" +
-            "逻辑性（0-100分）：\n" +
-            "- 90-100：结构严谨，论证充分，逻辑清晰\n" +
-            "- 70-89：结构合理，逻辑基本通顺\n" +
-            "- 50-69：结构松散，逻辑存在跳跃\n" +
-            "- 0-49：逻辑混乱，前后矛盾\n\n" +
-            "表达清晰度（0-100分）：\n" +
-            "- 90-100：语言精炼准确，表达清晰易懂\n" +
-            "- 70-89：表达基本清晰，偶有冗余\n" +
-            "- 50-69：表达不够清晰，存在语病或冗余\n" +
-            "- 0-49：表达混乱，难以理解\n\n" +
-            "综合评分 = 原创性*0.4 + 逻辑性*0.3 + 表达清晰度*0.3\n\n" +
-            "请以JSON格式输出：\n" +
-            "{\"quality_score\": <0-100的整数>, \"originality_score\": <0-100的整数>, \"logic_score\": <0-100的整数>, \"clarity_score\": <0-100的整数>, \"comment\": \"<综合评语，100字以内>\"}\n\n" +
-            "标题：%s\n\n内容：%s";
-
-    // 技术相关性判断提示词
-    private static final String TECH_RELEVANCE_PROMPT =
-            "请判断以下文章是否属于技术内容。技术内容的定义非常广泛，包括但不限于以下类型：\n\n" +
-            "1. 技术硬核类：技术栈分析、源码解读、架构设计、解决方案、性能优化、算法研究、安全攻防等\n" +
-            "2. 技术实践类：项目实战、开发经验、工具使用、DevOps、测试方法、代码质量等\n" +
-            "3. 技术趋势类：技术选型分析、行业技术动态、技术发展预测、AI/ML技术进展等\n" +
-            "4. 技术时政类：技术政策解读、开源社区事件、技术公司动态、技术伦理讨论等\n" +
-            "5. 程序员职业类：技术人成长、程序员思维方式、技术管理、团队协作、职业规划等\n" +
-            "6. 技术叙事类：程序员代码人生、技术人故事、开发趣事、技术文化等\n\n" +
-            "非技术内容示例（不限于此）：纯游戏攻略、纯音乐推荐、纯娱乐八卦、纯生活分享、纯情感故事等\n\n" +
-            "请以JSON格式输出：\n" +
-            "{\"is_tech\": true/false, \"confidence\": <0.0-1.0的浮点数, 置信度>, \"reason\": \"<判断理由，50字以内>\"}\n\n" +
+    // 综合AI审核提示词（一次调用完成违规检测、标题相关性、内容质量、技术相关性四项审核）
+    private static final String COMPREHENSIVE_AUDIT_PROMPT =
+            "你是一位技术社区文章审核专家。请基于标题和内容，一次性完成以下4项审核，严格按JSON格式输出，不要输出任何额外内容。\n\n" +
+            "1. 违规检测：判断是否包含色情低俗、暴力恐怖、政治敏感、违法信息（赌博/毒品/诈骗/传销）、人身攻击/侮辱谩骂/谣言等违规内容。注意：技术文章中讨论安全漏洞、渗透测试、技术政策与行业动态的客观分析属正常内容，不算违规；只有明显违规才标记。\n" +
+            "2. 标题相关性：判断标题与内容是否相符、是否标题党。分数0-100，越高越相符（90+精准概括，60以下明显夸大或偏离）。\n" +
+            "3. 内容质量：从原创性、逻辑性、表达清晰度三方面评分（各0-100）。综合评分 = 原创性*0.4 + 逻辑性*0.3 + 表达清晰度*0.3。\n" +
+            "4. 技术相关性：判断是否属于技术内容（技术硬核/实践/趋势/时政/程序员职业/技术叙事等）。纯游戏攻略、音乐推荐、娱乐八卦、生活分享等不算。\n\n" +
+            "输出JSON：\n" +
+            "{\"is_violation\": true/false, \"violation_type\": \"\", \"violation_reason\": \"\", \"title_relevance_score\": 0, \"title_relevance_reason\": \"\", \"quality_score\": 0, \"originality_score\": 0, \"logic_score\": 0, \"clarity_score\": 0, \"comment\": \"\", \"is_tech\": true/false, \"confidence\": 0.0, \"tech_reason\": \"\"}\n\n" +
             "标题：%s\n\n内容：%s";
 
     // 违规内容检测提示词
@@ -111,15 +71,19 @@ public class BailianAiServiceImpl implements BailianAiService {
             "标题：%s\n\n内容：%s";
 
     @Override
-    public Map<String, Object> analyzeArticle(ApArticle article, String content) {
+    public Map<String, Object> comprehensiveAudit(ApArticle article, String content) {
         Map<String, Object> result = new HashMap<>();
         result.put("success", false);
+        result.put("is_violation", false);
+        result.put("violation_type", "");
+        result.put("violation_reason", "");
         result.put("titleRelevanceScore", 0);
         result.put("qualityScore", 0);
         result.put("isTechContent", true);
 
         if (content == null || content.isEmpty()) {
-            log.warn("Article content is empty for articleId={}", article.getId());
+            log.warn("Article content is empty for comprehensive audit, articleId={}", article.getId());
+            result.put("success", true);
             return result;
         }
 
@@ -135,76 +99,44 @@ public class BailianAiServiceImpl implements BailianAiService {
         String wrappedTitle = promptSanitizer.wrapWithDelimiters("title", safeTitle);
         String wrappedContent = promptSanitizer.wrapWithDelimiters("article", safeContent);
 
-        ApArticleAiAnalysis analysis = new ApArticleAiAnalysis();
-        analysis.setArticleId(article.getId());
-        analysis.setCreatedTime(new Date());
-
-        StringBuilder rawResponses = new StringBuilder();
-
         try {
-            // 1. 标题相关性分析
-            log.info("Starting title relevance analysis for articleId={}", article.getId());
-            String titlePrompt = String.format(TITLE_RELEVANCE_PROMPT, wrappedTitle, wrappedContent);
-            String titleResponse = dashScopeClient.callGeneration(SYSTEM_PROMPT, titlePrompt);
+            // 一次调用完成违规检测、标题相关性、内容质量、技术相关性四项审核
+            log.info("Starting comprehensive AI audit for articleId={}", article.getId());
+            String auditPrompt = String.format(COMPREHENSIVE_AUDIT_PROMPT, wrappedTitle, wrappedContent);
+            String auditResponse = dashScopeClient.callGeneration(SYSTEM_PROMPT, auditPrompt);
 
-            if (titleResponse != null) {
-                rawResponses.append("===TITLE_RELEVANCE===\n").append(titleResponse).append("\n\n");
-                JSONObject titleJson = parseJsonResponse(titleResponse);
-                if (titleJson != null) {
-                    analysis.setTitleRelevanceScore(titleJson.getInteger("score"));
-                    analysis.setTitleRelevanceReason(titleJson.getString("reason"));
-                    result.put("titleRelevanceScore", titleJson.getInteger("score"));
+            if (auditResponse != null) {
+                JSONObject auditJson = parseJsonResponse(auditResponse);
+                if (auditJson != null) {
+                    // 违规检测
+                    Boolean isViolation = auditJson.getBoolean("is_violation");
+                    result.put("is_violation", isViolation != null && isViolation);
+                    result.put("violation_type", auditJson.getString("violation_type") != null ? auditJson.getString("violation_type") : "");
+                    result.put("violation_reason", auditJson.getString("violation_reason") != null ? auditJson.getString("violation_reason") : "");
+
+                    // 标题相关性
+                    result.put("titleRelevanceScore", auditJson.getInteger("title_relevance_score") != null ? auditJson.getInteger("title_relevance_score") : 0);
+
+                    // 内容质量
+                    result.put("qualityScore", auditJson.getInteger("quality_score") != null ? auditJson.getInteger("quality_score") : 0);
+
+                    // 技术相关性
+                    Boolean isTech = auditJson.getBoolean("is_tech");
+                    result.put("isTechContent", isTech != null && isTech);
+
+                    // 持久化综合审核结果
+                    saveComprehensiveAudit(article.getId(), auditJson, auditResponse);
+
+                    log.info("Comprehensive AI audit completed for articleId={}, is_violation={}, qualityScore={}, isTech={}",
+                            article.getId(), result.get("is_violation"), result.get("qualityScore"), result.get("isTechContent"));
                 }
             }
-
-            // 2. 内容质量评分
-            log.info("Starting quality analysis for articleId={}", article.getId());
-            String qualityPrompt = String.format(QUALITY_PROMPT, wrappedTitle, wrappedContent);
-            String qualityResponse = dashScopeClient.callGeneration(SYSTEM_PROMPT, qualityPrompt);
-
-            if (qualityResponse != null) {
-                rawResponses.append("===QUALITY===\n").append(qualityResponse).append("\n\n");
-                JSONObject qualityJson = parseJsonResponse(qualityResponse);
-                if (qualityJson != null) {
-                    analysis.setQualityScore(qualityJson.getInteger("quality_score"));
-                    analysis.setOriginalityScore(qualityJson.getInteger("originality_score"));
-                    analysis.setLogicScore(qualityJson.getInteger("logic_score"));
-                    analysis.setClarityScore(qualityJson.getInteger("clarity_score"));
-                    analysis.setQualityComment(qualityJson.getString("comment"));
-                    result.put("qualityScore", qualityJson.getInteger("quality_score"));
-                }
-            }
-
-            // 3. 技术相关性判断
-            log.info("Starting tech relevance analysis for articleId={}", article.getId());
-            String techPrompt = String.format(TECH_RELEVANCE_PROMPT, wrappedTitle, wrappedContent);
-            String techResponse = dashScopeClient.callGeneration(SYSTEM_PROMPT, techPrompt);
-
-            if (techResponse != null) {
-                rawResponses.append("===TECH_RELEVANCE===\n").append(techResponse).append("\n\n");
-                JSONObject techJson = parseJsonResponse(techResponse);
-                if (techJson != null) {
-                    analysis.setIsTechContent(techJson.getBoolean("is_tech"));
-                    if (techJson.get("confidence") != null) {
-                        analysis.setTechConfidence(BigDecimal.valueOf(techJson.getDouble("confidence")));
-                    }
-                    result.put("isTechContent", techJson.getBoolean("is_tech"));
-                }
-            }
-
-            // 保存原始响应
-            analysis.setRawResponse(rawResponses.toString());
-
-            // 持久化分析结果
-            saveAnalysis(analysis);
-
             result.put("success", true);
-            log.info("AI analysis completed for articleId={}, qualityScore={}, isTech={}",
-                    article.getId(), analysis.getQualityScore(), analysis.getIsTechContent());
-
         } catch (Exception e) {
-            log.error("AI analysis failed for articleId={}: {}", article.getId(), e.getMessage(), e);
-            // 分析失败不阻塞流程
+            log.error("Comprehensive AI audit failed for articleId={}: {}", article.getId(), e.getMessage(), e);
+            // 审核失败不阻塞流程，降级通过
+            result.put("success", true);
+            result.put("is_violation", false);
         }
 
         return result;
@@ -262,96 +194,6 @@ public class BailianAiServiceImpl implements BailianAiService {
         return result;
     }
 
-    @Override
-    public Map<String, Object> checkViolation(ApArticle article, String content) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", false);
-        result.put("is_violation", false);
-        result.put("violation_type", "");
-        result.put("violation_reason", "");
-
-        if (content == null || content.isEmpty()) {
-            log.warn("Article content is empty for violation check, articleId={}", article.getId());
-            result.put("success", true);
-            return result;
-        }
-
-        // 截断内容，避免token超限
-        String truncatedContent = content.length() > 4000 ? content.substring(0, 4000) : content;
-        String rawTitle = article.getTitle() != null ? article.getTitle() : "";
-
-        // Layer 1: 输入净化
-        String safeTitle = promptSanitizer.sanitize(rawTitle);
-        String safeContent = promptSanitizer.sanitize(truncatedContent);
-        String wrappedContent = promptSanitizer.wrapWithDelimiters("violation-check", safeContent);
-
-        try {
-            log.info("Starting AI violation check for articleId={}", article.getId());
-            String violationPrompt = String.format(VIOLATION_CHECK_PROMPT, safeTitle, wrappedContent);
-            String violationResponse = dashScopeClient.callGeneration(SYSTEM_PROMPT, violationPrompt);
-
-            if (violationResponse != null) {
-                JSONObject violationJson = parseJsonResponse(violationResponse);
-                if (violationJson != null) {
-                    Boolean isViolation = violationJson.getBoolean("is_violation");
-                    String violationType = violationJson.getString("violation_type");
-                    String violationReason = violationJson.getString("violation_reason");
-
-                    result.put("is_violation", isViolation != null && isViolation);
-                    result.put("violation_type", violationType != null ? violationType : "");
-                    result.put("violation_reason", violationReason != null ? violationReason : "");
-
-                    // 持久化违规检测结果
-                    saveViolationResult(article.getId(), result, violationResponse);
-
-                    log.info("AI violation check completed for articleId={}, is_violation={}, type={}",
-                            article.getId(), result.get("is_violation"), result.get("violation_type"));
-                }
-            }
-            result.put("success", true);
-        } catch (Exception e) {
-            log.error("AI violation check failed for articleId={}: {}", article.getId(), e.getMessage(), e);
-            // 检测失败不阻塞流程，降级通过
-            result.put("success", true);
-            result.put("is_violation", false);
-        }
-
-        return result;
-    }
-
-    /**
-     * 保存违规检测结果到AI分析表
-     */
-    private void saveViolationResult(Long articleId, Map<String, Object> violationResult, String rawResponse) {
-        try {
-            QueryWrapper<ApArticleAiAnalysis> queryWrapper = new QueryWrapper<>();
-            queryWrapper.eq("article_id", articleId);
-            ApArticleAiAnalysis analysis = aiAnalysisMapper.selectOne(queryWrapper);
-
-            if (analysis == null) {
-                analysis = new ApArticleAiAnalysis();
-                analysis.setArticleId(articleId);
-                analysis.setCreatedTime(new Date());
-            }
-
-            analysis.setIsViolation((Boolean) violationResult.get("is_violation"));
-            analysis.setViolationType((String) violationResult.get("violation_type"));
-            analysis.setViolationReason((String) violationResult.get("violation_reason"));
-
-            // 追加违规检测原始响应
-            String existingRaw = analysis.getRawResponse() != null ? analysis.getRawResponse() : "";
-            analysis.setRawResponse(existingRaw + "\n===VIOLATION_CHECK===\n" + rawResponse + "\n\n");
-
-            if (analysis.getId() != null) {
-                aiAnalysisMapper.updateById(analysis);
-            } else {
-                aiAnalysisMapper.insert(analysis);
-            }
-        } catch (Exception e) {
-            log.error("Failed to save violation result for articleId={}: {}", articleId, e.getMessage());
-        }
-    }
-
     /**
      * 从AI响应中提取JSON
      */
@@ -388,18 +230,43 @@ public class BailianAiServiceImpl implements BailianAiService {
     }
 
     /**
-     * 保存分析结果
+     * 保存综合审核结果到AI分析表（先删旧记录再插入，覆盖当次完整审核数据）
      */
-    private void saveAnalysis(ApArticleAiAnalysis analysis) {
+    private void saveComprehensiveAudit(Long articleId, JSONObject json, String rawResponse) {
         try {
             // 先删除旧记录
             QueryWrapper<ApArticleAiAnalysis> deleteWrapper = new QueryWrapper<>();
-            deleteWrapper.eq("article_id", analysis.getArticleId());
+            deleteWrapper.eq("article_id", articleId);
             aiAnalysisMapper.delete(deleteWrapper);
-            // 插入新记录
+
+            ApArticleAiAnalysis analysis = new ApArticleAiAnalysis();
+            analysis.setArticleId(articleId);
+            analysis.setCreatedTime(new Date());
+
+            // 违规检测
+            analysis.setIsViolation(json.getBoolean("is_violation"));
+            analysis.setViolationType(json.getString("violation_type"));
+            analysis.setViolationReason(json.getString("violation_reason"));
+            // 标题相关性
+            analysis.setTitleRelevanceScore(json.getInteger("title_relevance_score"));
+            analysis.setTitleRelevanceReason(json.getString("title_relevance_reason"));
+            // 内容质量
+            analysis.setQualityScore(json.getInteger("quality_score"));
+            analysis.setOriginalityScore(json.getInteger("originality_score"));
+            analysis.setLogicScore(json.getInteger("logic_score"));
+            analysis.setClarityScore(json.getInteger("clarity_score"));
+            analysis.setQualityComment(json.getString("comment"));
+            // 技术相关性
+            analysis.setIsTechContent(json.getBoolean("is_tech"));
+            if (json.get("confidence") != null) {
+                analysis.setTechConfidence(BigDecimal.valueOf(json.getDouble("confidence")));
+            }
+            // 原始响应
+            analysis.setRawResponse(rawResponse);
+
             aiAnalysisMapper.insert(analysis);
         } catch (Exception e) {
-            log.error("Failed to save AI analysis for articleId={}: {}", analysis.getArticleId(), e.getMessage());
+            log.error("Failed to save comprehensive audit for articleId={}: {}", articleId, e.getMessage());
         }
     }
 }
