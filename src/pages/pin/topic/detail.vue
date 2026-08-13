@@ -6,7 +6,6 @@
       <div class="topic-stats">
         <span>{{ formatCount(topic.viewCount) }}阅读</span>
         <span>{{ formatCount(topic.participantCount) }}参与</span>
-        <span>{{ formatCount(topic.postCount) }}帖子</span>
       </div>
       <p class="topic-desc" v-if="topic.description">导语：{{ topic.description }}</p>
     </div>
@@ -134,7 +133,7 @@
 </template>
 
 <script>
-import { getTopicDetail, getTopicFeed, incrTopicView } from '@/apis/topic'
+import { getTopicDetail, getTopicFeed } from '@/apis/topic'
 import RecommendTopics from '@/components/RecommendTopics.vue'
 import PinsPublishModal from '@/pages/creator/pins/components/PinsPublishModal.vue'
 import { publishPins } from '@/apis/pins'
@@ -176,7 +175,6 @@ export default {
   },
   mounted() {
     this.loadDetail()
-    incrTopicView(this.topicId).catch(() => {})
     window.addEventListener('scroll', this.handleScroll)
     // 如果 URL 带 publish=1，自动弹出发布框
     if (this.$route.query.publish === '1') {

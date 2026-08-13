@@ -7,3 +7,10 @@ import request from '@/common/article_request'
 export const getAuthorInfo = (userId) => {
   return request.get('/api/v1/author/info', { params: { userId } })
 }
+
+/**
+ * 获取个人主页动态列表（点赞文章/沸点、关注用户、发布文章/沸点，时间线降序）
+ */
+export const getUserDynamic = (userId, size = 50) => {
+  return request.get('/api/v1/user/dynamic', { params: { userId, size } })
+}

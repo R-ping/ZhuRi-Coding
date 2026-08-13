@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## 2026-08-13 — 个人主页动态分栏 + 话题详情浏览/参与数聚合
+
+### 功能变更
+- **个人主页动态分栏**：个人主页「动态」分栏不再为空，按时间线降序展示用户动作记录（点赞文章/沸点、关注用户、发布文章/沸点）
+- 新增后端聚合接口 `GET /api/v1/user/dynamic`，从 `user_behavior_record` 查询有效行为记录，批量关联 `ap_article`/`ap_pins`/用户信息，组装目标标题、封面、跳转地址、浏览量与时间
+- 前端动态分栏按动作分类（点赞/关注/发布）展示图标、行为描述、目标内容与时间，支持跳转文章/沸点/用户主页
+
+### 话题详情页
+- 浏览数改为话题关联内容浏览量总和（沸点 `view_count` + 文章 `views`），参与数 = 沸点数 + 文章数（统一用「参与」表示帖子/帖子文章数量）
+- 前端话题详情移除「帖子」计数项，仅保留「阅读」「参与」
+
+### 变更文件
+- 新增：`heima-leadnews-model/.../user/vo/UserDynamicVO.java`
+- 新增：`heima-leadnews-service/heima-leadnews-content/.../controller/v1/user/UserDynamicController.java`
+- 修改：`src/apis/author.js`
+- 修改：`src/pages/user/index.vue`
+
 ## 2026-08-13 — 优化：文章 AI 审核由 4 次调用合并为 1 次综合审核
 
 ### 变更

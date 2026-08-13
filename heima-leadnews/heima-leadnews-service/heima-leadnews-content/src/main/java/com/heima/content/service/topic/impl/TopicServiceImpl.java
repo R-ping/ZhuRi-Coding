@@ -12,7 +12,6 @@ import com.heima.content.mapper.topic.TopicMapper;
 import com.heima.content.mapper.topic.TopicRelationMapper;
 import com.heima.content.mapper.topic.UserTopicPostMapper;
 import com.heima.content.service.topic.TopicService;
-import com.heima.common.redis.CacheService;
 import com.heima.model.circle.pojos.ApCircle;
 import com.heima.model.topic.dtos.TopicSquareDto;
 import com.heima.model.pins.pojos.ApPins;
@@ -28,12 +27,10 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
@@ -59,12 +56,6 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
 
     @Autowired
     private ApArticleMapper apArticleMapper;
-
-    @Autowired
-    private CacheService cacheService;
-
-    private static final String TOPIC_VIEW_PREFIX = "topic:view:";
-    private static final String TOPIC_VIEW_RATE_LIMIT_PREFIX = "topic:view:rate:";
 
     @Override
     public Map<String, Object> recommend(int page, int size) {
@@ -162,9 +153,49 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
         vo.setCoverImage(topic.getCoverImage() != null ? topic.getCoverImage() : "");
         vo.setBadge(topic.getBadge() != null ? topic.getBadge() : "");
         vo.setType(topic.getType() != null ? topic.getType() : 1);
-        vo.setViewCount(topic.getViewCount() != null ? topic.getViewCount() : 0L);
-        vo.setParticipantCount(topic.getParticipantCount() != null ? topic.getParticipantCount() : 0L);
-        vo.setPostCount(topic.getPostCount() != null ? (long) topic.getPostCount() : 0L);
+        // 浏览数为关联沸点浏览量 + 文章浏览量总和，参与数为关联沸点数 + 文章数（统一用“参与”表示帖子数量）
+        long pinCount = 0L;
+        long pinViews = 0L;
+        LambdaQueryWrapper<ApPins> pinsWrapper = new LambdaQueryWrapper<>();
+        pinsWrapper.eq(ApPins::getTopicId, id)
+                   .eq(ApPins::getStatus, (byte) 9)
+                   .eq(ApPins::getIsDeleted, false);
+        List<ApPins> topicPins = apPinsMapper.selectList(pinsWrapper);
+        if (topicPins != null) {
+            pinCount = topicPins.size();
+            for (ApPins p : topicPins) {
+                pinViews += p.getViews() != null ? p.getViews() : 0L;
+            }
+        }
+        long articleCount = 0L;
+        long articleViews = 0L;
+        LambdaQueryWrapper<TopicRelation> articleRelWrapper = new LambdaQueryWrapper<>();
+        articleRelWrapper.eq(TopicRelation::getTopicId, id)
+                         .eq(TopicRelation::getTargetType, 1);
+        List<TopicRelation> articleRelations = topicRelationMapper.selectList(articleRelWrapper);
+        if (articleRelations != null && !articleRelations.isEmpty()) {
+            List<Long> articleIds = articleRelations.stream()
+                    .map(TopicRelation::getTargetId)
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (!articleIds.isEmpty()) {
+                LambdaQueryWrapper<ApArticle> articleWrapper = new LambdaQueryWrapper<>();
+                articleWrapper.in(ApArticle::getId, articleIds)
+                              .eq(ApArticle::getStatus, (byte) 9)
+                              .eq(ApArticle::getIsDeleted, false);
+                List<ApArticle> topicArticles = apArticleMapper.selectList(articleWrapper);
+                if (topicArticles != null) {
+                    articleCount = topicArticles.size();
+                    for (ApArticle a : topicArticles) {
+                        articleViews += a.getViews() != null ? a.getViews() : 0L;
+                    }
+                }
+            }
+        }
+        vo.setViewCount(pinViews + articleViews);
+        vo.setParticipantCount(pinCount + articleCount);
+        vo.setPostCount(pinCount + articleCount);
         // availableTabs 根据 type 返回
         List<String> tabs = new ArrayList<>();
         tabs.add("hot");
@@ -316,29 +347,6 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
         result.put("cursor", cursor + size);
         result.put("has_more", hasMore);
         return result;
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void incrView(Long topicId, Long userId) {
-        // 防刷：单用户+单话题 1分钟内最多5次
-        String rateKey = TOPIC_VIEW_RATE_LIMIT_PREFIX + userId + ":" + topicId;
-        Long count = cacheService.incrBy(rateKey,1);
-        if (count != null && count == 1) {
-            cacheService.expire(rateKey, 1, TimeUnit.MINUTES);
-        }
-        if (count != null && count > 5) {
-            return;
-        }
-        // 阅读量递增
-        String viewKey = TOPIC_VIEW_PREFIX + topicId;
-        cacheService.incrBy(viewKey,1);
-        // 异步回写 DB（简单处理：直接更新）
-        ApTopic topic = getById(topicId);
-        if (topic != null) {
-            topic.setViewCount((topic.getViewCount() != null ? topic.getViewCount() : 0L) + 1);
-            updateById(topic);
-        }
     }
 
     @Override

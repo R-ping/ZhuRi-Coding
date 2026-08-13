@@ -22,7 +22,7 @@ public class ExceptionCatch {
     @ExceptionHandler(FeignException.class)
     @ResponseBody
     public ResponseResult handleFeignException(FeignException e, HttpServletResponse response) {
-        log.error("Feign调用异常: {}", e.getMessage());
+        log.error("Feign调用异常: ", e);
         response.setStatus(HttpServletResponse.SC_OK);
         // 提取 Feign 响应中的错误信息
         String errorMsg = "服务调用失败";
@@ -36,6 +36,7 @@ public class ExceptionCatch {
                 com.alibaba.fastjson.JSONObject json = com.alibaba.fastjson.JSON.parseObject(bodyStr);
                 if (json != null && json.containsKey("message")) {
                     errorMsg = json.getString("message");
+                    log.error("Feign调用异常，fallback一次信息是：{}",errorMsg);
                 }
             }
         } catch (Exception ignored) {

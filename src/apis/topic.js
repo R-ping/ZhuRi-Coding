@@ -20,11 +20,6 @@ export const getTopicFeed = (id, params = {}) => {
   return request.get(`/api/v1/topics/${id}/feed`, { params })
 }
 
-// 增加话题阅读量
-export const incrTopicView = (id) => {
-  return request.post(`/api/v1/topics/${id}/view`)
-}
-
 // 搜索话题
 export const searchTopics = (keyword, limit = 10) => {
   return request.get('/api/v1/topics/search', { params: { keyword, limit } })

@@ -229,6 +229,20 @@ public class PinsQueryService {
         return ResponseResult.okResult(voList.isEmpty() ? null : voList.get(0));
     }
 
+    /**
+     * 递增沸点浏览量（供沸点详情页调用，话题详情浏览数为关联沸点浏览量的总和）
+     */
+    public void incrView(Long pinsId) {
+        if (pinsId == null) {
+            return;
+        }
+        try {
+            apPinsMapper.incrementViews(pinsId);
+        } catch (Exception e) {
+            log.error("递增沸点浏览量失败, pinsId={}", pinsId, e);
+        }
+    }
+
     // ========== 侧边栏 ==========
 
     public ResponseResult sidebar() {

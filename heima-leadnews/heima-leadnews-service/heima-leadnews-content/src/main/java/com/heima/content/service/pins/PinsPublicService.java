@@ -19,6 +19,11 @@ public interface PinsPublicService {
     ResponseResult detail(Long pinsId);
 
     /**
+     * 递增沸点浏览量
+     */
+    ResponseResult view(Long pinsId);
+
+    /**
      * 侧边栏
      */
     ResponseResult sidebar();

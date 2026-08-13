@@ -10,6 +10,11 @@ export const getPinsDetail = (pinsId) => {
   return request.get(`/api/v1/pins/${pinsId}`)
 }
 
+// 增加沸点浏览量
+export const incrPinView = (pinsId) => {
+  return request.post(`/api/v1/pins/${pinsId}/view`)
+}
+
 // 获取右侧边栏数据 (用户统计+精选沸点+推荐话题)
 export const getSidebar = () => {
   return request.get('/api/v1/pins/sidebar')

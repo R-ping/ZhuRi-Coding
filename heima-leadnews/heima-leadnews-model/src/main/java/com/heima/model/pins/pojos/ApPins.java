@@ -62,6 +62,9 @@ public class ApPins implements Serializable {
     @TableField("share_count")
     private Integer shareCount = 0;
 
+    @TableField("view_count")
+    private Integer views = 0;
+
     private Byte status;
 
     private String reason;

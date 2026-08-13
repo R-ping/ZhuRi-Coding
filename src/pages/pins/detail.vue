@@ -248,7 +248,7 @@
 
 <script>
 import { toast } from '@/utils/toast'
-import { getPinsDetail, getPinsList, getComments, createComment, likePins } from '@/apis/pins'
+import { getPinsDetail, getPinsList, getComments, createComment, likePins, incrPinView } from '@/apis/pins'
 import { uploadFile } from '@/common/oss_upload'
 
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
@@ -308,6 +308,8 @@ export default {
     mounted() {
         if (this.pinsId) {
             this.init()
+            // 递增沸点浏览量（话题详情浏览数为关联沸点浏览量总和）
+            incrPinView(this.pinsId).catch(() => {})
         } else {
             this.loading = false
         }

@@ -149,14 +149,31 @@
 
             <div class="content-area">
                 <div v-if="activeTab === 'dynamic'" class="tab-content">
-                    <div class="dynamic-list">
+                    <div v-if="dynamicList.length === 0" class="empty-state">
+                        <div class="empty-icon">📝</div>
+                        <div class="empty-text">暂无动态</div>
+                    </div>
+                    <div v-else class="dynamic-list">
                         <div class="dynamic-item" v-for="item in dynamicList" :key="item.id">
-                            <img :src="item.userAvatar || defaultAvatar" class="dynamic-avatar" alt="avatar">
-                            <div class="dynamic-content">
-                                <span class="dynamic-user">{{ item.userName }}</span>
-                                <span class="dynamic-action">{{ item.action }}</span>
-                                <span class="dynamic-target">{{ item.target }}</span>
-                                <span class="dynamic-time">{{ item.time }}</span>
+                            <span class="dynamic-category" :class="'cat-' + item.actionCategory">
+                                {{ categoryIcon(item.actionCategory) }}
+                            </span>
+                            <div class="dynamic-body">
+                                <div class="dynamic-text">
+                                    <span class="dynamic-action">{{ item.behaviorDesc }}</span>
+                                    <a
+                                        class="dynamic-target"
+                                        :href="item.targetUrl"
+                                        @click.prevent="openTarget(item)"
+                                    >{{ item.targetTitle }}</a>
+                                </div>
+                                <div v-if="item.targetCover" class="dynamic-cover-wrap">
+                                    <img :src="item.targetCover" class="dynamic-cover" alt="cover">
+                                </div>
+                                <div class="dynamic-meta">
+                                    <span v-if="item.targetMeta" class="dynamic-meta-text">{{ item.targetMeta }}</span>
+                                    <span class="dynamic-time">{{ formatTime(item.createdTime) }}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -410,6 +427,7 @@ import { toast } from '@/utils/toast'
 import { getUserStatistics } from '@/apis/user'
 import { getArticleList, getColumnList, getPinsList } from '@/apis/creator/content'
 import { getFollowers } from '@/apis/creator/fans'
+import { getUserDynamic } from '@/apis/author'
 
 export default {
     name: 'UserProfile',
@@ -468,6 +486,13 @@ export default {
         },
         defaultAvatar() {
             return defaultAvatar
+        },
+        // 当前浏览的个人主页用户ID（优先取路由参数，其次当前登录用户）
+        profileUserId() {
+            const routeId = this.$route.params && this.$route.params.id
+            if (routeId) return routeId
+            const storeUser = this.$store.getters.userInfo
+            return storeUser && storeUser.id ? storeUser.id : ''
         }
     },
     mounted() {
@@ -545,6 +570,9 @@ export default {
         },
         async loadTabContent() {
             switch (this.activeTab) {
+                case 'dynamic':
+                    this.fetchDynamic()
+                    break
                 case 'article':
                     this.fetchArticles()
                     break
@@ -563,6 +591,47 @@ export default {
                 default:
                     break
             }
+        },
+        async fetchDynamic() {
+            try {
+                const userId = this.profileUserId
+                const res = await getUserDynamic(userId, 50)
+                if (res && res.code === 200 && Array.isArray(res.data)) {
+                    this.dynamicList = res.data
+                }
+            } catch (e) {
+                // Keep empty list when API fails
+            }
+        },
+        categoryIcon(category) {
+            if (category === 'follow') return '👥'
+            if (category === 'publish') return '📝'
+            return '👍'
+        },
+        openTarget(item) {
+            if (item.targetUrl) {
+                // 沸点/用户使用站内路由，文章详情新开窗口
+                if (item.targetUrl.indexOf('/content/article/') === 0) {
+                    window.open(item.targetUrl, '_blank')
+                } else {
+                    this.$router.push(item.targetUrl)
+                }
+            }
+        },
+        formatTime(time) {
+            if (!time) return ''
+            const date = new Date(time)
+            const now = new Date()
+            const diff = now - date
+            const minute = 60 * 1000
+            const hour = 60 * minute
+            const day = 24 * hour
+            if (diff < minute) return '刚刚'
+            if (diff < hour) return Math.floor(diff / minute) + '分钟前'
+            if (diff < day) return Math.floor(diff / hour) + '小时前'
+            if (diff < 7 * day) return Math.floor(diff / day) + '天前'
+            const pad = n => (n < 10 ? '0' + n : '' + n)
+            return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
         },
         async fetchArticles() {
             try {
@@ -932,45 +1001,85 @@ export default {
 .dynamic-item {
     display: flex;
     gap: 12px;
-    padding: 12px 0;
+    padding: 14px 0;
     border-bottom: 1px solid #f2f3f5;
     &:last-child {
         border: none;
     }
 }
 
-.dynamic-avatar {
-    width: 36px;
-    height: 36px;
+.dynamic-category {
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
-    object-fit: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
     flex-shrink: 0;
+    background: #f2f3f5;
+    &.cat-like {
+        background: #eaf2ff;
+    }
+    &.cat-follow {
+        background: #e8f8f0;
+    }
+    &.cat-publish {
+        background: #fff3e6;
+    }
 }
 
-.dynamic-content {
+.dynamic-body {
     flex: 1;
+    min-width: 0;
+}
+
+.dynamic-text {
     font-size: 14px;
     line-height: 1.6;
 }
 
-.dynamic-user {
-    color: #252933;
-    font-weight: 500;
-}
-
 .dynamic-action {
     color: #515767;
-    margin: 0 4px;
+    margin-right: 4px;
 }
 
 .dynamic-target {
     color: #1e80ff;
     cursor: pointer;
+    word-break: break-all;
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.dynamic-cover-wrap {
+    margin-top: 8px;
+}
+
+.dynamic-cover {
+    max-width: 160px;
+    max-height: 100px;
+    border-radius: 4px;
+    object-fit: cover;
+    cursor: pointer;
+}
+
+.dynamic-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: #8a919f;
+}
+
+.dynamic-meta-text {
+    color: #8a919f;
 }
 
 .dynamic-time {
-    color: #8a919f;
-    margin-left: 8px;
+    color: #c4c9d1;
     font-size: 12px;
 }
 
