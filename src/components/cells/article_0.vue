@@ -8,7 +8,7 @@
                 </div>
                 <div class="tags">
                     <span class="tags-text tags-icon">{{data.icon}}</span>
-                    <span class="tags-text">{{data.source}}</span>
+                    <span class="author-link" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave">{{data.source}}</span>
                     <span class="meta-sep">·</span>
                     <span class="tags-text meta-comment">{{data.comment}} 评论</span>
                     <span class="meta-sep">·</span>
@@ -58,6 +58,13 @@
                 if (days < 30) return days + '天前'
                 if (months < 12) return months + '个月前'
                 return Math.floor(months / 12) + '年前'
+            },
+            // 作者昵称悬浮 -> 通知父级展示作者信息卡片
+            onAuthorHover:function(event){
+                this.$emit('author-hover', { userId: this.data.authorId, event: event })
+            },
+            onAuthorLeave:function(){
+                this.$emit('author-leave')
             }
         }
     }

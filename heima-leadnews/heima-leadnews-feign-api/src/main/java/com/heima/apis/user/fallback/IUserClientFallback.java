@@ -17,6 +17,12 @@ public class IUserClientFallback implements FallbackFactory<IUserClient> {
                 log.error("IUserClient.getBasicInfo fallback, userId={}, error: {}", userId, cause.getMessage());
                 return ResponseResult.errorResult(500, "用户服务不可用");
             }
+
+            @Override
+            public ResponseResult getPublicInfo(Long userId) {
+                log.error("IUserClient.getPublicInfo fallback, userId={}, error: {}", userId, cause.getMessage());
+                return ResponseResult.errorResult(500, "用户服务不可用");
+            }
         };
     }
 }

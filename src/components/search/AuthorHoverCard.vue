@@ -12,26 +12,35 @@
         <div class="author-section">
           <img
             class="author-avatar"
-            :src="author.avatar || defaultAvatar"
+            :src="displayAvatar"
             alt="author avatar"
           />
           <div class="author-info">
             <div class="author-name-row">
-              <span class="author-name">{{ author.name || '匿名用户' }}</span>
-              <span v-if="author.level" class="author-level">{{ author.level }}</span>
+              <span class="author-name">{{ displayName }}</span>
             </div>
-            <div class="author-bio" v-if="author.bio">{{ author.bio }}</div>
+            <div class="author-level-row">
+              <span class="level-badge daily" title="逐日等级">
+                <span class="level-badge-label">逐日</span>
+                <span class="level-badge-value">Lv.{{ displayDailyLevel }}</span>
+              </span>
+              <span class="level-badge power" title="逐力值等级">
+                <span class="level-badge-label">逐力</span>
+                <span class="level-badge-value">Lv.{{ displayPowerLevel }}</span>
+              </span>
+            </div>
+            <div class="author-bio">{{ displayPosition }}</div>
           </div>
         </div>
 
         <div class="author-stats">
           <div class="stat-item">
-            <span class="stat-value">{{ formatCount(author.followCount) }}</span>
+            <span class="stat-value">{{ formatCount(displayFollowCount) }}</span>
             <span class="stat-label">关注</span>
           </div>
           <div class="stat-divider"></div>
           <div class="stat-item">
-            <span class="stat-value">{{ formatCount(author.followerCount) }}</span>
+            <span class="stat-value">{{ formatCount(displayFollowerCount) }}</span>
             <span class="stat-label">粉丝</span>
           </div>
         </div>
@@ -39,10 +48,10 @@
         <div class="author-actions">
           <button
             class="btn-follow"
-            :class="{ 'is-followed': author.isFollowed }"
+            :class="{ 'is-followed': displayFollowed }"
             @click="onFollow"
           >
-            {{ author.isFollowed ? '已关注' : '+ 关注' }}
+            {{ displayFollowed ? '已关注' : '+ 关注' }}
           </button>
           <button
             class="btn-message"
@@ -57,6 +66,8 @@
 </template>
 
 <script>
+import { getAuthorInfo } from '@/apis/author'
+
 export default {
   name: 'AuthorHoverCard',
   props: {
@@ -64,6 +75,12 @@ export default {
       type: Boolean,
       default: false
     },
+    // 作者用户ID：传入时组件自动拉取聚合接口数据
+    userId: {
+      type: [Number, String],
+      default: null
+    },
+    // 兼容旧用法：未传 userId 时使用静态 author 数据
     author: {
       type: Object,
       default: function () { return {} }
@@ -75,7 +92,9 @@ export default {
   },
   data() {
     return {
-      defaultAvatar: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiBmaWxsPSIjZTBlMGUwIiByeD0iMzIiLz48dGV4dCB4PSIzMiIgeT0iNDIiIGZvbnQtc2l6ZT0iMzIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM5OTkiPuWvueaPjC90ZXh0Pjwvc3ZnPg=='
+      defaultAvatar: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiBmaWxsPSIjZTBlMGUwIiByeD0iMzIiLz48dGV4dCB4PSIzMiIgeT0iNDIiIGZvbnQtc2l6ZT0iMzIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM5OTkiPuWvueaPjC90ZXh0Pjwvc3ZnPg==',
+      info: {},
+      loading: false
     }
   },
   computed: {
@@ -87,12 +106,40 @@ export default {
     },
     arrowDirection() {
       return this.position.arrow || 'top'
+    },
+    displayName() {
+      return this.info.nickname || this.author.name || '匿名用户'
+    },
+    displayAvatar() {
+      return this.info.avatar || this.author.avatar || this.defaultAvatar
+    },
+    displayPosition() {
+      return this.info.position || this.author.position || this.author.bio || '暂无简介'
+    },
+    displayDailyLevel() {
+      return this.info.dailyLevel || this.author.dailyLevel || 1
+    },
+    displayPowerLevel() {
+      return this.info.powerLevel || this.author.powerLevel || 1
+    },
+    displayFollowCount() {
+      return this.info.followCount != null ? this.info.followCount : (this.author.followCount || 0)
+    },
+    displayFollowerCount() {
+      return this.info.followerCount != null ? this.info.followerCount : (this.author.followerCount || 0)
+    },
+    displayFollowed() {
+      return this.info.isFollowed != null ? this.info.isFollowed : (this.author.isFollowed || false)
+    },
+    currentUserId() {
+      return this.userId || this.author.id || null
     }
   },
   watch: {
     visible(val) {
       if (val) {
         document.addEventListener('click', this.handleOutsideClick)
+        this.fetchInfo()
       } else {
         document.removeEventListener('click', this.handleOutsideClick)
       }
@@ -113,11 +160,32 @@ export default {
       }
       return String(count)
     },
+    // 拉取作者聚合信息；未传 userId 时保留静态数据
+    async fetchInfo() {
+      if (!this.currentUserId || this.loading) return
+      this.loading = true
+      try {
+        const res = await getAuthorInfo(this.currentUserId)
+        if (res && res.code === 200 && res.data) {
+          this.info = res.data
+        }
+      } catch (e) {
+        // 拉取失败时保留静态数据兜底
+      } finally {
+        this.loading = false
+      }
+    },
     onFollow() {
-      this.$emit('follow', this.author.id)
+      const followed = this.displayFollowed
+      this.$emit('follow', this.currentUserId, !followed)
     },
     onMessage() {
-      this.$emit('message', this.author.id)
+      // 携带昵称/头像，供跳转站内信私信分栏后直接选中该用户打开聊天区
+      this.$emit('message', {
+        userId: this.currentUserId,
+        name: this.displayName,
+        avatar: this.displayAvatar
+      })
     },
     onCardClick() {},
     handleOutsideClick(e) {
@@ -130,15 +198,13 @@ export default {
 </script>
 
 <style lang="less" scoped>
-@import '../../styles/article';
-
 .author-hover-card {
   position: fixed;
   z-index: 9999;
-  width: 220px;
+  width: 232px;
   background-color: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.04);
   overflow: visible;
   transform-origin: top center;
 }
@@ -212,8 +278,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .author-name {
@@ -221,15 +286,46 @@ export default {
   font-weight: 600;
   color: #252933;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
-.author-level {
+.author-level-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.level-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 4px;
   font-size: 11px;
+  line-height: 1.5;
+}
+
+.level-badge.daily {
   color: #1E80FF;
   background-color: #E8F3FF;
-  padding: 1px 6px;
-  border-radius: 3px;
-  line-height: 1.4;
+}
+
+.level-badge.power {
+  color: #FA8C16;
+  background-color: #FFF7E6;
+}
+
+.level-badge-label {
+  opacity: 0.85;
+}
+
+.level-badge-value {
+  font-weight: 600;
 }
 
 .author-bio {
@@ -240,7 +336,8 @@ export default {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  margin-top: 4px;
+  margin-top: 2px;
+  word-break: break-word;
 }
 
 .author-stats {
@@ -343,7 +440,7 @@ export default {
 
 @media screen and (max-width: 767px) {
   .author-hover-card {
-    width: 180px;
+    width: 200px;
   }
 
   .author-avatar {
