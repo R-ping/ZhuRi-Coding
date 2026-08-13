@@ -9,12 +9,13 @@ import lombok.Data;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.Date;
+import lombok.Getter;
 
 @Data
 @TableName("ap_course_order")
 public class ApCourseOrder implements Serializable {
 
-    @TableId(value = "id", type = IdType.AUTO)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private Long id;
 
     @TableField("order_no")
@@ -34,9 +35,12 @@ public class ApCourseOrder implements Serializable {
 
     @TableField("paid_amount")
     private BigDecimal paidAmount;
-
+    @TableField("total_amount")
+    private BigDecimal totalAmount;
     @TableField("discount_code")
     private String discountCode;
+    @TableField("pay_method")
+    private PayType payMethod;
 
     @TableField("status")
     private Integer status;
@@ -53,10 +57,19 @@ public class ApCourseOrder implements Serializable {
     @TableField("updated_time")
     private Date updatedTime;
 
+    @Getter
     public enum Status {
         PENDING(0), PAID(1), CANCELLED(2), REFUNDED(3);
         final int code;
         Status(int code) { this.code = code; }
-        public int getCode() { return code; }
+    }
+
+    @Getter
+    public enum PayType{
+        WEIXING("微信支付"),ZHIFUBAO("支付宝支付"),OTHER("其它");
+        final String name;
+        PayType(String name) {
+            this.name=name;
+        }
     }
 }

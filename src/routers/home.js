@@ -24,6 +24,7 @@ const PinsDetail = () => import('@/pages/pins/detail.vue')
 const Course = () => import('@/pages/course/index.vue')
 const CourseDetail = () => import('@/pages/course/detail.vue')
 const CourseRead = () => import('@/pages/course/read.vue')
+const CourseOrder = () => import('@/pages/course/order.vue')
 const Hot = () => import('@/pages/hot/index.vue')
 const TopicSquare = () => import('@/pages/pin/topics/index.vue')
 const TopicDetail = () => import('@/pages/pin/topic/detail.vue')
@@ -138,6 +139,11 @@ let routes = [
                 path:'/course',
                 name:'course',
                 component:Course
+            },
+            {
+                path:'/course/order/:orderNo',
+                name:'course-order',
+                component:CourseOrder
             },
             {
                 path:'/course/:id',

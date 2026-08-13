@@ -192,7 +192,6 @@ export default {
       chapters: [],
       isPurchased: false,
       showPurchaseModal: false,
-      orderNo: '',
       discountCode: '',
       discountInfo: null,
       discountValidating: false,
@@ -332,13 +331,9 @@ export default {
           discountCode: this.discountCode || undefined
         })
         if (res && res.code === 200 && res.data) {
-          this.orderNo = res.data.orderNo
           this.showPurchaseModal = false
-          // 跳转到支付页面
-          const payUrl = courseApi.getPayPageUrl(this.orderNo)
-          window.open(payUrl, '_blank')
-          // 开始轮询订单状态
-          this.pollOrderStatus()
+          // 跳转到订单详情页，由订单页发起支付并轮询订单状态
+          this.$router.push(`/course/order/${res.data.orderNo}`)
         } else {
           toast(res.message || '创建订单失败', 2)
         }
@@ -347,40 +342,6 @@ export default {
       } finally {
         this.paying = false
       }
-    },
-    pollOrderStatus() {
-      let pollCount = 0
-      const maxPolls = 60
-      const interval = setInterval(async () => {
-        pollCount++
-        try {
-          const res = await courseApi.getOrderStatus(this.orderNo)
-          if (res && res.code === 200 && res.data) {
-            const status = res.data.status
-            if (status === 1) {
-              // 支付成功
-              clearInterval(interval)
-              this.isPurchased = true
-              toast('购买成功！', 2)
-              setTimeout(() => {
-                const firstChapter = this.chapters[0]
-                if (firstChapter) {
-                  this.$router.push(`/course/read/${firstChapter.id}`)
-                }
-              }, 1500)
-            } else if (status === 2 || status === 3) {
-              // 已取消或已退款
-              clearInterval(interval)
-              toast('支付未完成', 2)
-            }
-          }
-        } catch (e) {
-          // 忽略轮询错误
-        }
-        if (pollCount >= maxPolls) {
-          clearInterval(interval)
-        }
-      }, 3000)
     },
     handleRead() {
       const firstChapter = this.chapters[0]

@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 
 @Data
@@ -23,7 +24,7 @@ public class ApUserActionLog implements Serializable {
     private String actionType;
 
     @TableField("score_change")
-    private Integer scoreChange;
+    private BigDecimal scoreChange;
 
     @TableField("action_detail")
     private String actionDetail;

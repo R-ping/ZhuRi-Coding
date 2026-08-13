@@ -150,7 +150,8 @@ export default {
       }
     },
     goToDetail(courseId) {
-      this.$router.push(`/course/${courseId}`)
+      // 课程列表进入详情页：新开标签页打开
+      window.open(`/course/${courseId}`, '_blank')
     }
   }
 }

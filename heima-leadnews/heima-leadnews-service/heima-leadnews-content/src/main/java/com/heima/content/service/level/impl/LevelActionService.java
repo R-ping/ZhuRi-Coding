@@ -19,9 +19,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 行为记录与积分服务 — 负责用户行为记录、逐日分计算、签到
@@ -60,121 +62,76 @@ public class LevelActionService {
     @Transactional(rollbackFor = Exception.class)
     public void recordAction(Long userId, String actionType, String actionDetail) {
         Integer score = ACTION_SCORE_MAP.getOrDefault(actionType, 0);
-        if (score == 0) {
+        if (score == null || score == 0) {
             return;
         }
 
         ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
-
-        String today = new java.sql.Date(System.currentTimeMillis()).toString();
-
-        Integer dailyLimit = DAILY_ACTION_LIMIT.get(actionType);
-        if (dailyLimit != null) {
-            if (getTodayActionCount(userId, actionType, today) >= dailyLimit) {
-                return;
-            }
-        }
-
-        int todayScore = getTodayScore(userId, today);
-
-        int actualScore = Math.min(score, DAILY_SCORE_LIMIT - todayScore);
-        if (actualScore <= 0) {
-            return;
-        }
-
-        ApUserActionLog actionLog = new ApUserActionLog();
-        actionLog.setUserId(userId);
-        actionLog.setActionType(actionType);
-        actionLog.setScoreChange(actualScore);
-        actionLog.setActionDetail(actionDetail);
-        actionLogMapper.insert(actionLog);
-
-        upsertDailyProgress(userId, actionType);
-
-        userLevel.setDailyScore(userLevel.getDailyScore() + actualScore);
-        userLevel.setDailyScoreToday(userLevel.getDailyScoreToday() + actualScore);
-
-        int newDailyLevel = levelQueryService.calculateLevel(1, userLevel.getDailyScore());
-        if (newDailyLevel != userLevel.getDailyLevel()) {
-            int oldLevel = userLevel.getDailyLevel();
-            userLevel.setDailyLevel(newDailyLevel);
-            permissionService.updateUserPermissions(userId, 1, oldLevel, newDailyLevel);
-            diamondService.grantDiamondOnLevelUp(userId, 1, newDailyLevel);
-        }
-
-        userLevelMapper.updateById(userLevel);
-
-        log.info("用户{}执行行为{}，获得逐日分{}，当前逐日等级{}", userId, actionType, actualScore,
-            userLevel.getDailyLevel());
+        grantScore(userLevel, userId, actionType, BigDecimal.valueOf(score), actionDetail);
     }
 
     /**
-     * 记录行为（含限制校验，返回结果）
+     * 记录行为（含限制校验，返回结果）— 分值来自行为配置表
+     */
+    public Map<String, Object> recordActionWithLimit(Long userId, String actionType, String actionDetail) {
+        Integer score = ACTION_SCORE_MAP.getOrDefault(actionType, 0);
+        if (score == null || score == 0) {
+            return buildFailResult("无效的行为类型");
+        }
+        return recordActionWithLimit(userId, actionType, BigDecimal.valueOf(score), actionDetail);
+    }
+
+    /**
+     * 支付行为：按实际支付金额加逐日经验（金额即经验值，支持小数），受每日上限控制
+     */
+    public Map<String, Object> recordPaymentAction(Long userId, String actionType, BigDecimal amount,
+        String actionDetail) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return buildFailResult("无效的支付金额");
+        }
+        return recordActionWithLimit(userId, actionType, amount, actionDetail);
+    }
+
+    /**
+     * 记录行为（含限制校验，返回结果）— score 为本次期望获得的经验值
      */
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> recordActionWithLimit(Long userId, String actionType, String actionDetail) {
+    private Map<String, Object> recordActionWithLimit(Long userId, String actionType, BigDecimal score,
+        String actionDetail) {
         Map<String, Object> result = new HashMap<>();
-
-        Integer score = ACTION_SCORE_MAP.getOrDefault(actionType, 0);
-        if (score == 0) {
-            result.put("success", false);
-            result.put("message", "无效的行为类型");
-            result.put("score", 0);
-            return result;
-        }
 
         ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
 
         String today = new java.sql.Date(System.currentTimeMillis()).toString();
 
         Integer dailyLimit = DAILY_ACTION_LIMIT.get(actionType);
-        if (dailyLimit != null) {
-            if (getTodayActionCount(userId, actionType, today) >= dailyLimit) {
-                result.put("success", false);
-                result.put("message", "今日该行为已达上限");
-                result.put("score", 0);
-                return result;
-            }
+        if (dailyLimit != null && getTodayActionCount(userId, actionType, today) >= dailyLimit) {
+            return buildFailResult("今日该行为已达上限");
         }
 
-        int todayScore = getTodayScore(userId, today);
-
-        int actualScore = Math.min(score, DAILY_SCORE_LIMIT - todayScore);
-        if (actualScore <= 0) {
-            result.put("success", false);
-            result.put("message", "今日积分已达上限");
-            result.put("score", 0);
-            return result;
+        BigDecimal todayScore = getTodayScore(userId, today);
+        BigDecimal remain = BigDecimal.valueOf(DAILY_SCORE_LIMIT).subtract(todayScore);
+        BigDecimal actualScore = score.min(remain);
+        if (actualScore.compareTo(BigDecimal.ZERO) <= 0) {
+            return buildFailResult("今日积分已达上限");
         }
 
-        ApUserActionLog actionLog = new ApUserActionLog();
-        actionLog.setUserId(userId);
-        actionLog.setActionType(actionType);
-        actionLog.setScoreChange(actualScore);
-        actionLog.setActionDetail(actionDetail);
-        actionLogMapper.insert(actionLog);
-
-        upsertDailyProgress(userId, actionType);
-
-        userLevel.setDailyScore(userLevel.getDailyScore() + actualScore);
-        userLevel.setDailyScoreToday(userLevel.getDailyScoreToday() + actualScore);
-
-        int newDailyLevel = levelQueryService.calculateLevel(1, userLevel.getDailyScore());
-        if (newDailyLevel != userLevel.getDailyLevel()) {
-            int oldLevel = userLevel.getDailyLevel();
-            userLevel.setDailyLevel(newDailyLevel);
-            permissionService.updateUserPermissions(userId, 1, oldLevel, newDailyLevel);
-            diamondService.grantDiamondOnLevelUp(userId, 1, newDailyLevel);
-        }
-
-        userLevelMapper.updateById(userLevel);
-
-        log.info("用户{}执行行为{}，获得逐日分{}，当前逐日等级{}", userId, actionType, actualScore,
-            userLevel.getDailyLevel());
+        grantScore(userLevel, userId, actionType, actualScore, actionDetail);
 
         result.put("success", true);
         result.put("message", "行为记录成功");
         result.put("score", actualScore);
+        return result;
+    }
+
+    /**
+     * 构建失败返回
+     */
+    private Map<String, Object> buildFailResult(String message) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("message", message);
+        result.put("score", BigDecimal.ZERO);
         return result;
     }
 
@@ -195,7 +152,7 @@ public class LevelActionService {
         if (todayCheckinCount > 0) {
             result.put("success", false);
             result.put("hasCheckedIn", true);
-            result.put("score", 0);
+            result.put("score", BigDecimal.ZERO);
             return result;
         }
 
@@ -205,41 +162,22 @@ public class LevelActionService {
         if (dailyLimit != null && todayCheckinCount >= dailyLimit) {
             result.put("success", false);
             result.put("hasCheckedIn", true);
-            result.put("score", 0);
+            result.put("score", BigDecimal.ZERO);
             return result;
         }
 
-        int todayScore = getTodayScore(userId, today);
+        BigDecimal todayScore = getTodayScore(userId, today);
 
-        Integer score = ACTION_SCORE_MAP.getOrDefault("daily_checkin", 0);
-        int actualScore = Math.min(score, DAILY_SCORE_LIMIT - todayScore);
-        if (actualScore <= 0) {
+        BigDecimal score = BigDecimal.valueOf(ACTION_SCORE_MAP.getOrDefault("daily_checkin", 0));
+        BigDecimal actualScore = score.min(BigDecimal.valueOf(DAILY_SCORE_LIMIT).subtract(todayScore));
+        if (actualScore.compareTo(BigDecimal.ZERO) <= 0) {
             result.put("success", false);
             result.put("hasCheckedIn", false);
-            result.put("score", 0);
+            result.put("score", BigDecimal.ZERO);
             return result;
         }
 
-        ApUserActionLog actionLog = new ApUserActionLog();
-        actionLog.setUserId(userId);
-        actionLog.setActionType("daily_checkin");
-        actionLog.setScoreChange(actualScore);
-        actionLog.setActionDetail("每日签到");
-        actionLogMapper.insert(actionLog);
-
-        userLevel.setDailyScore(userLevel.getDailyScore() + actualScore);
-        userLevel.setDailyScoreToday(userLevel.getDailyScoreToday() + actualScore);
-
-        int newDailyLevel = levelQueryService.calculateLevel(1, userLevel.getDailyScore());
-        if (newDailyLevel != userLevel.getDailyLevel()) {
-            int oldLevel = userLevel.getDailyLevel();
-            userLevel.setDailyLevel(newDailyLevel);
-            permissionService.updateUserPermissions(userId, 1, oldLevel, newDailyLevel);
-        }
-
-        userLevelMapper.updateById(userLevel);
-
-        log.info("用户{}签到成功，获得逐日分{}，当前逐日等级{}", userId, actualScore, userLevel.getDailyLevel());
+        grantScore(userLevel, userId, "daily_checkin", actualScore, "每日签到");
 
         result.put("success", true);
         result.put("hasCheckedIn", true);
@@ -257,12 +195,14 @@ public class LevelActionService {
     /**
      * 获取用户今日积分总和
      */
-    private int getTodayScore(Long userId, String today) {
+    private BigDecimal getTodayScore(Long userId, String today) {
         LambdaQueryWrapper<ApUserActionLog> query = new LambdaQueryWrapper<>();
         query.eq(ApUserActionLog::getUserId, userId);
         query.apply("DATE(created_time) = {0}", today);
         return actionLogMapper.selectList(query).stream()
-            .mapToInt(ApUserActionLog::getScoreChange).sum();
+            .map(ApUserActionLog::getScoreChange)
+            .filter(Objects::nonNull)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
@@ -282,6 +222,46 @@ public class LevelActionService {
      */
     public void recordPassiveAction(Long userId, String actionType) {
         upsertDailyProgress(userId, actionType);
+    }
+
+    /**
+     * 核心加分：写行为日志、更新逐日经验与等级、升级时发权限与钻石
+     *
+     * @param userLevel    用户等级记录（可变，内部累加后落库）
+     * @param userId       用户ID
+     * @param actionType   行为类型
+     * @param actualScore  实际获得的经验值（已扣除每日上限）
+     * @param actionDetail 行为详情
+     */
+    private void grantScore(ApUserLevel userLevel, Long userId, String actionType, BigDecimal actualScore,
+        String actionDetail) {
+        ApUserActionLog actionLog = new ApUserActionLog();
+        actionLog.setUserId(userId);
+        actionLog.setActionType(actionType);
+        actionLog.setScoreChange(actualScore);
+        actionLog.setActionDetail(actionDetail);
+        actionLogMapper.insert(actionLog);
+
+        upsertDailyProgress(userId, actionType);
+
+        BigDecimal currentScore = userLevel.getDailyScore() != null ? userLevel.getDailyScore() : BigDecimal.ZERO;
+        BigDecimal todayScore = userLevel.getDailyScoreToday() != null ? userLevel.getDailyScoreToday()
+            : BigDecimal.ZERO;
+        userLevel.setDailyScore(currentScore.add(actualScore));
+        userLevel.setDailyScoreToday(todayScore.add(actualScore));
+
+        int newDailyLevel = levelQueryService.calculateLevel(1, userLevel.getDailyScore());
+        if (newDailyLevel != userLevel.getDailyLevel()) {
+            int oldLevel = userLevel.getDailyLevel();
+            userLevel.setDailyLevel(newDailyLevel);
+            permissionService.updateUserPermissions(userId, 1, oldLevel, newDailyLevel);
+            diamondService.grantDiamondOnLevelUp(userId, 1, newDailyLevel);
+        }
+
+        userLevelMapper.updateById(userLevel);
+
+        log.info("用户{}执行行为{}，获得逐日分{}，当前逐日等级{}", userId, actionType, actualScore,
+            userLevel.getDailyLevel());
     }
 
     /**

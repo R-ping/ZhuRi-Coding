@@ -5,6 +5,7 @@ import com.heima.content.service.order.OrderService;
 import com.heima.model.course.pojos.ApCourseOrder;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,6 +18,14 @@ public class PayController {
 
     @Autowired
     private OrderService orderService;
+
+    /** 支付异步通知地址（支付宝服务端回调，需外网可达） */
+    @Value("${alipay.notify-url}")
+    private String notifyUrl;
+
+    /** 前端 Web 地址前缀，用于拼装课程支付成功后的回跳地址（课程页是前端 Vue SPA） */
+    @Value("${alipay.web-base-url:http://localhost:9901}")
+    private String webBaseUrl;
 
     /** 发起支付 - 返回支付页面 */
     @GetMapping(value = "/page", produces = MediaType.TEXT_HTML_VALUE)
@@ -32,7 +41,9 @@ public class PayController {
         }
 
         String subject = "课程购买 - " + order.getCourseId();
-        return alipayService.generatePayPage(orderNo, subject, order.getPaidAmount().toString());
+        // 支付成功后回跳到前端课程详情页（使用前端对外地址，而非后端网关地址）
+        String returnUrl = webBaseUrl + "/course/" + order.getCourseId();
+        return alipayService.generatePayPage(orderNo, subject, order.getPaidAmount().toString(), notifyUrl, returnUrl);
     }
 
     /** 支付异步通知 */

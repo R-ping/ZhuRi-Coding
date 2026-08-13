@@ -6,7 +6,7 @@ import com.heima.model.common.dtos.ResponseResult;
 public interface OrderService {
 
     /** 创建订单 */
-    ResponseResult createOrder(Long courseId, String discountCode, Long userId);
+    ResponseResult createOrder(Long courseId, String discountCode, Long userId, String payType);
 
     /** 查询订单状态 */
     ResponseResult getOrderStatus(String orderNo);

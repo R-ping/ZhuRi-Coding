@@ -1349,6 +1349,145 @@
         if (countEl) countEl.textContent = count || 0;
     }
 
+    // ========== 打赏（赞赏） ==========
+    var tipSelectedAmount = 1;
+
+    function loadTipSummary() {
+        apiGet('/content/api/v1/tip/summary?articleId=' + articleId).then(function(res) {
+            if (res && res.code === 200 && res.data) {
+                var countEl = document.getElementById('tipCount');
+                var amountEl = document.getElementById('tipAmount');
+                if (countEl) countEl.textContent = res.data.tipCount || 0;
+                if (amountEl) amountEl.textContent = res.data.tipAmount || 0;
+            }
+        }).catch(function(err) { console.error('加载打赏汇总失败:', err); });
+    }
+
+    function renderTipList(list) {
+        var container = document.getElementById('tipRewardList');
+        if (!container) return;
+        if (!list || list.length === 0) {
+            container.innerHTML = '<div class="tip-reward-list-empty">暂无赞赏，期待你的支持～</div>';
+            return;
+        }
+        var html = '';
+        list.forEach(function(item) {
+            var avatar = item.avatar || '';
+            var name = item.nickName || '匿名用户';
+            var msg = item.message || '';
+            var amount = item.amount || 0;
+            html += '<div class="tip-reward-item">';
+            html += '<img class="tip-reward-avatar" src="' + escapeHtml(avatar) + '" alt="avatar" onerror="this.style.visibility=\'hidden\'">';
+            html += '<div class="tip-reward-info">';
+            html += '<div class="tip-reward-name">' + escapeHtml(name) + '</div>';
+            if (msg) html += '<div class="tip-reward-msg">' + escapeHtml(msg) + '</div>';
+            html += '</div>';
+            html += '<div class="tip-reward-amount">¥' + amount + '</div>';
+            html += '</div>';
+        });
+        container.innerHTML = html;
+    }
+
+    function loadTipList() {
+        apiGet('/content/api/v1/tip/list?articleId=' + articleId + '&page=1&size=20').then(function(res) {
+            if (res && res.code === 200 && res.data) {
+                renderTipList(res.data.list);
+            }
+        }).catch(function(err) { console.error('加载打赏名单失败:', err); });
+    }
+
+    function openTipModal() {
+        var overlay = document.getElementById('tipModalOverlay');
+        if (overlay) overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        // 重置金额与留言
+        tipSelectedAmount = 1;
+        document.querySelectorAll('.tip-amount-option').forEach(function(btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-amount') === '1');
+        });
+        document.getElementById('tipAmountCustom').value = '';
+        document.getElementById('tipMessage').value = '';
+    }
+    function closeTipModal() {
+        var overlay = document.getElementById('tipModalOverlay');
+        if (overlay) overlay.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    function initTip() {
+        var rewardBtn = document.getElementById('tipRewardBtn');
+        var closeBtn = document.getElementById('closeTipModal');
+        var overlay = document.getElementById('tipModalOverlay');
+        var payBtn = document.getElementById('tipPayBtn');
+        var customInput = document.getElementById('tipAmountCustom');
+
+        if (rewardBtn) {
+            rewardBtn.addEventListener('click', function() {
+                if (!isLoggedIn()) { openLoginModal(); return; }
+                openTipModal();
+            });
+        }
+        if (closeBtn) closeBtn.addEventListener('click', closeTipModal);
+        if (overlay) {
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) closeTipModal();
+            });
+        }
+        // 金额档位选择
+        document.querySelectorAll('.tip-amount-option').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.tip-amount-option').forEach(function(b) {
+                    b.classList.remove('active');
+                });
+                this.classList.add('active');
+                tipSelectedAmount = parseInt(this.getAttribute('data-amount')) || 1;
+                if (customInput) customInput.value = '';
+            });
+        });
+        // 自定义金额
+        if (customInput) {
+            customInput.addEventListener('input', function() {
+                var v = this.value;
+                if (v) {
+                    document.querySelectorAll('.tip-amount-option').forEach(function(b) {
+                        b.classList.remove('active');
+                    });
+                    tipSelectedAmount = parseFloat(v) || 0;
+                } else {
+                    tipSelectedAmount = 1;
+                }
+            });
+        }
+        // 立即赞赏
+        if (payBtn) {
+            payBtn.addEventListener('click', function() {
+                var amount = tipSelectedAmount;
+                if (!amount || amount < 1) { showToast('请输入正确的打赏金额'); return; }
+                var msg = document.getElementById('tipMessage').value.trim();
+                var btn = this;
+                btn.disabled = true;
+                btn.textContent = '提交中...';
+                // articleId 为 19 位雪花 ID，超出 JS Number 安全整数范围（2^53），
+                // 必须按字符串传递，否则 JSON 序列化时会丢失精度导致后端匹配不到文章
+                apiPost('/content/api/v1/tip/create', { articleId: String(articleId), amount: amount, message: msg }).then(function(res) {
+                    btn.disabled = false;
+                    btn.textContent = '立即赞赏';
+                    if (res && res.code === 200 && res.data && res.data.payUrl) {
+                        // 新窗口打开支付页，当前页保持
+                        window.open(res.data.payUrl, '_blank');
+                        closeTipModal();
+                    } else {
+                        showToast((res && (res.message || res.errorMessage)) || '创建打赏订单失败');
+                    }
+                }).catch(function() {
+                    btn.disabled = false;
+                    btn.textContent = '立即赞赏';
+                    showToast('创建打赏订单失败，请重试');
+                });
+            });
+        }
+    }
+
     // ========== 初始化加载 ==========
     initTopBar();
     initLoginModal();
@@ -1358,4 +1497,17 @@
     loadRecommend(false);
     loadRelated();
     loadFeatured();
+    initTip();
+    loadTipSummary();
+    loadTipList();
+
+    // 支付成功回跳（?tip=success）时提示并刷新打赏名单
+    (function() {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('tip') === 'success') {
+            showToast('赞赏成功，感谢你的支持！');
+            loadTipSummary();
+            loadTipList();
+        }
+    })();
 })();

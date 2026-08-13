@@ -1942,7 +1942,152 @@
             .column-card { flex-wrap: wrap; }
             .column-cover { width: 80px; height: 56px; }
             .column-meta { width: 100%; justify-content: flex-start; margin-top: 8px; }
+            .tip-modal { width: 92%; }
         }
+
+        /* ========== 打赏（赞赏）卡片与弹窗 ========== */
+        .tip-section {
+            margin: 24px auto 8px;
+            padding: 28px 24px;
+            background: linear-gradient(135deg, #fff7f0 0%, #fff 60%);
+            border: 1px solid #ffe3c8;
+            border-radius: 12px;
+            text-align: center;
+            max-width: 560px;
+        }
+        .tip-section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        .tip-section-sub {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 16px;
+        }
+        .tip-reward-btn {
+            display: inline-block;
+            padding: 10px 40px;
+            background: linear-gradient(135deg, #ff8a3d, #ff6b00);
+            color: #fff;
+            border: none;
+            border-radius: 999px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .tip-reward-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(255, 107, 0, 0.35);
+        }
+        .tip-summary-row {
+            margin-top: 14px;
+            font-size: 13px;
+            color: #888;
+        }
+        .tip-summary-row .tip-summary-count { color: #ff6b00; font-weight: 600; }
+        .tip-reward-list {
+            margin-top: 18px;
+            border-top: 1px dashed #ffe3c8;
+            padding-top: 14px;
+            text-align: left;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+        .tip-reward-list-empty {
+            font-size: 13px;
+            color: #bbb;
+            text-align: center;
+            padding: 6px 0;
+        }
+        .tip-reward-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 4px;
+            border-bottom: 1px solid #faf3ec;
+        }
+        .tip-reward-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #ffe9d6;
+            flex-shrink: 0;
+            object-fit: cover;
+        }
+        .tip-reward-info { flex: 1; min-width: 0; }
+        .tip-reward-name { font-size: 13px; color: #333; font-weight: 500; }
+        .tip-reward-msg { font-size: 12px; color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .tip-reward-amount { font-size: 14px; color: #ff6b00; font-weight: 600; flex-shrink: 0; }
+
+        .tip-modal {
+            width: 420px;
+            border-radius: 12px;
+        }
+        .tip-modal .modal-header {
+            text-align: center;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        .tip-modal-title { font-size: 17px; font-weight: 600; color: #333; }
+        .tip-modal-sub { font-size: 12px; color: #999; margin-top: 4px; }
+        .tip-amount-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin: 16px 0;
+        }
+        .tip-amount-option {
+            padding: 12px 0;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            background: #fff;
+            color: #333;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .tip-amount-option.active {
+            border-color: #ff6b00;
+            color: #ff6b00;
+            background: #fff6ef;
+        }
+        .tip-amount-custom {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            font-size: 14px;
+            box-sizing: border-box;
+            margin-bottom: 12px;
+        }
+        .tip-amount-custom:focus { outline: none; border-color: #ff6b00; }
+        .tip-message-input {
+            width: 100%;
+            height: 72px;
+            padding: 10px 12px;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            font-size: 13px;
+            resize: none;
+            box-sizing: border-box;
+        }
+        .tip-message-input:focus { outline: none; border-color: #ff6b00; }
+        .tip-pay-btn {
+            width: 100%;
+            padding: 12px 0;
+            background: linear-gradient(135deg, #ff8a3d, #ff6b00);
+            color: #fff;
+            border: none;
+            border-radius: 999px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 14px;
+        }
+        .tip-pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .tip-pay-note { font-size: 11px; color: #bbb; text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -2084,6 +2229,20 @@
 
                 <div class="article-body" id="articleContent">
                     ${articleContentHtml}
+                </div>
+
+                <!-- 打赏（赞赏）卡片 -->
+                <div class="tip-section" id="tipSection">
+                    <div class="tip-section-title">觉得这篇文章不错？</div>
+                    <div class="tip-section-sub">支持作者，让好内容被更多人看到</div>
+                    <button class="tip-reward-btn" id="tipRewardBtn">赞赏</button>
+                    <div class="tip-summary-row">
+                        已获 <span class="tip-summary-count" id="tipCount">0</span> 次赞赏 · 共
+                        <span class="tip-summary-count" id="tipAmount">0</span> 元
+                    </div>
+                    <div class="tip-reward-list" id="tipRewardList">
+                        <div class="tip-reward-list-empty">暂无赞赏，期待你的支持～</div>
+                    </div>
                 </div>
 
                 <!-- 专栏区域 -->
@@ -2410,6 +2569,29 @@
             <div class="modal-footer report-footer">
                 <button class="cancel-btn" id="cancelReportBtn">取消</button>
                 <button class="confirm-btn" id="confirmReportBtn">确定举报</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 打赏弹窗 -->
+    <div class="modal-overlay" id="tipModalOverlay">
+        <div class="modal-container tip-modal" id="tipModal">
+            <div class="modal-header">
+                <div class="tip-modal-title">赞赏作者</div>
+                <div class="tip-modal-sub">你的支持是作者持续创作的最大动力</div>
+                <button class="modal-close-btn" id="closeTipModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="tip-amount-grid" id="tipAmountGrid">
+                    <button type="button" class="tip-amount-option active" data-amount="1">1</button>
+                    <button type="button" class="tip-amount-option" data-amount="5">5</button>
+                    <button type="button" class="tip-amount-option" data-amount="10">10</button>
+                    <button type="button" class="tip-amount-option" data-amount="50">50</button>
+                </div>
+                <input type="number" class="tip-amount-custom" id="tipAmountCustom" placeholder="自定义金额（元）" min="1" max="10000">
+                <textarea class="tip-message-input" id="tipMessage" placeholder="说点什么鼓励一下作者（选填，最多200字）" maxlength="200"></textarea>
+                <button class="tip-pay-btn" id="tipPayBtn">立即赞赏</button>
+                <div class="tip-pay-note">赞赏金额将进入平台账户，用于支持作者创作</div>
             </div>
         </div>
     </div>

@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -58,11 +59,11 @@ public class LevelPrivilegeService {
 
         // 2. 当前等级经验（未登录 userId=0 视为0）
         int currentLevel = 0;
-        int currentScore = 0;
+        BigDecimal currentScore = BigDecimal.ZERO;
         if (userId != null && userId > 0) {
             ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
             currentLevel = userLevel.getDailyLevel() != null ? userLevel.getDailyLevel() : 1;
-            currentScore = userLevel.getDailyScore() != null ? userLevel.getDailyScore() : 0;
+            currentScore = userLevel.getDailyScore() != null ? userLevel.getDailyScore() : BigDecimal.ZERO;
         }
 
         // 3. 权益列表（level_type=1 且启用，按 needJscoreLevel、sortOrder 升序）
@@ -132,7 +133,7 @@ public class LevelPrivilegeService {
         growth.put("jscore_this_level_mini_score", 0);
         if (validUser) {
             ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
-            Integer dailyScore = userLevel.getDailyScore() != null ? userLevel.getDailyScore() : 0;
+            BigDecimal dailyScore = userLevel.getDailyScore() != null ? userLevel.getDailyScore() : BigDecimal.ZERO;
             Integer dailyLevel = userLevel.getDailyLevel() != null ? userLevel.getDailyLevel() : 1;
             growth.put("jpower", userLevel.getPowerValue() != null ? userLevel.getPowerValue() : 0);
             growth.put("jscore", dailyScore);

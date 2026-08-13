@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -106,6 +107,12 @@ public class LevelServiceImpl implements LevelService {
     @Override
     public Map<String, Object> recordActionWithLimit(Long userId, String actionType, String actionDetail) {
         return levelActionService.recordActionWithLimit(userId, actionType, actionDetail);
+    }
+
+    @Override
+    public Map<String, Object> recordPaymentAction(Long userId, String actionType, BigDecimal amount,
+        String actionDetail) {
+        return levelActionService.recordPaymentAction(userId, actionType, amount, actionDetail);
     }
 
     @Override

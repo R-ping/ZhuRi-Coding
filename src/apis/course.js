@@ -152,5 +152,10 @@ export default {
   /** 结算明细 */
   getSettlementDetail(settlementId) {
     return request.get(`${COURSE_API_PREFIX}/settlement/detail`, { settlementId })
+  },
+
+  /** 作者打赏收益汇总 */
+  getTipRevenue() {
+    return request.get('/content/api/v1/tip/my-revenue', {})
   }
 }

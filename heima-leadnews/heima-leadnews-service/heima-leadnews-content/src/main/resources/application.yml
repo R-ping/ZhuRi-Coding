@@ -97,6 +97,10 @@ alipay:
   private-key: ${ALIPAY_PRIVATE_KEY:}
   alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
   gateway-url: https://openapi-sandbox.dl.alipaydev.com/gateway.do
-  notify-url: ${ALIPAY_NOTIFY_URL:http://localhost:51601/course/api/v1/pay/notify}
-  return-url: ${ALIPAY_RETURN_URL:http://localhost:9901/course/pay-result}
+  notify-url: ${ALIPAY_NOTIFY_URL:https://58c840b3.r40.cpolar.top/course/api/v1/pay/notify}
+  return-url: ${ALIPAY_RETURN_URL:https://58c840b3.r40.cpolar.top/course/pay-result}
+  # 打赏等场景拼装绝对通知/回跳地址时使用的前缀（网关对外地址）
+  base-url: ${ALIPAY_BASE_URL:https://58c840b3.r40.cpolar.top}
+  # 课程支付成功后的回跳地址前缀（课程页是前端 Vue SPA，指向前端对外地址，本地默认 9901）
+  web-base-url: ${ALIPAY_WEB_BASE_URL:https://5bdb24b5.r40.cpolar.top}
 

@@ -13,6 +13,10 @@ public final class LevelScoreConstants {
     /** 每日积分上限 */
     public static final int DAILY_SCORE_LIMIT = 200;
 
+    /** 支付行为类型（按实际支付金额加分，金额即经验值，受每日积分上限控制） */
+    public static final String ACTION_PURCHASE_COURSE = "purchase_course";
+    public static final String ACTION_REWARD_ARTICLE = "reward_article";
+
     /** 行为类型 → 积分值 */
     public static final Map<String, Integer> ACTION_SCORE_MAP = new HashMap<>();
     static {

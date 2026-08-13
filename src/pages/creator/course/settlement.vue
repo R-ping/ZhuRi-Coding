@@ -17,6 +17,11 @@
         <div class="summary-label">作者收入 (70%)</div>
         <div class="summary-value">¥{{ authorShare.toFixed(2) }}</div>
       </div>
+      <div class="summary-card tip-card">
+        <div class="summary-label">文章打赏收入</div>
+        <div class="summary-value">¥{{ tipRevenue.toFixed(2) }}</div>
+        <div class="summary-tip-count">{{ tipCount }} 次赞赏</div>
+      </div>
     </div>
 
     <div class="settlement-table" v-loading="loading">
@@ -117,6 +122,8 @@ export default {
       totalSales: 0,
       platformShare: 0,
       authorShare: 0,
+      tipRevenue: 0,
+      tipCount: 0,
       showDetailDialog: false,
       currentDetail: null
     }
@@ -134,6 +141,12 @@ export default {
           this.totalSales = res.data.totalSales || 0
           this.platformShare = res.data.totalPlatformShare || 0
           this.authorShare = res.data.totalAuthorShare || 0
+        }
+        // 文章打赏收益
+        const tipRes = await courseApi.getTipRevenue()
+        if (tipRes && tipRes.code === 200 && tipRes.data) {
+          this.tipRevenue = tipRes.data.totalAmount || 0
+          this.tipCount = tipRes.data.totalCount || 0
         }
       } catch (e) {
         console.error('加载结算记录失败', e)
@@ -186,6 +199,12 @@ export default {
 .summary-card.highlight {
   background: linear-gradient(135deg, #1E80FF, #4A90FF);
   .summary-label, .summary-value { color: #fff; }
+}
+
+.summary-card.tip-card {
+  background: linear-gradient(135deg, #ff8a3d, #ff6b00);
+  .summary-label, .summary-value { color: #fff; }
+  .summary-tip-count { color: rgba(255,255,255,0.85); font-size: 12px; margin-top: 4px; }
 }
 
 .summary-label {
