@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -68,7 +69,8 @@ public class LevelPowerService {
         userLevel.setPowerValue(userLevel.getPowerValue() + actualPower);
         userLevel.setPowerValueToday(userLevel.getPowerValueToday() + actualPower);
 
-        int newPowerLevel = levelQueryService.calculateLevel(2, userLevel.getPowerValue());
+        int newPowerLevel = levelQueryService.calculateLevel(2,
+            BigDecimal.valueOf(userLevel.getPowerValue() != null ? userLevel.getPowerValue() : 0));
         int oldLevel = userLevel.getPowerLevel();
         boolean levelChanged = false;
         if (newPowerLevel != userLevel.getPowerLevel()) {

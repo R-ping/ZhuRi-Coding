@@ -58,6 +58,8 @@ CREATE TABLE `ap_article` (
   `tags` json DEFAULT NULL,
   `collection` int unsigned DEFAULT NULL COMMENT '收藏数量',
   `comment` int unsigned DEFAULT NULL COMMENT '评论数量',
+  `tip_count` int unsigned NOT NULL DEFAULT '0' COMMENT '打赏人数',
+  `tip_amount` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '打赏总金额',
   `views` int unsigned DEFAULT NULL COMMENT '阅读数量',
   `score` int DEFAULT NULL,
   `province_id` int unsigned DEFAULT NULL COMMENT '省市',
@@ -75,6 +77,46 @@ CREATE TABLE `ap_article` (
   `column_id` bigint DEFAULT NULL COMMENT '专栏ID',
   PRIMARY KEY (`id`) USING BTREE
 ) ENGINE=InnoDB AUTO_INCREMENT=2087071668418568195 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='文章信息表，存储已发布的文章';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_article_tip_order` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `order_no` varchar(32) NOT NULL COMMENT '订单号',
+  `user_id` int NOT NULL COMMENT '打赏人用户ID',
+  `article_id` bigint NOT NULL COMMENT '文章ID',
+  `author_id` int NOT NULL COMMENT '作者用户ID',
+  `amount` decimal(10,2) NOT NULL COMMENT '打赏金额',
+  `message` varchar(200) DEFAULT '' COMMENT '打赏留言',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-待支付 1-已支付',
+  `trade_no` varchar(64) DEFAULT '' COMMENT '支付宝交易号',
+  `pay_time` datetime DEFAULT NULL COMMENT '支付时间',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_article_id` (`article_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_author_id` (`author_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章打赏订单表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_article_tip_record` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `order_no` varchar(32) NOT NULL COMMENT '关联订单号',
+  `user_id` int NOT NULL COMMENT '打赏人用户ID',
+  `nick_name` varchar(50) DEFAULT '' COMMENT '打赏人昵称',
+  `avatar` varchar(255) DEFAULT '' COMMENT '打赏人头像',
+  `article_id` bigint NOT NULL COMMENT '文章ID',
+  `author_id` int NOT NULL COMMENT '作者用户ID',
+  `amount` decimal(10,2) NOT NULL COMMENT '打赏金额',
+  `message` varchar(200) DEFAULT '' COMMENT '打赏留言',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '打赏时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_article_id` (`article_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章打赏流水表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -956,10 +998,10 @@ CREATE TABLE `ap_user_follow` (
 CREATE TABLE `ap_user_level` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` bigint NOT NULL COMMENT '用户ID',
-  `daily_score` int DEFAULT '0' COMMENT '逐日分(逐友值)',
+  `daily_score` decimal(10,2) DEFAULT '0.00' COMMENT '逐日分(逐友值)',
   `daily_level` tinyint DEFAULT '1' COMMENT '逐日等级(逐友等级)',
   `power_value` int DEFAULT '0' COMMENT '逐力值',
-  `daily_score_today` int DEFAULT '0' COMMENT '今日逐日分(逐友分)获取量',
+  `daily_score_today` decimal(10,2) DEFAULT '0.00' COMMENT '今日逐日分(逐友分)获取量',
   `power_level` tinyint DEFAULT '1' COMMENT '逐力等级',
   `power_value_today` int DEFAULT '0' COMMENT '今日逐力值获取量',
   `diamond_balance` int DEFAULT '0' COMMENT '矿石余额',

@@ -145,7 +145,19 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
                 && (path.endsWith("/column")
                     || path.endsWith("/related")
                     || path.endsWith("/featured")))
-            || (path.startsWith("/content/api/v1/comment/article/") && path.endsWith("/comments"));
+            || (path.startsWith("/content/api/v1/comment/article/") && path.endsWith("/comments"))
+            // 文章打赏公开只读接口（未登录也可查看打赏汇总/感谢名单，利于 SEO）
+            // 注意：仅放行只读查询与支付页/回调；创建打赏订单（/tip/create）与作者收益（/tip/my-revenue）仍须登录
+            || path.startsWith("/content/api/v1/tip/summary")
+            || path.startsWith("/content/api/v1/tip/list")
+            || path.startsWith("/content/api/v1/tip/pay/page")
+            || path.startsWith("/content/api/v1/tip/notify")
+            // 课程支付：支付页由浏览器新开标签页直接导航（无法携带 accToken），
+            // 通知回调由支付宝服务器 POST（无 token），均需公开放行
+            || path.startsWith("/content/api/v1/course/pay/page")
+            || path.startsWith("/content/api/v1/course/pay/notify")
+            || path.startsWith("/content/api/v1/course/my")
+            || path.startsWith("/content/api/v1/course/detail");
     }
 
     /**

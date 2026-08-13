@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -106,6 +107,18 @@ public class ApArticle implements Serializable {
      * 评论数量
      */
     private Integer comment;
+
+    /**
+     * 打赏人数
+     */
+    @TableField("tip_count")
+    private Integer tipCount = 0;
+
+    /**
+     * 打赏总金额
+     */
+    @TableField("tip_amount")
+    private BigDecimal tipAmount = BigDecimal.ZERO;
 
     /**
      * 阅读数量

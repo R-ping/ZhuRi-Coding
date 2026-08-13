@@ -26,7 +26,8 @@ public class OrderController {
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
         String discountCode = params.get("discountCode") != null ? params.get("discountCode").toString() : null;
-        return orderService.createOrder(courseId, discountCode, user.getId().longValue());
+        String payType = params.get("payType")!=null?params.get("payType").toString():null;
+        return orderService.createOrder(courseId, discountCode, user.getId().longValue(),payType);
     }
 
     /** 查询订单状态 */

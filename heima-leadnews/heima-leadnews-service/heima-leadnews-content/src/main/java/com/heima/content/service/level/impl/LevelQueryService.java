@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,11 +47,11 @@ public class LevelQueryService {
         if (userLevel == null) {
             userLevel = new ApUserLevel();
             userLevel.setUserId(userId);
-            userLevel.setDailyScore(0);
+            userLevel.setDailyScore(BigDecimal.ZERO);
             userLevel.setDailyLevel(1);
             userLevel.setPowerValue(0);
             userLevel.setPowerLevel(1);
-            userLevel.setDailyScoreToday(0);
+            userLevel.setDailyScoreToday(BigDecimal.ZERO);
             userLevel.setPowerValueToday(0);
             userLevelMapper.insert(userLevel);
         }
@@ -99,7 +100,7 @@ public class LevelQueryService {
         ApUserLevel userLevel = getUserLevel(userId);
 
         Integer dailyLevel = userLevel.getDailyLevel() != null ? userLevel.getDailyLevel() : 1;
-        Integer dailyScore = userLevel.getDailyScore() != null ? userLevel.getDailyScore() : 0;
+        BigDecimal dailyScore = userLevel.getDailyScore() != null ? userLevel.getDailyScore() : BigDecimal.ZERO;
 
         Integer diamondBalance = 0;
         try {
@@ -128,7 +129,8 @@ public class LevelQueryService {
             levelMax = dailyLevel * 150;
         }
 
-        int levelPercent = levelMax > 0 ? (int) (dailyScore * 100L / levelMax) : 0;
+        int levelPercent = levelMax > 0 ? dailyScore.multiply(BigDecimal.valueOf(100))
+            .divide(BigDecimal.valueOf(levelMax), 0, java.math.RoundingMode.DOWN).intValue() : 0;
 
         result.put("levelBadge", "ZR." + dailyLevel);
         result.put("levelScore", dailyScore);
@@ -154,7 +156,7 @@ public class LevelQueryService {
     /**
      * 根据积分计算等级
      */
-    public int calculateLevel(int levelType, int score) {
+    public int calculateLevel(int levelType, BigDecimal score) {
         LambdaQueryWrapper<ApLevelConfig> query = new LambdaQueryWrapper<>();
         query.eq(ApLevelConfig::getLevelType, levelType);
         query.le(ApLevelConfig::getMinScore, score);

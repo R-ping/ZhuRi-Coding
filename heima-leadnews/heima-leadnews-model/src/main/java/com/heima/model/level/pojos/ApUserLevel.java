@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 
 @Data
@@ -20,7 +21,7 @@ public class ApUserLevel implements Serializable {
     private Long userId;
 
     @TableField("daily_score")
-    private Integer dailyScore;
+    private BigDecimal dailyScore;
 
     @TableField("daily_level")
     private Integer dailyLevel;
@@ -32,7 +33,7 @@ public class ApUserLevel implements Serializable {
     private Integer powerLevel;
 
     @TableField("daily_score_today")
-    private Integer dailyScoreToday;
+    private BigDecimal dailyScoreToday;
 
     @TableField("power_value_today")
     private Integer powerValueToday;

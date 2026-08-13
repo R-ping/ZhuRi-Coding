@@ -9,12 +9,14 @@ import com.heima.content.mapper.course.ApCourseOrderMapper;
 import com.heima.content.mapper.course.ApUserCourseMapper;
 import com.heima.content.service.order.DiscountService;
 import com.heima.content.service.order.OrderService;
+import com.heima.content.service.payment.PaymentRewardService;
+import com.heima.model.common.dtos.ResponseResult;
+import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.course.pojos.ApCourse;
 import com.heima.model.course.pojos.ApCourseDiscount;
 import com.heima.model.course.pojos.ApCourseOrder;
+import com.heima.model.course.pojos.ApCourseOrder.PayType;
 import com.heima.model.user.pojos.ApUserCourse;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -45,9 +47,12 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private DiscountService discountService;
 
+    @Autowired
+    private PaymentRewardService paymentRewardService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ResponseResult createOrder(Long courseId, String discountCode, Long userId) {
+    public ResponseResult createOrder(Long courseId, String discountCode, Long userId, String payType) {
         if (courseId == null || userId == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
@@ -94,7 +99,9 @@ public class OrderServiceImpl implements OrderService {
         order.setCourseId(courseId);
         order.setOriginalAmount(originalAmount);
         order.setDiscountAmount(discountAmount);
+        order.setPayMethod(payType==null?PayType.OTHER:PayType.valueOf(payType));
         order.setPaidAmount(paidAmount);
+        order.setTotalAmount(paidAmount);
         order.setDiscountCode(discountCode != null ? discountCode : "");
         order.setStatus(ApCourseOrder.Status.PENDING.getCode());
         order.setCreatedTime(new Date());
@@ -194,6 +201,14 @@ public class OrderServiceImpl implements OrderService {
             userCourse.setIsTrial(0);
             userCourse.setLastLearnAt(new Date());
             userCourseMapper.updateById(userCourse);
+        }
+
+        // 4. 支付成功联动：加逐日等级经验 + 发"系统通知"站内信（失败不影响支付主流程）
+        try {
+            paymentRewardService.onCoursePurchaseSuccess(order.getUserId().longValue(),
+                order.getCourseId(), order.getPaidAmount(), order.getOrderNo());
+        } catch (Exception e) {
+            log.error("课程支付成功联动失败: orderNo={}", orderNo, e);
         }
 
         log.info("订单支付成功: orderNo={}, tradeNo={}, userId={}, courseId={}",

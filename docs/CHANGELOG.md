@@ -1,5 +1,68 @@
 # CHANGELOG
 
+## 2026-08-13 — 支付成功联动等级经验与系统通知（经验值=实际支付金额）
+
+### 功能变更
+- **支付成功联动等级体系 + 站内信**：课程购买、文章打赏在收到支付宝异步回调确认支付成功后，自动给付款用户增加逐日等级经验，并发送「系统通知」类型站内信
+- **经验值 = 实际支付金额**：打赏 2.5 元加 2.5 经验、购买课程实付 23.45 元加 23.45 经验（金额即经验值，支持小数），受全局每日 200 分上限控制
+- 新增行为类型：`purchase_course`（购买课程）、`reward_article`（打赏文章）；等级服务新增 `recordPaymentAction(userId, actionType, amount, detail)` 按金额动态加分
+- 逐日经验相关字段由 `int` 升级为 `decimal(10,2)`：`ap_user_action_log.score_change`、`ap_user_level.daily_score`、`ap_user_level.daily_score_today`（实体 `ApUserActionLog.scoreChange`、`ApUserLevel.dailyScore/dailyScoreToday` 同步改为 `BigDecimal`）
+- 新增 `PaymentRewardService` 聚合联动逻辑：调用等级服务 `recordPaymentAction` 加经验、调用站内信服务 `sendActivityNotification` 发通知；任一联动失败仅记录日志，不影响支付主流程
+- 站内信内容包含订单信息、实付金额、获得的经验值及跳转链接（课程详情/文章详情），前端「系统通知」tab 直接展示
+
+### 变更文件
+- 新增：`content/.../service/payment/PaymentRewardService.java`、`impl/PaymentRewardServiceImpl.java`
+- 新增：`content/.../resources/db/migrations/alter_score_decimal.sql`（字段升级 decimal）
+- 修改：`content/.../constants/LevelScoreConstants.java`（新增支付行为类型）
+- 修改：`content/.../service/level/LevelService.java`、`impl/LevelActionService.java`、`impl/LevelQueryService.java`、`impl/LevelPrivilegeService.java`（金额加分与 BigDecimal 适配）
+- 修改：`model/.../level/pojos/ApUserLevel.java`、`model/.../user/pojos/ApUserActionLog.java`（字段类型改 BigDecimal）
+- 修改：`content/.../service/order/impl/OrderServiceImpl.java`（课程支付成功联动）
+- 修改：`content/.../service/tip/impl/TipServiceImpl.java`（打赏支付成功联动，补 import）
+- 修改：`heima-leadnews-basic/heima-file-starter/pom.xml`（库模块跳过 spring-boot repackage，修复全量构建）
+- 修改：`content/.../resources/db/schema.sql`（同步 decimal 字段定义）
+
+## 2026-08-13 — 课程订单详情页 + 支付回跳修复 + 列表新开标签
+
+### 功能变更
+- **新增课程订单详情页**：课程详情页「立即购买」创建订单后跳转到订单详情页（`/course/order/:orderNo`），展示课程信息、订单信息、金额明细（课程价/折扣/实付）与订单状态
+- **立即支付入口**：订单页点击「立即支付」新开标签页跳转支付宝收银台（`/content/api/v1/course/pay/page`），并每 3s 轮询订单状态，支付成功后展示成功横幅并支持「继续阅读」
+- **修复支付回跳地址**：课程支付成功后的回跳地址不再使用后端网关 `return-url`，改为使用前端对外地址拼装 `{web-base-url}/course/{courseId}` 回跳到前端课程详情页
+- **课程列表新开标签**：课程列表点击课程卡片改为新开标签页打开课程详情页（`window.open`）
+- 后端新增 `alipay.web-base-url` 配置（`ALIPAY_WEB_BASE_URL`），默认 `http://localhost:9901`，生产指向前端内网穿透映射地址
+
+### 变更文件
+- 新增：`src/pages/course/order.vue`（课程订单详情页）
+- 修改：`src/routers/home.js`（新增 `/course/order/:orderNo` 路由）
+- 修改：`src/pages/course/index.vue`（列表进入详情新开标签页）
+- 修改：`src/pages/course/detail.vue`（创建订单后跳转订单页，移除原直接支付/轮询逻辑）
+- 修改：`content/.../controller/v1/pay/PayController.java`（回跳地址指向前端课程详情页）
+- 修改：`content/.../resources/application.yml`、`.env`（新增 `web-base-url`/`ALIPAY_WEB_BASE_URL` 配置）
+
+## 2026-08-13 — 文章打赏（赞赏）功能
+
+### 功能变更
+- **文章阅读页赞赏卡片**：在文章正文末尾、专栏区域之前新增「赞赏」卡片，展示已获赞赏次数与总金额，以及公开感谢名单（打赏人昵称/头像/留言/金额）
+- **打赏弹窗**：支持固定档位（1/5/10/50 元）+ 自定义金额（1~10000 元）+ 留言（选填，≤200 字），复用支付宝沙箱支付流程
+- **打赏闭环**：创建订单 → 生成支付页 → 模拟支付回调 → 订单标记已支付并写入打赏流水 → 更新文章打赏汇总（`tip_count`/`tip_amount`）
+- **打赏金额入平台账户**供作者结算；创作中心「收入结算」页新增「文章打赏收入」汇总卡片
+- 后端新增 `GET /api/v1/tip/summary`、`GET /api/v1/tip/list`（公开只读，网关白名单放行，利于 SEO）；`POST /api/v1/tip/create`、`GET /api/v1/tip/my-revenue`（需登录）
+- `AlipayService` 增加自定义通知地址/回跳地址的重载，支持打赏独立支付页与回调
+
+### 数据库
+- 新增表 `ap_article_tip_order`（打赏订单）、`ap_article_tip_record`（打赏流水/感谢名单）
+- `ap_article` 新增字段 `tip_count`、`tip_amount`
+- 变更脚本：`content/src/main/resources/db/migrations/create_ap_article_tip_tables.sql`，并同步更新 `schema.sql`
+
+### 变更文件
+- 新增：`heima-leadnews-model/.../article/pojos/ApArticleTipOrder.java`、`ApArticleTipRecord.java`
+- 新增：`content/.../mapper/tip/ApArticleTipOrderMapper.java`、`ApArticleTipRecordMapper.java`
+- 新增：`content/.../service/tip/TipService.java`、`impl/TipServiceImpl.java`
+- 新增：`content/.../controller/v1/tip/TipController.java`
+- 修改：`content/.../service/pay/AlipayService.java`、`impl/AlipayServiceImpl.java`
+- 修改：`content/.../templates/article.ftl`（赞赏卡片 + 弹窗 + 样式）、`content/.../static/article-static.js`（打赏逻辑）
+- 修改：`gateway/.../filter/AuthorizeFilter.java`（打赏公开只读路径白名单）
+- 修改：`src/apis/course.js`、`src/pages/creator/course/settlement.vue`（打赏收益展示）
+
 ## 2026-08-13 — 个人主页动态分栏 + 话题详情浏览/参与数聚合
 
 ### 功能变更
