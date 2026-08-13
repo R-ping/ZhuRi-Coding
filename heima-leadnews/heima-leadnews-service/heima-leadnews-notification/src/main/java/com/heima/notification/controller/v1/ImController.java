@@ -23,6 +23,13 @@ public class ImController {
         return imService.listSessions(userId);
     }
 
+    @GetMapping("/session")
+    public ResponseResult getOrCreateSession(@RequestParam("peer_id") Long peerId) {
+        ApUser user = AppThreadLocalUtil.getUser();
+        Long userId = user != null ? user.getId().longValue() : null;
+        return imService.getOrCreateSession(userId, peerId);
+    }
+
     @GetMapping("/messages")
     public ResponseResult listMessages(
             @RequestParam("session_id") Long sessionId,

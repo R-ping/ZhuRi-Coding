@@ -14,4 +14,10 @@ public class IFollowClientFallback implements IFollowClient {
     public ResponseResult follow(Long userId, Long followUserId) {
         return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, "关注服务不可用");
     }
+
+    @Override
+    public ResponseResult isFollowing(Long userId, Long followUserId) {
+        // 降级返回 false，避免开阻塞发送；IM 侧需兼容降级结果
+        return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, "关注关系查询不可用");
+    }
 }

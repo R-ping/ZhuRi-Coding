@@ -163,7 +163,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div class="chat-warning" v-if="!selectedContact.isMutualFollow">
+                                <div class="chat-warning" v-if="!selectedContact.canSendUnlimited">
                                     由于对方并未关注你，在收到对方回复之前，你最多只能发送1条文字消息
                                 </div>
                                 <div class="chat-input-area">
@@ -267,6 +267,16 @@ export default {
             if (newTab && ['comment', 'like', 'follow', 'message', 'system'].includes(newTab) && newTab !== this.activeTab) {
                 this.activeTab = newTab
             }
+        },
+        '$route.query.peer_id': function(newPeerId) {
+            if (!this._initialized) return
+            if (newPeerId) {
+                if (this.activeTab !== 'message') {
+                    this.activeTab = 'message'
+                    this.loadSessions()
+                }
+                this.openPeerConversation(newPeerId)
+            }
         }
     },
     mounted() {
@@ -278,6 +288,11 @@ export default {
         }
         this._initialized = true
         this.switchTab(this.activeTab)
+        // 从作者卡片「私信」按钮跳转而来：打开私信分栏并选中该用户
+        const peerId = this.$route.query.peer_id
+        if (this.activeTab === 'message' && peerId) {
+            this.openPeerConversation(peerId)
+        }
     },
     methods: {
         formatTime(timestamp) {
@@ -466,13 +481,14 @@ export default {
                     var list = (d.data.list || []).map(function(s) {
                         return {
                             id: s.session_id,
-                            name: '用户' + s.peer_id,
+                            name: s.peer_name || ('用户' + s.peer_id),
                             peerId: s.peer_id,
-                            avatar: '',
+                            avatar: s.peer_avatar || '',
                             lastMessage: s.last_message || '',
                             lastTime: s.last_message_at ? new Date(s.last_message_at).getTime() : Date.now(),
-                            isMutualFollow: s.is_active || false,
+                            isMutualFollow: !!(s.can_send_unlimited),
                             isActive: s.is_active || false,
+                            canSendUnlimited: !!(s.can_send_unlimited),
                             unreadCount: s.unread_count || 0,
                             sentCount: 0,
                             messages: []
@@ -536,19 +552,62 @@ export default {
             this.loadMessages(contact.id)
         },
 
+        // 从作者卡片跳转：对指定用户打开（不存在则新建）会话并选中聊天区
+        openPeerConversation(peerId) {
+            var self = this
+            peerId = Number(peerId)
+            if (!peerId) return
+            // 若会话列表已存在该用户，直接选中
+            var exist = this.contacts.find(function(c) { return c.peerId === peerId })
+            if (exist) {
+                this.selectedContact = exist
+                this.loadMessages(exist.id)
+                return
+            }
+            var url = this.getNotificationUrl('im_session')
+            request.get(url, { peer_id: peerId }).then(function(d) {
+                if (d && d.code === 200 && d.data) {
+                    var s = d.data
+                    var contact = {
+                        id: s.session_id,
+                        name: s.peer_name || ('用户' + s.peer_id),
+                        peerId: s.peer_id,
+                        avatar: s.peer_avatar || '',
+                        lastMessage: s.last_message || '',
+                        lastTime: s.last_message_at ? new Date(s.last_message_at).getTime() : Date.now(),
+                        isMutualFollow: !!(s.can_send_unlimited),
+                        isActive: s.is_active || false,
+                        canSendUnlimited: !!(s.can_send_unlimited),
+                        unreadCount: s.unread_count || 0,
+                        sentCount: 0,
+                        messages: []
+                    }
+                    // 追加到联系人列表并选中
+                    var exists = self.contacts.some(function(c) { return c.peerId === contact.peerId })
+                    if (!exists) {
+                        self.contacts.push(contact)
+                    }
+                    self.selectedContact = contact
+                    self.loadMessages(contact.id)
+                }
+            }).catch(function() {
+                toast('会话加载失败', 2)
+            })
+        },
+
         sendMessage() {
             var self = this
             if (!self.messageInput.trim()) return
             var contact = self.selectedContact
             if (!contact) return
 
-            if (!contact.isActive && !contact.isMutualFollow) {
+            if (!contact.canSendUnlimited) {
                 var sentCount = 0
                 if (contact.messages) {
                     sentCount = contact.messages.filter(function(m) { return m.isSelf }).length
                 }
                 if (sentCount >= 1) {
-                    toast('对方未关注你，你最多只能发送1条消息', 2)
+                    toast('对方未关注你，在回复前你最多只能发送1条消息', 2)
                     return
                 }
             }
