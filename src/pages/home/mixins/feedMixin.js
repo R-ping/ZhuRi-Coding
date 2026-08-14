@@ -81,7 +81,7 @@ export default {
         min_behot_time: this.params.min_behot_time
       }
       var self = this
-      Api.loaddata(reqParams).then((d) => {
+      return Api.loaddata(reqParams).then((d) => {
         self.$set(state, 'loading', false)
         self.$set(state, 'loadingMore', false)
         self.$set(state, 'refreshing', false)
@@ -120,14 +120,13 @@ export default {
       // 推荐标签页：刷新时重新生成种子
       if (this.shouldUseRecommend(tabId)) {
         this.resetRecommendState(index)
-        this.recommendLoad(index)
-        return
+        return this.recommendLoad(index)
       }
       // 特殊标签页：保持原有行为
       var state = this.tabStates[index]
-      if (!state || state.loading || state.refreshing) return
+      if (!state || state.loading || state.refreshing) return Promise.resolve()
       this.$set(state, 'refreshing', true)
-      this.load(index, 0)
+      return this.load(index, 0)
     },
 
     tanfer(data, curIndex, loaddir) {
@@ -320,7 +319,7 @@ export default {
         size: self.params.size || 10,
         tagName: self.subTabStates[index] ? self.subTabStates[index].selectedTag : '__all__'
       }
-      Api.recommendLoad(reqParams).then(function(d) {
+      return Api.recommendLoad(reqParams).then(function(d) {
         self.$set(state, 'loading', false)
         self.$set(state, 'loaded', true)
         self.$set(self.tabStates[index], 'loading', false)
