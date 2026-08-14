@@ -1,5 +1,120 @@
 # CHANGELOG
 
+## 2026-08-14 — 双 Token 机制语义修正（444 刷新 / 401 登出）
+
+### 变更
+
+1. **明确双 Token 语义，修正前端处理**：
+   - **444** = access token 过期（1 小时）→ 携带 refresh token 请求 `/user/api/v1/token/refresh` 刷新双 token 并重放原请求（无感续期）。刷新成功后旧 refresh token 在服务端删除、生成新双 token（一次性），因此只要用户持续使用，refresh token 的 7 天有效期会一直滚动保持。
+   - **401** = 最终认证失败的信号（如刷新失败说明 refresh token 也已过期）→ **不再刷新**，直接 `sessionExpired` 清除登录态并跳回首页（不弹登录框）。
+   - 纠正上一版「401 也触发刷新」的错误实现：`request.js` / `article_request.js` / `reward_request.js` 的 401 分支恢复为 `sessionExpired`，仅 444 分支走刷新流程。
+   - 匿名/游客请求返回 401 时静默 reject（`_usedUserToken` 守卫），不影响基础浏览。
+2. **流程闭环验证**（后端）：网关对受保护接口 accToken 缺失/过期返回 444（`AuthorizeFilter.java`）；`TokenServiceImpl.refreshToken` 校验 refresh token（Redis 7 天）、删除旧值、返回新双 token；刷新失败返回 `TOKEN_INVALID`（体 code=50），前端 `tokenManager` 据此执行登出。
+
+### 验证
+- 修改涉及 `src/common/request.js`、`article_request.js`、`reward_request.js`
+- 待外部浏览器验证：① acc token 过期（写入过期值）→ 请求返回 444 → 自动刷新并重放，页面数据正常、登录态保持；② 将 refresh token 也改为无效 → 刷新失败 → 跳回首页、token 清除、无登录框
+
+## 2026-08-14 — Token 过期跳页优化 + 个人设置页完善
+
+### 变更
+
+1. **Token 过期不再弹登录框，改为跳回首页**：用户登录态失效时（401/444/刷新失败），不再弹出登录弹窗，改为清空登录态后 `window.location.href = '/'` 整页跳回首页。未登录状态下用户可正常基础浏览所有公开页面。修改涉及 4 个文件共 8 处触发点：
+   - `store.js` 新增 `sessionExpired` action（`logout` + 跳首页），保留原 `logout` 供登录流程正常使用
+   - `request.js`：401 分支、`__refreshAndRetry` 无 refreshToken 分支
+   - `tokenManager.js`：`refresh()` 无 refreshToken 分支、`handleRefreshInvalid()` 分支
+   - `article_request.js`：401 分支（增加 `_usedUserToken` 守卫）、`refreshTokenAndRetry` 无 refreshToken 分支
+   - `reward_request.js`：401 分支（增加 `_usedUserToken` 守卫）、`refreshTokenAndRetry` 无 refreshToken 分支
+   - **验证**：外部浏览器写入无效 token → 刷新设置页 → 自动跳回 `/home`，token 已清除，无登录框弹出，首页内容正常加载
+
+2. **修复设置页区块切换失效（根因）**：Element UI 原先仅在 `CreatorLayout.vue` 局部注册，导致设置页 `el-dialog` / `el-upload` / `el-button` / `el-switch` 渲染为未知组件，Vue DOM patch 阶段报错、切换侧边栏区块不刷新。已将 Element UI 全局注册至 `src/entry.js`（`Vue.use(ElementUI)`），并移除 CreatorLayout 重复注册。验证：6 个区块切换全部正常，控制台无报错。
+3. **补齐头像弹窗缺失方法**：`triggerAvatarUpload` 改为打开「更换头像」弹窗；新增 `handleAvatarChange`（本地预览）与 `uploadAvatar`（确认后上传）方法；删除冗余的原生 file input 上传路径，统一走弹窗流程。
+4. **修复头像上传请求封装缺陷**：`src/common/request.js` 的 `__fetch` 原本固定 `Content-Type: application/json`，且 `post` 第三参数被拼入 query（`?headers=[object Object]`），导致 FormData 上传失败（500/444）。已增加 FormData 自动识别（移除手动 Content-Type，让浏览器自动设置 boundary），并修正 `apis/user.js` 的 `uploadAvatar` 调用。验证：上传 200，头像 URL 落库 OSS。
+5. **新增「返回个人主页」入口**：设置页侧边栏顶部增加「返回个人主页」（对齐掘金），点击跳转 `/user/{userId}`。
+
+### 验证
+- Token 失效跳首页：写入无效 token → 刷新设置页 → 自动跳回 `/home`，token 清除，无登录框，首页正常浏览
+- 外部浏览器（Chrome 插件）实测：6 个区块切换正常、头像弹窗预览+上传成功（OSS 落库）、返回个人主页跳转正常
+- 对照掘金设置页 6 区块（个人资料/账号设置/通用设置/消息设置/屏蔽管理/标签管理），功能项与当前系统已对齐
+
+## 2026-08-14 — 上线前修复（P0 六项全部完成）
+
+### 修复内容
+1. **P0.4 导航无效入口**：`layout_main.vue` 顶部「数据标注 / AI Coding / 更多」加 `handleUnreleasedNav` toast 兜底（「该功能即将上线，敬请期待」）
+2. **P0.8 404 路由兜底**：新增 `src/pages/not_found/index.vue`（404 图标 + 回首页/返回按钮）；全局 catch-all 注册于 `routers/index.js`；修正 `creator.js` 顶层 `path:'*'` 误拦截（改为 `/creator` 子路由内兜底，未知路径不再进入创作者中心布局）
+3. **P0.1 SEO meta**：`index.html` 补 description/keywords/theme-color/robots/canonical/og:*/twitter:*/apple-touch-icon，title 改为「逐日Coding - 开发者技术社区」，移除 bootcss 字体 CDN（`font.js` 本地打包 font-awesome ttf）
+4. **P0.6 卡片信息密度**：`feedMixin.js` 透传 `likes`/`authorImage`；`article_0/1/3.vue` 增加点赞数 + 作者头像展示（摘要待后端补字段）
+5. **P0.2 空状态与错误兜底**：`pins/index.vue` 增加 `pinsError` 状态（503 显示「加载失败，点击重试」而非「暂无内容」）；`course/index.vue` 增加 `loadError` 状态 + 重试按钮
+6. **P0.5 监听清理复测**：抽查 17 处定时器/监听器均正常清理；`ByteMdEditor.vue` 补 MutationObserver disconnect
+
+### 验证
+- `npm run build` 通过（21s，2432 modules）
+- Playwright 冒烟 5/5：点赞数显示、导航 toast、404 页、沸点错误态、课程错误态
+- 沸点接口已恢复（10 条帖子）；课程接口仍 503，错误态正确展示
+
+### 待办
+- 课程接口 503 需后端排查（`/content/api/v1/course/list`）
+- 文章卡片摘要需后端补 `description` 字段
+- canonical/og:url 占位域名需替换为正式域名
+- 清理 `dist_bak_20260814`（旧构建备份）
+
+## 2026-08-14 — 上线审查报告更新（范围澄清）
+
+### 变更
+- **P0.3 作者昵称乱码 → 已解决**：项目负责人确认系历史入库数据所致，数据已修正，该项移出 P0 阻塞清单（仅保留前端「匿名用户」兜底建议）
+- **确认本项目无移动端业务**：移动端相关项全部移出上线范围（P0.7 骨架屏/App 按钮、P1.9 iPad 适配、P2 4.2 改为编辑器体积优化、QA 5.4 移动断点）
+- 调整后上线范围：P0×6、P1×9、P2×6，总工作量预估 3-5 个工作日
+- 更新文件：`docs/pre_launch_audit_report.md`（含附录二：范围澄清）
+
+## 2026-08-13 — 上线前全面审查（与稀土掘金对标）
+
+### 审查产出
+- 完整报告：`docs/pre_launch_audit_report.md`
+- 页面截图：`docs/audit_shots/pc_home.png` / `mobile_home.png` / `pc_pins.png` / `pc_course.png`
+- 截图脚本：`_tmp_audit_shots.py`（基于 Playwright + 系统 Edge）
+
+### 阻塞上线项（P0，8 项）
+1. `index.html` 缺少 description/keywords/og/twitter/theme-color/canonical/manifest
+2. 首页/课程页可见空状态，疑似接口返回空（移动端整屏骨架）
+3. 作者昵称显示乱码 `??422067`（DB 字符集或后端序列化问题）
+4. 顶部导航「更多 / 数据标注 / AI Coding」点击无反应
+5. 顶层定时器清理分支需复测，避免内存泄漏
+6. 内容卡片信息密度低于掘金：缺摘要/点赞/作者头像
+7. 移动端骨架屏长驻 + 「App内打开」占位按钮未发布即渲染
+8. `vue-router` history 模式无 catch-all 404 兜底
+
+### 体验优化项（P1，10 项）
+- 空状态/错误文案统一
+- 搜索入口缺热搜词
+- 右侧栏内容单薄（仅签到+推荐话题）
+- Tab 数据未预加载相邻 tab
+- 阅读行为上报需复测
+- 性能：图片懒加载/Gzip/ImageMin/element-ui 按需引入未做
+- 控制台 Vue key 警告（`home/index.vue`）
+- 可访问性：缺 ARIA/键盘焦点/alt
+- iPad/平板断点粗糙
+- 多环境/部署配置硬编码
+
+### 运营增强项（P2，7 项）
+- 空数据运营位/新人指南/版本日志
+- bytemd 移动端按需加载
+- 文章详情 SEO（预渲染/SSR）
+- 埋点与监控（Sentry + Web Vitals）
+- 暗色模式
+- 文章目录/大纲
+- 键盘快捷键
+
+### QA 验收 Checklist
+- 功能闭环：未登录浏览 + 登录互动 + 创作中心 + 课程
+- 数据完整性：≥30 篇文章/20 沸点/5 课程/10 话题，UTF-8 正常，测试账号已清理
+- 性能：LCP<2.5s, gzip<1.5MB, Lighthouse≥80, TTI<3s
+- 兼容：Chrome/Edge/Safari/Firefox 最新两版 + iOS Safari 14+/Android Chrome 90+，分辨率 1024/1280/1440/1920 + 375/390/414/768
+- 安全：OSS 签名不泄露、XSS 复测、CSRF token、验证码
+- 运营：导航无效入口处理、App 入口可隐藏、footer 链接可达
+
+### 结论
+P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
+
 ## 2026-08-13 — 支付成功联动等级经验与系统通知（经验值=实际支付金额）
 
 ### 功能变更

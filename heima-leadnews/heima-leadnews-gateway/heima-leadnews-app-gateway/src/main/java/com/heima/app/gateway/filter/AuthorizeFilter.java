@@ -125,6 +125,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/pins/sidebar")
             || path.startsWith("/content/api/v1/circle/recommend")
             || path.startsWith("/content/api/v1/circle/my")
+            || path.startsWith("/content/api/v1/author/info")
             // 沸点详情页公开只读接口（未登录也可浏览沸点详情/评论列表，利于 SEO）
             // 注意：仅放行只读查询，发布/点赞/发表评论/分享等写接口仍须登录
             || path.startsWith("/content/api/v1/pins/comment/list")
@@ -134,6 +135,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || (path.startsWith("/content/api/v1/article/")&&path.endsWith("/recommend"))
             || path.startsWith("/content/api/v1/tag/by-category")
             || path.startsWith("/content/api/v1/article/load")
+            || path.startsWith("/content/api/v1/circle")
             // 文章详情页（FTL 服务端渲染）浏览器导航加载，无法携带 accToken，公开访问利于 SEO
             || path.startsWith("/content/article/")
             // 文章详情页共用交互脚本（静态资源）
@@ -154,6 +156,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/tip/notify")
             // 课程支付：支付页由浏览器新开标签页直接导航（无法携带 accToken），
             // 通知回调由支付宝服务器 POST（无 token），均需公开放行
+            || path.startsWith("/content/api/v1/course/list")
             || path.startsWith("/content/api/v1/course/pay/page")
             || path.startsWith("/content/api/v1/course/pay/notify")
             || path.startsWith("/content/api/v1/course/my")

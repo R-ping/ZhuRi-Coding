@@ -129,6 +129,10 @@ Request.prototype = {
             't': '' + time,
             // 'md': this.sign(parms)
         }
+        // FormData 上传（如头像）：移除手动 Content-Type，让浏览器自动设置带 boundary 的值
+        if (body && typeof FormData !== 'undefined' && body instanceof FormData) {
+            delete headers['Content-Type']
+        }
         var config = {
             method: type,
             url: path,
@@ -158,13 +162,10 @@ Request.prototype = {
             if (error.response && error.response.status === 444 && retryCount < 1 && usedUserToken) {
                 return _this.__refreshAndRetry(type, path, time, parms, body, retryCount)
             }
-            // 401未授权 — 仅当原请求使用用户token时才清除过期token并弹出登录窗口
+            // 401未授权 — 刷新失败/ref token失效等最终认证失败的信号，不再刷新，清除过期token并跳回首页（不弹登录框）。
+            // 仅当原请求使用用户token时处理，匿名/游客请求静默reject
             if (error.response && error.response.status === 401 && retryCount < 1 && usedUserToken) {
-                _this.store.dispatch('logout')
-                // 防止重复弹出登录框
-                if (!_this.store.state.isLoginPopupShowing) {
-                    _this.store.dispatch('showLogin')
-                }
+                _this.store.dispatch('sessionExpired')
                 return Promise.reject(error.response || error)
             }
             // 403权限不足
@@ -185,7 +186,7 @@ Request.prototype = {
     /**
      * 444状态码处理：用refreshToken刷新双Token后重放原请求
      * - 无accessToken：用户从未登录，直接reject，不触发logout和showLogin
-     * - 有accessToken无refreshToken：无法刷新，清除过期token后弹出登录弹窗
+     * - 有accessToken无refreshToken：无法刷新，清除过期token后跳回首页
      * - 有accessToken和refreshToken：尝试刷新，失败才清除全部登录状态
      */
     __refreshAndRetry: function (type, path, time, parms, body, retryCount) {
@@ -197,9 +198,8 @@ Request.prototype = {
         }
         var refreshToken = _this.store.state.refreshToken
         if (!refreshToken) {
-            // 有accessToken但没有refreshToken，无法刷新，清除过期token后弹出登录弹窗
-            _this.store.dispatch('logout')
-            _this.store.dispatch('showLogin')
+            // 有accessToken但没有refreshToken，无法刷新，清除过期token后跳回首页（不弹登录框）
+            _this.store.dispatch('sessionExpired')
             return Promise.reject({ code: 444, errorMessage: '登录已过期，请重新登录' })
         }
         // 使用统一token管理器，避免两个拦截器并发刷新冲突

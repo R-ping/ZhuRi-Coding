@@ -187,6 +187,19 @@ var store = new Vuex.Store({
         logout({ commit }) {
             commit('CLEAR_AUTH')
         },
+        /**
+         * 登录态失效统一处理：清空登录态并跳回首页，不弹出登录框。
+         * 未登录状态下用户仍可正常基础浏览（首页/沸点/文章等公开页面）。
+         */
+        sessionExpired({ commit }) {
+            commit('CLEAR_AUTH')
+            // 已处于首页则无需重复跳转（避免并发 401 触发多次跳转）
+            var path = window.location.pathname
+            if (path !== '/' && path !== '/home') {
+                // 整页跳转回首页，彻底重置前端内存态并重新加载应用
+                window.location.href = '/'
+            }
+        },
         guestLogin({ commit }, token) {
             commit('SET_GUEST_TOKEN', token)
         },

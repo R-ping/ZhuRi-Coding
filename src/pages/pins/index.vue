@@ -92,7 +92,9 @@
                 <!-- 帖子列表 -->
                 <div class="pins-list">
                     <div class="pins-empty" v-if="pinsList.length === 0 && !pinsLoading">
-                        <span>暂无内容</span>
+                        <span v-if="pinsError">加载失败，请检查网络后重试</span>
+                        <span v-else>暂无内容</span>
+                        <span class="pins-retry-btn" v-if="pinsError" @click="fetchPinsList(true)">点击重试</span>
                     </div>
                     <div class="pins-item" v-for="pins in pinsList" :key="pins.id">
                         <img :src="pins.userAvatar || defaultAvatar" class="pins-avatar" alt="avatar"
@@ -516,6 +518,8 @@ export default {
             pinsLoading: false,
             hasMore: true,
             noMore: false,
+            // 沸点列表加载失败标记（503/超时等，用于区分"暂无内容"与"加载失败"）
+            pinsError: false,
 
             // 作者信息悬浮卡片
             showAuthorCard: false,
@@ -700,6 +704,7 @@ export default {
                 }
                 const res = await getPinsList(params)
                 if (res && res.code === 200 && res.data) {
+                    this.pinsError = false
                     const list = res.data.list || res.data || []
                     const total = res.data.total || 0
                     if (reset) {
@@ -712,10 +717,14 @@ export default {
                         this.hasMore = false
                         this.noMore = true
                     }
+                } else {
+                    // 业务错误（如 503/接口异常返回）
+                    if (reset) this.pinsError = true
                 }
             } catch (e) {
                 if (reset) {
                     this.pinsList = []
+                    this.pinsError = true
                 }
             } finally {
                 this.pinsLoading = false
@@ -1181,6 +1190,22 @@ export default {
     padding: 60px 20px;
     color: #8a919f;
     font-size: 14px;
+}
+
+.pins-retry-btn {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 6px 20px;
+    border-radius: 16px;
+    border: 1px solid #1E80FF;
+    color: #1E80FF;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+}
+.pins-retry-btn:hover {
+    background: rgba(30, 128, 255, 0.08);
 }
 
 .pins-item {

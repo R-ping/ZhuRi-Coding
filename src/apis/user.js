@@ -15,9 +15,7 @@ export const updateUserProfile = (data) => {
 export const uploadAvatar = (file) => {
   const formData = new FormData()
   formData.append('file', file)
-  return request.post('/user/api/v1/user/avatar', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  })
+  return request.post('/user/api/v1/user/avatar', formData)
 }
 
 // 获取账号绑定状态
