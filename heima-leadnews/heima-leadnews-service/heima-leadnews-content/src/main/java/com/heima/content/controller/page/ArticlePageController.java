@@ -68,6 +68,8 @@ public class ArticlePageController {
         model.addAttribute("title", nullSafe(article.getTitle()));
         model.addAttribute("authorName", nullSafe(article.getAuthorName()));
         model.addAttribute("authorAvatar", nullSafe(article.getAuthorImage()));
+        // 作者ID（用于正文尾部作者卡片：拉取作者信息、跳转作者主页）
+        model.addAttribute("authorId", article.getAuthorId() != null ? article.getAuthorId() : 0L);
         model.addAttribute("publishTime", article.getPublishTime());
         model.addAttribute("readCount", article.getViews() != null ? article.getViews() : 0);
         model.addAttribute("readTime", calculateReadTime(content));

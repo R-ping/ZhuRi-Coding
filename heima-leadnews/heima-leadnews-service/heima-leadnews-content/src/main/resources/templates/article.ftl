@@ -963,45 +963,70 @@
             padding-bottom: 16px;
             border-bottom: 1px solid #e4e6eb;
         }
-        .recommend-list {
+        .recommend-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
             list-style: none;
             margin: 0;
             padding: 0;
         }
-        .recommend-item {
-            padding: 14px 0;
-            border-bottom: 1px solid #f2f3f5;
-            min-height: 60px;
+        .recommend-card {
+            display: flex;
+            flex-direction: column;
+            text-decoration: none;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #f2f3f5;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .recommend-item:last-child {
-            border-bottom: none;
+        .recommend-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         }
-        .recommend-item-title {
+        .recommend-card-cover {
+            width: 100%;
+            aspect-ratio: 16 / 10;
+            overflow: hidden;
+            background: #f2f3f5;
+        }
+        .recommend-card-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .recommend-card-info {
+            padding: 12px 14px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+        }
+        .recommend-card-title {
             font-size: 15px;
             font-weight: 500;
             color: #252933;
-            margin-bottom: 6px;
-            line-height: 1.4;
+            line-height: 1.45;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
+            min-height: 43px;
         }
-        .recommend-item-title a {
-            color: #252933;
-        }
-        .recommend-item-title a:hover {
+        .recommend-card:hover .recommend-card-title {
             color: #1e80ff;
         }
-        .recommend-item-meta {
+        .recommend-card-meta {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
             align-items: center;
             font-size: 12px;
             color: #8a919f;
+            margin-top: auto;
         }
-        .recommend-item-meta .category-tag {
+        .recommend-card-meta .category-tag {
             display: inline-block;
             padding: 1px 6px;
             border-radius: 3px;
@@ -1009,8 +1034,119 @@
             color: #1e80ff;
             font-size: 11px;
         }
-        .recommend-item-meta .meta-sep {
+        .recommend-card-meta .meta-sep {
             color: #c4c9d1;
+        }
+
+        /* ========== 读完提示 ========== */
+        .read-end-hint {
+            text-align: center;
+            color: #8a919f;
+            font-size: 13px;
+            letter-spacing: 2px;
+            padding: 8px 0 4px;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.6s, transform 0.6s;
+        }
+        .read-end-hint.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .read-end-hint::before,
+        .read-end-hint::after {
+            content: "";
+            display: inline-block;
+            width: 40px;
+            height: 1px;
+            background: #e4e6eb;
+            vertical-align: middle;
+            margin: 0 12px;
+        }
+
+        /* ========== 正文尾部作者卡片 ========== */
+        .end-author-card {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #f2f3f5;
+            padding: 24px;
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .end-author-card .ea-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: #f2f3f5;
+        }
+        .end-author-card .ea-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .end-author-card .ea-name {
+            font-size: 17px;
+            font-weight: 600;
+            color: #252933;
+            margin-bottom: 6px;
+        }
+        .end-author-card .ea-desc {
+            font-size: 13px;
+            color: #8a919f;
+            line-height: 1.6;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .end-author-card .ea-followers {
+            font-size: 12px;
+            color: #8a919f;
+        }
+        .end-author-card .ea-followers b {
+            color: #4e5969;
+            font-weight: 600;
+        }
+        .end-author-card .ea-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+        .end-author-card .ea-follow-btn {
+            width: 96px;
+            height: 34px;
+            border: none;
+            border-radius: 17px;
+            background: #1e80ff;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .end-author-card .ea-follow-btn:hover {
+            background: #0d6ae0;
+        }
+        .end-author-card .ea-follow-btn.active {
+            background: #eaf2ff;
+            color: #1e80ff;
+        }
+        .end-author-card .ea-links {
+            display: flex;
+            gap: 14px;
+        }
+        .end-author-card .ea-link {
+            font-size: 13px;
+            color: #1e80ff;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .end-author-card .ea-link:hover {
+            text-decoration: underline;
         }
 
         /* ========== 右侧边栏推荐卡片样式 ========== */
@@ -1208,6 +1344,165 @@
             height: auto;
         }
 
+        /* ========== 点赞/收藏 动效 ========== */
+        .action-icon,
+        .action-btn svg {
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), fill 0.2s;
+        }
+        .action-item.bursting .action-icon,
+        .action-btn.bursting svg {
+            animation: actionBurst 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes actionBurst {
+            0%   { transform: scale(1); }
+            35%  { transform: scale(1.45) rotate(-8deg); }
+            70%  { transform: scale(0.92); }
+            100% { transform: scale(1); }
+        }
+        .action-btn svg,
+        .action-sidebar .action-icon svg {
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        /* 数字平滑跳动 */
+        .action-count {
+            transition: color 0.2s, transform 0.2s;
+        }
+        .action-count.count-bump {
+            color: #1e80ff;
+            transform: scale(1.25);
+        }
+
+        /* ========== 分享面板 ========== */
+        .share-panel {
+            position: fixed;
+            left: 84px;
+            top: 50%;
+            transform: translateY(-50%) scale(0.92);
+            transform-origin: left center;
+            width: 264px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+            border: 1px solid #f2f3f5;
+            padding: 16px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, transform 0.2s, visibility 0.2s;
+        }
+        .share-panel.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(-50%) scale(1);
+        }
+        .share-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .share-panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #252933;
+        }
+        .share-panel-close {
+            border: none;
+            background: none;
+            font-size: 20px;
+            color: #8a919f;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0 4px;
+        }
+        .share-panel-close:hover {
+            color: #252933;
+        }
+        .share-panel-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .share-option {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 0;
+            border: none;
+            border-radius: 8px;
+            background: #f7f8fa;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s;
+        }
+        .share-option:hover {
+            background: #eaf2ff;
+            transform: translateY(-2px);
+        }
+        .share-option:active {
+            transform: scale(0.95);
+        }
+        .share-icon {
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .share-icon svg {
+            width: 22px;
+            height: 22px;
+            fill: #515767;
+        }
+        .share-option[data-share="wechat"] .share-icon svg { fill: #07c160; }
+        .share-option[data-share="weibo"] .share-icon svg { fill: #e6162d; }
+        .share-option[data-share="qq"] .share-icon svg { fill: #12b7f5; }
+        .share-option[data-share="juejin"] .share-icon svg { fill: #1e80ff; }
+        .share-label {
+            font-size: 12px;
+            color: #515767;
+        }
+        .share-copy-row {
+            display: flex;
+            gap: 8px;
+        }
+        .share-link-input {
+            flex: 1;
+            min-width: 0;
+            height: 32px;
+            padding: 0 10px;
+            border: 1px solid #e4e6eb;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #8a919f;
+            background: #f7f8fa;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .share-copy-btn {
+            height: 32px;
+            padding: 0 14px;
+            border: none;
+            border-radius: 6px;
+            background: #1e80ff;
+            color: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        .share-copy-btn:hover {
+            background: #0056d6;
+        }
+        body.dark .share-panel { background: #1e1e1e; border-color: #333; }
+        body.dark .share-panel-title { color: #e5e6eb; }
+        body.dark .share-panel-close { color: #8a919f; }
+        body.dark .share-option { background: #2a2a2a; }
+        body.dark .share-option:hover { background: #333; }
+        body.dark .share-label { color: #c0c4cc; }
+        body.dark .share-link-input { background: #2a2a2a; border-color: #444; color: #c0c4cc; }
+
         .image-lightbox {
             display: none;
             position: fixed;
@@ -1318,102 +1613,6 @@
             justify-content: flex-end;
         }
 
-        /* ========== 收藏集弹窗 ========== */
-        .collect-list {
-            list-style: none;
-            margin: 0 0 16px;
-            padding: 0;
-        }
-        .collect-item {
-            padding: 0;
-            border-bottom: 1px solid #f7f8fa;
-        }
-        .collect-item-label {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 0;
-            cursor: pointer;
-            min-height: 56px;
-        }
-        .collect-item-label:hover {
-            background: #f7f8fa;
-            margin: 0 -12px;
-            padding: 12px;
-        }
-        .collect-item-info {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .collect-item-name {
-            font-size: 14px;
-            font-weight: 500;
-            color: #252933;
-        }
-        .collect-item-tag {
-            display: inline-block;
-            font-size: 11px;
-            color: #1e80ff;
-            background: #eaf2ff;
-            padding: 1px 6px;
-            border-radius: 3px;
-            margin-left: 6px;
-        }
-        .collect-item-meta {
-            font-size: 12px;
-            color: #8a919f;
-        }
-        .collect-checkbox {
-            display: none;
-        }
-        .checkmark {
-            width: 18px;
-            height: 18px;
-            border: 2px solid #c4c9d1;
-            border-radius: 3px;
-            display: inline-block;
-            position: relative;
-            flex-shrink: 0;
-        }
-        .collect-checkbox:checked + .checkmark {
-            background: #1e80ff;
-            border-color: #1e80ff;
-        }
-        .collect-checkbox:checked + .checkmark::after {
-            content: '';
-            position: absolute;
-            left: 5px;
-            top: 1px;
-            width: 5px;
-            height: 10px;
-            border: solid #fff;
-            border-width: 0 2px 2px 0;
-            transform: rotate(45deg);
-        }
-        .collect-create-link {
-            display: block;
-            font-size: 14px;
-            color: #1e80ff;
-            padding: 8px 0;
-        }
-        .collect-create-link:hover {
-            color: #0056d6;
-        }
-        .collect-confirm-btn {
-            padding: 8px 32px;
-            border: none;
-            border-radius: 4px;
-            background: #1e80ff;
-            color: #fff;
-            font-size: 14px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .collect-confirm-btn:hover {
-            background: #0056d6;
-        }
-
         /* ========== 举报弹窗 ========== */
         .report-modal {
             width: 520px;
@@ -1521,6 +1720,38 @@
             font-size: 11px;
             color: #8a919f;
             margin-top: 4px;
+        }
+        /* 举报图片预览缩略图 */
+        .report-preview-item {
+            width: 80px;
+            height: 80px;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .report-preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .report-preview-remove {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 18px;
+            height: 18px;
+            line-height: 18px;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.55);
+            color: #fff;
+            font-size: 14px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .report-preview-remove:hover {
+            background: rgba(0, 0, 0, 0.75);
         }
         .report-footer {
             gap: 12px;
@@ -1931,6 +2162,7 @@
             .toc-float-btn { display: flex; }
             .comment-section { padding: 20px 16px; }
             .recommend-section { padding: 20px 16px; }
+            .recommend-grid { grid-template-columns: repeat(2, 1fr); }
         }
         @media (max-width: 640px) {
             .main-wrapper { padding: 56px 12px 24px; }
@@ -1939,6 +2171,9 @@
             .action-bar { flex-wrap: wrap; }
             .comment-section { padding: 16px 12px; }
             .recommend-section { padding: 16px 12px; }
+            .recommend-grid { grid-template-columns: 1fr; }
+            .end-author-card { flex-direction: column; align-items: flex-start; text-align: left; }
+            .end-author-card .ea-actions { flex-direction: row; align-items: center; }
             .column-card { flex-wrap: wrap; }
             .column-cover { width: 80px; height: 56px; }
             .column-meta { width: 100%; justify-content: flex-start; margin-top: 8px; }
@@ -2088,9 +2323,139 @@
         }
         .tip-pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .tip-pay-note { font-size: 11px; color: #bbb; text-align: center; margin-top: 10px; }
+
+        /* ========== 阅读进度条 ========== */
+        .reading-progress {
+            position: fixed;
+            top: 60px; /* 顶栏高度 */
+            left: 0;
+            height: 2px;
+            width: 0;
+            background: #1e80ff;
+            z-index: 101;
+            transition: width 0.1s linear;
+            pointer-events: none;
+        }
+
+        /* ========== 阅读设置：字号/行距（CSS 变量，运行时切换） ========== */
+        :root {
+            --read-font-size: 17px;
+            --read-line-height: 1.75;
+        }
+        .article-body {
+            font-size: var(--read-font-size);
+            line-height: var(--read-line-height);
+        }
+
+        /* ========== 暗色主题（body.dark 覆盖主阅读区域） ========== */
+        body.dark { background: #121212; color: #e4e6eb; }
+        body.dark .article-topbar { background: #1e1e1e; box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+        body.dark .content-card { background: #1e1e1e; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        body.dark .article-title { color: #e4e6eb; }
+        body.dark .author-name { color: #e4e6eb; }
+        body.dark .publish-meta,
+        body.dark .read-count,
+        body.dark .read-time,
+        body.dark .column-tag { color: #8a919f; }
+        body.dark .article-body { color: #c9d1d9; }
+        body.dark .article-body h1,
+        body.dark .article-body h2,
+        body.dark .article-body h3,
+        body.dark .article-body h4,
+        body.dark .article-body h5,
+        body.dark .article-body h6 { color: #e4e6eb; }
+        body.dark .article-body code,
+        body.dark .article-body pre { background: #161b22; color: #c9d1d9; border-color: #2d333b; }
+        body.dark .article-body blockquote { color: #8b949e; border-color: #2d333b; }
+        body.dark .action-sidebar { background: #1e1e1e; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+        body.dark .action-item .action-count { color: #8a919f; }
+        body.dark .modal-container { background: #1e1e1e; }
+        body.dark .modal-title,
+        body.dark .modal-subtitle { color: #e4e6eb; }
+        body.dark .modal-header,
+        body.dark .modal-footer { border-color: #2d333b; }
+        body.dark .setting-btn { background: #1e1e1e; color: #8a919f; border-color: #2d333b; }
+        body.dark .setting-btn.active { background: #eaf2ff; color: #1e80ff; border-color: #1e80ff; }
+        /* 暗色适配：为你推荐横排卡片 / 正文尾部作者卡片 / 读完提示 */
+        body.dark .recommend-section,
+        body.dark .end-author-card { background: #1e1e1e; border-color: #2d333b; }
+        body.dark .recommend-title,
+        body.dark .end-author-card .ea-name { color: #e4e6eb; }
+        body.dark .recommend-card { background: #1e1e1e; border-color: #2d333b; }
+        body.dark .recommend-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        body.dark .recommend-card-title { color: #e4e6eb; }
+        body.dark .recommend-card:hover .recommend-card-title { color: #4d9fff; }
+        body.dark .recommend-card-meta { color: #8a919f; }
+        body.dark .recommend-card-cover { background: #2a2a2a; }
+        body.dark .end-author-card .ea-desc,
+        body.dark .end-author-card .ea-followers { color: #8a919f; }
+        body.dark .end-author-card .ea-followers b { color: #c0c4cc; }
+        body.dark .read-end-hint { color: #8a919f; }
+        body.dark .read-end-hint::before,
+        body.dark .read-end-hint::after { background: #2d333b; }
+
+        /* ========== 阅读设置弹窗 ========== */
+        .reader-settings-modal { width: 420px; }
+        .setting-group { margin-bottom: 20px; }
+        .setting-title { font-size: 14px; font-weight: 600; color: #252933; margin-bottom: 10px; }
+        .setting-buttons { display: flex; gap: 10px; }
+        .setting-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #e4e6eb;
+            border-radius: 6px;
+            background: #fff;
+            color: #515767;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .setting-btn:hover { border-color: #1e80ff; color: #1e80ff; }
+        .setting-btn.active { background: #eaf2ff; border-color: #1e80ff; color: #1e80ff; }
+
+        /* ========== 沉浸模式（body.immersive-mode） ========== */
+        .article-topbar,
+        .action-sidebar {
+            transition: opacity 0.3s ease;
+        }
+        body.immersive-mode .article-topbar,
+        body.immersive-mode .action-sidebar {
+            opacity: 0;
+            pointer-events: none;
+        }
+        body.immersive-mode .toc-sidebar {
+            display: none;
+        }
+        body.immersive-mode .main-wrapper {
+            max-width: 920px;
+        }
+        body.immersive-mode .content-area {
+            max-width: 100%;
+        }
+        /* 沉浸模式下提供退出按钮 */
+        .immersive-exit-btn {
+            display: none;
+            position: fixed;
+            top: 72px;
+            right: 24px;
+            z-index: 99;
+            padding: 6px 14px;
+            border: 1px solid #e4e6eb;
+            border-radius: 6px;
+            background: #fff;
+            color: #515767;
+            font-size: 13px;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .immersive-exit-btn:hover { color: #1e80ff; border-color: #1e80ff; }
+        body.immersive-mode .immersive-exit-btn { display: block; }
+        body.dark .immersive-exit-btn { background: #1e1e1e; color: #8a919f; border-color: #2d333b; }
     </style>
 </head>
 <body>
+    <!-- 阅读进度条 -->
+    <div class="reading-progress" id="readingProgress"></div>
     <!-- 顶栏（与主页 Web 端顶栏保持一致） -->
     <header class="article-topbar">
         <div class="topbar-inner">
@@ -2231,6 +2596,28 @@
                     ${articleContentHtml}
                 </div>
 
+                <!-- 读完提示 -->
+                <div class="read-end-hint" id="readEndHint">— 已读完，感谢阅读 —</div>
+
+                <!-- 正文尾部作者卡片 -->
+                <div class="end-author-card" id="endAuthorCard">
+                    <img src="${authorAvatar!'https://p3.pstatp.com/thumb/1480/7186611868'}" class="ea-avatar" id="endAuthorAvatar" alt="avatar">
+                    <div class="ea-info">
+                        <div class="ea-name" id="endAuthorName">${authorName!'黑马头条'}</div>
+                        <div class="ea-desc" id="endAuthorDesc"></div>
+                        <div class="ea-followers"><b id="endAuthorFollowers">0</b> 粉丝</div>
+                    </div>
+                    <div class="ea-actions">
+                        <button class="ea-follow-btn<#if relation?? && relation.isfollow?? && relation.isfollow> active</#if>" id="endAuthorFollowBtn">
+                            <#if relation?? && relation.isfollow?? && relation.isfollow>已关注<#else>+ 关注</#if>
+                        </button>
+                        <div class="ea-links">
+                            <a href="/user/${authorId!0}" class="ea-link" target="_blank">查看主页</a>
+                            <a href="/user/${authorId!0}?tab=article" class="ea-link" target="_blank">更多文章</a>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 打赏（赞赏）卡片 -->
                 <div class="tip-section" id="tipSection">
                     <div class="tip-section-title">觉得这篇文章不错？</div>
@@ -2323,7 +2710,7 @@
             <!-- 为你推荐 -->
             <div class="recommend-section" id="recommendSection">
                 <div class="recommend-title">为你推荐</div>
-                <ul class="recommend-list" id="recommendList"></ul>
+                <div class="recommend-grid" id="recommendList"></div>
                 <button class="load-more-btn" id="recommendLoadMore" style="display:none;">加载更多</button>
             </div>
         </article>
@@ -2448,6 +2835,48 @@
             </div>
             <div class="action-count">沉浸</div>
         </div>
+        <div class="action-item" id="sideSettingsBtn">
+            <div class="action-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.996.996 0 0 0 .25-1.52L19.5 5.64c-.26-.46-.78-.64-1.24-.42l-2.5 1.07c-.33-.26-.73-.44-1.11-.51-.25-.44-.54-.85-.85-1.24l-.6-1.56a.996.996 0 0 0-.99-.72l-1.8.64c-.36.13-.76.3-1.24.51-.38.07-.78.25-1.11.51L5.86 3.28c-.45-.21-.98-.04-1.24.42L2.7 7.02c-.34.5-.21 1.16.25 1.52l2.01 1.56c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.996.996 0 0 0-.25 1.52l1.92 3.32c.26.46.78.64 1.24.42l2.5-1.07c.33.26.73.44 1.11.51.25.44.54.85.85 1.24l.6 1.56c.09.41.32.82.72.99.4.18.83.18 1.27 0l1.8-.64c.36-.13.76-.3 1.24-.51.38-.07.78-.25 1.11-.51l2.5 1.07c.45.21.98.04 1.24-.42l1.92-3.32c.26-.46.12-1.1-.25-1.52zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor"/></svg>
+            </div>
+            <div class="action-count">设置</div>
+        </div>
+        <div class="action-item" id="sideBackTopBtn" title="回到顶部">
+            <div class="action-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5.83l6.59 6.59L17 14l-5-5-5 5-1.59-1.58L12 5.83zm0 6l6.59 6.59L17 20l-5-5-5 5-1.59-1.58L12 11.83z"/></svg>
+            </div>
+            <div class="action-count">回顶</div>
+        </div>
+    </div>
+
+    <!-- 分享面板 -->
+    <div class="share-panel" id="sharePanel">
+        <div class="share-panel-header">
+            <span class="share-panel-title">分享文章</span>
+            <button class="share-panel-close" id="closeSharePanel" aria-label="关闭">&times;</button>
+        </div>
+        <div class="share-panel-grid">
+            <button class="share-option" data-share="wechat" title="复制微信分享文案">
+                <span class="share-icon"><svg viewBox="0 0 24 24"><path d="M9.5 4C5.36 4 2 6.69 2 10c0 1.84.99 3.5 2.54 4.59l-.63 2.16 2.2-1.13c.67.19 1.38.3 2.11.32-.16-.5-.25-1.03-.25-1.58 0-3.09 2.91-5.59 6.5-5.59.3 0 .59.02.88.05C14.85 5.86 12.38 4 9.5 4zm-2.2 3.75c-.51 0-.93-.41-.93-.93s.42-.93.93-.93.93.42.93.93-.42.93-.93.93zm4.4 0c-.51 0-.93-.41-.93-.93s.42-.93.93-.93.93.42.93.93-.42.93-.93.93zM21.5 13.5c0-2.69-2.68-4.87-6-4.87s-6 2.18-6 4.87 2.68 4.87 6 4.87c.64 0 1.25-.1 1.83-.29l2.25 1.08-.59-1.96c1.37-.99 2.51-2.3 2.51-3.83zm-4.3-.75c-.34 0-.62-.28-.62-.62s.28-.62.62-.62.62.28.62.62-.28.62-.62.62zm-3.4 0c-.34 0-.62-.28-.62-.62s.28-.62.62-.62.62.28.62.62-.28.62-.62.62z"/></svg></span>
+                <span class="share-label">微信</span>
+            </button>
+            <button class="share-option" data-share="weibo" title="分享到微博">
+                <span class="share-icon"><svg viewBox="0 0 24 24"><path d="M10.87 17.07c-2.04-.45-3.86-1.57-5.02-3.24-.16-.22-.1-.53.1-.68.2-.15.51-.1.66.1 1.03 1.47 2.62 2.45 4.4 2.84.25.06.4.31.34.57-.06.25-.3.43-.48.41zm5.12-1.3c-.18-.17-.44-.2-.66-.07-.11.06-.24.11-.38.14-.9.24-1.94.19-2.95-.05-.21-.05-.43.08-.48.29-.05.21.08.43.29.48 1.12.26 2.26.31 3.24.05.2-.06.34-.24.34-.45 0-.13-.06-.27-.19-.39zM12.5 1.5c.23 0 .41.19.41.42 0 .23-.18.41-.41.41-3.11 0-5.94 1.51-7.6 4.03-.1.15-.31.2-.46.1-.16-.1-.21-.31-.11-.46C6.7 2.73 9.48 1.5 12.5 1.5zM12.5 0c-.28 0-.5.22-.5.5s.22.5.5.5c3.41 0 6.5 1.67 8.3 4.47.11.17.34.22.51.11.17-.11.22-.34.11-.51C19.89 2.08 16.44 0 12.5 0zM14.6 4.9c-.21-.12-.48-.05-.6.16-.12.21-.05.48.16.6 1.47.84 2.44 2.3 2.72 3.99.04.23.24.4.47.4.02 0 .05 0 .07-.01.26-.05.43-.3.38-.56C17.51 6.56 16.36 4.85 14.6 4.9zM19.1 12.26c-1.67 3.3-5.15 5.62-8.74 5.85-.55.03-1.1-.01-1.64-.1-.25-.04-.51.06-.68.27-.67.84-2.75 2.72-4.69 2.72H3.27c-.15 0-.27-.12-.27-.27v-.12c.22-1.7 1.38-2.98 2.34-3.78-1.25-.66-2.1-1.84-2.1-3.13 0-2.64 3.17-4.77 7.09-4.77.63 0 1.26.06 1.86.19.8-1.1 2.17-1.82 3.7-1.82.39 0 .78.05 1.14.16.14.04.29.03.41-.05l2.07-1.47c.35-.25.82.06.74.49l-.31 1.55c-.05.24.04.49.23.64 1.27 1.04 2.11 2.64 2.11 4.36 0 .58-.1 1.15-.28 1.69z"/></svg></span>
+                <span class="share-label">微博</span>
+            </button>
+            <button class="share-option" data-share="qq" title="分享到 QQ">
+                <span class="share-icon"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5.5 13.28c-.18.5-.42.97-.74 1.4-.13.17-.06.43.14.52.3.15.59.32.86.53.21.16.15.48-.08.6-2.1 1.12-4.8 1.67-6.68 1.67-1.87 0-4.57-.55-6.67-1.67-.23-.12-.3-.44-.09-.6.28-.2.57-.38.87-.53.2-.09.27-.35.14-.52-.32-.43-.56-.9-.74-1.4-.1-.28-.37-.44-.65-.39-1.32.23-2.2-.61-1.48-1.73.48-.75 1.4-.95 2.17-.9-.06-.9-.45-1.7-.58-2.57-.18-1.27.4-2.18 1.55-2.74C9.9 6.42 10.9 6.5 12 6.5s2.1-.08 3.17.42c1.15.56 1.73 1.47 1.55 2.74-.13.87-.52 1.67-.58 2.57.77-.05 1.69.15 2.17.9.72 1.12-.16 1.96-1.48 1.73-.27-.05-.54.11-.64.39z"/></svg></span>
+                <span class="share-label">QQ</span>
+            </button>
+            <button class="share-option" data-share="juejin" title="复制掘金分享文案">
+                <span class="share-icon"><svg viewBox="0 0 24 24"><path d="M12 2l2.4 2.4L12 6.8 9.6 4.4 12 2zM6.4 8.4L12 14l5.6-5.6L12 2.8 6.4 8.4zm0 5.2L12 19.2l5.6-5.6L12 8 6.4 13.6z"/></svg></span>
+                <span class="share-label">掘金</span>
+            </button>
+        </div>
+        <div class="share-copy-row">
+            <input type="text" class="share-link-input" id="shareLinkInput" readonly>
+            <button class="share-copy-btn" id="shareCopyBtn">复制链接</button>
+        </div>
     </div>
 
     <div class="image-lightbox" id="imageLightbox">
@@ -2458,6 +2887,9 @@
     <button class="toc-float-btn" id="tocFloatBtn" aria-label="目录">
         <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
     </button>
+
+    <!-- 沉浸模式退出按钮 -->
+    <button class="immersive-exit-btn" id="immersiveExitBtn">退出沉浸</button>
 
     <div class="drawer-mask" id="drawerMask"></div>
     <div class="toc-drawer" id="tocDrawer">
@@ -2472,48 +2904,6 @@
                 </#list>
             </#if>
         </ul>
-    </div>
-
-    <!-- 收藏集选择弹窗 -->
-    <div class="modal-overlay" id="collectModalOverlay">
-        <div class="modal-container collect-modal" id="collectModal">
-            <div class="modal-header">
-                <div class="modal-title-group">
-                    <h3 class="modal-title">选择收藏集</h3>
-                    <p class="modal-subtitle">选择或创建你想添加的收藏集</p>
-                </div>
-                <button class="modal-close-btn" id="closeCollectModal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <ul class="collect-list" id="collectList">
-                    <li class="collect-item">
-                        <label class="collect-item-label">
-                            <div class="collect-item-info">
-                                <span class="collect-item-name">我的收藏</span>
-                                <span class="collect-item-tag">默认</span>
-                                <span class="collect-item-meta">7 篇文章 · 0 订阅</span>
-                            </div>
-                            <input type="checkbox" class="collect-checkbox" checked>
-                            <span class="checkmark"></span>
-                        </label>
-                    </li>
-                    <li class="collect-item">
-                        <label class="collect-item-label">
-                            <div class="collect-item-info">
-                                <span class="collect-item-name">前端技术</span>
-                                <span class="collect-item-meta">3 篇文章 · 0 订阅</span>
-                            </div>
-                            <input type="checkbox" class="collect-checkbox">
-                            <span class="checkmark"></span>
-                        </label>
-                    </li>
-                </ul>
-                <a href="javascript:void(0)" class="collect-create-link">+ 新建收藏集</a>
-            </div>
-            <div class="modal-footer">
-                <button class="collect-confirm-btn" id="collectConfirmBtn">确定</button>
-            </div>
-        </div>
     </div>
 
     <!-- 举报反馈弹窗 -->
@@ -2559,9 +2949,10 @@
                 <div class="report-upload-group">
                     <div class="report-upload-label">上传图片（选填，最多4张）</div>
                     <div class="report-upload-area" id="reportUploadArea">
-                        <div class="report-upload-box">
+                        <input type="file" id="reportImageInput" accept="image/*" multiple style="display:none;">
+                        <div class="report-upload-box" id="reportUploadBox">
                             <span class="upload-plus">+</span>
-                            <span class="upload-text">上传 0/4</span>
+                            <span class="upload-text" id="reportUploadText">上传 0/4</span>
                         </div>
                     </div>
                 </div>
@@ -2596,9 +2987,52 @@
         </div>
     </div>
 
+    <!-- 阅读设置弹窗 -->
+    <div class="modal-overlay" id="readerSettingsOverlay">
+        <div class="modal-container reader-settings-modal" id="readerSettingsModal">
+            <div class="modal-header">
+                <h3 class="modal-title">阅读设置</h3>
+                <p class="modal-subtitle">调整阅读体验，设置自动保存</p>
+                <button class="modal-close-btn" id="closeReaderSettings">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <div class="setting-title">字号</div>
+                    <div class="setting-buttons">
+                        <button class="setting-btn" data-font="15">A− 小</button>
+                        <button class="setting-btn" data-font="17">标准</button>
+                        <button class="setting-btn" data-font="19">A+ 大</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-title">行间距</div>
+                    <div class="setting-buttons">
+                        <button class="setting-btn" data-line="1.5">紧凑</button>
+                        <button class="setting-btn" data-line="1.75">标准</button>
+                        <button class="setting-btn" data-line="2.0">宽松</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-title">主题</div>
+                    <div class="setting-buttons">
+                        <button class="setting-btn" data-theme="light">浅色</button>
+                        <button class="setting-btn" data-theme="dark">暗色</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-title">模式</div>
+                    <div class="setting-buttons">
+                        <button class="setting-btn" id="toggleImmersiveBtn">切换沉浸阅读</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // 使用 ?c 强制按"计算机"格式输出数字，避免 FreeMarker 默认将大整数渲染为带千分位逗号（如 2,087,071,...）导致 API URL 失效
         window.ARTICLE_ID = "${(articleId!0)?c}";
+        window.AUTHOR_ID = ${(authorId!0)};
     </script>
     <script>
         // 加载共用交互脚本（方案②：作为内容服务静态资源由网关 /content/article-static.js 统一提供）

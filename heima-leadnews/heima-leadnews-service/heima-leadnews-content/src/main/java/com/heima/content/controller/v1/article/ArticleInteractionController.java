@@ -4,9 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.follow.ApFollowMapper;
+import com.heima.content.mapper.interaction.ApArticleReportMapper;
 import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
 import com.heima.model.article.pojos.ApArticle;
+import com.heima.model.behavior.dtos.ArticleReportDto;
+import com.heima.model.behavior.pojos.ApArticleReport;
 import com.heima.model.behavior.pojos.ApBehaviorLikes;
 import com.heima.model.behavior.pojos.ApCollection;
 import com.heima.model.common.dtos.ResponseResult;
@@ -40,6 +43,9 @@ public class ArticleInteractionController {
 
     @Autowired
     private ApFollowMapper apFollowMapper;
+
+    @Autowired
+    private ApArticleReportMapper apArticleReportMapper;
 
     @Autowired
     private ApArticleMapper apArticleMapper;
@@ -233,6 +239,68 @@ public class ArticleInteractionController {
 
         Map<String, Object> result = new HashMap<>();
         result.put("followed", followed);
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 举报文章
+     * POST /api/v1/article/{id}/report
+     *
+     * @param id  文章ID
+     * @param dto 举报参数（reason 必填，description/imageUrls 选填）
+     * @return { "reportId": number }
+     */
+    @PostMapping("/{id}/report")
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult report(@PathVariable Long id, @RequestBody ArticleReportDto dto) {
+        // 检查登录
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+
+        // 查询文章是否存在（并取作者ID）
+        ApArticle article = apArticleMapper.selectById(id);
+        if (article == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
+        }
+
+        // 参数校验：举报原因必填
+        String reason = dto.getReason() == null ? "" : dto.getReason().trim();
+        if (reason.isEmpty()) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "请选择举报原因");
+        }
+        if (reason.length() > 100) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "举报原因过长");
+        }
+
+        // 参数校验：补充说明 ≤100 字
+        String description = dto.getDescription() == null ? "" : dto.getDescription().trim();
+        if (description.length() > 100) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "补充说明不能超过100字");
+        }
+
+        // 参数校验：举报图片最多 4 张
+        java.util.List<String> imageUrls = dto.getImageUrls() == null ? new java.util.ArrayList<>() : dto.getImageUrls();
+        if (imageUrls.size() > 4) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "举报图片最多上传4张");
+        }
+
+        // 组装举报记录并落库
+        ApArticleReport report = new ApArticleReport();
+        report.setUserId(user.getId());
+        report.setArticleId(id);
+        report.setAuthorId(article.getAuthorId());
+        report.setReason(reason);
+        report.setDescription(description);
+        report.setImageUrls(String.join(",", imageUrls));
+        report.setStatus(0); // 待处理
+        report.setCreatedTime(new Date());
+        apArticleReportMapper.insert(report);
+        log.info("用户{}举报文章{}，原因：{}", user.getId(), id, reason);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("reportId", report.getId());
         return ResponseResult.okResult(result);
     }
 }
