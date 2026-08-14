@@ -14,4 +14,7 @@ public interface CheckinService {
 
     /** 获取今日签到状态（侧边栏用） */
     ResponseResult getTodayStatus(Long userId);
+
+    /** 获取用户连续签到天数（含今日，供其他服务 Feign 调用） */
+    ResponseResult getContinuousCheckinDays(Long userId);
 }

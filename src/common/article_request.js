@@ -63,9 +63,13 @@ service.interceptors.response.use(
       console.warn('[article_request.js] 403 Forbidden:', error.response.config.url)
       return Promise.reject(error)
     }
-    // 444 — accessToken过期，尝试刷新后重放
+    // 444 — accessToken过期，尝试刷新后重放；
+    // 仅当本次请求携带了有效用户 token 时才处理，匿名/游客请求静默 reject，不影响基础浏览
     if (error.response && error.response.status === 444) {
-      return refreshTokenAndRetry(error.config)
+      if (error.config && error.config._usedUserToken) {
+        return refreshTokenAndRetry(error.config)
+      }
+      return Promise.reject(error)
     }
     return Promise.reject(error)
   }

@@ -4,6 +4,7 @@ import com.heima.apis.reward.IRewardClient;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.reward.entity.UserAssets;
 import com.heima.reward.mapper.UserAssetsMapper;
+import com.heima.reward.service.CheckinService;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class RewardClient implements IRewardClient {
     @Autowired
     private UserAssetsMapper userAssetsMapper;
+    @Autowired
+    private CheckinService checkinService;
 
     /**
      * 获取用户资产（矿石余额）
@@ -65,5 +68,14 @@ public class RewardClient implements IRewardClient {
         result.put("oreBalance", newBalance);
         result.put("added", amount);
         return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 获取用户连续签到天数（含今日，供其他服务 Feign 调用，成就勋章判定用）
+     */
+    @GetMapping("/user/{userId}/checkin/continuous")
+    @Override
+    public ResponseResult getContinuousCheckinDays(@PathVariable("userId") Long userId) {
+        return checkinService.getContinuousCheckinDays(userId);
     }
 }

@@ -574,6 +574,29 @@ public class CheckinServiceImpl implements CheckinService {
     }
 
     // ========================================================================
+    // 5. 获取用户连续签到天数（含今日，供其他服务 Feign 调用，成就勋章判定用）
+    // ========================================================================
+
+    /**
+     * 获取用户连续签到天数（含今日，供其他服务 Feign 调用，成就勋章判定用）
+     */
+    @Override
+    public ResponseResult getContinuousCheckinDays(Long userId) {
+        LocalDate today = getToday();
+        boolean todaySigned = signRecordMapper.selectCount(
+                new LambdaQueryWrapper<SignRecord>()
+                        .eq(SignRecord::getUserId, userId)
+                        .eq(SignRecord::getSignDate, today)
+        ) > 0;
+        int continuousDays = calculateContinuousDays(userId, today);
+        int display = todaySigned ? continuousDays + 1 : continuousDays;
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("continuousDays", display);
+        return ResponseResult.okResult(data);
+    }
+
+    // ========================================================================
     // 辅助方法
     // ========================================================================
 

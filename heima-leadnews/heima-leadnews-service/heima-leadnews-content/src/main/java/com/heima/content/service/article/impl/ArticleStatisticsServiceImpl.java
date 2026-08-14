@@ -6,6 +6,7 @@ import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
 import com.heima.content.mapper.pins.ApPinsMapper;
+import com.heima.content.service.achievement.AchievementService;
 import com.heima.content.service.article.ArticleStatisticsService;
 import com.heima.content.service.level.LevelService;
 import com.heima.model.article.pojos.ApArticle;
@@ -45,6 +46,9 @@ public class ArticleStatisticsServiceImpl implements ArticleStatisticsService {
     @Autowired
     private LevelService levelService;
 
+    @Autowired
+    private AchievementService achievementService;
+
     @Override
     public ResponseResult getUserStatistics(Long userId) {
         Map<String, Object> result = new HashMap<>();
@@ -78,8 +82,13 @@ public class ArticleStatisticsServiceImpl implements ArticleStatisticsService {
         // 7. tagCount（关注的标签数，暂未实现标签关注功能）
         result.put("tagCount", 0);
 
-        // 8. badgeCount（徽章数，暂未实现徽章系统）
-        result.put("badgeCount", 0);
+        // 8. badgeCount（已解锁成就勋章数）
+        try {
+            result.put("badgeCount", achievementService.getUserAchievements(userId).getUnlockedCount());
+        } catch (Exception e) {
+            log.warn("获取用户成就勋章数失败，userId={}, error={}", userId, e.getMessage());
+            result.put("badgeCount", 0);
+        }
 
         // 9. levelInfo
         Map<String, Object> levelInfo = levelService.getUserLevelInfo(userId);
