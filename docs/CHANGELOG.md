@@ -1,5 +1,92 @@
 # CHANGELOG
 
+## 2026-08-14 — 首页分栏体验（阶段4 补）：回顶按钮 + 刷新反馈
+
+### 变更
+
+1. **桌面端回顶按钮**：Web 端滚动超过一屏（scrollTop > 500px）时，右下角悬浮圆形「回顶」按钮，点击平滑滚动回顶部；hover 上浮高亮。滚动监听挂载/移除随组件生命周期正确清理。
+2. **桌面端刷新按钮**：分栏顶栏右侧新增「刷新」按钮（icon 刷新时旋转 loading 动画），点击加载当前分栏最新内容。
+3. **刷新反馈条**：刷新成功后顶部居中弹出轻提示——有新内容显示「已更新 N 条新内容」，无新内容显示「已是最新内容」，2 秒后自动消失；`feedMixin.loadnew` 记录刷新前文章 ID 集合、Promise 化后计算新增条数，刷新失败不提示。
+4. **分栏顶栏布局修正**：`.desktop-subheader` 改为 `justify-content: flex-start` + 刷新按钮 `margin-left:auto`（此前 space-between 导致刷新按钮被挤出）；sticky 定位 `top` 调整为 `60PX` 避开 60px 高的固定顶栏。
+
+### 变更文件
+- 修改：`src/pages/home/index.vue`（回顶按钮/刷新按钮/反馈条模板 + `showBackToTop`/`refreshToast`/`isRefreshing` 数据 + `handleWindowScroll`/`scrollToTop`/`showRefreshToast`/`handleRefresh` 方法，合并重复生命周期钩子）
+- 修改：`src/pages/home/mixins/feedMixin.js`（`loadnew` 记录旧 ID 集合 + `showRefreshFeedback` 计算新增条数）
+- 修改：`src/pages/home/styles/home.less`（`.back-to-top`/`.desktop-refresh`/`.refresh-toast` 样式与动画、subheader 布局修正）
+
+### 验证
+- `npm run build` 通过（14.58s）；待外部浏览器回归：回顶按钮出现与平滑滚动、刷新按钮 loading 态与反馈条、sticky 顶栏不再遮挡。
+
+## 2026-08-14 — 首页分栏体验（阶段4）：图片懒加载 + 分栏切换淡入
+
+### 变更
+
+1. **图片懒加载**：`article_0/1/3` 三种信息流卡片的作者头像与封面图（含多图）统一添加 `loading="lazy"`，减少首屏网络占用，滚动到可视区域再加载。
+2. **分栏切换淡入**：Web 端切换分栏时，列表加载完成后内容整体淡入上移动画（200ms），提升切换流畅感；实现为 `desktop-list.content-fade` CSS 动画 + `triggerContentFade`（移除类→强制回流→重新添加，确保每次切换都触发动画）。
+
+### 变更文件
+- 修改：`src/components/cells/article_0.vue`、`article_1.vue`、`article_3.vue`（图片 `loading="lazy"`）
+- 修改：`src/pages/home/index.vue`（`_pendingFade` 标记 + `currentList` 监听 + `triggerContentFade`）
+- 修改：`src/pages/home/styles/home.less`（`contentFadeIn` 动画）
+
+### 验证
+- `npm run build` 通过；待外部浏览器回归：分栏切换淡入动画、图片懒加载生效。
+
+## 2026-08-14 — 详情页留存闭环（阶段3）：作者卡片/读完提示/推荐横排/回顶
+
+### 变更
+
+1. **正文尾部作者卡片**：正文结束后新增作者卡片（头像/昵称/简介/粉丝数/关注按钮/查看主页/更多文章），数据通过 `GET /content/api/v1/author/info?userId=` 实时拉取（昵称、头像、简介或「职位 · 公司」、粉丝数、是否已关注）；关注按钮复用统一关注逻辑（登录校验、toggle 状态与文案联动）。后端 `ArticlePageController` 增加 `authorId` 到 model 供模板生成跳转链接与请求参数。
+2. **读完提示**：正文尾部增加「— 已读完，感谢阅读 —」提示，基于 `IntersectionObserver` 在正文末尾进入视口时淡入显示。
+3. **为你推荐横排改版**：推荐列表由纵排改为 3 列网格卡片（封面/标题/点赞·评论·阅读数），窄屏降为 2 列/单列；滚动到正文 85% 或页面较短时提前预加载推荐（`maybePreloadRecommend`），减少尾部等待。
+4. **回顶按钮**：右侧悬浮栏「回顶」按钮平滑滚动回顶部。
+
+### 变更文件
+- 修改：`heima-leadnews-content/.../controller/page/ArticlePageController.java`（model 增加 authorId）
+- 修改：`heima-leadnews-content/src/main/resources/templates/article.ftl`（作者卡片/读完提示/推荐网格/回顶 HTML+CSS、暗色适配、响应式）
+- 修改：`heima-leadnews-content/src/main/resources/static/article-static.js`（loadEndAuthorCard、maybePreloadRecommend、读完提示 Observer、回顶、作者卡片关注联动）
+
+### 验证
+- `node --check article-static.js` 通过；待外部浏览器回归：作者卡片数据加载与关注同步、推荐横排渲染、回顶、读完提示显示。
+
+## 2026-08-14 — 详情页互动闭环（阶段2）：分享/真实收藏/举报/动效
+
+### 变更
+
+1. **新增分享面板**：详情页右侧悬浮栏「分享」按钮改为真实分享面板（微信/微博/QQ/掘金 + 复制链接），支持 `navigator.clipboard` 复制并降级 `execCommand`；微信/掘金复制文案、微博/QQ 打开分享窗口。
+2. **收藏改为真实切换**：移除原假「收藏集」弹窗，收藏按钮直接调用 `POST /api/v1/article/{id}/collect` 真实 toggle，并联动计数与选中态。
+3. **点赞/收藏动效**：点赞、收藏、关注按钮点击触发 `actionBurst` 缩放动画，计数数字 `count-bump` 跳动上色，提升交互反馈。
+4. **真实举报功能**：举报弹窗支持原因单选（必填）+ 补充说明（≤100字）+ 最多 4 张图片上传（复用 OSS `post_signature` 直传、可预览/移除）；提交调用新增 `POST /api/v1/article/{id}/report` 接口落库 `ap_article_report`。
+5. **后端举报接口**：`ArticleInteractionController` 新增 `/{id}/report`，校验登录与文章存在、必填原因，记录举报人/文章/作者/原因/说明/图片/状态（0待处理），事务提交。
+6. **新增举报数据表**：`ap_article_report`（举报人/文章/作者/原因/说明/图片URL/状态/时间，含 article_id、user_id 索引）；实体 `ApArticleReport`、Mapper `ApArticleReportMapper`、DTO `ArticleReportDto`、迁移脚本 `create_ap_article_report.sql`，`schema.sql` 同步。
+
+### 变更文件
+- 修改：`heima-leadnews-content/src/main/resources/templates/article.ftl`（移除假收藏集弹窗、新增分享面板 HTML/CSS、动效 CSS、举报图片上传 UI）
+- 修改：`heima-leadnews-content/src/main/resources/static/article-static.js`（分享面板逻辑、收藏真实 toggle、动效、举报图片上传与提交）
+- 新增：`heima-leadnews-model/.../behavior/pojos/ApArticleReport.java`、`behavior/dtos/ArticleReportDto.java`
+- 新增：`heima-leadnews-content/.../mapper/interaction/ApArticleReportMapper.java`
+- 修改：`heima-leadnews-content/.../controller/v1/article/ArticleInteractionController.java`（新增 report 接口）
+- 新增：`heima-leadnews-content/src/main/resources/db/migrations/create_ap_article_report.sql`
+- 修改：`heima-leadnews-content/src/main/resources/db/schema.sql`
+
+### 验证
+- `node --check article-static.js` 通过；待外部浏览器回归：分享面板复制/跳转、点赞收藏动效、收藏真实 toggle、举报图片上传提交、未登录触点唤起登录。
+
+## 2026-08-14 — 详情页阅读体验升级（阶段1）
+
+### 变更
+
+1. **新增顶部阅读进度条**：文章详情页顶部顶栏下固定一条 2px 蓝色进度条，随滚动实时更新阅读百分比（`scroll` + `resize` 监听，`passive` 优化）。
+2. **新增阅读设置弹窗**：详情页右侧悬浮栏新增「设置」入口，弹窗支持字号（15/17/19px）、行距（1.5/1.75/2.0）、浅色/暗色主题三档调节；偏好写入 `localStorage`（`zhuri_reader_settings`）持久化，刷新页面自动恢复。
+3. **启用沉浸阅读模式**：修复原无效的「沉浸」按钮——沉浸时隐藏顶栏/侧栏/悬浮栏并居中加宽正文；提供「退出沉浸」按钮恢复布局，沉浸状态同样持久化。
+
+### 变更文件
+- 修改：`heima-leadnews-content/src/main/resources/templates/article.ftl`（进度条/设置弹窗/沉浸样式与结构）
+- 修改：`heima-leadnews-content/src/main/resources/static/article-static.js`（进度条更新、阅读偏好加载/应用/保存、设置弹窗交互、沉浸切换）
+
+### 验证
+- 外部浏览器实测：滚动进度条实时更新；字号/行距/暗色切换即时生效；沉浸模式顶栏侧栏隐藏、退出按钮恢复；刷新后偏好保持。
+
 ## 2026-08-14 — 双 Token 机制语义修正（444 刷新 / 401 登出）
 
 ### 变更
