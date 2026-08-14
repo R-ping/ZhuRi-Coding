@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-08-14 — 成就勋章系统联调验证 + 匿名 444 误登出修复
+
+### 变更
+
+1. **成就勋章系统联调验证通过**（后端四个服务已在 IDEA 重启）：
+   - 登录 → 个人主页：等级徽章正常展示（「逐友等级 Lv.3 · 新星逐友」「逐力值等级 Lv.2 · 初级创作者」）
+   - 勋章入口「2/11」计数正确，勋章墙弹窗完整展示 2 枚等级徽章 + 11 枚静态勋章，解锁状态与进度（12/50、12/100、1/100 等）实时计算准确
+   - `GET /content/api/v1/user/{userId}/achievements` 登录态与匿名态均返回 200，网关公开路径放行生效
+   - 匿名（无 token 无 cookie）可浏览个人主页及勋章墙，等级徽章由公开接口正常驱动
+2. **修复匿名访问个人主页被误跳回首页**：`article_request.js` / `reward_request.js` 的 444 处理缺少 `_usedUserToken` 守卫，匿名请求（未登录无 token）命中网关 444 时误进 `refreshTokenAndRetry`，因无 refreshToken 触发 `sessionExpired` 整页跳回首页，导致匿名无法浏览个人主页。已为两处 444 分支补齐 `_usedUserToken` 守卫，匿名/游客请求静默 reject，与 `request.js` 语义对齐。
+
+### 验证
+- 登录态个人主页等级徽章 / 勋章入口 / 勋章墙弹窗全部正常
+- 匿名态（清空 storage + cookie）访问 `/user/{userId}`：停留在个人主页不再跳回首页，勋章墙正常
+- 匿名请求 `/content/api/v1/user/{userId}/achievements` 返回 200
+
 ## 2026-08-14 — 双 Token 机制语义修正（444 刷新 / 401 登出）
 
 ### 变更

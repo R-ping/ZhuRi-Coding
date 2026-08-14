@@ -31,4 +31,10 @@ public interface IRewardClient {
     @PostMapping("/api/v1/reward/user/{userId}/ore/add")
     ResponseResult addOreBalance(@PathVariable("userId") Long userId,
                                  @RequestParam("amount") int amount);
+
+    /**
+     * 获取用户连续签到天数（成就勋章-连续签到30天判定用）
+     */
+    @GetMapping("/api/v1/reward/user/{userId}/checkin/continuous")
+    ResponseResult getContinuousCheckinDays(@PathVariable("userId") Long userId);
 }

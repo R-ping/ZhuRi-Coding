@@ -32,4 +32,12 @@ public class IRewardClientFallback implements IRewardClient {
         log.error("奖励服务不可用，增加用户矿石余额失败，userId={}, amount={}", userId, amount);
         return ResponseResult.errorResult(500, "奖励服务不可用，矿石奖励发放失败");
     }
+
+    @Override
+    public ResponseResult getContinuousCheckinDays(Long userId) {
+        log.error("奖励服务不可用，获取连续签到天数失败，userId={}", userId);
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("continuousDays", 0);
+        return ResponseResult.okResult(result);
+    }
 }

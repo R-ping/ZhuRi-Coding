@@ -160,7 +160,9 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/course/pay/page")
             || path.startsWith("/content/api/v1/course/pay/notify")
             || path.startsWith("/content/api/v1/course/my")
-            || path.startsWith("/content/api/v1/course/detail");
+            || path.startsWith("/content/api/v1/course/detail")
+            // 成就勋章公开只读接口（未登录也可浏览他人主页勋章）
+            || path.matches("/content/api/v1/user/\\d+/achievements");
     }
 
     /**

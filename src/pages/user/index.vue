@@ -7,7 +7,14 @@
                     <img :src="userInfo.avatar || defaultAvatar" class="user-big-avatar" alt="avatar">
                     <div class="user-meta">
                         <div class="user-name">{{ userInfo.nickName || '用户' }}</div>
-                        <div class="user-level">掘友等级 Lv.2</div>
+                        <div class="user-level-row">
+                            <span class="user-level" v-if="dailyLevelBadge">
+                                {{ dailyLevelBadge.name }} Lv.{{ dailyLevelBadge.level }}<template v-if="dailyLevelBadge.levelTitle"> · {{ dailyLevelBadge.levelTitle }}</template>
+                            </span>
+                            <span class="user-level power" v-if="powerLevelBadge">
+                                {{ powerLevelBadge.name }} Lv.{{ powerLevelBadge.level }}<template v-if="powerLevelBadge.levelTitle"> · {{ powerLevelBadge.levelTitle }}</template>
+                            </span>
+                        </div>
                         <div class="user-intro">{{ userInfo.intro || '这个人很懒，什么都没有留下' }}</div>
                         <div class="user-stats-row">
                             <span class="stat-item">
@@ -30,9 +37,9 @@
                                 <span class="stat-text">关注者</span>
                             </span>
                             <span class="stat-divider">·</span>
-                            <span class="stat-item">
-                                <span class="stat-num">{{ stats.badgeCount }}</span>
-                                <span class="stat-text">获得徽章</span>
+                            <span class="stat-item badge-entry" @click="openAchievementDialog">
+                                <span class="stat-num">{{ stats.badgeCount }}/11</span>
+                                <span class="stat-text">勋章</span>
                             </span>
                         </div>
                     </div>
@@ -416,6 +423,35 @@
                 </div>
             </div>
         </el-dialog>
+
+        <el-dialog
+            title="我的勋章"
+            :visible.sync="achievementDialog"
+            width="720px"
+            custom-class="achievement-dialog"
+        >
+            <div class="achievement-wall">
+                <div class="ach-level-section" v-if="achievements.levels.length">
+                    <div class="ach-level-card" v-for="lv in achievements.levels" :key="lv.type">
+                        <div class="ach-level-icon">{{ lv.type === 'daily' ? '☀️' : '💪' }}</div>
+                        <div class="ach-level-info">
+                            <div class="ach-level-name">{{ lv.name }}</div>
+                            <div class="ach-level-title">{{ lv.levelTitle || (lv.name + ' Lv.' + lv.level) }}</div>
+                            <div class="ach-level-value">Lv.{{ lv.level }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="ach-grid">
+                    <div class="ach-item" :class="{ unlocked: item.unlocked }" v-for="item in achievements.list" :key="item.code">
+                        <div class="ach-icon">{{ item.icon }}</div>
+                        <div class="ach-name">{{ item.name }}</div>
+                        <div class="ach-desc">{{ item.description }}</div>
+                        <div class="ach-progress" v-if="item.unlocked">已解锁</div>
+                        <div class="ach-progress locked" v-else>{{ item.progress }}/{{ item.threshold }}</div>
+                    </div>
+                </div>
+            </div>
+        </el-dialog>
     </div>
 </template>
 
@@ -425,6 +461,7 @@ import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
 import { getUserStatistics } from '@/apis/user'
+import { getUserAchievements } from '@/apis/achievement'
 import { getArticleList, getColumnList, getPinsList } from '@/apis/creator/content'
 import { getFollowers } from '@/apis/creator/fans'
 import { getUserDynamic } from '@/apis/author'
@@ -463,6 +500,13 @@ export default {
                 powerLevel: 0,
                 powerTitle: ''
             },
+            achievementDialog: false,
+            achievements: {
+                unlockedCount: 0,
+                totalCount: 0,
+                list: [],
+                levels: []
+            },
             columnForm: {
                 name: '',
                 desc: '',
@@ -493,6 +537,14 @@ export default {
             if (routeId) return routeId
             const storeUser = this.$store.getters.userInfo
             return storeUser && storeUser.id ? storeUser.id : ''
+        },
+        // 逐友等级徽章（取自成就接口，动态展示当前等级）
+        dailyLevelBadge() {
+            return this.achievements.levels.find(l => l.type === 'daily') || null
+        },
+        // 逐力值等级徽章
+        powerLevelBadge() {
+            return this.achievements.levels.find(l => l.type === 'power') || null
         }
     },
     mounted() {
@@ -565,8 +617,31 @@ export default {
                 // Keep default values when API fails
             }
 
+            // 加载成就勋章（当前浏览用户）
+            this.fetchAchievements()
+
             // Load content based on active tab
             this.loadTabContent()
+        },
+        async fetchAchievements() {
+            try {
+                const userId = this.profileUserId
+                if (!userId) return
+                const res = await getUserAchievements(userId)
+                if (res && res.code === 200 && res.data) {
+                    this.achievements = {
+                        unlockedCount: res.data.unlockedCount || 0,
+                        totalCount: res.data.totalCount || 0,
+                        list: res.data.list || [],
+                        levels: res.data.levels || []
+                    }
+                }
+            } catch (e) {
+                // 接口失败时保留默认值，不影响页面浏览
+            }
+        },
+        openAchievementDialog() {
+            this.achievementDialog = true
         },
         async loadTabContent() {
             switch (this.activeTab) {
@@ -777,6 +852,12 @@ export default {
     margin-bottom: 4px;
 }
 
+.user-level-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
 .user-level {
     font-size: 12px;
     color: #1e80ff;
@@ -784,7 +865,11 @@ export default {
     padding: 2px 8px;
     border-radius: 4px;
     display: inline-block;
-    margin-bottom: 12px;
+
+    &.power {
+        color: #9a6700;
+        background: #fdf4df;
+    }
 }
 
 .user-intro {
@@ -1442,6 +1527,116 @@ export default {
     .user-header {
         flex-direction: column;
         gap: 16px;
+    }
+}
+
+.stat-item.badge-entry {
+    cursor: pointer;
+    transition: opacity .2s;
+
+    &:hover {
+        opacity: .7;
+    }
+}
+
+.achievement-wall {
+    .ach-level-section {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+
+        .ach-level-card {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, #f0f6ff 0%, #eaf2ff 100%);
+            border-radius: 8px;
+            padding: 16px;
+
+            .ach-level-icon {
+                font-size: 32px;
+            }
+
+            .ach-level-info {
+                flex: 1;
+
+                .ach-level-name {
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: #252933;
+                }
+
+                .ach-level-title {
+                    font-size: 12px;
+                    color: #515767;
+                    margin-top: 4px;
+                }
+
+                .ach-level-value {
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: #1e80ff;
+                    margin-top: 4px;
+                }
+            }
+        }
+    }
+
+    .ach-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+
+        .ach-item {
+            text-align: center;
+            padding: 16px 8px;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px solid #f2f3f5;
+            transition: all .2s;
+
+            &:hover {
+                box-shadow: 0 4px 12px rgba(0, 0, 0, .06);
+            }
+
+            .ach-icon {
+                font-size: 36px;
+                margin-bottom: 8px;
+            }
+
+            .ach-name {
+                font-size: 14px;
+                font-weight: 600;
+                color: #252933;
+                margin-bottom: 4px;
+            }
+
+            .ach-desc {
+                font-size: 12px;
+                color: #8a919f;
+                margin-bottom: 8px;
+            }
+
+            .ach-progress {
+                display: inline-block;
+                font-size: 12px;
+                color: #1e80ff;
+                background: #eaf2ff;
+                padding: 2px 8px;
+                border-radius: 4px;
+
+                &.locked {
+                    color: #8a919f;
+                    background: #f2f3f5;
+                }
+            }
+
+            &.unlocked {
+                border-color: #1e80ff;
+                background: #f7fbff;
+            }
+        }
     }
 }
 </style>

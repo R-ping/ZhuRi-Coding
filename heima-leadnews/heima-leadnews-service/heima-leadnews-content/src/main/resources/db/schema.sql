@@ -1,15 +1,4 @@
--- ============================================================
--- leadnews-content 服务 数据库表结构汇总 (schema)
--- 数据库: leadnews_article (内容库)
--- 生成时间: 2026-08-13
--- 说明: 由 mysqldump --no-data 从本地库导出，仅含建表 DDL，无数据
--- 包含模块: 文章/沸点/话题/圈子/评论/专栏/课程/逐友等级/逐日值等级等
--- 增量变更请放在本目录 migrations/ 下，勿直接改动本汇总文件
--- ============================================================
-
-CREATE DATABASE IF NOT EXISTS `leadnews_article` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `leadnews_article`;
-
+﻿
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
@@ -20,6 +9,25 @@ USE `leadnews_article`;
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_achievement` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `code` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '勋章唯一编码',
+  `name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '勋章名称',
+  `category` tinyint NOT NULL DEFAULT '2' COMMENT '分类：1=新人成长，2=活跃成就',
+  `icon` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '图标（emoji字符）',
+  `description` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '解锁条件文案',
+  `trigger_type` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '触发类型：publish_article/publish_content/checkin_streak/likes/followers',
+  `threshold` int NOT NULL DEFAULT '0' COMMENT '解锁阈值',
+  `sort_order` int NOT NULL DEFAULT '0' COMMENT '展示排序',
+  `is_active` tinyint NOT NULL DEFAULT '1' COMMENT '是否启用：1=启用 0=禁用',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_code` (`code`)
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='成就勋章定义表';
+/*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `ap_activity` (
@@ -77,46 +85,6 @@ CREATE TABLE `ap_article` (
   `column_id` bigint DEFAULT NULL COMMENT '专栏ID',
   PRIMARY KEY (`id`) USING BTREE
 ) ENGINE=InnoDB AUTO_INCREMENT=2087071668418568195 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='文章信息表，存储已发布的文章';
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `ap_article_tip_order` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `order_no` varchar(32) NOT NULL COMMENT '订单号',
-  `user_id` int NOT NULL COMMENT '打赏人用户ID',
-  `article_id` bigint NOT NULL COMMENT '文章ID',
-  `author_id` int NOT NULL COMMENT '作者用户ID',
-  `amount` decimal(10,2) NOT NULL COMMENT '打赏金额',
-  `message` varchar(200) DEFAULT '' COMMENT '打赏留言',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-待支付 1-已支付',
-  `trade_no` varchar(64) DEFAULT '' COMMENT '支付宝交易号',
-  `pay_time` datetime DEFAULT NULL COMMENT '支付时间',
-  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_order_no` (`order_no`),
-  KEY `idx_article_id` (`article_id`),
-  KEY `idx_user_id` (`user_id`),
-  KEY `idx_author_id` (`author_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章打赏订单表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `ap_article_tip_record` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `order_no` varchar(32) NOT NULL COMMENT '关联订单号',
-  `user_id` int NOT NULL COMMENT '打赏人用户ID',
-  `nick_name` varchar(50) DEFAULT '' COMMENT '打赏人昵称',
-  `avatar` varchar(255) DEFAULT '' COMMENT '打赏人头像',
-  `article_id` bigint NOT NULL COMMENT '文章ID',
-  `author_id` int NOT NULL COMMENT '作者用户ID',
-  `amount` decimal(10,2) NOT NULL COMMENT '打赏金额',
-  `message` varchar(200) DEFAULT '' COMMENT '打赏留言',
-  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '打赏时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_order_no` (`order_no`),
-  KEY `idx_article_id` (`article_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章打赏流水表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -235,6 +203,63 @@ CREATE TABLE `ap_article_draft` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_article_report` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` int unsigned DEFAULT NULL COMMENT '举报人ID',
+  `article_id` bigint unsigned DEFAULT NULL COMMENT '被举报文章ID',
+  `author_id` bigint unsigned DEFAULT NULL COMMENT '被举报文章作者ID',
+  `reason` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '举报原因',
+  `description` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '补充说明（≤100字）',
+  `image_urls` varchar(2000) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '举报图片URL（逗号分隔，最多4张）',
+  `status` tinyint DEFAULT '0' COMMENT '处理状态：0待处理 1已处理',
+  `created_time` datetime DEFAULT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_article_id` (`article_id`),
+  KEY `idx_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章举报记录表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_article_tip_order` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `order_no` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '订单号',
+  `user_id` int NOT NULL COMMENT '打赏人用户ID',
+  `article_id` bigint NOT NULL COMMENT '文章ID',
+  `author_id` int NOT NULL COMMENT '作者用户ID',
+  `amount` decimal(10,2) NOT NULL COMMENT '打赏金额',
+  `message` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT '打赏留言',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-待支付 1-已支付',
+  `trade_no` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT '支付宝交易号',
+  `pay_time` datetime DEFAULT NULL COMMENT '支付时间',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_article_id` (`article_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_author_id` (`author_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章打赏订单表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_article_tip_record` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `order_no` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '关联订单号',
+  `user_id` int NOT NULL COMMENT '打赏人用户ID',
+  `nick_name` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT '打赏人昵称',
+  `avatar` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT '打赏人头像',
+  `article_id` bigint NOT NULL COMMENT '文章ID',
+  `author_id` int NOT NULL COMMENT '作者用户ID',
+  `amount` decimal(10,2) NOT NULL COMMENT '打赏金额',
+  `message` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT '打赏留言',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '打赏时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_article_id` (`article_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章打赏流水表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `ap_author` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
   `name` varchar(20) DEFAULT NULL COMMENT '作者名称（用户昵称）',
@@ -293,7 +318,7 @@ CREATE TABLE `ap_behavior_likes` (
   `operation` int DEFAULT NULL,
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -399,7 +424,7 @@ CREATE TABLE `ap_collection` (
   `created_time` datetime DEFAULT NULL,
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_user_type` (`entry_id`,`article_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='APP收藏信息表';
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='APP收藏信息表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -625,14 +650,19 @@ CREATE TABLE `ap_course_lesson` (
 CREATE TABLE `ap_course_order` (
   `id` bigint NOT NULL COMMENT '主键',
   `order_no` varchar(50) NOT NULL COMMENT '对外订单号',
-  `course_id` bigint DEFAULT NULL COMMENT '课程id',
+  `course_id` bigint NOT NULL COMMENT '课程id',
   `user_id` int NOT NULL COMMENT '下单用户',
   `original_amount` decimal(10,2) NOT NULL,
+  `discount_amount` decimal(10,2) NOT NULL,
+  `paid_amount` decimal(10,2) DEFAULT NULL COMMENT '支付金额',
   `total_amount` decimal(10,2) NOT NULL COMMENT '订单总金额',
-  `status` tinyint DEFAULT '0' COMMENT '状态 0待支付 1已支付 2已取消 3已退款',
+  `discount_code` varchar(32) NOT NULL,
   `pay_method` varchar(20) DEFAULT '' COMMENT '支付方式',
-  `paid_at` datetime DEFAULT NULL COMMENT '支付时间',
-  `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `status` tinyint DEFAULT '0' COMMENT '状态 0待支付 1已支付 2已取消 3已退款',
+  `pay_time` datetime DEFAULT NULL COMMENT '支付时间',
+  `trade_no` varchar(32) DEFAULT NULL COMMENT '交易号',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order_no` (`order_no`),
   KEY `idx_user_id` (`user_id`),
@@ -787,6 +817,7 @@ CREATE TABLE `ap_pins` (
   `content` text NOT NULL COMMENT '帖子内容',
   `circle_id` bigint DEFAULT NULL COMMENT '圈子ID（可选）',
   `topic_id` bigint DEFAULT NULL COMMENT '话题ID（可选）',
+  `view_count` int DEFAULT '0',
   `like_count` int DEFAULT '0' COMMENT '点赞数',
   `comment_count` int DEFAULT '0' COMMENT '评论数',
   `share_count` int DEFAULT '0' COMMENT '分享数',
@@ -897,7 +928,7 @@ CREATE TABLE `ap_user_action_log` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `action_type` varchar(50) NOT NULL COMMENT '行为类型 daily_login, article_read, comment, like, share, follow',
-  `score_change` int NOT NULL COMMENT '逐日分变化量',
+  `score_change` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '逐日分变化量',
   `action_detail` varchar(500) DEFAULT NULL COMMENT '行为详情',
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
