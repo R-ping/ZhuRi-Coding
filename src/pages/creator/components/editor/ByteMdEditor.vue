@@ -64,6 +64,13 @@ export default {
     this.applySyncScroll();
     this.initScrollIndicator();
   },
+  beforeDestroy() {
+    // 断开滚动指示器的 MutationObserver，避免组件销毁后观察器悬挂
+    if (this._overflowObserver) {
+      this._overflowObserver.disconnect();
+      this._overflowObserver = null;
+    }
+  },
   watch: {
     syncScroll() {
       this.applySyncScroll();
@@ -119,6 +126,7 @@ export default {
         const observer = new MutationObserver(checkOverflow)
         observer.observe(editor, { childList: true, subtree: true, characterData: true })
         observer.observe(preview, { childList: true, subtree: true, characterData: true })
+        this._overflowObserver = observer
       })
     },
     async handleUploadImages(files) {

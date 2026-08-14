@@ -1,9 +1,14 @@
 import Vue from 'vue'
+import ElementUI from 'element-ui'
+import 'element-ui/lib/theme-chalk/index.css'
 import lang from '@/langs/lang'
 import conf from '@/common/conf'
 import request from '@/common/request'
 import store from '@/stores/store'
 import date from '@/utils/date'
+
+// 全局注册 Element UI（个人设置、创作者中心等页面均依赖 el-dialog / el-switch / el-button 等组件）
+Vue.use(ElementUI)
 
 Vue.prototype.$date = date
 Vue.prototype.$lang = lang

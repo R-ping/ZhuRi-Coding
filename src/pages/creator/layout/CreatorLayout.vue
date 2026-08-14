@@ -9,11 +9,6 @@
 </template>
 
 <script>
-import Element from 'element-ui'
-import 'element-ui/lib/theme-chalk/index.css'
-import Vue from 'vue'
-Vue.use(Element)
-
 import 'font-awesome/css/font-awesome.min.css'
 import './styles/index.less'
 

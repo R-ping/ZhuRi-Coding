@@ -25,10 +25,9 @@ const REFRESH_RETRY_DELAY = 800
 function refresh(retryFn) {
   const refreshToken = store.state.refreshToken
 
-  // 无 refresh_token 说明从未登录或已登出，才清除登录态并弹窗
+  // 无 refresh_token 说明从未登录或已登出，清空登录态并跳回首页（不弹登录框）
   if (!refreshToken) {
-    store.dispatch('logout')
-    store.dispatch('showLogin')
+    store.dispatch('sessionExpired')
     return Promise.reject({ code: 444, errorMessage: '登录已过期，请重新登录' })
   }
 
@@ -104,8 +103,7 @@ function handleRefreshInvalid() {
   failPending.forEach(function (req) {
     req.reject({ code: 444, errorMessage: '登录已过期，请重新登录' })
   })
-  store.dispatch('logout')
-  store.dispatch('showLogin')
+  store.dispatch('sessionExpired')
   return Promise.reject({ code: 444, errorMessage: '登录已过期，请重新登录' })
 }
 

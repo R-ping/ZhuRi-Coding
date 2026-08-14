@@ -44,7 +44,14 @@
       <span class="loading-text">加载中...</span>
     </div>
 
-    <div class="no-more" v-if="!loading && noMore">
+    <!-- 首屏空/错误状态：区分"暂无课程"与"加载失败" -->
+    <div class="no-more" v-if="!loading && courseList.length === 0">
+      <span v-if="loadError">加载失败，请检查网络后重试</span>
+      <span v-else>— 暂无课程 —</span>
+      <span class="retry-btn" v-if="loadError" @click="selectCategory(0)">点击重试</span>
+    </div>
+
+    <div class="no-more" v-if="!loading && noMore && courseList.length > 0">
       <span>— 没有更多了 —</span>
     </div>
   </div>
@@ -82,7 +89,9 @@ export default {
       courseList: [],
       page: 1,
       loading: false,
-      noMore: false
+      noMore: false,
+      // 课程列表加载失败标记（503/超时等）
+      loadError: false
     }
   },
   computed: {
@@ -103,6 +112,7 @@ export default {
       this.page = 1
       this.courseList = []
       this.noMore = false
+      this.loadError = false
       this.loadCourseList()
     },
     selectFilter(filterId) {
@@ -110,6 +120,7 @@ export default {
       this.page = 1
       this.courseList = []
       this.noMore = false
+      this.loadError = false
       this.loadCourseList()
     },
     async loadCourseList() {
@@ -123,6 +134,7 @@ export default {
           status: 9 // 只查询已上架课程
         })
         if (res && res.code === 200 && res.data) {
+          this.loadError = false
           const list = res.data.list || []
           // 客户端分类筛选
           let filteredData = list
@@ -140,11 +152,11 @@ export default {
           this.noMore = res.data.total <= this.page * 10
           this.page++
         } else {
-          this.noMore = true
+          // 业务错误（503/异常返回）
+          this.loadError = true
         }
       } catch (e) {
-        console.error('加载课程列表失败', e)
-        this.noMore = true
+        this.loadError = true
       } finally {
         this.loading = false
       }
@@ -279,6 +291,21 @@ export default {
 .no-more span {
   font-size: 13px;
   color: #ccc;
+}
+
+.retry-btn {
+  display: inline-block;
+  padding: 4px 16px;
+  border-radius: 14px;
+  border: 1px solid #1E80FF;
+  color: #1E80FF;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+.retry-btn:hover {
+  background: rgba(30, 128, 255, 0.08);
 }
 
 @media screen and (min-width: 768px) {

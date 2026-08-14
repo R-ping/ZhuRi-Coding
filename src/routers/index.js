@@ -10,5 +10,11 @@ let concat = (router) => {
 routes = routes.concat(Home)
 // 合并'创作中心'相关路由
 routes = routes.concat(Creator)
+// 兜底：未知路径跳转 404 页（vue-router 3.x 使用 '*' 通配）
+routes = routes.concat([{
+    path: '*',
+    name: 'not-found',
+    component: () => import('@/pages/not_found/index')
+}])
 
 export default  routes;

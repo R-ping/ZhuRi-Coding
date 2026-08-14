@@ -14,9 +14,9 @@
                         <span class="nav-link" :class="{ active: currentNav === 'home' }" @click="goToHome">首页</span>
                         <span class="nav-link" :class="{ active: currentNav === 'pins' }" @click="goToPins">沸点</span>
                         <span class="nav-link" :class="{ active: currentNav === 'course' }" @click="goToCourse">课程</span>
-                        <span class="nav-link">数据标注</span>
-                        <span class="nav-link">AI Coding</span>
-                        <span class="nav-link more-link">更多 <span class="more-arrow">&#9662;</span></span>
+                        <span class="nav-link" @click="handleUnreleasedNav">数据标注</span>
+                        <span class="nav-link" @click="handleUnreleasedNav">AI Coding</span>
+                        <span class="nav-link more-link" @click="handleUnreleasedNav">更多 <span class="more-arrow">&#9662;</span></span>
                     </nav>
                     <div class="header-center">
                         <div class="web-search-box" ref="searchBox">
@@ -453,6 +453,10 @@
             },
             handleAppOpen() {
                 toast('未发布App产品，敬请期待', 2)
+            },
+            // 未上线导航入口：toast 提示，避免死链
+            handleUnreleasedNav() {
+                toast('该功能即将上线，敬请期待', 2)
             },
             toggleUserDropdown(e) {
                 if (this.isLoggedIn) {

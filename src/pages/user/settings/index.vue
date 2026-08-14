@@ -3,6 +3,10 @@
         <div class="art-top" v-if="!isDesktop"><HomeBar/></div>
         <div class="settings-content">
             <div class="settings-sidebar">
+                <div class="sidebar-back" @click="goToProfile">
+                    <i class="el-icon-back"></i>
+                    <span>返回个人主页</span>
+                </div>
                 <div 
                     class="sidebar-item" 
                     :class="{ 'active': activeSection === 'profile' }"
@@ -66,7 +70,6 @@
                                 <img :src="profileForm.avatarUrl || defaultAvatar" class="current-avatar" alt="avatar">
                                 <div class="avatar-actions">
                                     <button class="edit-btn primary" @click="triggerAvatarUpload">上传头像</button>
-                                    <input type="file" ref="avatarInput" accept="image/jpeg,image/png,image/webp" style="display:none" @change="handleAvatarFileChange">
                                     <span class="avatar-hint">格式: 支持JPG、PNG、WebP | 大小: 5M以内</span>
                                 </div>
                             </div>
@@ -487,7 +490,7 @@
 import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
-import { getUserProfile, updateUserProfile, uploadAvatar, getBindings, updatePassword, deleteAccount, updatePrivacyMessage, getBlocks, removeBlock, getTagsDiscover, getFollowedTags, followTag, unfollowTag } from '@/apis/user'
+import { getUserProfile, updateUserProfile, uploadAvatar as uploadAvatarApi, getBindings, updatePassword, deleteAccount, updatePrivacyMessage, getBlocks, removeBlock, getTagsDiscover, getFollowedTags, followTag, unfollowTag } from '@/apis/user'
 import { toast } from '@/utils/toast'
 
 export default {
@@ -498,6 +501,7 @@ export default {
             activeSection: 'profile',
             showAvatarUpload: false,
             localAvatar: null,
+            localAvatarFile: null,
             profileForm: {
                 username: '',
                 avatarUrl: '',
@@ -629,38 +633,38 @@ export default {
             }
         },
         triggerAvatarUpload() {
-            this.$refs.avatarInput.click()
+            this.showAvatarUpload = true
+            this.localAvatar = null
+            this.localAvatarFile = null
         },
-        async handleAvatarFileChange(e) {
-            const file = e.target.files[0]
-            if (!file) return
-            
-            // 校验类型
-            const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
-            if (!allowedTypes.includes(file.type)) {
-                toast('仅支持JPG、PNG、WebP格式的图片', 2)
+        goToProfile() {
+            const userInfo = this.$store.getters.userInfo || {}
+            const userId = userInfo.userId || 1
+            this.$router.push('/user/' + userId)
+        },
+        handleAvatarChange(file) {
+            // el-upload 选择文件后仅作本地预览，确认时再上传
+            this.localAvatarFile = file.raw
+            this.localAvatar = URL.createObjectURL(file.raw)
+        },
+        async uploadAvatar() {
+            if (!this.localAvatarFile) {
+                toast('请先选择头像图片', 2)
                 return
             }
-            
-            // 校验大小
-            if (file.size > 5 * 1024 * 1024) {
-                toast('图片大小不能超过5MB', 2)
-                return
-            }
-            
             try {
-                const res = await uploadAvatar(file)
+                const res = await uploadAvatarApi(this.localAvatarFile)
                 if (res && res.code === 200 && res.data && res.data.url) {
                     this.profileForm.avatarUrl = res.data.url
                     toast('头像上传成功', 2)
+                    this.showAvatarUpload = false
+                    this.localAvatar = null
+                    this.localAvatarFile = null
                 } else {
                     toast(res.message || '上传失败', 2)
                 }
             } catch (e) {
                 toast(e.message || '上传失败', 2)
-            } finally {
-                // 清除input以便重新选择同一文件
-                e.target.value = ''
             }
         },
         toggleTag(tagId) {
@@ -925,6 +929,26 @@ export default {
     }
     i {
         font-size: 18px;
+    }
+}
+
+.sidebar-back {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #1e80ff;
+    cursor: pointer;
+    border-bottom: 1px solid #f2f3f5;
+    margin-bottom: 8px;
+    transition: background 0.2s;
+    &:hover {
+        background: #f7f8fa;
+    }
+    i {
+        font-size: 16px;
     }
 }
 

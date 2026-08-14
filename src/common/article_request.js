@@ -21,7 +21,7 @@ const isImgUpload = (config) => {
 service.interceptors.request.use(
   config => {
     const accessToken = store.state.accessToken
-    // 记录本次请求是否使用了有效用户 token（用于 401 时决定是否弹登录框）
+    // 记录本次请求是否使用了有效用户 token（用于 401/444 时决定是否触发刷新重放）
     config._usedUserToken = !!accessToken
     if (accessToken) {
       if (!isImgUpload(config)) {
@@ -50,12 +50,11 @@ service.interceptors.response.use(
     return data
   },
   error => {
-    // 401未授权 — 仅当本次请求携带了有效用户 token 时，才清除过期 token 并弹出登录弹窗；
-    // 匿名/游客请求（请求头无 accToken 或非用户 token）返回 401 时静默 reject，不弹登录框
+    // 401未授权 — 刷新失败/ref token失效等最终认证失败的信号，不再刷新，清除登录态并跳回首页（不弹登录框）；
+    // 仅当本次请求携带了有效用户 token 时才处理，匿名/游客请求静默 reject，不影响基础浏览
     if (error.response && error.response.status === 401) {
       if (error.config && error.config._usedUserToken) {
-        store.dispatch('logout')
-        store.dispatch('showLogin')
+        store.dispatch('sessionExpired')
       }
       return Promise.reject(error)
     }
@@ -76,8 +75,7 @@ service.interceptors.response.use(
 function refreshTokenAndRetry(config) {
   const refreshToken = store.state.refreshToken
   if (!refreshToken) {
-    store.dispatch('logout')
-    store.dispatch('showLogin')
+    store.dispatch('sessionExpired')
     return Promise.reject({ code: 444, errorMessage: '登录已过期，请重新登录' })
   }
   // 使用统一token管理器，避免两个拦截器并发刷新冲突

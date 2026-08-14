@@ -130,13 +130,14 @@ let routes = [
                 path: 'growth/topic/:id',
                 name: 'CreatorTopicDetail',
                 component: () => import('@/pages/creator/growth/topic/detail.vue')
+            },
+            {
+                // /creator 下的未知路径：在创作中心布局内显示 404 页
+                path: '*',
+                name: 'CreatorNotFound',
+                component: () => import('@/pages/not_found/index')
             }
         ]
-    },
-    {
-        path: '*',
-        name: 'CreatorNotFound',
-        component: () => import('@/pages/creator/layout/CreatorLayout.vue')
     }
 ]
 

@@ -7,12 +7,15 @@
                     <span class="tag-item" v-for="tag in data.tags" :key="tag">{{tag}}</span>
                 </div>
                 <div class="tags">
+                    <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像"/>
                     <span class="tags-text tags-icon">{{data.icon}}</span>
                     <span class="tags-text tags-author" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave">{{data.source}}</span>
                     <span class="meta-sep">·</span>
                     <span class="tags-text meta-comment">{{data.comment}} 评论</span>
                     <span class="meta-sep">·</span>
                     <span class="tags-text meta-comment">{{data.views}} 阅读</span>
+                    <span class="meta-sep">·</span>
+                    <span class="tags-text meta-like"><i class="like-icon">&#xf087;</i> {{data.likes}} 点赞</span>
                     <span class="tags-text date" v-if="showTime">{{formatTime(data.date)}}</span>
                 </div>
             </div>
@@ -133,5 +136,22 @@
         border-radius: 4px;
         padding: 2px 8px;
         line-height: 1.4;
+    }
+    .like-icon {
+        font-family: fontawesome;
+        font-style: normal;
+        font-size: 12px;
+        margin-right: 2px;
+    }
+    .meta-like {
+        color: #b0b5c0;
+    }
+    .author-avatar {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: -4px;
+        flex-shrink: 0;
     }
 </style>

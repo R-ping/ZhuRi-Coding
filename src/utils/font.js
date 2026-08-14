@@ -1,3 +1,6 @@
+// font-awesome 字体本地化（Vite 构建时打包，去除第三方 CDN 依赖）
+import fontAwesomeTtf from 'font-awesome/fonts/fontawesome-webfont.ttf'
+
 let utilFunc = {
     initIconFont () {
         // 避免重复注入
@@ -6,7 +9,7 @@ let utilFunc = {
         }
         var style = document.createElement('style');
         style.id = 'fontawesome-webfont';
-        style.textContent = '@font-face { font-family: "fontawesome"; src: url("https://cdn.bootcss.com/font-awesome/4.7.0/fonts/fontawesome-webfont.ttf?v=5.10.2"); }';
+        style.textContent = '@font-face { font-family: "fontawesome"; src: url("' + fontAwesomeTtf + '"); }';
         document.head.appendChild(style);
     }
 };
