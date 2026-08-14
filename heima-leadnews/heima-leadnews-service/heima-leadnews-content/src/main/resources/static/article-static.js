@@ -1,5 +1,6 @@
 (function() {
     var articleId = window.ARTICLE_ID || '0';
+    var authorId = window.AUTHOR_ID || 0;
     var tocLinks = document.querySelectorAll('.toc-list a');
     var headings = Array.from(document.querySelectorAll('.article-body h1, .article-body h2, .article-body h3'));
 
@@ -481,9 +482,11 @@
         if (!detailData) return;
         var followBtn = document.getElementById('followBtn');
         var authorFollowBtn = document.getElementById('authorFollowBtn');
+        var endAuthorFollowBtn = document.getElementById('endAuthorFollowBtn');
         if (detailData.isFollow) {
             if (followBtn) { followBtn.classList.add('active'); followBtn.textContent = '已关注'; }
             if (authorFollowBtn) { authorFollowBtn.classList.add('active'); authorFollowBtn.textContent = '已关注'; }
+            if (endAuthorFollowBtn) { endAuthorFollowBtn.classList.add('active'); endAuthorFollowBtn.textContent = '已关注'; }
         }
     }
 
@@ -558,7 +561,7 @@
         apiPost('/content/api/v1/article/' + articleId + '/follow').then(function(res) {
             if (res && res.code === 200 && res.data) {
                 var followed = res.data.followed;
-                var btns = [document.getElementById('followBtn'), document.getElementById('authorFollowBtn')];
+                var btns = [document.getElementById('followBtn'), document.getElementById('authorFollowBtn'), document.getElementById('endAuthorFollowBtn')];
                 btns.forEach(function(btn) {
                     if (btn) {
                         btn.classList.toggle('active', followed);
@@ -570,8 +573,10 @@
     }
     var followBtn = document.getElementById('followBtn');
     var authorFollowBtn = document.getElementById('authorFollowBtn');
+    var endAuthorFollowBtn = document.getElementById('endAuthorFollowBtn');
     if (followBtn) followBtn.addEventListener('click', handleFollow);
     if (authorFollowBtn) authorFollowBtn.addEventListener('click', handleFollow);
+    if (endAuthorFollowBtn) endAuthorFollowBtn.addEventListener('click', handleFollow);
 
     // 侧边栏点赞/收藏/分享/举报
     var sideLikeBtn = document.getElementById('sideLikeBtn');
@@ -1150,12 +1155,13 @@
         });
     }
 
-    // ========== 为你推荐 ==========
+    // ========== 为你推荐（横排卡片） ==========
     var recommendCursor = '';
     var recommendHasMore = false;
+    var recommendLoaded = false;
 
     function loadRecommend(append) {
-        var url = '/content/api/v1/article/' + articleId + '/recommend?cursor=' + encodeURIComponent(recommendCursor) + '&size=5';
+        var url = '/content/api/v1/article/' + articleId + '/recommend?cursor=' + encodeURIComponent(recommendCursor) + '&size=6';
         apiGet(url).then(function(res) {
             if (res && res.code === 200 && res.data) {
                 var list = res.data.list || [];
@@ -1167,27 +1173,25 @@
                     container.innerHTML = '';
                 }
                 list.forEach(function(item) {
-                    var li = document.createElement('li');
-                    li.className = 'recommend-item';
-                    var tags = '';
-                    if (item.categoryName) {
-                        tags += '<span class="category-tag">' + escapeHtml(item.categoryName) + '</span>';
-                    }
-                    li.innerHTML = '<div class="recommend-item-title"><a href="/content/article/' + item.articleId + '" target="_blank">' + escapeHtml(item.title) + '</a></div>' +
-                        '<div class="recommend-item-meta">' +
+                    var coverUrl = item.coverImage || '';
+                    var a = document.createElement('a');
+                    a.className = 'recommend-card';
+                    a.href = '/content/article/' + item.articleId;
+                    a.target = '_blank';
+                    a.innerHTML = '<div class="recommend-card-cover">' +
+                        (coverUrl ? '<img src="' + coverUrl + '" alt="" loading="lazy">' : '') +
+                        '</div>' +
+                        '<div class="recommend-card-info">' +
+                        '<div class="recommend-card-title">' + escapeHtml(item.title) + '</div>' +
+                        '<div class="recommend-card-meta">' +
                         '<span>' + escapeHtml(item.authorName || '') + '</span>' +
                         '<span class="meta-sep">·</span>' +
-                        '<span>' + formatTime(item.publishTime) + '</span>' +
-                        '<span class="meta-sep">·</span>' +
                         '<span>' + (item.viewCount || 0) + '阅读</span>' +
-                        '<span class="meta-sep">·</span>' +
-                        '<span>' + (item.diggCount || 0) + '赞</span>' +
-                        '<span class="meta-sep">·</span>' +
-                        '<span>' + (item.commentCount || 0) + '评论</span>' +
-                        tags +
-                        '</div>';
-                    container.appendChild(li);
+                        (item.categoryName ? '<span class="category-tag">' + escapeHtml(item.categoryName) + '</span>' : '') +
+                        '</div></div>';
+                    container.appendChild(a);
                 });
+                recommendLoaded = true;
                 loadMoreBtn.style.display = recommendHasMore ? 'block' : 'none';
             }
         }).catch(function(err) { console.error('加载为你推荐失败:', err); });
@@ -1198,6 +1202,77 @@
         recommendLoadMore.addEventListener('click', function() {
             loadRecommend(true);
         });
+    }
+
+    // 正文 85% 位置预加载「为你推荐」（页面较短时直接加载）
+    function maybePreloadRecommend() {
+        if (recommendLoaded) return;
+        var articleBody = document.getElementById('articleContent');
+        if (!articleBody) { loadRecommend(false); return; }
+        var rect = articleBody.getBoundingClientRect();
+        var scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        // 正文已滚过 85%，或剩余滚动量不足一屏时提前加载
+        if (rect.bottom <= window.innerHeight * 0.85 || scrollable <= window.innerHeight * 0.5) {
+            loadRecommend(false);
+        }
+    }
+    window.addEventListener('scroll', maybePreloadRecommend, { passive: true });
+    maybePreloadRecommend();
+
+    // ========== 回到顶部 ==========
+    var sideBackTopBtn = document.getElementById('sideBackTopBtn');
+    if (sideBackTopBtn) {
+        sideBackTopBtn.addEventListener('click', function() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    }
+
+    // ========== 读完提示 ==========
+    // 正文进入视口后淡入「— 已读完，感谢阅读 —」
+    var readEndHint = document.getElementById('readEndHint');
+    if (readEndHint && 'IntersectionObserver' in window) {
+        var hintObserver = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (entry.isIntersecting) {
+                    readEndHint.classList.add('show');
+                    hintObserver.disconnect();
+                }
+            });
+        }, { rootMargin: '-60px 0px 0px 0px' });
+        hintObserver.observe(readEndHint);
+    } else if (readEndHint) {
+        readEndHint.classList.add('show');
+    }
+
+    // ========== 正文尾部作者卡片 ==========
+    // 通过作者信息聚合接口拉取头像/昵称/简介/粉丝数/关注态并填充
+    function loadEndAuthorCard() {
+        var nameEl = document.getElementById('endAuthorName');
+        var descEl = document.getElementById('endAuthorDesc');
+        var followersEl = document.getElementById('endAuthorFollowers');
+        var avatarEl = document.getElementById('endAuthorAvatar');
+        var followBtnEl = document.getElementById('endAuthorFollowBtn');
+        if (!nameEl || !authorId) return;
+        apiGet('/content/api/v1/author/info?userId=' + authorId).then(function(res) {
+            if (!res || res.code !== 200 || !res.data) return;
+            var data = res.data;
+            if (data.nickname) nameEl.textContent = data.nickname;
+            if (data.avatar && avatarEl) avatarEl.src = data.avatar;
+            // 简介：优先 bio，其次 职位 · 公司
+            var desc = data.bio || '';
+            if (!desc) {
+                var parts = [];
+                if (data.position) parts.push(data.position);
+                if (data.company) parts.push(data.company);
+                desc = parts.join(' · ');
+            }
+            descEl.textContent = desc || '这个人很懒，什么都没有留下~';
+            if (followersEl) followersEl.textContent = data.followerCount || 0;
+            if (followBtnEl && data.isFollowed) {
+                followBtnEl.classList.add('active');
+                followBtnEl.textContent = '已关注';
+            }
+        }).catch(function(err) { console.error('加载作者卡片失败:', err); });
     }
 
     // ========== 相关推荐（右侧边栏） ==========
@@ -1712,12 +1787,12 @@
     loadArticleDetail();
     loadColumn();
     loadComments(false);
-    loadRecommend(false);
     loadRelated();
     loadFeatured();
     initTip();
     loadTipSummary();
     loadTipList();
+    loadEndAuthorCard();
 
     // 支付成功回跳（?tip=success）时提示并刷新打赏名单
     (function() {

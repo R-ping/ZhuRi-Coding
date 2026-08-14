@@ -963,45 +963,70 @@
             padding-bottom: 16px;
             border-bottom: 1px solid #e4e6eb;
         }
-        .recommend-list {
+        .recommend-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
             list-style: none;
             margin: 0;
             padding: 0;
         }
-        .recommend-item {
-            padding: 14px 0;
-            border-bottom: 1px solid #f2f3f5;
-            min-height: 60px;
+        .recommend-card {
+            display: flex;
+            flex-direction: column;
+            text-decoration: none;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #f2f3f5;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .recommend-item:last-child {
-            border-bottom: none;
+        .recommend-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         }
-        .recommend-item-title {
+        .recommend-card-cover {
+            width: 100%;
+            aspect-ratio: 16 / 10;
+            overflow: hidden;
+            background: #f2f3f5;
+        }
+        .recommend-card-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .recommend-card-info {
+            padding: 12px 14px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+        }
+        .recommend-card-title {
             font-size: 15px;
             font-weight: 500;
             color: #252933;
-            margin-bottom: 6px;
-            line-height: 1.4;
+            line-height: 1.45;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
+            min-height: 43px;
         }
-        .recommend-item-title a {
-            color: #252933;
-        }
-        .recommend-item-title a:hover {
+        .recommend-card:hover .recommend-card-title {
             color: #1e80ff;
         }
-        .recommend-item-meta {
+        .recommend-card-meta {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
             align-items: center;
             font-size: 12px;
             color: #8a919f;
+            margin-top: auto;
         }
-        .recommend-item-meta .category-tag {
+        .recommend-card-meta .category-tag {
             display: inline-block;
             padding: 1px 6px;
             border-radius: 3px;
@@ -1009,8 +1034,119 @@
             color: #1e80ff;
             font-size: 11px;
         }
-        .recommend-item-meta .meta-sep {
+        .recommend-card-meta .meta-sep {
             color: #c4c9d1;
+        }
+
+        /* ========== 读完提示 ========== */
+        .read-end-hint {
+            text-align: center;
+            color: #8a919f;
+            font-size: 13px;
+            letter-spacing: 2px;
+            padding: 8px 0 4px;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.6s, transform 0.6s;
+        }
+        .read-end-hint.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .read-end-hint::before,
+        .read-end-hint::after {
+            content: "";
+            display: inline-block;
+            width: 40px;
+            height: 1px;
+            background: #e4e6eb;
+            vertical-align: middle;
+            margin: 0 12px;
+        }
+
+        /* ========== 正文尾部作者卡片 ========== */
+        .end-author-card {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #f2f3f5;
+            padding: 24px;
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .end-author-card .ea-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: #f2f3f5;
+        }
+        .end-author-card .ea-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .end-author-card .ea-name {
+            font-size: 17px;
+            font-weight: 600;
+            color: #252933;
+            margin-bottom: 6px;
+        }
+        .end-author-card .ea-desc {
+            font-size: 13px;
+            color: #8a919f;
+            line-height: 1.6;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .end-author-card .ea-followers {
+            font-size: 12px;
+            color: #8a919f;
+        }
+        .end-author-card .ea-followers b {
+            color: #4e5969;
+            font-weight: 600;
+        }
+        .end-author-card .ea-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+        .end-author-card .ea-follow-btn {
+            width: 96px;
+            height: 34px;
+            border: none;
+            border-radius: 17px;
+            background: #1e80ff;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .end-author-card .ea-follow-btn:hover {
+            background: #0d6ae0;
+        }
+        .end-author-card .ea-follow-btn.active {
+            background: #eaf2ff;
+            color: #1e80ff;
+        }
+        .end-author-card .ea-links {
+            display: flex;
+            gap: 14px;
+        }
+        .end-author-card .ea-link {
+            font-size: 13px;
+            color: #1e80ff;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .end-author-card .ea-link:hover {
+            text-decoration: underline;
         }
 
         /* ========== 右侧边栏推荐卡片样式 ========== */
@@ -2026,6 +2162,7 @@
             .toc-float-btn { display: flex; }
             .comment-section { padding: 20px 16px; }
             .recommend-section { padding: 20px 16px; }
+            .recommend-grid { grid-template-columns: repeat(2, 1fr); }
         }
         @media (max-width: 640px) {
             .main-wrapper { padding: 56px 12px 24px; }
@@ -2034,6 +2171,9 @@
             .action-bar { flex-wrap: wrap; }
             .comment-section { padding: 16px 12px; }
             .recommend-section { padding: 16px 12px; }
+            .recommend-grid { grid-template-columns: 1fr; }
+            .end-author-card { flex-direction: column; align-items: flex-start; text-align: left; }
+            .end-author-card .ea-actions { flex-direction: row; align-items: center; }
             .column-card { flex-wrap: wrap; }
             .column-cover { width: 80px; height: 56px; }
             .column-meta { width: 100%; justify-content: flex-start; margin-top: 8px; }
@@ -2236,6 +2376,23 @@
         body.dark .modal-footer { border-color: #2d333b; }
         body.dark .setting-btn { background: #1e1e1e; color: #8a919f; border-color: #2d333b; }
         body.dark .setting-btn.active { background: #eaf2ff; color: #1e80ff; border-color: #1e80ff; }
+        /* 暗色适配：为你推荐横排卡片 / 正文尾部作者卡片 / 读完提示 */
+        body.dark .recommend-section,
+        body.dark .end-author-card { background: #1e1e1e; border-color: #2d333b; }
+        body.dark .recommend-title,
+        body.dark .end-author-card .ea-name { color: #e4e6eb; }
+        body.dark .recommend-card { background: #1e1e1e; border-color: #2d333b; }
+        body.dark .recommend-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        body.dark .recommend-card-title { color: #e4e6eb; }
+        body.dark .recommend-card:hover .recommend-card-title { color: #4d9fff; }
+        body.dark .recommend-card-meta { color: #8a919f; }
+        body.dark .recommend-card-cover { background: #2a2a2a; }
+        body.dark .end-author-card .ea-desc,
+        body.dark .end-author-card .ea-followers { color: #8a919f; }
+        body.dark .end-author-card .ea-followers b { color: #c0c4cc; }
+        body.dark .read-end-hint { color: #8a919f; }
+        body.dark .read-end-hint::before,
+        body.dark .read-end-hint::after { background: #2d333b; }
 
         /* ========== 阅读设置弹窗 ========== */
         .reader-settings-modal { width: 420px; }
@@ -2439,6 +2596,28 @@
                     ${articleContentHtml}
                 </div>
 
+                <!-- 读完提示 -->
+                <div class="read-end-hint" id="readEndHint">— 已读完，感谢阅读 —</div>
+
+                <!-- 正文尾部作者卡片 -->
+                <div class="end-author-card" id="endAuthorCard">
+                    <img src="${authorAvatar!'https://p3.pstatp.com/thumb/1480/7186611868'}" class="ea-avatar" id="endAuthorAvatar" alt="avatar">
+                    <div class="ea-info">
+                        <div class="ea-name" id="endAuthorName">${authorName!'黑马头条'}</div>
+                        <div class="ea-desc" id="endAuthorDesc"></div>
+                        <div class="ea-followers"><b id="endAuthorFollowers">0</b> 粉丝</div>
+                    </div>
+                    <div class="ea-actions">
+                        <button class="ea-follow-btn<#if relation?? && relation.isfollow?? && relation.isfollow> active</#if>" id="endAuthorFollowBtn">
+                            <#if relation?? && relation.isfollow?? && relation.isfollow>已关注<#else>+ 关注</#if>
+                        </button>
+                        <div class="ea-links">
+                            <a href="/user/${authorId!0}" class="ea-link" target="_blank">查看主页</a>
+                            <a href="/user/${authorId!0}?tab=article" class="ea-link" target="_blank">更多文章</a>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 打赏（赞赏）卡片 -->
                 <div class="tip-section" id="tipSection">
                     <div class="tip-section-title">觉得这篇文章不错？</div>
@@ -2531,7 +2710,7 @@
             <!-- 为你推荐 -->
             <div class="recommend-section" id="recommendSection">
                 <div class="recommend-title">为你推荐</div>
-                <ul class="recommend-list" id="recommendList"></ul>
+                <div class="recommend-grid" id="recommendList"></div>
                 <button class="load-more-btn" id="recommendLoadMore" style="display:none;">加载更多</button>
             </div>
         </article>
@@ -2661,6 +2840,12 @@
                 <svg viewBox="0 0 24 24" width="20" height="20"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.996.996 0 0 0 .25-1.52L19.5 5.64c-.26-.46-.78-.64-1.24-.42l-2.5 1.07c-.33-.26-.73-.44-1.11-.51-.25-.44-.54-.85-.85-1.24l-.6-1.56a.996.996 0 0 0-.99-.72l-1.8.64c-.36.13-.76.3-1.24.51-.38.07-.78.25-1.11.51L5.86 3.28c-.45-.21-.98-.04-1.24.42L2.7 7.02c-.34.5-.21 1.16.25 1.52l2.01 1.56c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.996.996 0 0 0-.25 1.52l1.92 3.32c.26.46.78.64 1.24.42l2.5-1.07c.33.26.73.44 1.11.51.25.44.54.85.85 1.24l.6 1.56c.09.41.32.82.72.99.4.18.83.18 1.27 0l1.8-.64c.36-.13.76-.3 1.24-.51.38-.07.78-.25 1.11-.51l2.5 1.07c.45.21.98.04 1.24-.42l1.92-3.32c.26-.46.12-1.1-.25-1.52zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor"/></svg>
             </div>
             <div class="action-count">设置</div>
+        </div>
+        <div class="action-item" id="sideBackTopBtn" title="回到顶部">
+            <div class="action-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5.83l6.59 6.59L17 14l-5-5-5 5-1.59-1.58L12 5.83zm0 6l6.59 6.59L17 20l-5-5-5 5-1.59-1.58L12 11.83z"/></svg>
+            </div>
+            <div class="action-count">回顶</div>
         </div>
     </div>
 
@@ -2847,6 +3032,7 @@
     <script>
         // 使用 ?c 强制按"计算机"格式输出数字，避免 FreeMarker 默认将大整数渲染为带千分位逗号（如 2,087,071,...）导致 API URL 失效
         window.ARTICLE_ID = "${(articleId!0)?c}";
+        window.AUTHOR_ID = ${(authorId!0)};
     </script>
     <script>
         // 加载共用交互脚本（方案②：作为内容服务静态资源由网关 /content/article-static.js 统一提供）

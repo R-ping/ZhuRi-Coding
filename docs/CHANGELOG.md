@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## 2026-08-14 — 详情页留存闭环（阶段3）：作者卡片/读完提示/推荐横排/回顶
+
+### 变更
+
+1. **正文尾部作者卡片**：正文结束后新增作者卡片（头像/昵称/简介/粉丝数/关注按钮/查看主页/更多文章），数据通过 `GET /content/api/v1/author/info?userId=` 实时拉取（昵称、头像、简介或「职位 · 公司」、粉丝数、是否已关注）；关注按钮复用统一关注逻辑（登录校验、toggle 状态与文案联动）。后端 `ArticlePageController` 增加 `authorId` 到 model 供模板生成跳转链接与请求参数。
+2. **读完提示**：正文尾部增加「— 已读完，感谢阅读 —」提示，基于 `IntersectionObserver` 在正文末尾进入视口时淡入显示。
+3. **为你推荐横排改版**：推荐列表由纵排改为 3 列网格卡片（封面/标题/点赞·评论·阅读数），窄屏降为 2 列/单列；滚动到正文 85% 或页面较短时提前预加载推荐（`maybePreloadRecommend`），减少尾部等待。
+4. **回顶按钮**：右侧悬浮栏「回顶」按钮平滑滚动回顶部。
+
+### 变更文件
+- 修改：`heima-leadnews-content/.../controller/page/ArticlePageController.java`（model 增加 authorId）
+- 修改：`heima-leadnews-content/src/main/resources/templates/article.ftl`（作者卡片/读完提示/推荐网格/回顶 HTML+CSS、暗色适配、响应式）
+- 修改：`heima-leadnews-content/src/main/resources/static/article-static.js`（loadEndAuthorCard、maybePreloadRecommend、读完提示 Observer、回顶、作者卡片关注联动）
+
+### 验证
+- `node --check article-static.js` 通过；待外部浏览器回归：作者卡片数据加载与关注同步、推荐横排渲染、回顶、读完提示显示。
+
 ## 2026-08-14 — 详情页互动闭环（阶段2）：分享/真实收藏/举报/动效
 
 ### 变更
