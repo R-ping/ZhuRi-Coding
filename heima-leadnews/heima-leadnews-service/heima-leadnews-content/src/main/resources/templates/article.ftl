@@ -2088,9 +2088,122 @@
         }
         .tip-pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .tip-pay-note { font-size: 11px; color: #bbb; text-align: center; margin-top: 10px; }
+
+        /* ========== 阅读进度条 ========== */
+        .reading-progress {
+            position: fixed;
+            top: 60px; /* 顶栏高度 */
+            left: 0;
+            height: 2px;
+            width: 0;
+            background: #1e80ff;
+            z-index: 101;
+            transition: width 0.1s linear;
+            pointer-events: none;
+        }
+
+        /* ========== 阅读设置：字号/行距（CSS 变量，运行时切换） ========== */
+        :root {
+            --read-font-size: 17px;
+            --read-line-height: 1.75;
+        }
+        .article-body {
+            font-size: var(--read-font-size);
+            line-height: var(--read-line-height);
+        }
+
+        /* ========== 暗色主题（body.dark 覆盖主阅读区域） ========== */
+        body.dark { background: #121212; color: #e4e6eb; }
+        body.dark .article-topbar { background: #1e1e1e; box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+        body.dark .content-card { background: #1e1e1e; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        body.dark .article-title { color: #e4e6eb; }
+        body.dark .author-name { color: #e4e6eb; }
+        body.dark .publish-meta,
+        body.dark .read-count,
+        body.dark .read-time,
+        body.dark .column-tag { color: #8a919f; }
+        body.dark .article-body { color: #c9d1d9; }
+        body.dark .article-body h1,
+        body.dark .article-body h2,
+        body.dark .article-body h3,
+        body.dark .article-body h4,
+        body.dark .article-body h5,
+        body.dark .article-body h6 { color: #e4e6eb; }
+        body.dark .article-body code,
+        body.dark .article-body pre { background: #161b22; color: #c9d1d9; border-color: #2d333b; }
+        body.dark .article-body blockquote { color: #8b949e; border-color: #2d333b; }
+        body.dark .action-sidebar { background: #1e1e1e; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+        body.dark .action-item .action-count { color: #8a919f; }
+        body.dark .modal-container { background: #1e1e1e; }
+        body.dark .modal-title,
+        body.dark .modal-subtitle { color: #e4e6eb; }
+        body.dark .modal-header,
+        body.dark .modal-footer { border-color: #2d333b; }
+        body.dark .setting-btn { background: #1e1e1e; color: #8a919f; border-color: #2d333b; }
+        body.dark .setting-btn.active { background: #eaf2ff; color: #1e80ff; border-color: #1e80ff; }
+
+        /* ========== 阅读设置弹窗 ========== */
+        .reader-settings-modal { width: 420px; }
+        .setting-group { margin-bottom: 20px; }
+        .setting-title { font-size: 14px; font-weight: 600; color: #252933; margin-bottom: 10px; }
+        .setting-buttons { display: flex; gap: 10px; }
+        .setting-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #e4e6eb;
+            border-radius: 6px;
+            background: #fff;
+            color: #515767;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .setting-btn:hover { border-color: #1e80ff; color: #1e80ff; }
+        .setting-btn.active { background: #eaf2ff; border-color: #1e80ff; color: #1e80ff; }
+
+        /* ========== 沉浸模式（body.immersive-mode） ========== */
+        .article-topbar,
+        .action-sidebar {
+            transition: opacity 0.3s ease;
+        }
+        body.immersive-mode .article-topbar,
+        body.immersive-mode .action-sidebar {
+            opacity: 0;
+            pointer-events: none;
+        }
+        body.immersive-mode .toc-sidebar {
+            display: none;
+        }
+        body.immersive-mode .main-wrapper {
+            max-width: 920px;
+        }
+        body.immersive-mode .content-area {
+            max-width: 100%;
+        }
+        /* 沉浸模式下提供退出按钮 */
+        .immersive-exit-btn {
+            display: none;
+            position: fixed;
+            top: 72px;
+            right: 24px;
+            z-index: 99;
+            padding: 6px 14px;
+            border: 1px solid #e4e6eb;
+            border-radius: 6px;
+            background: #fff;
+            color: #515767;
+            font-size: 13px;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .immersive-exit-btn:hover { color: #1e80ff; border-color: #1e80ff; }
+        body.immersive-mode .immersive-exit-btn { display: block; }
+        body.dark .immersive-exit-btn { background: #1e1e1e; color: #8a919f; border-color: #2d333b; }
     </style>
 </head>
 <body>
+    <!-- 阅读进度条 -->
+    <div class="reading-progress" id="readingProgress"></div>
     <!-- 顶栏（与主页 Web 端顶栏保持一致） -->
     <header class="article-topbar">
         <div class="topbar-inner">
@@ -2448,6 +2561,12 @@
             </div>
             <div class="action-count">沉浸</div>
         </div>
+        <div class="action-item" id="sideSettingsBtn">
+            <div class="action-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.996.996 0 0 0 .25-1.52L19.5 5.64c-.26-.46-.78-.64-1.24-.42l-2.5 1.07c-.33-.26-.73-.44-1.11-.51-.25-.44-.54-.85-.85-1.24l-.6-1.56a.996.996 0 0 0-.99-.72l-1.8.64c-.36.13-.76.3-1.24.51-.38.07-.78.25-1.11.51L5.86 3.28c-.45-.21-.98-.04-1.24.42L2.7 7.02c-.34.5-.21 1.16.25 1.52l2.01 1.56c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.996.996 0 0 0-.25 1.52l1.92 3.32c.26.46.78.64 1.24.42l2.5-1.07c.33.26.73.44 1.11.51.25.44.54.85.85 1.24l.6 1.56c.09.41.32.82.72.99.4.18.83.18 1.27 0l1.8-.64c.36-.13.76-.3 1.24-.51.38-.07.78-.25 1.11-.51l2.5 1.07c.45.21.98.04 1.24-.42l1.92-3.32c.26-.46.12-1.1-.25-1.52zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor"/></svg>
+            </div>
+            <div class="action-count">设置</div>
+        </div>
     </div>
 
     <div class="image-lightbox" id="imageLightbox">
@@ -2458,6 +2577,9 @@
     <button class="toc-float-btn" id="tocFloatBtn" aria-label="目录">
         <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
     </button>
+
+    <!-- 沉浸模式退出按钮 -->
+    <button class="immersive-exit-btn" id="immersiveExitBtn">退出沉浸</button>
 
     <div class="drawer-mask" id="drawerMask"></div>
     <div class="toc-drawer" id="tocDrawer">
@@ -2592,6 +2714,48 @@
                 <textarea class="tip-message-input" id="tipMessage" placeholder="说点什么鼓励一下作者（选填，最多200字）" maxlength="200"></textarea>
                 <button class="tip-pay-btn" id="tipPayBtn">立即赞赏</button>
                 <div class="tip-pay-note">赞赏金额将进入平台账户，用于支持作者创作</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 阅读设置弹窗 -->
+    <div class="modal-overlay" id="readerSettingsOverlay">
+        <div class="modal-container reader-settings-modal" id="readerSettingsModal">
+            <div class="modal-header">
+                <h3 class="modal-title">阅读设置</h3>
+                <p class="modal-subtitle">调整阅读体验，设置自动保存</p>
+                <button class="modal-close-btn" id="closeReaderSettings">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <div class="setting-title">字号</div>
+                    <div class="setting-buttons">
+                        <button class="setting-btn" data-font="15">A− 小</button>
+                        <button class="setting-btn" data-font="17">标准</button>
+                        <button class="setting-btn" data-font="19">A+ 大</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-title">行间距</div>
+                    <div class="setting-buttons">
+                        <button class="setting-btn" data-line="1.5">紧凑</button>
+                        <button class="setting-btn" data-line="1.75">标准</button>
+                        <button class="setting-btn" data-line="2.0">宽松</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-title">主题</div>
+                    <div class="setting-buttons">
+                        <button class="setting-btn" data-theme="light">浅色</button>
+                        <button class="setting-btn" data-theme="dark">暗色</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-title">模式</div>
+                    <div class="setting-buttons">
+                        <button class="setting-btn" id="toggleImmersiveBtn">切换沉浸阅读</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

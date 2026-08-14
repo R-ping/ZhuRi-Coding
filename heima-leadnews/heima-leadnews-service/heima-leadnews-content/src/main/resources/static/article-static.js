@@ -1510,4 +1510,134 @@
             loadTipList();
         }
     })();
+
+    // ========== 阅读进度条 ==========
+    var readingProgressEl = document.getElementById('readingProgress');
+    function updateReadingProgress() {
+        if (!readingProgressEl) return;
+        var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        var scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        var percent = scrollable > 0 ? Math.min(100, scrollTop / scrollable * 100) : 0;
+        readingProgressEl.style.width = percent.toFixed(2) + '%';
+    }
+    if (readingProgressEl) {
+        window.addEventListener('scroll', updateReadingProgress, { passive: true });
+        window.addEventListener('resize', updateReadingProgress);
+        updateReadingProgress();
+    }
+
+    // ========== 阅读偏好（字号/行距/主题/沉浸）持久化 ==========
+    var READER_KEY = 'zhuri_reader_settings';
+    var DEFAULT_SETTINGS = { fontSize: 17, lineHeight: 1.75, theme: 'light', immersive: false };
+
+    function loadReaderSettings() {
+        try {
+            var saved = localStorage.getItem(READER_KEY);
+            return saved ? Object.assign({}, DEFAULT_SETTINGS, JSON.parse(saved)) : DEFAULT_SETTINGS;
+        } catch (e) {
+            return DEFAULT_SETTINGS;
+        }
+    }
+
+    function applyReaderSettings(s) {
+        // 字号/行距：写入 html 内联变量，.article-body 自动生效
+        document.documentElement.style.setProperty('--read-font-size', s.fontSize + 'px');
+        document.documentElement.style.setProperty('--read-line-height', String(s.lineHeight));
+        // 主题
+        document.body.classList.toggle('dark', s.theme === 'dark');
+        // 沉浸
+        document.body.classList.toggle('immersive-mode', !!s.immersive);
+        // 同步设置面板按钮选中态
+        syncSettingButtons(s);
+    }
+
+    function saveReaderSettings(s) {
+        try { localStorage.setItem(READER_KEY, JSON.stringify(s)); } catch (e) {}
+    }
+
+    function syncSettingButtons(s) {
+        document.querySelectorAll('.setting-btn[data-font]').forEach(function (b) {
+            b.classList.toggle('active', parseInt(b.getAttribute('data-font'), 10) === s.fontSize);
+        });
+        document.querySelectorAll('.setting-btn[data-line]').forEach(function (b) {
+            b.classList.toggle('active', parseFloat(b.getAttribute('data-line')) === s.lineHeight);
+        });
+        document.querySelectorAll('.setting-btn[data-theme]').forEach(function (b) {
+            b.classList.toggle('active', b.getAttribute('data-theme') === s.theme);
+        });
+    }
+
+    var readerSettings = loadReaderSettings();
+    applyReaderSettings(readerSettings);
+
+    // ========== 阅读设置弹窗 ==========
+    var readerOverlay = document.getElementById('readerSettingsOverlay');
+    function openReaderSettings() {
+        if (!readerOverlay) return;
+        readerOverlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeReaderSettings() {
+        if (!readerOverlay) return;
+        readerOverlay.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    var closeReaderBtn = document.getElementById('closeReaderSettings');
+    if (closeReaderBtn) closeReaderBtn.addEventListener('click', closeReaderSettings);
+    if (readerOverlay) {
+        readerOverlay.addEventListener('click', function (e) {
+            if (e.target === readerOverlay) closeReaderSettings();
+        });
+    }
+
+    // 字号
+    document.querySelectorAll('.setting-btn[data-font]').forEach(function (b) {
+        b.addEventListener('click', function () {
+            readerSettings.fontSize = parseInt(this.getAttribute('data-font'), 10);
+            saveReaderSettings(readerSettings);
+            applyReaderSettings(readerSettings);
+        });
+    });
+    // 行距
+    document.querySelectorAll('.setting-btn[data-line]').forEach(function (b) {
+        b.addEventListener('click', function () {
+            readerSettings.lineHeight = parseFloat(this.getAttribute('data-line'));
+            saveReaderSettings(readerSettings);
+            applyReaderSettings(readerSettings);
+        });
+    });
+    // 主题
+    document.querySelectorAll('.setting-btn[data-theme]').forEach(function (b) {
+        b.addEventListener('click', function () {
+            readerSettings.theme = this.getAttribute('data-theme');
+            saveReaderSettings(readerSettings);
+            applyReaderSettings(readerSettings);
+        });
+    });
+    // 沉浸开关（设置弹窗内）
+    var toggleImmersiveBtn = document.getElementById('toggleImmersiveBtn');
+    if (toggleImmersiveBtn) {
+        toggleImmersiveBtn.addEventListener('click', function () {
+            readerSettings.immersive = !readerSettings.immersive;
+            saveReaderSettings(readerSettings);
+            applyReaderSettings(readerSettings);
+            closeReaderSettings();
+        });
+    }
+
+    // 右侧悬浮栏「设置」入口
+    var sideSettingsBtn = document.getElementById('sideSettingsBtn');
+    if (sideSettingsBtn) sideSettingsBtn.addEventListener('click', openReaderSettings);
+
+    // ========== 沉浸模式 ==========
+    function toggleImmersiveMode() {
+        readerSettings.immersive = !readerSettings.immersive;
+        saveReaderSettings(readerSettings);
+        applyReaderSettings(readerSettings);
+    }
+    var sideImmersiveBtn = document.getElementById('sideImmersiveBtn');
+    if (sideImmersiveBtn) sideImmersiveBtn.addEventListener('click', toggleImmersiveMode);
+    var immersiveExitBtn = document.getElementById('immersiveExitBtn');
+    if (immersiveExitBtn) immersiveExitBtn.addEventListener('click', toggleImmersiveMode);
 })();
