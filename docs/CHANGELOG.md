@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 2026-08-14 — 详情页互动闭环（阶段2）：分享/真实收藏/举报/动效
+
+### 变更
+
+1. **新增分享面板**：详情页右侧悬浮栏「分享」按钮改为真实分享面板（微信/微博/QQ/掘金 + 复制链接），支持 `navigator.clipboard` 复制并降级 `execCommand`；微信/掘金复制文案、微博/QQ 打开分享窗口。
+2. **收藏改为真实切换**：移除原假「收藏集」弹窗，收藏按钮直接调用 `POST /api/v1/article/{id}/collect` 真实 toggle，并联动计数与选中态。
+3. **点赞/收藏动效**：点赞、收藏、关注按钮点击触发 `actionBurst` 缩放动画，计数数字 `count-bump` 跳动上色，提升交互反馈。
+4. **真实举报功能**：举报弹窗支持原因单选（必填）+ 补充说明（≤100字）+ 最多 4 张图片上传（复用 OSS `post_signature` 直传、可预览/移除）；提交调用新增 `POST /api/v1/article/{id}/report` 接口落库 `ap_article_report`。
+5. **后端举报接口**：`ArticleInteractionController` 新增 `/{id}/report`，校验登录与文章存在、必填原因，记录举报人/文章/作者/原因/说明/图片/状态（0待处理），事务提交。
+6. **新增举报数据表**：`ap_article_report`（举报人/文章/作者/原因/说明/图片URL/状态/时间，含 article_id、user_id 索引）；实体 `ApArticleReport`、Mapper `ApArticleReportMapper`、DTO `ArticleReportDto`、迁移脚本 `create_ap_article_report.sql`，`schema.sql` 同步。
+
+### 变更文件
+- 修改：`heima-leadnews-content/src/main/resources/templates/article.ftl`（移除假收藏集弹窗、新增分享面板 HTML/CSS、动效 CSS、举报图片上传 UI）
+- 修改：`heima-leadnews-content/src/main/resources/static/article-static.js`（分享面板逻辑、收藏真实 toggle、动效、举报图片上传与提交）
+- 新增：`heima-leadnews-model/.../behavior/pojos/ApArticleReport.java`、`behavior/dtos/ArticleReportDto.java`
+- 新增：`heima-leadnews-content/.../mapper/interaction/ApArticleReportMapper.java`
+- 修改：`heima-leadnews-content/.../controller/v1/article/ArticleInteractionController.java`（新增 report 接口）
+- 新增：`heima-leadnews-content/src/main/resources/db/migrations/create_ap_article_report.sql`
+- 修改：`heima-leadnews-content/src/main/resources/db/schema.sql`
+
+### 验证
+- `node --check article-static.js` 通过；待外部浏览器回归：分享面板复制/跳转、点赞收藏动效、收藏真实 toggle、举报图片上传提交、未登录触点唤起登录。
+
 ## 2026-08-14 — 详情页阅读体验升级（阶段1）
 
 ### 变更

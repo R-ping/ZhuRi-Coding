@@ -1208,6 +1208,165 @@
             height: auto;
         }
 
+        /* ========== 点赞/收藏 动效 ========== */
+        .action-icon,
+        .action-btn svg {
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), fill 0.2s;
+        }
+        .action-item.bursting .action-icon,
+        .action-btn.bursting svg {
+            animation: actionBurst 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes actionBurst {
+            0%   { transform: scale(1); }
+            35%  { transform: scale(1.45) rotate(-8deg); }
+            70%  { transform: scale(0.92); }
+            100% { transform: scale(1); }
+        }
+        .action-btn svg,
+        .action-sidebar .action-icon svg {
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        /* 数字平滑跳动 */
+        .action-count {
+            transition: color 0.2s, transform 0.2s;
+        }
+        .action-count.count-bump {
+            color: #1e80ff;
+            transform: scale(1.25);
+        }
+
+        /* ========== 分享面板 ========== */
+        .share-panel {
+            position: fixed;
+            left: 84px;
+            top: 50%;
+            transform: translateY(-50%) scale(0.92);
+            transform-origin: left center;
+            width: 264px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+            border: 1px solid #f2f3f5;
+            padding: 16px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, transform 0.2s, visibility 0.2s;
+        }
+        .share-panel.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(-50%) scale(1);
+        }
+        .share-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .share-panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #252933;
+        }
+        .share-panel-close {
+            border: none;
+            background: none;
+            font-size: 20px;
+            color: #8a919f;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0 4px;
+        }
+        .share-panel-close:hover {
+            color: #252933;
+        }
+        .share-panel-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .share-option {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 0;
+            border: none;
+            border-radius: 8px;
+            background: #f7f8fa;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s;
+        }
+        .share-option:hover {
+            background: #eaf2ff;
+            transform: translateY(-2px);
+        }
+        .share-option:active {
+            transform: scale(0.95);
+        }
+        .share-icon {
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .share-icon svg {
+            width: 22px;
+            height: 22px;
+            fill: #515767;
+        }
+        .share-option[data-share="wechat"] .share-icon svg { fill: #07c160; }
+        .share-option[data-share="weibo"] .share-icon svg { fill: #e6162d; }
+        .share-option[data-share="qq"] .share-icon svg { fill: #12b7f5; }
+        .share-option[data-share="juejin"] .share-icon svg { fill: #1e80ff; }
+        .share-label {
+            font-size: 12px;
+            color: #515767;
+        }
+        .share-copy-row {
+            display: flex;
+            gap: 8px;
+        }
+        .share-link-input {
+            flex: 1;
+            min-width: 0;
+            height: 32px;
+            padding: 0 10px;
+            border: 1px solid #e4e6eb;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #8a919f;
+            background: #f7f8fa;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .share-copy-btn {
+            height: 32px;
+            padding: 0 14px;
+            border: none;
+            border-radius: 6px;
+            background: #1e80ff;
+            color: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        .share-copy-btn:hover {
+            background: #0056d6;
+        }
+        body.dark .share-panel { background: #1e1e1e; border-color: #333; }
+        body.dark .share-panel-title { color: #e5e6eb; }
+        body.dark .share-panel-close { color: #8a919f; }
+        body.dark .share-option { background: #2a2a2a; }
+        body.dark .share-option:hover { background: #333; }
+        body.dark .share-label { color: #c0c4cc; }
+        body.dark .share-link-input { background: #2a2a2a; border-color: #444; color: #c0c4cc; }
+
         .image-lightbox {
             display: none;
             position: fixed;
@@ -1318,102 +1477,6 @@
             justify-content: flex-end;
         }
 
-        /* ========== 收藏集弹窗 ========== */
-        .collect-list {
-            list-style: none;
-            margin: 0 0 16px;
-            padding: 0;
-        }
-        .collect-item {
-            padding: 0;
-            border-bottom: 1px solid #f7f8fa;
-        }
-        .collect-item-label {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 0;
-            cursor: pointer;
-            min-height: 56px;
-        }
-        .collect-item-label:hover {
-            background: #f7f8fa;
-            margin: 0 -12px;
-            padding: 12px;
-        }
-        .collect-item-info {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .collect-item-name {
-            font-size: 14px;
-            font-weight: 500;
-            color: #252933;
-        }
-        .collect-item-tag {
-            display: inline-block;
-            font-size: 11px;
-            color: #1e80ff;
-            background: #eaf2ff;
-            padding: 1px 6px;
-            border-radius: 3px;
-            margin-left: 6px;
-        }
-        .collect-item-meta {
-            font-size: 12px;
-            color: #8a919f;
-        }
-        .collect-checkbox {
-            display: none;
-        }
-        .checkmark {
-            width: 18px;
-            height: 18px;
-            border: 2px solid #c4c9d1;
-            border-radius: 3px;
-            display: inline-block;
-            position: relative;
-            flex-shrink: 0;
-        }
-        .collect-checkbox:checked + .checkmark {
-            background: #1e80ff;
-            border-color: #1e80ff;
-        }
-        .collect-checkbox:checked + .checkmark::after {
-            content: '';
-            position: absolute;
-            left: 5px;
-            top: 1px;
-            width: 5px;
-            height: 10px;
-            border: solid #fff;
-            border-width: 0 2px 2px 0;
-            transform: rotate(45deg);
-        }
-        .collect-create-link {
-            display: block;
-            font-size: 14px;
-            color: #1e80ff;
-            padding: 8px 0;
-        }
-        .collect-create-link:hover {
-            color: #0056d6;
-        }
-        .collect-confirm-btn {
-            padding: 8px 32px;
-            border: none;
-            border-radius: 4px;
-            background: #1e80ff;
-            color: #fff;
-            font-size: 14px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .collect-confirm-btn:hover {
-            background: #0056d6;
-        }
-
         /* ========== 举报弹窗 ========== */
         .report-modal {
             width: 520px;
@@ -1521,6 +1584,38 @@
             font-size: 11px;
             color: #8a919f;
             margin-top: 4px;
+        }
+        /* 举报图片预览缩略图 */
+        .report-preview-item {
+            width: 80px;
+            height: 80px;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .report-preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .report-preview-remove {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 18px;
+            height: 18px;
+            line-height: 18px;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.55);
+            color: #fff;
+            font-size: 14px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .report-preview-remove:hover {
+            background: rgba(0, 0, 0, 0.75);
         }
         .report-footer {
             gap: 12px;
@@ -2569,6 +2664,36 @@
         </div>
     </div>
 
+    <!-- 分享面板 -->
+    <div class="share-panel" id="sharePanel">
+        <div class="share-panel-header">
+            <span class="share-panel-title">分享文章</span>
+            <button class="share-panel-close" id="closeSharePanel" aria-label="关闭">&times;</button>
+        </div>
+        <div class="share-panel-grid">
+            <button class="share-option" data-share="wechat" title="复制微信分享文案">
+                <span class="share-icon"><svg viewBox="0 0 24 24"><path d="M9.5 4C5.36 4 2 6.69 2 10c0 1.84.99 3.5 2.54 4.59l-.63 2.16 2.2-1.13c.67.19 1.38.3 2.11.32-.16-.5-.25-1.03-.25-1.58 0-3.09 2.91-5.59 6.5-5.59.3 0 .59.02.88.05C14.85 5.86 12.38 4 9.5 4zm-2.2 3.75c-.51 0-.93-.41-.93-.93s.42-.93.93-.93.93.42.93.93-.42.93-.93.93zm4.4 0c-.51 0-.93-.41-.93-.93s.42-.93.93-.93.93.42.93.93-.42.93-.93.93zM21.5 13.5c0-2.69-2.68-4.87-6-4.87s-6 2.18-6 4.87 2.68 4.87 6 4.87c.64 0 1.25-.1 1.83-.29l2.25 1.08-.59-1.96c1.37-.99 2.51-2.3 2.51-3.83zm-4.3-.75c-.34 0-.62-.28-.62-.62s.28-.62.62-.62.62.28.62.62-.28.62-.62.62zm-3.4 0c-.34 0-.62-.28-.62-.62s.28-.62.62-.62.62.28.62.62-.28.62-.62.62z"/></svg></span>
+                <span class="share-label">微信</span>
+            </button>
+            <button class="share-option" data-share="weibo" title="分享到微博">
+                <span class="share-icon"><svg viewBox="0 0 24 24"><path d="M10.87 17.07c-2.04-.45-3.86-1.57-5.02-3.24-.16-.22-.1-.53.1-.68.2-.15.51-.1.66.1 1.03 1.47 2.62 2.45 4.4 2.84.25.06.4.31.34.57-.06.25-.3.43-.48.41zm5.12-1.3c-.18-.17-.44-.2-.66-.07-.11.06-.24.11-.38.14-.9.24-1.94.19-2.95-.05-.21-.05-.43.08-.48.29-.05.21.08.43.29.48 1.12.26 2.26.31 3.24.05.2-.06.34-.24.34-.45 0-.13-.06-.27-.19-.39zM12.5 1.5c.23 0 .41.19.41.42 0 .23-.18.41-.41.41-3.11 0-5.94 1.51-7.6 4.03-.1.15-.31.2-.46.1-.16-.1-.21-.31-.11-.46C6.7 2.73 9.48 1.5 12.5 1.5zM12.5 0c-.28 0-.5.22-.5.5s.22.5.5.5c3.41 0 6.5 1.67 8.3 4.47.11.17.34.22.51.11.17-.11.22-.34.11-.51C19.89 2.08 16.44 0 12.5 0zM14.6 4.9c-.21-.12-.48-.05-.6.16-.12.21-.05.48.16.6 1.47.84 2.44 2.3 2.72 3.99.04.23.24.4.47.4.02 0 .05 0 .07-.01.26-.05.43-.3.38-.56C17.51 6.56 16.36 4.85 14.6 4.9zM19.1 12.26c-1.67 3.3-5.15 5.62-8.74 5.85-.55.03-1.1-.01-1.64-.1-.25-.04-.51.06-.68.27-.67.84-2.75 2.72-4.69 2.72H3.27c-.15 0-.27-.12-.27-.27v-.12c.22-1.7 1.38-2.98 2.34-3.78-1.25-.66-2.1-1.84-2.1-3.13 0-2.64 3.17-4.77 7.09-4.77.63 0 1.26.06 1.86.19.8-1.1 2.17-1.82 3.7-1.82.39 0 .78.05 1.14.16.14.04.29.03.41-.05l2.07-1.47c.35-.25.82.06.74.49l-.31 1.55c-.05.24.04.49.23.64 1.27 1.04 2.11 2.64 2.11 4.36 0 .58-.1 1.15-.28 1.69z"/></svg></span>
+                <span class="share-label">微博</span>
+            </button>
+            <button class="share-option" data-share="qq" title="分享到 QQ">
+                <span class="share-icon"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5.5 13.28c-.18.5-.42.97-.74 1.4-.13.17-.06.43.14.52.3.15.59.32.86.53.21.16.15.48-.08.6-2.1 1.12-4.8 1.67-6.68 1.67-1.87 0-4.57-.55-6.67-1.67-.23-.12-.3-.44-.09-.6.28-.2.57-.38.87-.53.2-.09.27-.35.14-.52-.32-.43-.56-.9-.74-1.4-.1-.28-.37-.44-.65-.39-1.32.23-2.2-.61-1.48-1.73.48-.75 1.4-.95 2.17-.9-.06-.9-.45-1.7-.58-2.57-.18-1.27.4-2.18 1.55-2.74C9.9 6.42 10.9 6.5 12 6.5s2.1-.08 3.17.42c1.15.56 1.73 1.47 1.55 2.74-.13.87-.52 1.67-.58 2.57.77-.05 1.69.15 2.17.9.72 1.12-.16 1.96-1.48 1.73-.27-.05-.54.11-.64.39z"/></svg></span>
+                <span class="share-label">QQ</span>
+            </button>
+            <button class="share-option" data-share="juejin" title="复制掘金分享文案">
+                <span class="share-icon"><svg viewBox="0 0 24 24"><path d="M12 2l2.4 2.4L12 6.8 9.6 4.4 12 2zM6.4 8.4L12 14l5.6-5.6L12 2.8 6.4 8.4zm0 5.2L12 19.2l5.6-5.6L12 8 6.4 13.6z"/></svg></span>
+                <span class="share-label">掘金</span>
+            </button>
+        </div>
+        <div class="share-copy-row">
+            <input type="text" class="share-link-input" id="shareLinkInput" readonly>
+            <button class="share-copy-btn" id="shareCopyBtn">复制链接</button>
+        </div>
+    </div>
+
     <div class="image-lightbox" id="imageLightbox">
         <button class="close-btn" id="closeLightbox">&times;</button>
         <img src="" class="lightbox-content" id="lightboxImage">
@@ -2594,48 +2719,6 @@
                 </#list>
             </#if>
         </ul>
-    </div>
-
-    <!-- 收藏集选择弹窗 -->
-    <div class="modal-overlay" id="collectModalOverlay">
-        <div class="modal-container collect-modal" id="collectModal">
-            <div class="modal-header">
-                <div class="modal-title-group">
-                    <h3 class="modal-title">选择收藏集</h3>
-                    <p class="modal-subtitle">选择或创建你想添加的收藏集</p>
-                </div>
-                <button class="modal-close-btn" id="closeCollectModal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <ul class="collect-list" id="collectList">
-                    <li class="collect-item">
-                        <label class="collect-item-label">
-                            <div class="collect-item-info">
-                                <span class="collect-item-name">我的收藏</span>
-                                <span class="collect-item-tag">默认</span>
-                                <span class="collect-item-meta">7 篇文章 · 0 订阅</span>
-                            </div>
-                            <input type="checkbox" class="collect-checkbox" checked>
-                            <span class="checkmark"></span>
-                        </label>
-                    </li>
-                    <li class="collect-item">
-                        <label class="collect-item-label">
-                            <div class="collect-item-info">
-                                <span class="collect-item-name">前端技术</span>
-                                <span class="collect-item-meta">3 篇文章 · 0 订阅</span>
-                            </div>
-                            <input type="checkbox" class="collect-checkbox">
-                            <span class="checkmark"></span>
-                        </label>
-                    </li>
-                </ul>
-                <a href="javascript:void(0)" class="collect-create-link">+ 新建收藏集</a>
-            </div>
-            <div class="modal-footer">
-                <button class="collect-confirm-btn" id="collectConfirmBtn">确定</button>
-            </div>
-        </div>
     </div>
 
     <!-- 举报反馈弹窗 -->
@@ -2681,9 +2764,10 @@
                 <div class="report-upload-group">
                     <div class="report-upload-label">上传图片（选填，最多4张）</div>
                     <div class="report-upload-area" id="reportUploadArea">
-                        <div class="report-upload-box">
+                        <input type="file" id="reportImageInput" accept="image/*" multiple style="display:none;">
+                        <div class="report-upload-box" id="reportUploadBox">
                             <span class="upload-plus">+</span>
-                            <span class="upload-text">上传 0/4</span>
+                            <span class="upload-text" id="reportUploadText">上传 0/4</span>
                         </div>
                     </div>
                 </div>

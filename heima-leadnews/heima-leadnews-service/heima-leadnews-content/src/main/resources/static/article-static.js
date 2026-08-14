@@ -487,20 +487,45 @@
         }
     }
 
+    // ========== 点赞/收藏 动效 ==========
+    // 点击按钮触发的弹跳/缩放动画
+    function burstAction(el) {
+        if (!el) return;
+        el.classList.remove('bursting');
+        // 强制回流以重启动画
+        void el.offsetWidth;
+        el.classList.add('bursting');
+        setTimeout(function() { el.classList.remove('bursting'); }, 500);
+    }
+    // 计数平滑变化：数值变化时短暂放大跳动
+    function bumpCount(el, newVal, oldVal) {
+        if (!el) return;
+        el.textContent = newVal;
+        if (newVal === oldVal) return;
+        el.classList.remove('count-bump');
+        void el.offsetWidth;
+        el.classList.add('count-bump');
+        setTimeout(function() { el.classList.remove('count-bump'); }, 320);
+    }
+
     // ========== 点赞/收藏/关注 API ==========
     var likeBtn = document.getElementById('likeBtn');
     if (likeBtn) {
         likeBtn.addEventListener('click', function() {
-            if (!isLoggedIn()) { openLoginModal(); return; }
+            if (!isLoggedIn()) { showToast('请先登录'); openLoginModal(); return; }
             var btn = this;
+            burstAction(btn);
             apiPost('/content/api/v1/article/' + articleId + '/like').then(function(res) {
                 if (res && res.code === 200 && res.data) {
                     btn.classList.toggle('active', res.data.liked);
                     document.getElementById('likeBtnText').textContent = res.data.liked ? '已赞' : '点赞';
+                    var prev = diggCount;
                     diggCount = res.data.diggCount || 0;
                     updateSidebarCounts();
+                    bumpCount(document.querySelector('#sideLikeBtn .action-count'), diggCount, prev);
                     var sideLikeBtn = document.getElementById('sideLikeBtn');
                     sideLikeBtn.classList.toggle('active', res.data.liked);
+                    burstAction(sideLikeBtn);
                 }
             }).catch(function(err) { console.error('点赞失败:', err); });
         });
@@ -509,21 +534,20 @@
     var collectBtn = document.getElementById('collectBtn');
     if (collectBtn) {
         collectBtn.addEventListener('click', function() {
-            if (!isLoggedIn()) { openLoginModal(); return; }
+            if (!isLoggedIn()) { showToast('请先登录'); openLoginModal(); return; }
             var btn = this;
-            // 打开收藏集选择弹窗
-            if (typeof openCollectModal === 'function') {
-                openCollectModal();
-                return;
-            }
+            burstAction(btn);
             apiPost('/content/api/v1/article/' + articleId + '/collect').then(function(res) {
                 if (res && res.code === 200 && res.data) {
                     btn.classList.toggle('active', res.data.collected);
                     document.getElementById('collectBtnText').textContent = res.data.collected ? '已收藏' : '收藏';
+                    var prev = collectCount;
                     collectCount = res.data.collectCount || 0;
                     updateSidebarCounts();
+                    bumpCount(document.querySelector('#sideCollectBtn .action-count'), collectCount, prev);
                     var sideCollectBtn = document.getElementById('sideCollectBtn');
                     sideCollectBtn.classList.toggle('active', res.data.collected);
+                    burstAction(sideCollectBtn);
                 }
             }).catch(function(err) { console.error('收藏失败:', err); });
         });
@@ -549,7 +573,7 @@
     if (followBtn) followBtn.addEventListener('click', handleFollow);
     if (authorFollowBtn) authorFollowBtn.addEventListener('click', handleFollow);
 
-    // 侧边栏点赞/收藏
+    // 侧边栏点赞/收藏/分享/举报
     var sideLikeBtn = document.getElementById('sideLikeBtn');
     if (sideLikeBtn) {
         sideLikeBtn.addEventListener('click', function() {
@@ -560,11 +584,6 @@
     var sideCollectBtn = document.getElementById('sideCollectBtn');
     if (sideCollectBtn) {
         sideCollectBtn.addEventListener('click', function() {
-            // 打开收藏集选择弹窗
-            if (typeof openCollectModal === 'function') {
-                openCollectModal();
-                return;
-            }
             var cb = document.getElementById('collectBtn');
             if (cb) cb.click();
         });
@@ -1252,39 +1271,123 @@
         });
     }
 
-    // ========== 收藏集弹窗 ==========
-    function openCollectModal() {
-        var overlay = document.getElementById('collectModalOverlay');
-        if (overlay) overlay.classList.add('open');
-        document.body.style.overflow = 'hidden';
+    // ========== 分享面板 ==========
+    var sharePanel = document.getElementById('sharePanel');
+    var shareLinkInput = document.getElementById('shareLinkInput');
+    var closeSharePanelBtn = document.getElementById('closeSharePanel');
+    var shareCopyBtn = document.getElementById('shareCopyBtn');
+    var currentShareUrl = window.location.href;
+
+    // 复制到剪贴板（优先 navigator.clipboard，降级 execCommand）
+    function copyFallback(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        return ok;
     }
-    function closeCollectModal() {
-        var overlay = document.getElementById('collectModalOverlay');
-        if (overlay) overlay.classList.remove('open');
-        document.body.style.overflow = '';
+    function copyToClipboard(text, successMsg) {
+        var done = function(ok) {
+            showToast(ok ? successMsg : '复制失败，请手动复制');
+        };
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(function() { done(true); }, function() { done(copyFallback(text)); });
+        } else {
+            done(copyFallback(text));
+        }
     }
-    var closeCollectBtn = document.getElementById('closeCollectModal');
-    var collectModalOverlay = document.getElementById('collectModalOverlay');
-    var collectConfirmBtn = document.getElementById('collectConfirmBtn');
-    if (closeCollectBtn) closeCollectBtn.addEventListener('click', closeCollectModal);
-    if (collectModalOverlay) {
-        collectModalOverlay.addEventListener('click', function(e) {
-            if (e.target === collectModalOverlay) closeCollectModal();
+
+    function openSharePanel() {
+        if (sharePanel) {
+            if (shareLinkInput) shareLinkInput.value = currentShareUrl;
+            sharePanel.classList.add('open');
+        }
+    }
+    function closeSharePanel() {
+        if (sharePanel) sharePanel.classList.remove('open');
+    }
+    if (closeSharePanelBtn) closeSharePanelBtn.addEventListener('click', closeSharePanel);
+    // 点击面板外部关闭
+    if (sharePanel) {
+        document.addEventListener('click', function(e) {
+            if (sharePanel.classList.contains('open') &&
+                !sharePanel.contains(e.target) &&
+                !document.getElementById('sideShareBtn').contains(e.target)) {
+                closeSharePanel();
+            }
         });
     }
-    if (collectConfirmBtn) {
-        collectConfirmBtn.addEventListener('click', function() {
-            alert('收藏成功！');
-            closeCollectModal();
+    // 复制链接
+    if (shareCopyBtn) {
+        shareCopyBtn.addEventListener('click', function() {
+            if (!shareLinkInput) return;
+            copyToClipboard(shareLinkInput.value, '链接已复制');
+            shareCopyBtn.textContent = '已复制';
+            setTimeout(function() { shareCopyBtn.textContent = '复制链接'; }, 2000);
+        });
+    }
+    // 分享选项
+    document.querySelectorAll('.share-option').forEach(function(opt) {
+        opt.addEventListener('click', function() {
+            var share = this.getAttribute('data-share');
+            var title = document.title || '分享文章';
+            var desc = '推荐一篇文章，快来阅读吧！';
+            var url = currentShareUrl;
+            var wechatText = title + '\n' + url + '\n' + desc;
+            switch (share) {
+                case 'wechat':
+                    // 微信：复制文案
+                    copyToClipboard(wechatText, '微信分享文案已复制');
+                    closeSharePanel();
+                    break;
+                case 'weibo':
+                    window.open('https://service.weibo.com/share/share.php?title=' + encodeURIComponent(title) + '&url=' + encodeURIComponent(url) + '&appkey=&source=&pic=&ralateUid=&language=zh_cn', '_blank', 'width=615,height=505');
+                    closeSharePanel();
+                    break;
+                case 'qq':
+                    window.open('https://connect.qq.com/widget/shareqq/index.html?title=' + encodeURIComponent(title) + '&url=' + encodeURIComponent(url) + '&desc=' + encodeURIComponent(desc), '_blank', 'width=700,height=520');
+                    closeSharePanel();
+                    break;
+                case 'juejin':
+                    // 掘金：复制掘金风格文案
+                    var juejinText = '推荐一篇文章：' + title + '\n' + url + '\n\n文章来源：逐日Coding';
+                    copyToClipboard(juejinText, '已复制掘金分享文案');
+                    closeSharePanel();
+                    break;
+            }
+        });
+    });
+    // 侧边栏分享按钮
+    var sideShareBtn = document.getElementById('sideShareBtn');
+    if (sideShareBtn) {
+        sideShareBtn.addEventListener('click', function() {
+            if (sharePanel && sharePanel.classList.contains('open')) {
+                closeSharePanel();
+            } else {
+                openSharePanel();
+            }
         });
     }
 
     // ========== 举报弹窗 ==========
     var selectedReportReason = '';
+    var reportImages = [];
     function openReportModal() {
         var overlay = document.getElementById('reportModalOverlay');
         if (overlay) overlay.classList.add('open');
         document.body.style.overflow = 'hidden';
+        selectedReportReason = '';
+        document.querySelectorAll('.report-option-btn').forEach(function(b) { b.classList.remove('selected'); });
+        if (reportTextarea) reportTextarea.value = '';
+        if (reportCharCount) reportCharCount.textContent = '0';
+        // 重置已选图片
+        reportImages = [];
+        renderReportPreview();
     }
     function closeReportModal() {
         var overlay = document.getElementById('reportModalOverlay');
@@ -1302,21 +1405,136 @@
             if (e.target === reportModalOverlay) closeReportModal();
         });
     }
+    // 举报真实提交
     if (confirmReportBtn) {
         confirmReportBtn.addEventListener('click', function() {
             if (!selectedReportReason) {
-                alert('请选择举报原因');
+                showToast('请选择举报原因');
                 return;
             }
-            alert('举报已提交，感谢您的反馈！');
-            closeReportModal();
+            // 先上传所有图片，获取 URL 列表
+            var uploadPromises = reportImages.map(function(file) {
+                return new Promise(function(resolve) {
+                    uploadReportImage(file, function(url) {
+                        resolve(url);
+                    });
+                });
+            });
+            Promise.all(uploadPromises).then(function(urls) {
+                var body = {
+                    reason: selectedReportReason,
+                    description: document.getElementById('reportTextarea').value || '',
+                    imageUrls: urls.filter(function(u) { return u; })
+                };
+                return apiPost('/content/api/v1/article/' + articleId + '/report', body);
+            }).then(function(res) {
+                if (res && res.code === 200) {
+                    showToast('举报已提交，感谢您的反馈！');
+                    reportImages = [];
+                    renderReportPreview();
+                    closeReportModal();
+                } else {
+                    showToast(res ? (res.errorMessage || '提交失败') : '网络异常');
+                }
+            }).catch(function(err) {
+                console.error('举报提交失败:', err);
+                showToast('提交失败，请稍后重试');
+            });
+        });
+    }
+    // 举报图片上传（复用 OSS 直传）
+    function uploadReportImage(file, onDone) {
+        if (!file) return;
+        apiGet('/content/api/v1/media/oss/post_signature').then(function(res) {
+            if (!res || res.code !== 200 || !res.data) {
+                showToast('获取上传签名失败');
+                onDone('');
+                return;
+            }
+            var data = res.data;
+            var ext = file.name.substring(file.name.lastIndexOf('.'));
+            var objectKey = data.dir + 'report/' + Date.now() + '_' + Math.random().toString(36).substring(2, 8) + ext;
+            var formData = new FormData();
+            formData.append('name', file.name);
+            formData.append('key', objectKey);
+            formData.append('policy', data.policy);
+            formData.append('OSSAccessKeyId', data.ossAccessKeyId);
+            formData.append('success_action_status', '200');
+            formData.append('signature', data.signature);
+            formData.append('file', file);
+            return fetch(data.host, { method: 'POST', body: formData, mode: 'no-cors' }).then(function() {
+                return { host: data.host, objectKey: objectKey };
+            });
+        }).then(function(info) {
+            if (!info) { onDone(''); return; }
+            return apiGet('/content/api/v1/media/oss/presigned_url?key=' + encodeURIComponent(info.objectKey)).then(function(pres) {
+                if (pres && pres.code === 200 && pres.data && pres.data.url) {
+                    onDone(pres.data.url);
+                } else {
+                    onDone(info.host + '/' + info.objectKey);
+                }
+            });
+        }).catch(function(err) {
+            console.error('举报图片上传失败:', err);
+            onDone('');
+        });
+    }
+    // 举报图片预览渲染
+    function renderReportPreview() {
+        var area = document.getElementById('reportUploadArea');
+        if (!area) return;
+        // 保留 upload-box
+        var uploadBox = document.getElementById('reportUploadBox');
+        // 清除旧的预览
+        area.querySelectorAll('.report-preview-item').forEach(function(el) { el.remove(); });
+        // 插入预览
+        reportImages.forEach(function(file, idx) {
+            var item = document.createElement('div');
+            item.className = 'report-preview-item';
+            var img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            img.alt = '预览';
+            var rm = document.createElement('span');
+            rm.className = 'report-preview-remove';
+            rm.textContent = '\u00d7';
+            rm.addEventListener('click', function() {
+                reportImages.splice(idx, 1);
+                renderReportPreview();
+            });
+            item.appendChild(img);
+            item.appendChild(rm);
+            area.insertBefore(item, uploadBox);
+        });
+        var text = document.getElementById('reportUploadText');
+        if (text) text.textContent = '上传 ' + reportImages.length + '/4';
+        if (reportImages.length >= 4) {
+            if (uploadBox) uploadBox.style.display = 'none';
+        } else {
+            if (uploadBox) uploadBox.style.display = 'flex';
+        }
+    }
+    // 举报图片选择
+    var reportImageInput = document.getElementById('reportImageInput');
+    var reportUploadBox = document.getElementById('reportUploadBox');
+    if (reportUploadBox) {
+        reportUploadBox.addEventListener('click', function() {
+            if (reportImages.length >= 4) { showToast('最多上传4张图片'); return; }
+            if (reportImageInput) reportImageInput.click();
+        });
+    }
+    if (reportImageInput) {
+        reportImageInput.addEventListener('change', function() {
+            var files = Array.from(this.files);
+            var remaining = 4 - reportImages.length;
+            files.slice(0, remaining).forEach(function(f) { reportImages.push(f); });
+            renderReportPreview();
+            this.value = '';
         });
     }
 
     // 举报原因选择
     document.querySelectorAll('.report-option-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
-            // 同一组内取消其他选择
             var group = this.parentNode;
             group.querySelectorAll('.report-option-btn').forEach(function(b) {
                 b.classList.remove('selected');
