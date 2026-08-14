@@ -2,14 +2,14 @@
     <div class="list-item">
         <span class="title" v-html="displayTitle"></span>
         <div class="item-image">
-            <img class="image" v-for="img in data.image" :src="img" :key="img"/>
+            <img class="image" v-for="img in data.image" :src="img" :key="img" loading="lazy"/>
         </div>
         <div class="item-l">
             <div class="tag-list" v-if="data.tags && data.tags.length">
                 <span class="tag-item" v-for="tag in data.tags" :key="tag">{{tag}}</span>
             </div>
             <div class="tags">
-                <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像"/>
+                <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像" loading="lazy"/>
                 <span class="tags-text tags-icon">{{data.icon}}</span>
                 <span class="tags-text tags-author" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave">{{data.source}}</span>
                 <span class="meta-sep">·</span>

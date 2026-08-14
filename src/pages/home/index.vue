@@ -69,7 +69,7 @@
       </wxc-tab-page>
 
       <!-- Web端列表 -->
-      <div class="desktop-list" v-if="isDesktop">
+      <div class="desktop-list" ref="desktopList" v-if="isDesktop">
         <div class="list-container" @scroll="onDesktopScroll">
           <!-- Web端子Tab和标签筛选 -->
           <div class="desktop-subheader" v-if="shouldShowSubTabs(tabTitles[currentTab].id)">
@@ -176,7 +176,9 @@
       showAuthorCard: false,
       authorCardUserId: null,
       authorCardPosition: { top: 0, left: 0 },
-      authorCardTimer: null
+      authorCardTimer: null,
+      // 分栏切换后列表加载完成时触发内容淡入
+      _pendingFade: false
     }),
     computed: {
       load_new_text: function () { return this.$lang.load_new_text },
@@ -219,7 +221,16 @@
       '$route.params.category': function() {
         if (this.isDesktop) {
           this.tagDropdownOpen = -1
+          // 标记分栏切换：列表加载完成后触发内容淡入动画
+          this._pendingFade = true
           this.loadCategoryFromRoute()
+        }
+      },
+      // 分栏切换后，列表从空到有数据时触发内容淡入
+      currentList: function(newList) {
+        if (this.isDesktop && this._pendingFade && newList && newList.length > 0) {
+          this._pendingFade = false
+          this.$nextTick(this.triggerContentFade)
         }
       }
     },
@@ -258,6 +269,15 @@
             this.currentTab = tabIndex
           }
         }
+      },
+      // 分栏内容淡入：重新触发 desktop-list 的淡入动画
+      triggerContentFade() {
+        const el = this.$refs.desktopList
+        if (!el) return
+        el.classList.remove('content-fade')
+        // 强制回流，确保动画重新触发
+        void el.offsetWidth
+        el.classList.add('content-fade')
       },
       getTabIndexByCategory(category) {
         const categoryMap = {

@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-08-14 — 首页分栏体验（阶段4）：图片懒加载 + 分栏切换淡入
+
+### 变更
+
+1. **图片懒加载**：`article_0/1/3` 三种信息流卡片的作者头像与封面图（含多图）统一添加 `loading="lazy"`，减少首屏网络占用，滚动到可视区域再加载。
+2. **分栏切换淡入**：Web 端切换分栏时，列表加载完成后内容整体淡入上移动画（200ms），提升切换流畅感；实现为 `desktop-list.content-fade` CSS 动画 + `triggerContentFade`（移除类→强制回流→重新添加，确保每次切换都触发动画）。
+
+### 变更文件
+- 修改：`src/components/cells/article_0.vue`、`article_1.vue`、`article_3.vue`（图片 `loading="lazy"`）
+- 修改：`src/pages/home/index.vue`（`_pendingFade` 标记 + `currentList` 监听 + `triggerContentFade`）
+- 修改：`src/pages/home/styles/home.less`（`contentFadeIn` 动画）
+
+### 验证
+- `npm run build` 通过；待外部浏览器回归：分栏切换淡入动画、图片懒加载生效。
+
 ## 2026-08-14 — 详情页留存闭环（阶段3）：作者卡片/读完提示/推荐横排/回顶
 
 ### 变更

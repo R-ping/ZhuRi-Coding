@@ -367,6 +367,20 @@
   .desktop-list {
     width: 100%;
   }
+  /* 分栏内容切换淡入动画 */
+  .desktop-list.content-fade {
+    animation: contentFadeIn 0.2s ease;
+  }
+  @keyframes contentFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8PX);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
   .list-container {
     overflow: visible;
   }

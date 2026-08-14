@@ -7,7 +7,7 @@
                     <span class="tag-item" v-for="tag in data.tags" :key="tag">{{tag}}</span>
                 </div>
                 <div class="tags">
-                    <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像"/>
+                    <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像" loading="lazy"/>
                     <span class="tags-text tags-icon">{{data.icon}}</span>
                     <span class="tags-text tags-author" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave">{{data.source}}</span>
                     <span class="meta-sep">·</span>
@@ -20,7 +20,7 @@
                 </div>
             </div>
             <div class="item-r" v-if="data.coverImage">
-                <img class="image" :src="data.coverImage"/>
+                <img class="image" :src="data.coverImage" loading="lazy"/>
             </div>
         </div>
     </div>
