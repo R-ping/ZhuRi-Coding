@@ -492,12 +492,95 @@
   .desktop-subheader {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-start;
+      gap: 16px;
       padding: 12px 24px;
       background-color: #fff;
       border-bottom: 1px solid #f0f1f5;
       position: sticky;
-      top: 0;
+      top: 60PX;
       z-index: 5;
+  }
+  /* 桌面端刷新按钮 */
+  .desktop-refresh {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      padding: 6px 12px;
+      font-size: 13PX;
+      color: #515767;
+      cursor: pointer;
+      border-radius: 4PX;
+      transition: color 0.2s, background-color 0.2s;
+  }
+  .desktop-refresh:hover {
+      color: #1E80FF;
+      background-color: #F4F5F7;
+  }
+  .refresh-icon {
+      font-family: fontawesome;
+      font-size: 14PX;
+      line-height: 1;
+  }
+  .refresh-icon.spinning {
+      animation: refreshSpin 0.8s linear infinite;
+  }
+  @keyframes refreshSpin {
+      to { transform: rotate(360deg); }
+  }
+
+  /* 桌面端回顶按钮：滚动超一屏后右下角悬浮 */
+  .back-to-top {
+      position: fixed;
+      right: 28PX;
+      bottom: 60PX;
+      width: 40PX;
+      height: 40PX;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #FFFFFF;
+      border-radius: 50%;
+      box-shadow: 0 2PX 8PX rgba(0, 0, 0, 0.12);
+      color: #515767;
+      font-size: 16PX;
+      cursor: pointer;
+      z-index: 100;
+      transition: color 0.2s, transform 0.2s, box-shadow 0.2s;
+  }
+  .back-to-top .icon {
+      font-family: fontawesome;
+      font-size: 18PX;
+  }
+  .back-to-top:hover {
+      color: #1E80FF;
+      transform: translateY(-2PX);
+      box-shadow: 0 4PX 12PX rgba(0, 0, 0, 0.16);
+  }
+
+  /* 刷新成功提示条：顶部居中轻提示 */
+  .refresh-toast {
+      position: fixed;
+      top: 72PX;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8PX 20PX;
+      background-color: rgba(0, 0, 0, 0.72);
+      color: #FFFFFF;
+      font-size: 13PX;
+      border-radius: 20PX;
+      z-index: 200;
+      animation: refreshToastIn 0.25s ease;
+  }
+  @keyframes refreshToastIn {
+      from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(-8PX);
+      }
+      to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+      }
   }
 }

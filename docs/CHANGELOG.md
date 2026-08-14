@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## 2026-08-14 — 首页分栏体验（阶段4 补）：回顶按钮 + 刷新反馈
+
+### 变更
+
+1. **桌面端回顶按钮**：Web 端滚动超过一屏（scrollTop > 500px）时，右下角悬浮圆形「回顶」按钮，点击平滑滚动回顶部；hover 上浮高亮。滚动监听挂载/移除随组件生命周期正确清理。
+2. **桌面端刷新按钮**：分栏顶栏右侧新增「刷新」按钮（icon 刷新时旋转 loading 动画），点击加载当前分栏最新内容。
+3. **刷新反馈条**：刷新成功后顶部居中弹出轻提示——有新内容显示「已更新 N 条新内容」，无新内容显示「已是最新内容」，2 秒后自动消失；`feedMixin.loadnew` 记录刷新前文章 ID 集合、Promise 化后计算新增条数，刷新失败不提示。
+4. **分栏顶栏布局修正**：`.desktop-subheader` 改为 `justify-content: flex-start` + 刷新按钮 `margin-left:auto`（此前 space-between 导致刷新按钮被挤出）；sticky 定位 `top` 调整为 `60PX` 避开 60px 高的固定顶栏。
+
+### 变更文件
+- 修改：`src/pages/home/index.vue`（回顶按钮/刷新按钮/反馈条模板 + `showBackToTop`/`refreshToast`/`isRefreshing` 数据 + `handleWindowScroll`/`scrollToTop`/`showRefreshToast`/`handleRefresh` 方法，合并重复生命周期钩子）
+- 修改：`src/pages/home/mixins/feedMixin.js`（`loadnew` 记录旧 ID 集合 + `showRefreshFeedback` 计算新增条数）
+- 修改：`src/pages/home/styles/home.less`（`.back-to-top`/`.desktop-refresh`/`.refresh-toast` 样式与动画、subheader 布局修正）
+
+### 验证
+- `npm run build` 通过（14.58s）；待外部浏览器回归：回顶按钮出现与平滑滚动、刷新按钮 loading 态与反馈条、sticky 顶栏不再遮挡。
+
 ## 2026-08-14 — 首页分栏体验（阶段4）：图片懒加载 + 分栏切换淡入
 
 ### 变更

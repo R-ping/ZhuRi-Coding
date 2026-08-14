@@ -72,8 +72,8 @@
       <div class="desktop-list" ref="desktopList" v-if="isDesktop">
         <div class="list-container" @scroll="onDesktopScroll">
           <!-- Web端子Tab和标签筛选 -->
-          <div class="desktop-subheader" v-if="shouldShowSubTabs(tabTitles[currentTab].id)">
-              <div class="sub-tabs">
+          <div class="desktop-subheader">
+              <div class="sub-tabs" v-if="shouldShowSubTabs(tabTitles[currentTab].id)">
                   <span class="sub-tab" :class="{active: subTabStates[currentTab].current === 'recommend'}"
                         @click="switchSubTab(currentTab, 'recommend')">推荐</span>
                   <span class="sub-tab" :class="{active: subTabStates[currentTab].current === 'latest'}"
@@ -93,6 +93,10 @@
                           {{ tag.tagName }}<span class="tag-count" v-if="tag.count > 0">{{ tag.count }}</span>
                       </div>
                   </div>
+              </div>
+              <div class="desktop-refresh" title="刷新" @click="handleRefresh">
+                  <span class="refresh-icon" :class="{ spinning: isRefreshing }">&#xf021;</span>
+                  <span class="refresh-text">刷新</span>
               </div>
           </div>
           <div class="pull-refresh" v-if="currentState.refreshing">
@@ -142,6 +146,16 @@
       @follow="onAuthorFollow"
       @message="onAuthorMessage"
     />
+
+    <!-- 桌面端回顶按钮 -->
+    <div class="back-to-top" v-if="isDesktop && showBackToTop" @click="scrollToTop">
+      <span class="icon">&#xf106;</span>
+    </div>
+
+    <!-- 刷新成功提示 -->
+    <div class="refresh-toast" v-if="isDesktop && refreshToast.visible">
+      {{ refreshToast.text }}
+    </div>
   </div>
 </template>
 
@@ -178,7 +192,14 @@
       authorCardPosition: { top: 0, left: 0 },
       authorCardTimer: null,
       // 分栏切换后列表加载完成时触发内容淡入
-      _pendingFade: false
+      _pendingFade: false,
+      // 桌面端回顶按钮：滚动超一屏时显示
+      showBackToTop: false,
+      // 刷新成功提示：已更新 N 条新内容
+      refreshToast: { visible: false, text: '' },
+      refreshToastTimer: null,
+      // 刷新按钮 loading 状态
+      isRefreshing: false
     }),
     computed: {
       load_new_text: function () { return this.$lang.load_new_text },
@@ -200,6 +221,10 @@
     mounted() {
       this.checkDevice()
       window.addEventListener('resize', this.checkDevice)
+      // 桌面端监听window滚动控制回顶按钮显示
+      if (this.isDesktop) {
+        window.addEventListener('scroll', this.handleWindowScroll)
+      }
       this.$nextTick(() => {
         this.updateTabHeight()
         this.$nextTick(() => {
@@ -234,11 +259,17 @@
         }
       }
     },
-    beforeDestroy() {
-      window.removeEventListener('resize', this.checkDevice)
-    },
     created() {
       this.tabPageHeight = Utils.getPageHeight()
+    },
+    beforeDestroy() {
+      if (this.refreshToastTimer) {
+        clearTimeout(this.refreshToastTimer)
+      }
+      window.removeEventListener('resize', this.checkDevice)
+      if (this.isDesktop) {
+        window.removeEventListener('scroll', this.handleWindowScroll)
+      }
     },
     methods: {
       updateTabHeight() {
@@ -382,6 +413,57 @@
             peer_name: payload.name || '',
             peer_avatar: payload.avatar || ''
           }
+        })
+      },
+      /**
+       * 桌面端列表滚动：同时检测无限加载和回顶按钮可见性
+       */
+      showRefreshToast(newCount) {
+        if (newCount === 0) {
+          this.refreshToast.text = '已是最新内容'
+        } else {
+          this.refreshToast.text = `已更新 ${newCount} 条新内容`
+        }
+        this.refreshToast.visible = true
+        // 清除旧定时器
+        if (this.refreshToastTimer) {
+          clearTimeout(this.refreshToastTimer)
+        }
+        // 2秒后自动隐藏
+        this.refreshToastTimer = setTimeout(() => {
+          this.refreshToast.visible = false
+        }, 2000)
+      },
+      /**
+       * 滚动回顶部：平滑滚动
+       */
+      scrollToTop() {
+        const scrollContainer = this.isDesktop ? window : (this.$refs.scrollContainers && this.$refs.scrollContainers[this.currentTab])
+        if (!scrollContainer) return
+        if (this.isDesktop) {
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        } else {
+          scrollContainer.scrollTo({ top: 0, behavior: 'smooth' })
+        }
+      },
+      /**
+       * 监听window滚动：滚动超一屏时显示回顶按钮
+       */
+      handleWindowScroll() {
+        var scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0
+        this.showBackToTop = scrollTop > 500
+      },
+      /**
+       * 桌面端刷新：加载当前分栏最新内容
+       */
+      handleRefresh() {
+        if (this.isRefreshing) return
+        var self = this
+        this.isRefreshing = true
+        this.loadnew(this.currentTab).then(function() {
+          self.isRefreshing = false
+        }, function() {
+          self.isRefreshing = false
         })
       }
     }

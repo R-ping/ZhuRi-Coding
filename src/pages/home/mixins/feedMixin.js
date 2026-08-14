@@ -117,16 +117,50 @@ export default {
 
     loadnew(index) {
       var tabId = Config.tabTitles[index].id
-      // 推荐标签页：刷新时重新生成种子
+      // 记录刷新前文章ID，用于计算「已更新 N 条新内容」
+      var oldIds = {}
+      var list = this.tabList[index] || []
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && list[i].id) oldIds[list[i].id] = true
+      }
+      var self = this
+      // 推荐标签页：刷新时清空列表并重新生成种子，整体替换
       if (this.shouldUseRecommend(tabId)) {
         this.resetRecommendState(index)
-        return this.recommendLoad(index)
+        this.clearTabList(index)
+        var p = this.recommendLoad(index)
+        // recommendLoad 内部已有 loading 判断，可能返回 undefined
+        if (!p || typeof p.then !== 'function') return Promise.resolve()
+        return p.then(function() {
+          self.showRefreshFeedback(index, oldIds)
+        })
       }
-      // 特殊标签页：保持原有行为
+      // 特殊标签页：保持原有行为，新内容插入列表顶部
       var state = this.tabStates[index]
       if (!state || state.loading || state.refreshing) return Promise.resolve()
       this.$set(state, 'refreshing', true)
-      return this.load(index, 0)
+      return this.load(index, 0).then(function() {
+        self.showRefreshFeedback(index, oldIds)
+      })
+    },
+
+    /**
+     * 刷新完成后计算新增条数并展示反馈条
+     * @param {Number} index 分栏索引
+     * @param {Object} oldIds 刷新前已存在文章ID集合
+     */
+    showRefreshFeedback(index, oldIds) {
+      // 刷新失败不提示「已更新」
+      var state = this.tabStates[index]
+      if (state && state.error) return
+      var newList = this.tabList[index] || []
+      var newCount = 0
+      for (var i = 0; i < newList.length; i++) {
+        if (newList[i] && newList[i].id && !oldIds[newList[i].id]) newCount++
+      }
+      if (this.showRefreshToast) {
+        this.showRefreshToast(newCount)
+      }
     },
 
     tanfer(data, curIndex, loaddir) {
