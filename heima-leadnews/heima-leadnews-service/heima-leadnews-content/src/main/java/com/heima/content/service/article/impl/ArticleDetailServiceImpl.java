@@ -277,21 +277,69 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
         }
 
-        // 查询同频道已发布文章，排除当前文章，游标分页
-        LambdaQueryWrapper<ApArticle> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ApArticle::getChannelId, currentArticle.getChannelId())
-                .eq(ApArticle::getStatus, ApArticle.Status.PUBLISHED.getCode())
-                .ne(ApArticle::getId, id);
+        // 相关推荐策略：优先推作者的其他文章（最多3篇），不足时依次用同频道文章、
+        // 全局文章兜底补齐到 size 篇。既突出作者作品，又保证侧边栏始终有足够内容可浏览。
+        List<ApArticle> articles = new ArrayList<>();
+        Set<Long> includedIds = new HashSet<>();
+        includedIds.add(id);
 
-        if (cursor != null && cursor > 0) {
-            wrapper.lt(ApArticle::getId, cursor);
+        int authorLimit = Math.min(3, size);
+        if (currentArticle.getAuthorId() != null && authorLimit > 0) {
+            LambdaQueryWrapper<ApArticle> authorWrapper = new LambdaQueryWrapper<>();
+            authorWrapper.eq(ApArticle::getAuthorId, currentArticle.getAuthorId())
+                    .eq(ApArticle::getStatus, ApArticle.Status.PUBLISHED.getCode())
+                    .eq(ApArticle::getIsDeleted, false)
+                    .ne(ApArticle::getId, id);
+            if (cursor != null && cursor > 0) {
+                authorWrapper.lt(ApArticle::getId, cursor);
+            }
+            authorWrapper.orderByDesc(ApArticle::getPublishTime)
+                    .orderByDesc(ApArticle::getId)
+                    .last("LIMIT " + authorLimit);
+            List<ApArticle> authorArticles = apArticleMapper.selectList(authorWrapper);
+            for (ApArticle a : authorArticles) {
+                includedIds.add(a.getId());
+                articles.add(a);
+            }
         }
 
-        wrapper.orderByDesc(ApArticle::getPublishTime)
-                .orderByDesc(ApArticle::getId)
-                .last("LIMIT " + size);
+        // 作者文章不足时，用同频道文章补齐
+        int channelLimit = size - articles.size();
+        if (channelLimit > 0) {
+            LambdaQueryWrapper<ApArticle> channelWrapper = new LambdaQueryWrapper<>();
+            channelWrapper.eq(ApArticle::getChannelId, currentArticle.getChannelId())
+                    .eq(ApArticle::getStatus, ApArticle.Status.PUBLISHED.getCode())
+                    .eq(ApArticle::getIsDeleted, false)
+                    .ne(ApArticle::getId, id);
+            if (cursor != null && cursor > 0) {
+                channelWrapper.lt(ApArticle::getId, cursor);
+            }
+            channelWrapper.notIn(ApArticle::getId, includedIds);
+            channelWrapper.orderByDesc(ApArticle::getPublishTime)
+                    .orderByDesc(ApArticle::getId)
+                    .last("LIMIT " + channelLimit);
+            List<ApArticle> channelArticles = apArticleMapper.selectList(channelWrapper);
+            for (ApArticle a : channelArticles) {
+                includedIds.add(a.getId());
+                articles.add(a);
+            }
+        }
 
-        List<ApArticle> articles = apArticleMapper.selectList(wrapper);
+        // 同频道仍不足时，全局兜底（排除已加入的文章，保证侧边栏始终有足够内容）
+        int globalLimit = size - articles.size();
+        if (globalLimit > 0) {
+            LambdaQueryWrapper<ApArticle> globalWrapper = new LambdaQueryWrapper<>();
+            globalWrapper.eq(ApArticle::getStatus, ApArticle.Status.PUBLISHED.getCode())
+                    .eq(ApArticle::getIsDeleted, false)
+                    .ne(ApArticle::getId, id)
+                    .notIn(ApArticle::getId, includedIds)
+                    .orderByDesc(ApArticle::getPublishTime)
+                    .orderByDesc(ApArticle::getId)
+                    .last("LIMIT " + globalLimit);
+            List<ApArticle> globalArticles = apArticleMapper.selectList(globalWrapper);
+            articles.addAll(globalArticles);
+        }
+
         List<ArticleRecommendVO> list = buildRecommendVOList(articles);
 
         long newCursor = articles.isEmpty() ? (cursor != null ? cursor : 0) : articles.get(articles.size() - 1).getId();

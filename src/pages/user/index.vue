@@ -44,7 +44,7 @@
                         </div>
                     </div>
                 </div>
-                <button class="settings-btn" @click="goToSettings">设置</button>
+                <button class="settings-btn" v-if="isOwnProfile" @click="goToSettings">设置</button>
             </div>
 
             <div class="user-sidebar">
@@ -221,7 +221,7 @@
                     <div v-if="columnList.length === 0" class="empty-state">
                         <div class="empty-icon">📚</div>
                         <div class="empty-text">暂无专栏</div>
-                        <button class="empty-btn" @click="showCreateColumn = true">新建专栏</button>
+                        <button class="empty-btn" v-if="isOwnProfile" @click="showCreateColumn = true">新建专栏</button>
                     </div>
                     <div v-else class="column-list">
                         <div class="column-item" v-for="column in columnList" :key="column.id">
@@ -259,17 +259,12 @@
                         <div class="empty-icon">⭐</div>
                         <div class="empty-text">暂无收藏集</div>
                     </div>
-                    <div v-else class="collection-list">
-                        <div 
-                            class="collection-item" 
-                            v-for="collection in collectionList" 
-                            :key="collection.id"
-                            @click="showCollectionDetail(collection)"
-                        >
-                            <div class="collection-icon">📁</div>
-                            <div class="collection-info">
-                                <div class="collection-name">{{ collection.name }}</div>
-                                <div class="collection-count">{{ collection.articleCount }}篇文章</div>
+                    <div v-else class="article-list">
+                        <div class="article-item" v-for="collection in collectionList" :key="collection.id">
+                            <div class="article-title">{{ collection.title }}</div>
+                            <div class="article-meta">
+                                <span class="article-time">{{ formatTime(collection.time) }}</span>
+                                <span class="article-read">{{ collection.readCount }}阅读</span>
                             </div>
                         </div>
                     </div>
@@ -343,9 +338,25 @@
                 </div>
 
                 <div v-if="activeTab === 'courses'" class="tab-content">
-                    <div class="empty-state">
+                    <div v-if="coursesList.length === 0" class="empty-state">
                         <div class="empty-icon">🎓</div>
                         <div class="empty-text">暂无课程</div>
+                    </div>
+                    <div v-else class="course-list">
+                        <div class="course-item" v-for="course in coursesList" :key="course.id">
+                            <img v-if="course.coverImage" :src="course.coverImage" class="course-cover" alt="cover">
+                            <div class="course-info">
+                                <div class="course-title">{{ course.title }}</div>
+                                <div class="course-subtitle" v-if="course.subtitle">{{ course.subtitle }}</div>
+                                <div class="course-meta">
+                                    <span class="course-chapters">{{ course.chapterCount || 0 }}章节</span>
+                                    <span class="course-study">{{ course.studyCount || 0 }}人在学</span>
+                                    <span class="course-price" :class="{ 'is-free': Number(course.price) === 0 }">
+                                        {{ Number(course.price) === 0 ? '免费' : '¥' + course.price }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -369,9 +380,18 @@
                             </div>
                         </div>
                     </div>
-                    <div v-if="likesSubtab === 'pins'" class="empty-state">
-                        <div class="empty-icon">💬</div>
-                        <div class="empty-text">暂无点赞的沸点</div>
+                    <div v-if="likesSubtab === 'pins'" class="article-list">
+                        <div v-if="likedPinsList.length === 0" class="empty-state">
+                            <div class="empty-icon">💬</div>
+                            <div class="empty-text">暂无点赞的沸点</div>
+                        </div>
+                        <div class="article-item" v-for="pin in likedPinsList" :key="pin.id">
+                            <div class="article-title">{{ pin.content }}</div>
+                            <div class="article-meta">
+                                <span class="article-time">{{ formatTime(pin.time) }}</span>
+                                <span class="article-read">{{ pin.likeCount }}赞</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -460,11 +480,8 @@ import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
-import { getUserStatistics } from '@/apis/user'
 import { getUserAchievements } from '@/apis/achievement'
-import { getArticleList, getColumnList, getPinsList } from '@/apis/creator/content'
-import { getFollowers } from '@/apis/creator/fans'
-import { getUserDynamic } from '@/apis/author'
+import { getUserDynamic, getUserHomeData, getUserHomeArticles, getUserHomeColumns, getUserHomePins, getUserHomeFollowing, getUserHomeFollowers, getUserHomeCollections, getUserHomeLikes, getUserHomeCourses } from '@/apis/author'
 
 export default {
     name: 'UserProfile',
@@ -517,11 +534,13 @@ export default {
             boilingList: [],
             columnList: [],
             collectionList: [],
+            coursesList: [],
             followingList: [],
             followersList: [],
             subscribedColumns: [],
             followedTags: [],
-            likedArticles: []
+            likedArticles: [],
+            likedPinsList: []
         }
     },
     computed: {
@@ -537,6 +556,14 @@ export default {
             if (routeId) return routeId
             const storeUser = this.$store.getters.userInfo
             return storeUser && storeUser.id ? storeUser.id : ''
+        },
+        // 是否自己的主页（决定是否展示「设置」「新建专栏」等仅本人可见的操作）
+        isOwnProfile() {
+            const routeId = this.$route.params && this.$route.params.id
+            if (!routeId) return true
+            const storeUser = this.$store.getters.userInfo
+            if (!storeUser || !storeUser.id) return false
+            return String(routeId) === String(storeUser.id)
         },
         // 逐友等级徽章（取自成就接口，动态展示当前等级）
         dailyLevelBadge() {
@@ -577,7 +604,7 @@ export default {
                 }
             }
 
-            // Load user info from Vuex store
+            // Load user info from Vuex store（本人主页时先立即渲染，再以接口数据校正）
             const storeUserInfo = this.$store.getters.userInfo
             if (storeUserInfo) {
                 this.userInfo = {
@@ -587,11 +614,32 @@ export default {
                 }
             }
 
-            // Fetch user statistics
+            // 加载当前浏览用户（profileUserId）的头部信息：基本信息 + 统计 + 等级（公开接口，未登录也可用）
+            this.fetchHomeData()
+
+            // 加载成就勋章（当前浏览用户）
+            this.fetchAchievements()
+
+            // Load content based on active tab
+            this.loadTabContent()
+        },
+        // 加载主页头部聚合数据（基本信息 + 统计 + 等级），以 profileUserId 为准
+        async fetchHomeData() {
+            const userId = this.profileUserId
+            if (!userId) return
             try {
-                const statsRes = await getUserStatistics()
-                if (statsRes && statsRes.code === 200 && statsRes.data) {
-                    const data = statsRes.data
+                const res = await getUserHomeData(userId)
+                if (res && res.code === 200 && res.data) {
+                    const data = res.data
+                    // 基本信息
+                    if (data.user) {
+                        this.userInfo = {
+                            nickName: data.user.nickname || data.user.nickName || '',
+                            avatar: data.user.avatar || '',
+                            intro: data.user.intro || ''
+                        }
+                    }
+                    // 统计
                     this.stats = {
                         followCount: data.followCount || 0,
                         followerCount: data.followerCount || 0,
@@ -601,7 +649,7 @@ export default {
                         tagCount: data.tagCount || 0,
                         badgeCount: data.badgeCount || 0
                     }
-                    // levelInfo is a nested object in the response
+                    // 等级（逐日/逐力值）
                     if (data.levelInfo) {
                         this.levelInfo = {
                             dailyScore: data.levelInfo.dailyScore || 0,
@@ -614,14 +662,8 @@ export default {
                     }
                 }
             } catch (e) {
-                // Keep default values when API fails
+                // 接口失败时保留默认值，不影响页面浏览
             }
-
-            // 加载成就勋章（当前浏览用户）
-            this.fetchAchievements()
-
-            // Load content based on active tab
-            this.loadTabContent()
         },
         async fetchAchievements() {
             try {
@@ -662,6 +704,12 @@ export default {
                     break
                 case 'collection':
                     this.fetchCollections()
+                    break
+                case 'courses':
+                    this.fetchCourses()
+                    break
+                case 'likes':
+                    this.fetchLikes()
                     break
                 default:
                     break
@@ -709,13 +757,16 @@ export default {
             return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
         },
         async fetchArticles() {
+            const userId = this.profileUserId
+            if (!userId) return
             try {
-                const res = await getArticleList({ authorId: this.$store.getters.userInfo?.id })
+                const res = await getUserHomeArticles(userId, { page: 1, size: 10 })
                 if (res && res.code === 200 && res.data && res.data.list) {
                     this.articleList = res.data.list.map(item => ({
-                        id: item.id,
+                        // 雪花ID为json-bigint大数对象，转为字符串作为Vue key
+                        id: String(item.id),
                         title: item.title,
-                        time: item.createTime || item.createdAt || '',
+                        time: item.createTime || '',
                         readCount: item.readCount || 0,
                         commentCount: item.commentCount || 0
                     }))
@@ -725,8 +776,10 @@ export default {
             }
         },
         async fetchColumns() {
+            const userId = this.profileUserId
+            if (!userId) return
             try {
-                const res = await getColumnList()
+                const res = await getUserHomeColumns(userId, { page: 1, size: 10 })
                 if (res && res.code === 200 && res.data && res.data.list) {
                     this.columnList = res.data.list.map(item => ({
                         id: item.id,
@@ -741,24 +794,46 @@ export default {
             }
         },
         async fetchPins() {
+            const userId = this.profileUserId
+            if (!userId) return
             try {
-                const res = await getPinsList()
+                const res = await getUserHomePins(userId, { page: 1, size: 10 })
                 if (res && res.code === 200 && res.data && res.data.list) {
-                    this.boilingList = res.data.list
+                    this.boilingList = res.data.list.map(item => ({
+                        id: String(item.id),
+                        content: item.content,
+                        title: item.content,
+                        createTime: item.createTime,
+                        likeCount: item.likeCount || 0,
+                        commentCount: item.commentCount || 0
+                    }))
                 }
             } catch (e) {
                 // Keep empty list when API fails
             }
         },
         async fetchFollowData() {
+            const userId = this.profileUserId
+            if (!userId) return
             try {
-                // Fetch followers
-                const followersRes = await getFollowers()
+                // 关注的用户（公开接口，按 profileUserId 查询）
+                const followingRes = await getUserHomeFollowing(userId, { page: 1, size: 20 })
+                if (followingRes && followingRes.code === 200 && followingRes.data) {
+                    const list = followingRes.data.list || []
+                    this.followingList = list.map(item => ({
+                        id: item.id,
+                        name: item.nickname || '',
+                        avatar: item.avatar || '',
+                        intro: item.intro || ''
+                    }))
+                }
+                // 关注者（公开接口，按 profileUserId 查询）
+                const followersRes = await getUserHomeFollowers(userId, { page: 1, size: 20 })
                 if (followersRes && followersRes.code === 200 && followersRes.data) {
-                    const list = followersRes.data.list || followersRes.data || []
+                    const list = followersRes.data.list || []
                     this.followersList = list.map(item => ({
-                        id: item.id || item.userId,
-                        name: item.name || item.nickname || '',
+                        id: item.id,
+                        name: item.nickname || '',
                         avatar: item.avatar || '',
                         intro: item.intro || ''
                     }))
@@ -768,8 +843,67 @@ export default {
             }
         },
         async fetchCollections() {
-            // Collections are tracked via the collectCount in statistics
-            // The actual collection list would need a dedicated API
+            const userId = this.profileUserId
+            if (!userId) return
+            try {
+                const res = await getUserHomeCollections(userId, { page: 1, size: 20 })
+                if (res && res.code === 200 && res.data) {
+                    const list = res.data.list || []
+                    this.collectionList = list.map(item => ({
+                        id: item.id,
+                        title: item.title,
+                        cover: item.coverImage || defaultAvatar,
+                        authorId: item.authorId,
+                        authorName: item.authorName || '',
+                        time: item.collectTime || '',
+                        readCount: item.readCount || 0
+                    }))
+                }
+            } catch (e) {
+                // Keep empty list when API fails
+            }
+        },
+        async fetchCourses() {
+            const userId = this.profileUserId
+            if (!userId) return
+            try {
+                const res = await getUserHomeCourses(userId, { page: 1, size: 10 })
+                if (res && res.code === 200 && res.data) {
+                    this.coursesList = res.data.list || []
+                }
+            } catch (e) {
+                // Keep empty list when API fails
+            }
+        },
+        async fetchLikes() {
+            const userId = this.profileUserId
+            if (!userId) return
+            try {
+                // 文章（公开接口）
+                const articleRes = await getUserHomeLikes(userId, { page: 1, size: 10, type: 'article' })
+                if (articleRes && articleRes.code === 200 && articleRes.data) {
+                    const list = articleRes.data.list || []
+                    this.likedArticles = list.map(item => ({
+                        id: String(item.id),
+                        title: item.title,
+                        time: item.likeTime || '',
+                        readCount: item.readCount || 0
+                    }))
+                }
+                // 沸点（公开接口）
+                const pinsRes = await getUserHomeLikes(userId, { page: 1, size: 10, type: 'pins' })
+                if (pinsRes && pinsRes.code === 200 && pinsRes.data) {
+                    const list = pinsRes.data.list || []
+                    this.likedPinsList = list.map(item => ({
+                        id: String(item.id),
+                        content: item.title || '',
+                        time: item.likeTime || '',
+                        likeCount: item.likeCount || 0
+                    }))
+                }
+            } catch (e) {
+                // Keep empty list when API fails
+            }
         },
         switchTab(tab) {
             this.activeTab = tab
@@ -1453,6 +1587,79 @@ export default {
     font-size: 13px;
     color: #515767;
     cursor: pointer;
+}
+
+.course-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+    padding: 8px 0;
+}
+
+.course-item {
+    display: flex;
+    gap: 12px;
+    border: 1px solid #f2f3f5;
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    transition: box-shadow .2s;
+
+    &:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .06);
+        border-color: #e4e6eb;
+    }
+}
+
+.course-cover {
+    width: 96px;
+    height: 72px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #f2f3f5;
+}
+
+.course-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.course-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #252933;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.course-subtitle {
+    font-size: 13px;
+    color: #8a919f;
+    margin-bottom: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.course-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: #8a919f;
+}
+
+.course-price {
+    margin-left: auto;
+    color: #f04142;
+    font-weight: 600;
+
+    &.is-free {
+        color: #00b42a;
+    }
 }
 
 .collection-detail {

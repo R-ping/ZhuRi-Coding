@@ -49,7 +49,7 @@
             word-break: break-word;
         }
 
-        /* 作者信息 */
+        /* 作者信息（掘金风格：水平布局，头像昵称可点击跳转作者主页） */
         .author-header {
             display: flex;
             align-items: center;
@@ -65,21 +65,59 @@
             margin-right: 12px;
             overflow: hidden;
             flex-shrink: 0;
+            display: block;
+            transition: box-shadow 0.2s;
+        }
+        .author-avatar:hover {
+            box-shadow: 0 0 0 3px #eaf2ff;
         }
         .author-avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
+            display: block;
         }
         .author-info {
             flex: 1;
             min-width: 0;
         }
+        /* 昵称 + 逐力值等级徽章 同行显示 */
+        .author-name-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
         .author-name {
             font-size: 16px;
             font-weight: 600;
             color: #252933;
-            margin-bottom: 4px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .author-name:hover {
+            color: #1e80ff;
+        }
+        .author-level-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #1e80ff;
+            background: #eaf2ff;
+            border: 1px solid #d5e6ff;
+            border-radius: 4px;
+            padding: 1px 8px;
+            line-height: 20px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .author-level-badge svg {
+            width: 12px;
+            height: 12px;
+            fill: #1e80ff;
         }
         .publish-time {
             font-size: 13px;
@@ -237,46 +275,85 @@
         .author-info-card {
             background: #fff;
             border-radius: 4px;
-            padding: 20px 0;
+            padding: 20px 0 0;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             margin-bottom: 16px;
         }
-        .author-info-card .author-avatar-wrap {
+        /* 掘金风格：头像 + 昵称/等级/职位 水平排列 */
+        .author-info-card .author-info-head {
             display: flex;
-            flex-direction: column;
             align-items: center;
-            padding: 0 20px;
-            margin-bottom: 16px;
+            gap: 12px;
+            padding: 0 16px 16px;
+        }
+        .author-info-card .author-avatar-link {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+            display: block;
+            border: 2px solid #1e80ff;
+            transition: box-shadow 0.2s;
+        }
+        .author-info-card .author-avatar-link:hover {
+            box-shadow: 0 0 0 3px #eaf2ff;
         }
         .author-info-card .avatar {
-            width: 64px;
-            height: 64px;
+            width: 100%;
+            height: 100%;
             border-radius: 50%;
             object-fit: cover;
-            margin-bottom: 10px;
-            border: 2px solid #1e80ff;
+            display: block;
+        }
+        .author-info-card .author-head-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .author-info-card .name-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
         }
         .author-info-card .name {
             font-size: 16px;
             font-weight: 600;
             color: #252933;
-            margin-bottom: 4px;
+            cursor: pointer;
+            transition: color 0.2s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .author-info-card .name:hover {
+            color: #1e80ff;
         }
         .author-info-card .badge {
             font-size: 12px;
+            font-weight: 500;
             color: #1e80ff;
             background: #eaf2ff;
-            padding: 2px 8px;
+            border: 1px solid #d5e6ff;
+            padding: 1px 6px;
             border-radius: 4px;
-            margin-bottom: 8px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .author-info-card .author-meta-line {
+            font-size: 12px;
+            color: #8a919f;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .author-info-card .job-title {
-            font-size: 13px;
+            font-size: 12px;
             color: #515767;
         }
         .author-info-card .company {
-            font-size: 13px;
-            color: #515767;
+            font-size: 12px;
+            color: #8a919f;
         }
         .author-info-card .stats {
             display: flex;
@@ -324,20 +401,45 @@
             cursor: pointer;
         }
 
-        /* 右侧目录 */
+        /* 右侧目录（固定高度 + 内部滚动，避免标题过多把下方卡片挤出视口） */
         .toc-sidebar {
             width: 260px;
             flex-shrink: 0;
-        }
-        .toc-card {
             position: sticky;
             top: 80px;
+            align-self: flex-start;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+            scrollbar-color: #d4d9e0 transparent;
+        }
+        .toc-sidebar::-webkit-scrollbar { width: 6px; }
+        .toc-sidebar::-webkit-scrollbar-thumb { background: #d4d9e0; border-radius: 3px; }
+        .toc-sidebar::-webkit-scrollbar-track { background: transparent; }
+        .toc-card {
             background: #fff;
             border-radius: 4px;
             padding: 16px 0;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            max-height: calc(100vh - 100px);
-            overflow-y: auto;
+        }
+        /* 侧边栏随滚动切换卡片（阅读进度阶段） */
+        .toc-sidebar .stage-toc,
+        .toc-sidebar .stage-related,
+        .toc-sidebar .stage-featured {
+            display: none;
+            animation: sidebarFadeIn 0.35s ease;
+        }
+        .toc-sidebar[data-stage="toc"] .stage-toc { display: block; }
+        .toc-sidebar[data-stage="related"] .stage-related { display: block; }
+        .toc-sidebar[data-stage="featured"] .stage-featured { display: block; }
+        .toc-sidebar[data-stage="toc-related"] .stage-toc,
+        .toc-sidebar[data-stage="toc-related"] .stage-related { display: block; }
+        .toc-sidebar[data-stage="end"] .stage-related,
+        .toc-sidebar[data-stage="end"] .stage-featured { display: block; }
+        @keyframes sidebarFadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         .toc-title {
             font-size: 15px;
@@ -369,7 +471,15 @@
             list-style: none;
             margin: 0;
             padding: 0;
+            /* 目录固定高度，标题级数再多也在内部滚动，不挤压下方卡片 */
+            max-height: 360px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #d4d9e0 transparent;
         }
+        .toc-list::-webkit-scrollbar { width: 6px; }
+        .toc-list::-webkit-scrollbar-thumb { background: #d4d9e0; border-radius: 3px; }
+        .toc-list::-webkit-scrollbar-track { background: transparent; }
         .toc-list li a {
             display: block;
             padding: 8px 16px;
@@ -392,55 +502,6 @@
         }
         .toc-list li.level-2 a { padding-left: 28px; }
         .toc-list li.level-3 a { padding-left: 40px; font-size: 13px; }
-
-        /* 作者作品 */
-        .author-works-card {
-            margin-top: 16px;
-            background: #fff;
-            border-radius: 4px;
-            padding: 16px 0;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-        .works-title {
-            font-size: 15px;
-            font-weight: 600;
-            color: #252933;
-            padding: 0 16px 12px;
-            border-bottom: 1px solid #e4e6eb;
-            margin-bottom: 8px;
-        }
-        .works-list {
-            list-style: none;
-            margin: 0;
-            padding: 0;
-        }
-        .work-item {
-            padding: 0;
-        }
-        .work-link {
-            display: flex;
-            flex-direction: column;
-            padding: 10px 16px;
-            text-decoration: none;
-            transition: all 0.2s;
-            border-bottom: 1px solid #f7f8fa;
-        }
-        .work-link:hover {
-            background: #f7f8fa;
-        }
-        .work-article-title {
-            font-size: 14px;
-            color: #252933;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-bottom: 4px;
-            line-height: 1.4;
-        }
-        .work-publish-time {
-            font-size: 12px;
-            color: #8a919f;
-        }
 
         /* ========== 专栏卡片样式 ========== */
         .column-section {
@@ -2124,9 +2185,11 @@
             align-items: center;
             justify-content: center;
             font-size: 24px;
-            font-family: "FontAwesome", fontawesome;
             border-radius: 50%;
             transition: all 0.2s;
+        }
+        .login-social-icon svg {
+            display: block;
         }
         .login-social-label { font-size: 13px; color: #999999; }
         .login-agreement {
@@ -2530,16 +2593,22 @@
                 <span class="login-divider-line"></span>
             </div>
             <div class="login-social">
-                <div class="login-social-item" data-social="weibo">
-                    <span class="login-social-icon" style="background-color:#fff3f3;color:#e6162d;">&#xf18a;</span>
+                <div class="login-social-item" data-social="weibo" title="微博登录">
+                    <span class="login-social-icon" style="background-color:#fff3f3;color:#e6162d;">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M10.87 17.07c-2.04-.45-3.86-1.57-5.02-3.24-.16-.22-.1-.53.1-.68.2-.15.51-.1.66.1 1.03 1.47 2.62 2.45 4.4 2.84.25.06.4.31.34.57-.06.25-.3.43-.48.41zm5.12-1.3c-.18-.17-.44-.2-.66-.07-.11.06-.24.11-.38.14-.9.24-1.94.19-2.95-.05-.21-.05-.43.08-.48.29-.05.21.08.43.29.48 1.12.26 2.26.31 3.24.05.2-.06.34-.24.34-.45 0-.13-.06-.27-.19-.39zM12.5 1.5c.23 0 .41.19.41.42 0 .23-.18.41-.41.41-3.11 0-5.94 1.51-7.6 4.03-.1.15-.31.2-.46.1-.16-.1-.21-.31-.11-.46C6.7 2.73 9.48 1.5 12.5 1.5zM12.5 0c-.28 0-.5.22-.5.5s.22.5.5.5c3.41 0 6.5 1.67 8.3 4.47.11.17.34.22.51.11.17-.11.22-.34.11-.51C19.89 2.08 16.44 0 12.5 0zM14.6 4.9c-.21-.12-.48-.05-.6.16-.12.21-.05.48.16.6 1.47.84 2.44 2.3 2.72 3.99.04.23.24.4.47.4.02 0 .05 0 .07-.01.26-.05.43-.3.38-.56C17.51 6.56 16.36 4.85 14.6 4.9zM19.1 12.26c-1.67 3.3-5.15 5.62-8.74 5.85-.55.03-1.1-.01-1.64-.1-.25-.04-.51.06-.68.27-.67.84-2.75 2.72-4.69 2.72H3.27c-.15 0-.27-.12-.27-.27v-.12c.22-1.7 1.38-2.98 2.34-3.78-1.25-.66-2.1-1.84-2.1-3.13 0-2.64 3.17-4.77 7.09-4.77.63 0 1.26.06 1.86.19.8-1.1 2.17-1.82 3.7-1.82.39 0 .78.05 1.14.16.14.04.29.03.41-.05l2.07-1.47c.35-.25.82.06.74.49l-.31 1.55c-.05.24.04.49.23.64 1.27 1.04 2.11 2.64 2.11 4.36 0 .58-.1 1.15-.28 1.69z"/></svg>
+                    </span>
                     <span class="login-social-label">微博</span>
                 </div>
-                <div class="login-social-item" data-social="github">
-                    <span class="login-social-icon" style="background-color:#f5f5f5;color:#333333;">&#xf09b;</span>
+                <div class="login-social-item" data-social="github" title="GitHub登录">
+                    <span class="login-social-icon" style="background-color:#f5f5f5;color:#333333;">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.05 11.05 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.26 5.66.41.36.78 1.06.78 2.14 0 1.54-.01 2.79-.01 3.17 0 .31.21.68.8.56A10.52 10.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+                    </span>
                     <span class="login-social-label">GitHub</span>
                 </div>
-                <div class="login-social-item" data-social="wechat">
-                    <span class="login-social-icon" style="background-color:#f0f9eb;color:#07c160;">&#xf1d7;</span>
+                <div class="login-social-item" data-social="wechat" title="微信公众号登录">
+                    <span class="login-social-icon" style="background-color:#f0f9eb;color:#07c160;">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M9.5 4C5.36 4 2 6.69 2 10c0 1.84.99 3.5 2.54 4.59l-.63 2.16 2.2-1.13c.67.19 1.38.3 2.11.32-.16-.5-.25-1.03-.25-1.58 0-3.09 2.91-5.59 6.5-5.59.3 0 .59.02.88.05C14.85 5.86 12.38 4 9.5 4zm-2.2 3.75c-.51 0-.93-.41-.93-.93s.42-.93.93-.93.93.42.93.93-.42.93-.93.93zm4.4 0c-.51 0-.93-.41-.93-.93s.42-.93.93-.93.93.42.93.93-.42.93-.93.93zM21.5 13.5c0-2.69-2.68-4.87-6-4.87s-6 2.18-6 4.87 2.68 4.87 6 4.87c.64 0 1.25-.1 1.83-.29l2.25 1.08-.59-1.96c1.37-.99 2.51-2.3 2.51-3.83zm-4.3-.75c-.34 0-.62-.28-.62-.62s.28-.62.62-.62.62.28.62.62-.28.62-.62.62zm-3.4 0c-.34 0-.62-.28-.62-.62s.28-.62.62-.62.62.28.62.62-.28.62-.62.62z"/></svg>
+                    </span>
                     <span class="login-social-label">微信</span>
                 </div>
             </div>
@@ -2559,11 +2628,19 @@
                 <h1 class="article-title">${title!''}</h1>
 
                 <div class="author-header">
-                    <div class="author-avatar">
+                    <a class="author-avatar" href="/user/${(authorId!0)?c}" title="查看作者主页">
                         <img src="${authorAvatar!'https://p3.pstatp.com/thumb/1480/7186611868'}" alt="avatar">
-                    </div>
+                    </a>
                     <div class="author-info">
-                        <div class="author-name">${authorName!'黑马头条'}</div>
+                        <div class="author-name-row">
+                            <a class="author-name" href="/user/${(authorId!0)?c}">${authorName!'黑马头条'}</a>
+                            <#if authorLevel?? && authorLevelTitle??>
+                            <span class="author-level-badge" title="${authorLevelTitle}">
+                                <svg viewBox="0 0 24 24"><path d="M12 2l2.4 2.4L12 6.8 9.6 4.4 12 2zM6.4 8.4L12 14l5.6-5.6L12 2.8 6.4 8.4zm0 5.2L12 19.2l5.6-5.6L12 8 6.4 13.6z"/></svg>
+                                Lv.${authorLevel}
+                            </span>
+                            </#if>
+                        </div>
                         <div class="publish-meta">
                             <span class="publish-time">
                                 <#if publishTime??>${publishTime?string('yyyy-MM-dd HH:mm')}</#if>
@@ -2612,8 +2689,8 @@
                             <#if relation?? && relation.isfollow?? && relation.isfollow>已关注<#else>+ 关注</#if>
                         </button>
                         <div class="ea-links">
-                            <a href="/user/${authorId!0}" class="ea-link" target="_blank">查看主页</a>
-                            <a href="/user/${authorId!0}?tab=article" class="ea-link" target="_blank">更多文章</a>
+                            <a href="/user/${(authorId!0)?c}" class="ea-link" target="_blank">查看主页</a>
+                            <a href="/user/${(authorId!0)?c}?tab=article" class="ea-link" target="_blank">更多文章</a>
                         </div>
                     </div>
                 </div>
@@ -2715,14 +2792,24 @@
             </div>
         </article>
 
-        <aside class="toc-sidebar">
+        <aside class="toc-sidebar" id="tocSidebar" data-stage="toc">
             <div class="author-info-card">
-                <div class="author-avatar-wrap">
-                    <img src="${authorAvatar!'https://p3.pstatp.com/thumb/1480/7186611868'}" class="avatar" alt="avatar">
-                    <div class="name">${authorName!'黑马头条'}</div>
-                    <div class="badge">${authorLevel!'LV.1'}</div>
-                    <div class="job-title">${authorJobTitle!'全栈开发工程师'}</div>
-                    <div class="company">${authorCompany!'某科技公司'}</div>
+                <div class="author-info-head">
+                    <a class="author-avatar-link" href="/user/${(authorId!0)?c}" title="查看作者主页">
+                        <img src="${authorAvatar!'https://p3.pstatp.com/thumb/1480/7186611868'}" class="avatar" alt="avatar">
+                    </a>
+                    <div class="author-head-info">
+                        <div class="name-row">
+                            <a class="name" href="/user/${(authorId!0)?c}">${authorName!'黑马头条'}</a>
+                            <#if authorLevel?? && authorLevelTitle??>
+                            <span class="badge" title="${authorLevelTitle}">Lv.${authorLevel}</span>
+                            </#if>
+                        </div>
+                        <div class="author-meta-line">
+                            <#if authorJobTitle?? && authorJobTitle?has_content><span class="job-title">${authorJobTitle}</span></#if>
+                            <#if authorCompany?? && authorCompany?has_content><span class="company"> · ${authorCompany}</span></#if>
+                        </div>
+                    </div>
                 </div>
                 <div class="stats">
                     <div class="stat-item">
@@ -2745,7 +2832,7 @@
                     <button class="message-btn">私信</button>
                 </div>
             </div>
-            <div class="toc-card">
+            <div class="toc-card stage-toc">
                 <div class="toc-title">
                 目录
                 <button class="toc-collapse-btn" id="tocCollapseBtn" title="收起">收起</button>
@@ -2758,32 +2845,15 @@
                     </#if>
                 </ul>
             </div>
-            <div class="author-works-card">
-                <div class="works-title">作者作品</div>
-                <ul class="works-list">
-                    <#if authorWorks??>
-                        <#list authorWorks as work>
-                            <li class="work-item">
-                                <a href="${work.staticUrl!'#'}" class="work-link" target="_blank">
-                                    <span class="work-article-title">${work.title!''}</span>
-                                    <span class="work-publish-time">
-                                        <#if work.publishTime??>${work.publishTime?string('MM-dd')}</#if>
-                                    </span>
-                                </a>
-                            </li>
-                        </#list>
-                    </#if>
-                </ul>
-            </div>
-            <!-- 相关推荐 -->
-            <div class="sidebar-recommend-card" id="relatedCard">
+            <!-- 相关推荐（取代原"作者作品"区域，优先该作者的其他文章） -->
+            <div class="sidebar-recommend-card stage-related" id="relatedCard">
                 <div class="sidebar-recommend-title">相关推荐</div>
                 <ul class="sidebar-recommend-list" id="relatedList">
                     <li class="sidebar-recommend-empty">加载中...</li>
                 </ul>
             </div>
             <!-- 精选内容 -->
-            <div class="sidebar-recommend-card" id="featuredCard">
+            <div class="sidebar-recommend-card stage-featured" id="featuredCard">
                 <div class="sidebar-recommend-title">精选内容</div>
                 <ul class="sidebar-recommend-list" id="featuredList">
                     <li class="sidebar-recommend-empty">加载中...</li>

@@ -1,13 +1,19 @@
 package com.heima.content.controller.page;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.heima.apis.user.IUserClient;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
+import com.heima.content.mapper.follow.ApFollowMapper;
+import com.heima.content.service.level.LevelService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleContent;
+import com.heima.model.common.dtos.ResponseResult;
+import com.heima.model.follow.pojos.ApFollow;
 import com.heima.model.search.vos.TocItem;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +42,15 @@ public class ArticlePageController {
 
     @Autowired
     private ApArticleContentMapper apArticleContentMapper;
+
+    @Autowired
+    private LevelService levelService;
+
+    @Autowired
+    private IUserClient userClient;
+
+    @Autowired
+    private ApFollowMapper apFollowMapper;
 
     /**
      * 渲染文章详情页
@@ -79,8 +94,72 @@ public class ArticlePageController {
         model.addAttribute("tocList", tocList);
         model.addAttribute("articleContentHtml", contentHtml);
 
+        // 3. 补充作者信息：逐力值等级（创作等级）、职位、公司、文章数、粉丝数
+        fillAuthorExtras(article, model);
+
         log.info("渲染文章详情页, articleId={}", id);
         return "article";
+    }
+
+    /**
+     * 填充作者扩展信息（逐力值等级/职位/公司/文章数/粉丝数）
+     * 逐力值等级即创作等级，用于作者信息区与右侧边栏展示。
+     */
+    private void fillAuthorExtras(ApArticle article, Model model) {
+        Long authorId = article.getAuthorId();
+        if (authorId == null || authorId <= 0) {
+            model.addAttribute("authorLevel", 1);
+            model.addAttribute("authorLevelTitle", "");
+            model.addAttribute("authorJobTitle", "");
+            model.addAttribute("authorCompany", "");
+            model.addAttribute("articleCount", 0);
+            model.addAttribute("fansCount", 0);
+            return;
+        }
+
+        // 逐力值等级（创作等级）
+        int powerLevel = 1;
+        String powerTitle = "";
+        try {
+            Map<String, Object> levelInfo = levelService.getUserLevelInfo(authorId);
+            Object pl = levelInfo.get("powerLevel");
+            if (pl instanceof Number) {
+                powerLevel = ((Number) pl).intValue();
+            }
+            powerTitle = levelInfo.get("powerTitle") != null ? levelInfo.get("powerTitle").toString() : "";
+        } catch (Exception e) {
+            log.warn("获取作者逐力值等级失败, authorId={}", authorId, e);
+        }
+        model.addAttribute("authorLevel", powerLevel);
+        model.addAttribute("authorLevelTitle", nullSafe(powerTitle));
+
+        // 职位/公司（用户公开信息）
+        String position = "";
+        String company = "";
+        try {
+            ResponseResult userResult = userClient.getPublicInfo(authorId);
+            if (userResult != null && userResult.getCode() == 200 && userResult.getData() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> userData = (Map<String, Object>) userResult.getData();
+                position = userData.get("position") != null ? userData.get("position").toString() : "";
+                company = userData.get("company") != null ? userData.get("company").toString() : "";
+            }
+        } catch (Exception e) {
+            log.warn("获取作者公开信息失败, authorId={}", authorId, e);
+        }
+        model.addAttribute("authorJobTitle", nullSafe(position));
+        model.addAttribute("authorCompany", nullSafe(company));
+
+        // 文章数（已发布、未删除）与粉丝数
+        long articleCount = apArticleMapper.selectCount(
+            new LambdaQueryWrapper<ApArticle>()
+                .eq(ApArticle::getAuthorId, authorId)
+                .eq(ApArticle::getStatus, ApArticle.Status.PUBLISHED.getCode())
+                .eq(ApArticle::getIsDeleted, false));
+        long fansCount = apFollowMapper.selectCount(
+            new LambdaQueryWrapper<ApFollow>().eq(ApFollow::getFollowUserId, authorId.intValue()));
+        model.addAttribute("articleCount", articleCount);
+        model.addAttribute("fansCount", fansCount);
     }
 
     /**
