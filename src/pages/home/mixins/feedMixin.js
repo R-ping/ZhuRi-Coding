@@ -82,10 +82,6 @@ export default {
       }
       var self = this
       return Api.loaddata(reqParams).then((d) => {
-        self.$set(state, 'loading', false)
-        self.$set(state, 'loadingMore', false)
-        self.$set(state, 'refreshing', false)
-        self.$set(state, 'loaded', true)
         if (d && d.code === 200) {
           if (d.data && d.data.length > 0) {
             self.tanfer(d.data, idx, dir)
@@ -98,6 +94,11 @@ export default {
           self.$set(state, 'error', true)
           self.$set(state, 'errorMsg', (d && d.errorMessage) || '加载失败，请检查网络')
         }
+        // 先填充数据，再关闭 loading，确保骨架屏与内容原子切换
+        self.$set(state, 'loading', false)
+        self.$set(state, 'loadingMore', false)
+        self.$set(state, 'refreshing', false)
+        self.$set(state, 'loaded', true)
       }).catch(() => {
         self.$set(state, 'loading', false)
         self.$set(state, 'loadingMore', false)
@@ -354,16 +355,13 @@ export default {
         tagName: self.subTabStates[index] ? self.subTabStates[index].selectedTag : '__all__'
       }
       return Api.recommendLoad(reqParams).then(function(d) {
-        self.$set(state, 'loading', false)
-        self.$set(state, 'loaded', true)
-        self.$set(self.tabStates[index], 'loading', false)
-        self.$set(self.tabStates[index], 'loaded', true)
         if (d && d.code === 200 && d.data) {
           var data = d.data
           self.$set(state, 'seed', data.seed)
           self.$set(state, 'page', data.page || 0)
           self.$set(state, 'noMore', !data.hasMore)
           self.$set(self.tabStates[index], 'noMore', !data.hasMore)
+          // 先填充数据，再关闭 loading，确保骨架屏与内容原子切换
           if (data.list && data.list.length > 0) {
             self.tanfer(data.list, index, 1)
           }
@@ -373,6 +371,10 @@ export default {
           self.$set(self.tabStates[index], 'error', true)
           self.$set(self.tabStates[index], 'errorMsg', (d && d.errorMessage) || '加载失败，请检查网络')
         }
+        self.$set(state, 'loading', false)
+        self.$set(state, 'loaded', true)
+        self.$set(self.tabStates[index], 'loading', false)
+        self.$set(self.tabStates[index], 'loaded', true)
       }).catch(function() {
         self.$set(state, 'loading', false)
         self.$set(state, 'loaded', true)

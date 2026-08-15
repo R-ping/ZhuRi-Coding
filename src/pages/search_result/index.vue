@@ -57,6 +57,7 @@
                     @tag-click="onTagClick"
                     @author-hover="onAuthorHover"
                     @author-leave="onAuthorLeave"
+                    @author-click="onAuthorClick"
                     @title-click="onTitleClick"
                 />
 
@@ -87,12 +88,16 @@
 
         <!-- 作者悬浮卡片 -->
         <AuthorHoverCard
+            ref="authorHoverCard"
             :visible="showAuthorCard"
             :author="authorCardData"
             :position="authorCardPosition"
-            @close="showAuthorCard = false"
+            @close="closeAuthorHoverCard"
             @follow="onAuthorFollow"
             @message="onAuthorMessage"
+            @go-profile="goToUserHome"
+            @card-enter="onAuthorCardEnter"
+            @card-leave="onAuthorCardLeave"
         />
     </div>
 </template>
@@ -101,11 +106,13 @@
     import { toast } from "@/utils/toast"
     import SearchResultArticle from '@/components/search/SearchResultArticle.vue'
     import AuthorHoverCard from '@/components/search/AuthorHoverCard.vue'
+    import authorHoverCardMixin from '@/mixins/authorHoverCardMixin'
     import Api from '@/apis/search_result/api'
 
     export default {
         name: 'SearchResult',
         components: { SearchResultArticle, AuthorHoverCard },
+        mixins: [authorHoverCardMixin],
         props: {
             keyword: {
                 type: String,
@@ -161,9 +168,8 @@
                     time: 'all'
                 },
                 totalCount: 0,
-                showAuthorCard: false,
-                authorCardData: {},
-                authorCardPosition: { top: 0, left: 0 }
+                // 作者悬浮卡片静态兜底数据（AuthorHoverCard 通过 :author 传入）
+                authorCardData: {}
             }
         },
         computed: {
@@ -371,37 +377,20 @@
                     followerCount: authorData.followerCount || 0,
                     isFollowed: authorData.isFollowed || false
                 }
-                
-                var rect = event.target.getBoundingClientRect()
-                var cardTop = rect.bottom + 8
-                var cardLeft = rect.left
-                
-                if (cardLeft + 240 > window.innerWidth) {
-                    cardLeft = window.innerWidth - 250
-                }
-                
-                this.authorCardPosition = {
-                    top: cardTop,
-                    left: cardLeft,
-                    arrow: 'top'
-                }
-                this.showAuthorCard = true
+                this.showAuthorHoverCard(authorData.authorId, event)
             },
-            // 作者离开
-            onAuthorLeave() {
-                var self = this
-                setTimeout(function() {
-                    self.showAuthorCard = false
-                }, 300)
+            // 点击作者头像/昵称 -> 跳转目标用户个人主页
+            onAuthorClick(userId) {
+                this.goToUserHome(userId)
             },
             // 作者关注
             onAuthorFollow(authorId) {
                 toast('关注功能开发中')
-                this.showAuthorCard = false
+                this.closeAuthorHoverCard()
             },
             // 作者私信
             onAuthorMessage(payload) {
-                this.showAuthorCard = false
+                this.closeAuthorHoverCard()
                 if (!payload || !payload.userId) return
                 this.$router.push({
                     path: '/notification',

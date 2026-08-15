@@ -111,7 +111,7 @@ public class OssImageCleanupTask {
                 listRequest.setMarker(objectListing.getNextMarker());
             } while (objectListing.isTruncated());
         } catch (Exception e) {
-            log.error("列出 OSS 对象失败", e);
+            log.error(" 列出 OSS 对象失败", e);
         }
         return objectNames;
     }
