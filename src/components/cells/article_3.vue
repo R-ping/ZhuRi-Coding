@@ -9,9 +9,9 @@
                 <span class="tag-item" v-for="tag in data.tags" :key="tag">{{tag}}</span>
             </div>
             <div class="tags">
-                <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像" loading="lazy"/>
+                <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像" loading="lazy" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave" @click.stop="onAuthorClick"/>
                 <span class="tags-text tags-icon">{{data.icon}}</span>
-                <span class="tags-text tags-author" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave">{{data.source}}</span>
+                <span class="tags-text tags-author" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave" @click.stop="onAuthorClick">{{data.source}}</span>
                 <span class="meta-sep">·</span>
                 <span class="tags-text meta-comment">{{data.comment}} 评论</span>
                 <span class="meta-sep">·</span>
@@ -76,6 +76,10 @@
             },
             onAuthorLeave:function(){
                 this.$emit('author-leave')
+            },
+            // 点击作者头像/昵称 -> 跳转目标用户个人主页
+            onAuthorClick:function(){
+                this.$emit('author-click', this.data.authorId)
             }
         }
     }

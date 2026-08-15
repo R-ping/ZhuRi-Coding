@@ -164,7 +164,7 @@ export default {
       this.$emit('author-leave')
     },
     onAuthorClick() {
-      this.$emit('author-click', this.data.id)
+      this.$emit('author-click', this.data.authorId)
     },
     onTagClick(tag) {
       this.$emit('tag-click', tag.id, tag.name)

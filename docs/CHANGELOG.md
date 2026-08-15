@@ -1,5 +1,119 @@
 # CHANGELOG
 
+## 2026-08-15 — 个人主页全分栏匿名浏览（动态/关注/收藏集/赞/课程公开接口）
+
+### 变更
+
+1. **动态时间线公开访问**（`UserDynamicController` + 网关）：
+   - 网关白名单新增 `path.startsWith("/content/api/v1/user/dynamic")`；带 `userId` 时未登录也可读取他人动态（不带则取当前登录用户，未登录返回 401）。
+   - 修复匿名访问动态分栏仍 444 的问题。
+2. **新增个人主页公开只读接口**（`UserHomeController`，路径 `/api/v1/user/home/{userId}`）：
+   - `GET /api/v1/user/home/{userId}/following`：该用户关注的用户列表（分页）。
+   - `GET /api/v1/user/home/{userId}/followers`：该用户的关注者列表（分页）。
+   - `GET /api/v1/user/home/{userId}/collections`：该用户收藏的文章列表（分页）。
+   - `GET /api/v1/user/home/{userId}/likes?type=article|pins`：该用户点赞的文章/沸点列表（分页，可过滤类型）。
+   - `GET /api/v1/user/home/{userId}/courses`：该用户创作的已发布课程列表（分页）。
+   - 均以 `profileUserId` 查询，未登录可浏览；与个人中心私有 manage 接口区分，仅返回已发布内容。
+3. **前端公开 API**（`src/apis/author.js`）：新增 `getUserHomeFollowing` / `getUserHomeFollowers` / `getUserHomeCollections` / `getUserHomeLikes` / `getUserHomeCourses`。
+4. **个人主页分栏适配**（`src/pages/user/index.vue`）：
+   - `fetchFollowData` 改用公开接口按 `profileUserId` 加载关注/关注者列表（原调用私有 `/api/v1/data/fans/list`，匿名 444）。
+   - 新增 `fetchCollections` / `fetchCourses` / `fetchLikes`（文章 + 沸点子分栏），接入 `loadTabContent`，修复课程/收藏集/赞分栏不发请求的问题。
+   - 课程分栏模板渲染 `coursesList`（课程卡片：封面/标题/副标题/章节/在学/价格）；赞-沸点子分栏渲染 `likedPinsList`。
+   - 文章/沸点/点赞列表的 `id` 为雪花大数，json-bigint 解析为 BigNumber 对象，作为 Vue key 触发「非原始值 key」警告；在 `fetchArticles` / `fetchPins` / `fetchLikes` 中统一 `String(item.id)` 转字符串，消除控制台警告。
+
+### 验证
+
+- `mvn compile/package`（heima-leadnews-content + app-gateway 模块，-am，skipTests）通过（exit 0）。
+- 网关 + 内容服务以新 jar 重启，全部公开接口匿名请求返回 HTTP 200 + code 200（原 444/未发请求）。
+- 浏览器实测（未登录，`/user/1`）：
+  - 动态 4 条、文章 2 篇、沸点 10 条、课程 1 门（卡片正常渲染）、关注者 1 人、赞-沸点 1 条均正常加载渲染；专栏/收藏集/赞-文章为空态（该用户暂无数据）。
+  - 全部分栏无 444/401 报错、无登录弹框。
+
+## 2026-08-15 — 未登录浏览他人主页分栏信息（公开个人主页接口）
+
+### 变更
+
+1. **新增个人主页公开只读接口**（`UserHomeController`，路径 `/api/v1/user/home/{userId}`）：
+   - `GET /api/v1/user/home/{userId}`：主页头部聚合数据（基本信息：昵称/头像/简介/职位/公司 + 统计 + 等级）。
+   - `GET /api/v1/user/home/{userId}/articles`：该用户已发布文章列表（分页）。
+   - `GET /api/v1/user/home/{userId}/columns`：该用户已发布专栏列表（分页）。
+   - `GET /api/v1/user/home/{userId}/pins`：该用户已发布沸点列表（分页）。
+   - 与个人中心 manage 接口（需登录、含草稿/审核态）区分：仅返回已发布内容，供公开主页展示。
+2. **网关白名单放行**：`AuthorizeFilter.isPublicPath` 新增 `path.startsWith("/content/api/v1/user/home/")`，未登录也可访问他人主页分栏数据。
+3. **前端公开 API**（`src/apis/author.js`）：新增 `getUserHomeData` / `getUserHomeArticles` / `getUserHomeColumns` / `getUserHomePins`。
+4. **个人主页适配匿名浏览**（`src/pages/user/index.vue`）：
+   - 数据加载由登录态私有接口（`getUserStatistics`）改为公开接口（`getUserHomeData`），以 `profileUserId`（路由参数优先）加载头像/昵称/统计/等级。
+   - `fetchArticles` / `fetchColumns` / `fetchPins` 改用 `profileUserId` + 公开接口。
+   - 新增 `isOwnProfile` 计算属性：仅本人主页展示「设置」「新建专栏」等操作按钮。
+
+### 验证
+
+- `mvn install`（heima-leadnews-content + app-gateway 模块，-am，skipTests）通过（exit 0）。
+- 网关 + 内容服务以新 jar 重启，匿名请求 `GET /content/api/v1/user/home/1` 返回 200（原 444）。
+- 浏览器实测（未登录）：
+  - 文章详情页作者信息区头像/昵称可见，昵称旁展示 `Lv.3`（逐力值等级）徽章，作者链接 `href=/user/1` 可跳转作者主页。
+  - 进入 `/user/1` 个人主页：头部昵称/头像/等级徽章/统计正常加载。
+  - 分栏切换：文章 tab 2 篇、沸点 tab 10 条、专栏 tab 空态（该用户暂无专栏）、关注/赞 tab 均正常渲染，无登录弹框、无 444/401 报错。
+
+## 2026-08-15 — 文章详情页体验升级（作者信息区 / 登录弹框 / 右侧边栏）
+
+### 变更
+
+1. **作者信息区改为掘金风格水平布局 + 头像昵称可点击跳转作者主页**：
+   - 顶部作者信息区：头像、昵称改为 `<a href="/user/{authorId}">`，点击直达作者主页；昵称旁新增「逐力值等级（创作等级）」徽章 `Lv.{powerLevel}`（title 展示等级名）。
+   - 右侧边栏作者卡片：由「头像/昵称/职位/等级 上下排列」改为「头像 + 昵称+等级徽章 + 职位·公司」水平布局（掘金风格），头像昵称同样可点击跳转作者主页。
+   - 后端 `ArticlePageController.fillAuthorExtras` 通过 `LevelService.getUserLevelInfo` 注入逐力值等级（`powerLevel`/`powerTitle`）、职位、公司、文章数与粉丝数。
+
+2. **修复详情页登录弹框**：
+   - 社交登录（微博 / GitHub / 微信）图标由 FontAwesome 字符改为内联 SVG（FTL 页面未加载 FontAwesome，原字符渲染为空导致「不完整、按钮位置不对、缺少图标」），颜色与主页登录弹框一致（微博红 / GitHub 黑 / 微信绿），悬停反色。
+
+3. **右侧边栏目录固定高度 + 滚动条**：
+   - `.toc-list` 固定最大高度（360px）+ `overflow-y: auto`，标题级数再多也在内部滚动，不再把下方「相关推荐 / 精选内容」挤出视口。
+   - `.toc-sidebar` 改为 `position: sticky; top: 80px; max-height: calc(100vh - 100px)`，整栏超高时内部滚动。
+
+4. **侧边栏随阅读滚动切换内容阶段**（`updateSidebarStage`）：
+   - 阅读进度 p<0.3 → 只显示目录；0.3≤p<0.6 → 相关推荐；0.6≤p<0.85 → 精选内容；0.85≤p<1.0 → 目录+相关推荐（目录高亮定位到当前标题级数）；p≥1.0（读完）→ 相关推荐+精选内容（目录隐藏）。
+   - 通过 `data-stage` 属性 + CSS 阶段选择器控制卡片显隐，切换带淡入动画。
+
+5. **相关推荐策略（后端）**：
+   - `ArticleDetailServiceImpl.getRelatedArticles`：优先取作者本人其他已发布文章（最多 3 篇），不足 3 篇时依次用**同频道文章**补齐、仍不足再**全局兜底**（排除已加入文章）补齐到 size（默认 5），保证侧边栏始终有足够内容。
+   - 移除侧边栏「作者作品」卡片（由相关推荐承担该作者其他文章的曝光）。
+
+### 验证
+
+- `mvn compile`（heima-leadnews-content 模块，-am）通过（exit 0）。
+- `node --check article-static.js` 语法通过。
+- 浏览器实测通过：
+  - 作者信息区水平布局（`flex-direction: row`），头像/昵称 `href=/user/1` 可点击跳转作者主页（实测点击后进入 `/user/1`）。
+  - 逐力值等级徽章展示 `Lv.3 中级创作者`。
+  - 登录弹框含微博 / GitHub / 微信 3 个社交登录按钮且均带内联 SVG 图标（22px）。
+  - 目录 `.toc-list` 固定 `max-height: 360px; overflow-y: auto`，超高内部滚动。
+  - 侧边栏阶段切换（滚动/派发 scroll 事件实测）：p<0.3 `toc` → 0.3-0.6 `related` → 0.6-0.85 `featured` → 0.85-1.0 `toc-related` → ≥1.0 `end`（related+featured）全部正确切换。
+- 注：隐藏后台标签页时浏览器会抑制原生 scroll 事件（视口 0×0），此为浏览器限制，不影响线上正常滚动触发。
+
+## 2026-08-15 — 作者悬浮卡片交互修复（几何悬浮区域，参考站内信）+ 头像昵称跳转个人主页
+
+### 变更
+
+1. **彻底修复作者信息悬浮卡片在鼠标移向卡片时消失**（文章列表/沸点/搜索结果页）：
+   - 参考站内信悬浮框「触发区 ∪ 下拉面板位于同一容器，鼠标移动不触发中间隐藏」的思路，重写 `authorHoverCardMixin.js`：
+     - 由「document mouseover + DOM 包含关系」改为「document mousemove + 几何判定」；
+     - 悬浮区域 = 触发元素外扩区 ∪ 卡片本体外扩区 ∪ 二者之间的竖直桥接通道，只要指针坐标落在任一区域内卡片就保持显示，与鼠标下方是哪个 DOM 元素无关；
+     - 鼠标真正离开悬浮区域后延迟 400ms 隐藏（只启动一次定时器，不因路过其他元素抖动重置）。
+   - `AuthorHoverCard.vue` 保留 `mouseenter` / `mouseleave` → 派发 `card-enter` / `card-leave` 作为兜底。
+   - 定位增强：卡片默认显示在触发元素下方 8px；下方空间不足（接近视口底部）时自动翻转到触发元素上方（箭头朝下），保证卡片始终可见、鼠标可达。
+   - 修复后实测：悬浮头像/昵称 → 卡片出现；鼠标移向卡片并停留 → 卡片不消失，可点击「关注 / 私信」；鼠标移出区域 → 卡片延迟关闭。
+2. **点击头像/昵称跳转目标用户个人主页**：
+   - `article_0.vue` / `article_1.vue` / `article_3.vue`：头像新增悬浮展示卡片 + 点击事件；头像、昵称点击（`@click.stop` 阻断打开文章）派发 `author-click`。
+   - `home/index.vue` 新增 `onAuthorClick` → `$router.push('/user/{authorId}')`。
+   - `pins/index.vue`：头像、昵称点击新增 `goToUserPage` → 跳转 `/user/{userId}`，并先关闭悬浮卡片。
+   - `search_result/index.vue`：同步补齐卡片保持逻辑（复用同一组件，避免同类问题）。
+
+### 验证
+
+- 浏览器实测（首页/沸点页）：悬浮触发 → 卡片出现 → 鼠标移至卡片保持显示 → 移出后关闭；底部触发自动翻转朝上。
+- `npm run build` 构建通过（exit 0）。
+
 ## 2026-08-14 — 成就勋章系统联调验证 + 匿名 444 误登出修复
 
 ### 变更

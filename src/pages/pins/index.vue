@@ -99,10 +99,11 @@
                     <div class="pins-item" v-for="pins in pinsList" :key="pins.id">
                         <img :src="pins.userAvatar || defaultAvatar" class="pins-avatar" alt="avatar"
                             @mouseenter="onAuthorHover(pins.userId, $event)"
-                            @mouseleave="onAuthorLeave">
+                            @mouseleave="onAuthorLeave"
+                            @click="goToUserPage(pins.userId)">
                         <div class="pins-content-area">
                             <div class="pins-header">
-                                <span class="pins-user" @mouseenter="onAuthorHover(pins.userId, $event)" @mouseleave="onAuthorLeave">{{ escapeHtml(pins.userName) }}</span>
+                                <span class="pins-user" @mouseenter="onAuthorHover(pins.userId, $event)" @mouseleave="onAuthorLeave" @click="goToUserPage(pins.userId)">{{ escapeHtml(pins.userName) }}</span>
                                 <span class="pins-time" @mouseenter="pins.hoverTime = true" @mouseleave="pins.hoverTime = false" :class="{ 'time-hover': pins.hoverTime }" @click="goToDetail(pins)">{{ formatTime(pins.createdTime) }}</span>
                             </div>
                             <div class="pins-text">{{ escapeHtml(pins.content) }}</div>
@@ -430,12 +431,16 @@
 
         <!-- 作者信息悬浮卡片 -->
         <AuthorHoverCard
+            ref="authorHoverCard"
             :visible="showAuthorCard"
             :userId="authorCardUserId"
             :position="authorCardPosition"
-            @close="showAuthorCard = false"
+            @close="closeAuthorHoverCard"
             @follow="onAuthorFollow"
             @message="onAuthorMessage"
+            @go-profile="goToUserHome"
+            @card-enter="onAuthorCardEnter"
+            @card-leave="onAuthorCardLeave"
         />
     </div>
 </template>
@@ -459,12 +464,14 @@ import {
 import PinsPublishBox from './components/PinsPublishBox.vue'
 import RecommendTopics from '@/components/RecommendTopics.vue'
 import AuthorHoverCard from '@/components/search/AuthorHoverCard.vue'
+import authorHoverCardMixin from '@/mixins/authorHoverCardMixin'
 import { uploadFile } from '@/common/oss_upload'
 import { followUser } from '@/apis/follow'
 
 export default {
     name: 'Pins',
     components: { HomeBar, PinsPublishBox, RecommendTopics, AuthorHoverCard },
+    mixins: [authorHoverCardMixin],
     data() {
         return {
             activeTab: 'latest',
@@ -521,12 +528,6 @@ export default {
             // 沸点列表加载失败标记（503/超时等，用于区分"暂无内容"与"加载失败"）
             pinsError: false,
 
-            // 作者信息悬浮卡片
-            showAuthorCard: false,
-            authorCardUserId: null,
-            authorCardPosition: { top: 0, left: 0 },
-            authorCardTimer: null,
-            
             // 右侧边栏
             sidebarData: {
                 pinsCount: 0,
@@ -1017,32 +1018,11 @@ export default {
         // ============== 作者信息悬浮卡片 ==============
         onAuthorHover(userId, event) {
             if (!userId) return
-            if (this.authorCardTimer) {
-                clearTimeout(this.authorCardTimer)
-                this.authorCardTimer = null
-            }
-            this.authorCardUserId = userId
-            var rect = event.target.getBoundingClientRect()
-            var cardTop = rect.bottom + 8
-            var cardLeft = rect.left
-            if (cardLeft + 240 > window.innerWidth) {
-                cardLeft = window.innerWidth - 250
-            }
-            this.authorCardPosition = {
-                top: cardTop,
-                left: cardLeft,
-                arrow: 'top'
-            }
-            this.showAuthorCard = true
+            this.showAuthorHoverCard(userId, event)
         },
-        onAuthorLeave() {
-            var self = this
-            if (this.authorCardTimer) {
-                clearTimeout(this.authorCardTimer)
-            }
-            this.authorCardTimer = setTimeout(function () {
-                self.showAuthorCard = false
-            }, 300)
+        // 点击作者头像/昵称 -> 跳转目标用户个人主页
+        goToUserPage(userId) {
+            this.goToUserHome(userId)
         },
         async onAuthorFollow(userId) {
             var currentUserId = this.userInfo && this.userInfo.userId
@@ -1063,7 +1043,7 @@ export default {
             }
         },
         onAuthorMessage(payload) {
-            this.showAuthorCard = false
+            this.closeAuthorHoverCard()
             if (!payload || !payload.userId) return
             this.$router.push({
                 path: '/notification',

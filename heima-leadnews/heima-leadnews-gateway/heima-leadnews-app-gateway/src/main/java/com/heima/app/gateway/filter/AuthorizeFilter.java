@@ -162,7 +162,11 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/course/my")
             || path.startsWith("/content/api/v1/course/detail")
             // 成就勋章公开只读接口（未登录也可浏览他人主页勋章）
-            || path.matches("/content/api/v1/user/\\d+/achievements");
+            || path.matches("/content/api/v1/user/\\d+/achievements")
+            // 个人主页公开只读接口（未登录也可浏览他人主页基本信息/统计/等级及分栏内容）
+            || path.startsWith("/content/api/v1/user/home/")
+            // 个人主页动态时间线（未登录也可浏览他人动态；未带 userId 时取登录用户）
+            || path.startsWith("/content/api/v1/user/dynamic");
     }
 
     /**

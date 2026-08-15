@@ -49,9 +49,9 @@
           </div>
           <div v-for="(item,key) in v" class="cell" :key="item.id || key"
             @click="wxcPanItemClicked(item)">
-            <Item0 v-if="item.type === 0" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
-            <Item1 v-if="item.type === 1" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
-            <Item3 v-if="item.type === 3" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
+            <Item0 v-if="item.type === 0" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave" @author-click="onAuthorClick"/>
+            <Item1 v-if="item.type === 1" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave" @author-click="onAuthorClick"/>
+            <Item3 v-if="item.type === 3" :data="item" :showTime="subTabStates[index] && subTabStates[index].current === 'latest'" @author-hover="onAuthorHover" @author-leave="onAuthorLeave" @author-click="onAuthorClick"/>
           </div>
           <div class="loading" v-if="tabStates[index] && tabStates[index].loadingMore">
             <span class="loading-spinner"></span>
@@ -94,10 +94,6 @@
                       </div>
                   </div>
               </div>
-              <div class="desktop-refresh" title="刷新" @click="handleRefresh">
-                  <span class="refresh-icon" :class="{ spinning: isRefreshing }">&#xf021;</span>
-                  <span class="refresh-text">刷新</span>
-              </div>
           </div>
           <div class="pull-refresh" v-if="currentState.refreshing">
             <span class="loading-spinner"></span>
@@ -116,9 +112,9 @@
           </div>
           <div v-for="(item,key) in currentList" class="cell desktop-cell" :key="item.id || key"
             @click="wxcPanItemClicked(item)">
-            <Item0 v-if="item.type === 0" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
-            <Item1 v-if="item.type === 1" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
-            <Item3 v-if="item.type === 3" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave"/>
+            <Item0 v-if="item.type === 0" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave" @author-click="onAuthorClick"/>
+            <Item1 v-if="item.type === 1" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave" @author-click="onAuthorClick"/>
+            <Item3 v-if="item.type === 3" :data="item" :showTime="currentShowTime" @author-hover="onAuthorHover" @author-leave="onAuthorLeave" @author-click="onAuthorClick"/>
           </div>
           <div class="loading" v-if="currentState.loadingMore">
             <span class="loading-spinner"></span>
@@ -139,12 +135,16 @@
 
     <!-- 作者信息悬浮卡片 -->
     <AuthorHoverCard
+      ref="authorHoverCard"
       :visible="showAuthorCard"
       :userId="authorCardUserId"
       :position="authorCardPosition"
-      @close="showAuthorCard = false"
+      @close="closeAuthorHoverCard"
       @follow="onAuthorFollow"
       @message="onAuthorMessage"
+      @go-profile="goToUserHome"
+      @card-enter="onAuthorCardEnter"
+      @card-leave="onAuthorCardLeave"
     />
 
     <!-- 桌面端回顶按钮 -->
@@ -168,6 +168,7 @@
   import Item3 from '../../components/cells/article_3.vue'
   import Config from './config'
   import feedMixin from './mixins/feedMixin'
+  import authorHoverCardMixin from '@/mixins/authorHoverCardMixin'
   import AuthorHoverCard from '@/components/search/AuthorHoverCard.vue'
   import { followUser } from '@/apis/follow'
   import { toast } from '@/utils/toast'
@@ -175,7 +176,7 @@
   export default {
     name: 'HeiMa-Home',
     components: { Home_Bar, WxcTabPage, Item0, Item1, Item3, AuthorHoverCard },
-    mixins: [feedMixin],
+    mixins: [feedMixin, authorHoverCardMixin],
     data: () => ({
       isDesktop: false,
       currentTab: 0,
@@ -186,20 +187,13 @@
       tabStyles: Config.tabStyles,
       tabList: [...Array(Config.tabTitles.length).keys()].map(() => []),
       tabPageHeight: 1334,
-      // 作者信息悬浮卡片
-      showAuthorCard: false,
-      authorCardUserId: null,
-      authorCardPosition: { top: 0, left: 0 },
-      authorCardTimer: null,
       // 分栏切换后列表加载完成时触发内容淡入
       _pendingFade: false,
       // 桌面端回顶按钮：滚动超一屏时显示
       showBackToTop: false,
       // 刷新成功提示：已更新 N 条新内容
       refreshToast: { visible: false, text: '' },
-      refreshToastTimer: null,
-      // 刷新按钮 loading 状态
-      isRefreshing: false
+      refreshToastTimer: null
     }),
     computed: {
       load_new_text: function () { return this.$lang.load_new_text },
@@ -355,34 +349,10 @@
       // ============== 作者信息悬浮卡片 ==============
       onAuthorHover(payload) {
         if (!payload || !payload.userId) return
-        var userId = payload.userId
-        var event = payload.event
-        if (this.authorCardTimer) {
-          clearTimeout(this.authorCardTimer)
-          this.authorCardTimer = null
-        }
-        this.authorCardUserId = userId
-        var rect = event.target.getBoundingClientRect()
-        var cardTop = rect.bottom + 8
-        var cardLeft = rect.left
-        if (cardLeft + 240 > window.innerWidth) {
-          cardLeft = window.innerWidth - 250
-        }
-        this.authorCardPosition = {
-          top: cardTop,
-          left: cardLeft,
-          arrow: 'top'
-        }
-        this.showAuthorCard = true
+        this.showAuthorHoverCard(payload.userId, payload.event)
       },
-      onAuthorLeave() {
-        var self = this
-        if (this.authorCardTimer) {
-          clearTimeout(this.authorCardTimer)
-        }
-        this.authorCardTimer = setTimeout(function () {
-          self.showAuthorCard = false
-        }, 300)
+      onAuthorClick(userId) {
+        this.goToUserHome(userId)
       },
       async onAuthorFollow(userId) {
         var currentUserId = this.$store.state.userInfo && this.$store.state.userInfo.userId
@@ -403,7 +373,7 @@
         }
       },
       onAuthorMessage(payload) {
-        this.showAuthorCard = false
+        this.closeAuthorHoverCard()
         if (!payload || !payload.userId) return
         this.$router.push({
           path: '/notification',
@@ -452,19 +422,6 @@
       handleWindowScroll() {
         var scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0
         this.showBackToTop = scrollTop > 500
-      },
-      /**
-       * 桌面端刷新：加载当前分栏最新内容
-       */
-      handleRefresh() {
-        if (this.isRefreshing) return
-        var self = this
-        this.isRefreshing = true
-        this.loadnew(this.currentTab).then(function() {
-          self.isRefreshing = false
-        }, function() {
-          self.isRefreshing = false
-        })
       }
     }
   };

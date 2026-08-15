@@ -363,6 +363,43 @@
     window.addEventListener('scroll', highlightToc);
     highlightToc();
 
+    // ========== 侧边栏随滚动切换内容阶段 ==========
+    // 阅读过程中侧边栏依次展示：目录 -> 相关推荐 -> 精选内容，
+    // 临近结尾重新展示 目录+相关推荐（目录定位到当前标题），
+    // 读完结尾只展示 相关推荐+精选内容。
+    function getReadingProgress() {
+        var body = document.getElementById('articleContent');
+        if (!body) return 1;
+        var top = body.getBoundingClientRect().top + window.pageYOffset;
+        var bottom = body.getBoundingClientRect().bottom + window.pageYOffset;
+        if (bottom - top <= 0) return 1;
+        var p = (window.pageYOffset - top) / (bottom - top);
+        return Math.max(0, Math.min(1, p));
+    }
+
+    function updateSidebarStage() {
+        var sidebar = document.getElementById('tocSidebar');
+        if (!sidebar) return;
+        var p = getReadingProgress();
+        var phase;
+        if (p < 0.3) {
+            phase = 'toc';
+        } else if (p < 0.6) {
+            phase = 'related';
+        } else if (p < 0.85) {
+            phase = 'featured';
+        } else if (p < 1.0) {
+            phase = 'toc-related';
+        } else {
+            phase = 'end';
+        }
+        if (sidebar.getAttribute('data-stage') !== phase) {
+            sidebar.setAttribute('data-stage', phase);
+        }
+    }
+    window.addEventListener('scroll', updateSidebarStage, { passive: true });
+    updateSidebarStage();
+
     // 移动端抽屉
     var tocFloatBtn = document.getElementById('tocFloatBtn');
     var tocDrawer = document.getElementById('tocDrawer');

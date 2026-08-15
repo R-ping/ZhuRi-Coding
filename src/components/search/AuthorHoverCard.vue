@@ -5,6 +5,8 @@
       class="author-hover-card"
       :style="cardStyle"
       @click.stop="onCardClick"
+      @mouseenter="onCardEnter"
+      @mouseleave="onCardLeave"
     >
       <div class="card-arrow" :class="arrowDirection"></div>
 
@@ -14,10 +16,12 @@
             class="author-avatar"
             :src="displayAvatar"
             alt="author avatar"
+            title="查看个人主页"
+            @click.stop="onGoProfile"
           />
           <div class="author-info">
             <div class="author-name-row">
-              <span class="author-name">{{ displayName }}</span>
+              <span class="author-name" title="查看个人主页" @click.stop="onGoProfile">{{ displayName }}</span>
             </div>
             <div class="author-level-row">
               <span class="level-badge daily" title="逐日等级">
@@ -188,6 +192,19 @@ export default {
       })
     },
     onCardClick() {},
+    // 点击卡片内头像/昵称 -> 派发跳转事件，由父级跳转目标用户个人主页
+    onGoProfile() {
+      if (!this.currentUserId) return
+      this.$emit('go-profile', this.currentUserId)
+    },
+    // 鼠标进入卡片：通知父级取消隐藏定时器，保证可点击卡片内的关注/私信按钮
+    onCardEnter() {
+      this.$emit('card-enter')
+    },
+    // 鼠标离开卡片：通知父级延迟隐藏
+    onCardLeave() {
+      this.$emit('card-leave')
+    },
     handleOutsideClick(e) {
       if (this.$el && !this.$el.contains(e.target)) {
         this.$emit('close')
@@ -268,6 +285,13 @@ export default {
   margin-bottom: 10px;
   border: 2px solid #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.author-avatar:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
 }
 
 .author-info {
@@ -290,6 +314,12 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.author-name:hover {
+  color: #1E80FF;
 }
 
 .author-level-row {

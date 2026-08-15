@@ -112,6 +112,10 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* 骨架屏不参与点击，且不产生层级遮挡 */
+  pointer-events: none;
+  position: relative;
+  z-index: 0;
 }
 
 .skeleton-item {
@@ -312,7 +316,8 @@
     margin-top: 0;
     background-color: #F4F5F7;
     border-radius: 0;
-    overflow: hidden;
+    /* clip 不创建滚动容器，使内部 sticky 元素以视口为参考系 */
+    overflow: clip;
   }
 
   .desktop-tabs {
@@ -501,35 +506,6 @@
       top: 60PX;
       z-index: 5;
   }
-  /* 桌面端刷新按钮 */
-  .desktop-refresh {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-left: auto;
-      padding: 6px 12px;
-      font-size: 13PX;
-      color: #515767;
-      cursor: pointer;
-      border-radius: 4PX;
-      transition: color 0.2s, background-color 0.2s;
-  }
-  .desktop-refresh:hover {
-      color: #1E80FF;
-      background-color: #F4F5F7;
-  }
-  .refresh-icon {
-      font-family: fontawesome;
-      font-size: 14PX;
-      line-height: 1;
-  }
-  .refresh-icon.spinning {
-      animation: refreshSpin 0.8s linear infinite;
-  }
-  @keyframes refreshSpin {
-      to { transform: rotate(360deg); }
-  }
-
   /* 桌面端回顶按钮：滚动超一屏后右下角悬浮 */
   .back-to-top {
       position: fixed;
