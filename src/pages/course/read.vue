@@ -129,7 +129,8 @@ export default {
   },
   methods: {
     async loadChapterDetail() {
-      const chapterId = parseInt(this.$route.params.id)
+      // 雪花ID超过 JS Number 安全范围，必须保留字符串形式，避免 parseInt 精度丢失
+      const chapterId = this.$route.params.id
       this.loading = true
       try {
         // 加载章节详情

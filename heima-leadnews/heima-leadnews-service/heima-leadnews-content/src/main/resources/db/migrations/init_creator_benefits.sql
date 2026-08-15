@@ -65,77 +65,70 @@ SELECT 2, 8, '传奇创作者', '登峰造极，行业传奇', 140000, 99999999,
 WHERE NOT EXISTS (SELECT 1 FROM ap_level_config WHERE level_type = 2 AND level_value = 8);
 
 -- 4. 创作者权益配置（level_type=2，按等级配置权益）
--- 等级1：基础权益
+-- 权益体系与 参考资料/逐力值权益response.md 一致，need_jscore_level=-1 表示不受逐友等级限制
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 1, '基础创作者标识', 'creator_badge_1', 'icon_badge_1', 'poster_level_1', '获得新锐创作者徽章', '[{"desc_title":"专属徽章","desc_content":"新锐创作者身份标识"}]', 0, '', '', 1, 1, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 1 AND privilege_code = 'creator_badge_1');
+SELECT 2, 1, '文章添加投票', 'can_create_poll', 'icon_vote', 'poster_vote', '文章创作时可以使用添加投票功能，更好地与掘友互动', '[{"desc_title":"什么是「文章添加投票」？","desc_content":"在进行文章创作时，可以在编辑器中使用添加投票功能，帮助你更好地与掘友互动。"},{"desc_title":"如何解锁「文章添加投票」？","desc_content":"创作等级达成LV1，即可解锁「文章添加投票」权益。"},{"desc_title":"使用说明","desc_content":"功能快马加鞭建设中"}]', -1, '', '', 0, 1, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 1 AND privilege_code = 'can_create_poll');
 
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 1, '发布文章权限', 'publish_article', 'icon_publish', 'poster_publish', '可发布原创文章', '[{"desc_title":"发布权限","desc_content":"拥有发布原创文章的权限"}]', 0, '', '', 1, 2, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 1 AND privilege_code = 'publish_article');
-
--- 等级2：进阶权益
-INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 2, '自定义简介', 'custom_bio', 'icon_custom', 'poster_custom', '可自定义个人简介和背景图', '[{"desc_title":"个性化设置","desc_content":"自定义个人主页背景图和简介"}]', 0, '', '', 1, 1, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 2 AND privilege_code = 'custom_bio');
+SELECT 2, 2, '文章添加视频', 'can_add_video', 'icon_video', 'poster_video', '文章创作时可以在编辑器中使用添加视频功能，更好地进行内容分享', '[{"desc_title":"什么是「文章添加视频」？","desc_content":"在进行文章创作时，可以在编辑器中使用添加视频功能，将帮助你更好地进行内容分享。"},{"desc_title":"如何解锁「文章添加视频」？","desc_content":"创作等级达成LV2，即可解锁「文章添加视频」权益。"},{"desc_title":"使用说明","desc_content":"前往编辑器页面，点击上传视频icon，唤起相关入口进行上传，目前仅支持西瓜视频链接上传。"}]', -1, '/editor/drafts/new?v=2', '', 1, 1, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 2 AND privilege_code = 'can_add_video');
 
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 2, '文章分类管理', 'category_manage', 'icon_category', 'poster_category', '可管理文章分类和标签', '[{"desc_title":"分类管理","desc_content":"创建和管理专属文章分类"}]', 0, '', '', 1, 2, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 2 AND privilege_code = 'category_manage');
-
--- 等级3：专业权益
-INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 3, '数据分析报告', 'data_report', 'icon_report', 'poster_report', '查看详细的文章数据分析', '[{"desc_title":"数据分析","desc_content":"查看文章阅读量、互动等详细数据"}]', 0, '', '', 1, 1, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 3 AND privilege_code = 'data_report');
+SELECT 2, 2, '文章加2个标签', 'can_add_2_tags', 'icon_tag2', 'poster_tag2', '发布文章时可以添加多个标签，有利于获得更多流量', '[{"desc_title":"什么是「文章加多标签」？","desc_content":"在发布文章时可以添加多个标签，添加多个标签有利于获得更多流量，你的内容将会被更多掘友看到。"},{"desc_title":"如何解锁「文章加多标签」？","desc_content":"创作等级达成LV2，即可解锁「文章加2个标签」权益。创作等级达成LV3，权益升级为「文章加3个标签」。"},{"desc_title":"使用说明","desc_content":"在文章编辑器页面-发布弹窗，可以进行添加标签操作。"}]', -1, '/editor/drafts/new?v=2', '', 1, 2, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 2 AND privilege_code = 'can_add_2_tags');
 
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 3, '收益提现', 'withdraw', 'icon_withdraw', 'poster_withdraw', '文章收益可提现', '[{"desc_title":"收益提现","desc_content":"文章创作收益可申请提现"}]', 0, '', '', 1, 2, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 3 AND privilege_code = 'withdraw');
-
--- 等级4：资深权益
-INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 4, '专栏申请', 'column_apply', 'icon_column', 'poster_column', '可申请开通专属专栏', '[{"desc_title":"专属专栏","desc_content":"申请开通个人专属专栏"}]', 0, '', '', 1, 1, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 4 AND privilege_code = 'column_apply');
+SELECT 2, 3, '文章加3个标签', 'can_add_3_tags', 'icon_tag3', 'poster_tag3', '发布文章时可以添加3个标签，有利于获得更多流量', '[{"desc_title":"什么是「文章加多标签」？","desc_content":"在发布文章时可以添加多个标签，添加多个标签有利于获得更多流量，你的内容将会被更多掘友看到。"},{"desc_title":"如何解锁「文章加多标签」？","desc_content":"创作等级达成LV2，即可解锁「文章加2个标签」权益。创作等级达成LV3，权益升级为「文章加3个标签」。"},{"desc_title":"使用说明","desc_content":"在文章编辑器页面-发布弹窗，可以进行添加标签操作。"}]', -1, '/editor/drafts/new?v=2', '', 1, 1, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 3 AND privilege_code = 'can_add_3_tags');
 
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 4, '原创认证', 'original_cert', 'icon_cert', 'poster_cert', '可申请原创认证', '[{"desc_title":"原创认证","desc_content":"申请文章原创认证标识"}]', 0, '', '', 1, 2, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 4 AND privilege_code = 'original_cert');
-
--- 等级5：知名权益
-INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 5, '付费专栏', 'paid_column', 'icon_paid', 'poster_paid', '可开设付费专栏', '[{"desc_title":"付费专栏","desc_content":"开设付费专栏获取收益"}]', 0, '', '', 1, 1, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 5 AND privilege_code = 'paid_column');
+SELECT 2, 3, '文章定时发布', 'can_schedule_publish', 'icon_schedule', 'poster_schedule', '可以将创作好的文章设置特定时间发布，让你更灵活、更有计划地进行文章创作', '[{"desc_title":"什么是「文章定时发布」？","desc_content":"可以将创作好的文章设置特定时间发布，让你更灵活、更有计划地进行文章创作。"},{"desc_title":"如何解锁「文章定时发布」？","desc_content":"创作等级达成LV3，即可解锁「文章定时发布」权益。"},{"desc_title":"使用说明","desc_content":"功能快马加鞭建设中"}]', -1, '', '', 0, 2, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 3 AND privilege_code = 'can_schedule_publish');
 
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 5, '优先推荐', 'recommend_priority', 'icon_recommend', 'poster_recommend', '文章获得平台优先推荐', '[{"desc_title":"优先推荐","desc_content":"文章获得平台流量扶持"}]', 0, '', '', 1, 2, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 5 AND privilege_code = 'recommend_priority');
-
--- 等级6：头部权益
-INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 6, '平台签约', 'platform_sign', 'icon_sign', 'poster_sign', '获得平台签约机会', '[{"desc_title":"平台签约","desc_content":"优质创作者平台签约机会"}]', 0, '', '', 1, 1, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 6 AND privilege_code = 'platform_sign');
+SELECT 2, 4, '自动推荐到首页', 'can_be_recommended', 'icon_recommend', 'poster_recommend', '文章发布成功后，符合标准的文章将在第一时间被自动推荐到首页', '[{"desc_title":"什么是「自动推荐到首页」？","desc_content":"文章发布成功后，对于符合标准的文章将在第一时间被自动推荐到首页。"},{"desc_title":"如何解锁「自动推荐到首页」？","desc_content":"创作等级达成LV4，即可解锁「自动推荐到首页」权益。"},{"desc_title":"使用说明","desc_content":"只要解锁该权益，对于符合推荐标准的文章将在第一时间被自动推荐；对于不符合推荐标准的文章将会进行人工review。"}]', -1, '/editor/drafts/new?v=2', '', 1, 1, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 4 AND privilege_code = 'can_be_recommended');
 
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 6, '商业合作', 'commerce_coop', 'icon_coop', 'poster_coop', '开放商业合作权限', '[{"desc_title":"商业合作","desc_content":"开放品牌商业合作权限"}]', 0, '', '', 1, 2, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 6 AND privilege_code = 'commerce_coop');
-
--- 等级7：顶级权益
-INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 7, '专属客服', 'vip_service', 'icon_vip', 'poster_vip', '享受一对一专属客服服务', '[{"desc_title":"专属服务","desc_content":"一对一专属客服和运营支持"}]', 0, '', '', 1, 1, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 7 AND privilege_code = 'vip_service');
+SELECT 2, 4, '流量加油包基础版', 'traffic_boost_basic', 'icon_boost', 'poster_boost', '作者可以使用流量加油包加持自己的内容曝光，你的内容将会被推荐给更多用户', '[{"desc_title":"什么是「流量加油包」？","desc_content":"作者可以使用流量加油包加持自己的内容曝光，你的内容将会被推荐给更多用户。"},{"desc_title":"如何解锁「流量加油包」？","desc_content":"创作等级达成LV4，即可解锁「流量加油包基础版」权益。创作等级达成LV5，权益升级，荣升为「流量加油包升级版」。创作等级达成LV6，权益再升级，荣升为「流量加油包加强版」。"},{"desc_title":"使用说明","desc_content":"功能快马加鞭建设中"}]', -1, '', '', 0, 2, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 4 AND privilege_code = 'traffic_boost_basic');
 
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 7, '线下活动', 'offline_event', 'icon_event', 'poster_event', '优先参与平台线下活动', '[{"desc_title":"线下活动","desc_content":"优先受邀参加平台线下活动"}]', 0, '', '', 1, 2, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 7 AND privilege_code = 'offline_event');
-
--- 等级8：传奇权益
-INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 8, '行业影响力', 'industry_influence', 'icon_influence', 'poster_influence', '成为平台标杆，引领行业', '[{"desc_title":"行业标杆","desc_content":"成为平台标杆创作者，引领行业发展"}]', 0, '', '', 1, 1, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 8 AND privilege_code = 'industry_influence');
+SELECT 2, 5, '流量加油包升级版', 'traffic_boost_upgrade', 'icon_boost', 'poster_boost', '升级版流量加油包，加持内容曝光，推荐给更多用户', '[{"desc_title":"什么是「流量加油包」？","desc_content":"作者可以使用流量加油包加持自己的内容曝光，你的内容将会被推荐给更多用户。"},{"desc_title":"如何解锁「流量加油包」？","desc_content":"创作等级达成LV4，即可解锁「流量加油包基础版」权益。创作等级达成LV5，权益升级，荣升为「流量加油包升级版」。创作等级达成LV6，权益再升级，荣升为「流量加油包加强版」。"},{"desc_title":"使用说明","desc_content":"功能快马加鞭建设中"}]', -1, '', '', 0, 1, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 5 AND privilege_code = 'traffic_boost_upgrade');
 
 INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
-SELECT 2, 8, '官方推荐', 'official_recommend', 'icon_official', 'poster_official', '获得平台官方全方位推荐', '[{"desc_title":"官方推荐","desc_content":"平台官方全方位推荐资源"}]', 0, '', '', 1, 2, 1, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 8 AND privilege_code = 'official_recommend');
+SELECT 2, 5, '优秀创作者', 'excellent_creator', 'icon_excellent', 'poster_excellent', '优秀创作者是社区重要的创作者成就，荣誉标示展示在个人主页与创作者中心', '[{"desc_title":"什么是「优秀创作者」？","desc_content":"优秀创作者是掘金社区重要的创作者成就，相关荣誉标示将会展示在你的个人主页、创作者中心，会让更多掘友快速认识你。"},{"desc_title":"如何解锁「优秀创作者」？","desc_content":"创作等级达成LV5，且无违规行为，即可解锁「优秀创作者」成就。"},{"desc_title":"使用说明","desc_content":"只要解锁该权益，相关荣誉标示将会展示在你的个人主页、创作者中心。"}]', -1, '/user/{userId}', '', 1, 2, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 5 AND privilege_code = 'excellent_creator');
+
+INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
+SELECT 2, 6, '流量加油包加强版', 'traffic_boost_plus', 'icon_boost', 'poster_boost', '加强版流量加油包，加持内容曝光，推荐给更多用户', '[{"desc_title":"什么是「流量加油包」？","desc_content":"作者可以使用流量加油包加持自己的内容曝光，你的内容将会被推荐给更多用户。"},{"desc_title":"如何解锁「流量加油包」？","desc_content":"创作等级达成LV4，即可解锁「流量加油包基础版」权益。创作等级达成LV5，权益升级，荣升为「流量加油包升级版」。创作等级达成LV6，权益再升级，荣升为「流量加油包加强版」。"},{"desc_title":"使用说明","desc_content":"功能快马加鞭建设中"}]', -1, '', '', 0, 1, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 6 AND privilege_code = 'traffic_boost_plus');
+
+INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
+SELECT 2, 6, '自定义域名', 'custom_domain', 'icon_domain', 'poster_domain', '可以设置个人主页的域名，个性化的名称有利于让更多掘友快速记住你', '[{"desc_title":"什么是「自定义域名」？","desc_content":"可以设置个人主页的域名，个性化的名称有利于让更多掘友快速记住你。"},{"desc_title":"如何解锁「自定义域名」？","desc_content":"创作等级达成LV6，即可解锁「自定义域名」权益。"},{"desc_title":"使用说明","desc_content":"功能快马加鞭建设中"}]', -1, '', '', 0, 2, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 6 AND privilege_code = 'custom_domain');
+
+INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
+SELECT 2, 6, '作者群发消息', 'author_group_msg', 'icon_msg', 'poster_msg', '权益开通后，作者可以按照一定频率给关注者群发消息，让你的读者快速获取一手消息', '[{"desc_title":"什么是「作者群发消息」？","desc_content":"权益开通后，作者可以按照一定频率给关注者群发消息，让你的读者快速获取一手消息。"},{"desc_title":"如何解锁「作者群发消息」？","desc_content":"创作等级达成LV6，即可解锁「作者群发消息」权益。"},{"desc_title":"使用说明","desc_content":"功能快马加鞭建设中"}]', -1, '', '', 0, 3, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 6 AND privilege_code = 'author_group_msg');
+
+INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
+SELECT 2, 7, '创作小册', 'can_create_course', 'icon_course', 'poster_course', '作者可以在平台创作体系化的小册内容，经运营审核通过后可进行售卖并获得收益', '[{"desc_title":"什么是「创作小册」？","desc_content":"作者可以在掘金创作体系化的小册内容，经运营审核通过后，相关小册可以在掘金上进行售卖，可以按照一定的规则获取收益。"},{"desc_title":"如何解锁「创作小册」？","desc_content":"创作等级达成LV7，即可解锁「创作小册」权益。"},{"desc_title":"使用说明","desc_content":"在创作中心下拉列表找到写小册入口，可以在小册编辑器进行创作。"}]', -1, '/creator/course/edit', '', 1, 1, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 7 AND privilege_code = 'can_create_course');
+
+INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
+SELECT 2, 7, '自定义推广', 'custom_promotion', 'icon_promo', 'poster_promo', '权益开通后，作者可以在所创作的文章页下方设置一个推广模块，用于推荐自己的内容', '[{"desc_title":"什么是「自定义推广」？","desc_content":"权益开通后，作者可以在所创作的文章页下方设置一个推广模块，用于推荐自己的内容。"},{"desc_title":"如何解锁「自定义推广」？","desc_content":"创作等级达成LV7，即可解锁「自定义推广」权益。"},{"desc_title":"使用说明","desc_content":"功能快马加鞭建设中"}]', -1, '', '', 0, 2, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 7 AND privilege_code = 'custom_promotion');
+
+INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
+SELECT 2, 8, '提交标签', 'submit_tag', 'icon_tag_submit', 'poster_tag_submit', '可以对平台的标签提供建议，提交新的标签', '[{"desc_title":"什么是「提交标签」？","desc_content":"可以对掘金的标签提供建议，提交新的标签。"},{"desc_title":"如何解锁「提交标签」？","desc_content":"创作等级达成LV8，即可解锁「提交标签」权益。"},{"desc_title":"使用说明","desc_content":"填写对掘金标签建议，我们会认真倾听你的声音。"}]', -1, '', '', 1, 1, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 8 AND privilege_code = 'submit_tag');
+
+INSERT INTO ap_level_privilege (level_type, level_value, privilege_name, privilege_code, icon_name, poster_name, description, desc_json, need_jscore_level, web_jump_url, app_jump_url, priv_status, sort_order, is_active, created_time)
+SELECT 2, 8, '社区共建者', 'community_builder', 'icon_community', 'poster_community', '社区共建者是重磅社区成就，标示展示在个人主页与创作者中心', '[{"desc_title":"什么是「社区共建者」？","desc_content":"社区共建者是重磅社区成就，相关标示将会展示在你的个人主页、创作者中心，会让更多掘友快速认识你，你也将拥有更多深度参与掘金共建的机会，如参与社区治理规范的建设等。"},{"desc_title":"如何解锁「社区共建者」？","desc_content":"创作等级达成LV8，即可解锁「社区共建者」成就。"},{"desc_title":"使用说明","desc_content":"只要解锁该权益，相关荣誉标示将会展示在你的个人主页、创作者中心。"}]', -1, '/user/{userId}', '', 1, 2, 1, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM ap_level_privilege WHERE level_type = 2 AND level_value = 8 AND privilege_code = 'community_builder');
 
 -- 5. 行为任务配置（创作者成长任务）
 INSERT INTO ap_behavior_config (action_code, action_name, group_type, group_sort, score, daily_limit, icon_name, btn_name, web_jump_url, sort_order, is_active, created_time, updated_time)

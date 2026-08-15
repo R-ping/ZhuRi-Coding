@@ -57,6 +57,11 @@ export default {
             }
         }
     },
+    // v-if 条件渲染下首次挂载时 refreshKey 已是递增后的值，watch 不会触发，
+    // 需在 mounted 主动加载一次课程创作权限，否则「写小册」恒为锁定
+    mounted() {
+        this.loadCoursePermission()
+    },
     methods: {
         async loadCoursePermission() {
             try {
@@ -75,7 +80,8 @@ export default {
                 toast('当前逐力值等级，未达到写小册要求', 2)
                 return
             }
-            this.handleNavigate('/course/publish')
+            // 写小册 -> 创作者中心课程编辑器（无 courseId 即为新建课程）
+            this.handleNavigate('/creator/course/edit')
         }
     }
 }

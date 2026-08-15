@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## 2026-08-15 — 前端发布课程「稀土掘金社区产品功能深度剖析」（12篇精选文章 + 12章节）
+
+### 变更
+
+1. **前端操控发布课程**（账号 `11111111111`，作者 user_id=1700683778）：
+   - 从参考资料精选 12 篇文档生成课程章节（`build_course_chapters.cjs`）：沸点功能深度剖析、沸点详情页（架构/交互）、沸点圈子（功能/分类）、话题功能前后端实现、文章列表与详情响应结构、推荐服务配额设计、掘友等级、掘力值体系、创作话题与创作活动。
+   - 课程信息：标题「稀土掘金社区产品功能深度剖析」、副标题、摘要、封面（OSS material 图）、分类「开发工具」、免费（¥0）。
+   - 通过浏览器完成：新建课程 → 填信息 → 创建 12 章节（含标题与内容）→ 提交审核（`POST /manage/submit` → 200）。
+2. **数据库清理与模拟审批**：
+   - `cleanup_duplicate_course_chapters.sql`：清理自动化重复创建的 60 条重复/空章节，保留正确 12 章并修正排序与 `chapter_count=12`。
+   - `simulate_course_review_pass.sql`：模拟后台审批通过，`ap_course` 置为 `status=9`（已发布）、`published_at=NOW()`。
+3. **雪花ID精度修复**（课程/章节 ID 为 19 位 Long，`parseInt` 丢精度导致查询不到数据）：
+   - `src/pages/course/detail.vue`：移除所有 `parseInt(this.$route.params.id)`，保留字符串形式（loadCourseDetail / checkPurchaseStatus / createOrder / validateDiscount）。
+   - `src/pages/course/read.vue`：`loadChapterDetail` 中章节 ID 不再 `parseInt`。
+4. **GET 参数序列化修复**（`src/common/request.js`）：
+   - `objToQueryString` 跳过 `undefined`/`null` 值，避免序列化为 `status=undefined&keyword=undefined` 导致后端 `Byte` 参数转换失败返回 500（课程管理列表页加载失败）。
+
+### 验证
+
+- 数据库：`ap_course` id=2088642484839063553 `status=9`、`chapter_count=12`、`published_at=2026-08-15 23:43:51`；`ap_course_chapter` 12 条（sort 1~12，内容完整）。
+- 前端：
+  - 课程管理列表（`/creator/course/list`）：显示「稀土掘金社区产品功能深度剖析｜免费｜12｜0｜已上架」，修复后正常加载（不再 500）。
+  - 公开课程详情页（`/course/2088642484839063553`）：封面/标题/副标题/作者/12 小节/课程简介/目录完整渲染，「免费」「立即购买」。
+
+## 2026-08-15 — 解锁写小册权限（逐力值 Lv.7）+ 课程创作入口修复
+
+### 变更
+
+1. **数据库解锁**（`leadnews_article.ap_user_level`）：
+   - 账号 `11111111111`（用户422067，user_id=1700683778）`power_level` 置为 `7`、`power_value` 置为 `5000`（满足 `ap_level_config` 中逐力值 Lv.7 最低分 5000），解锁「创建小册」权限（`ap_level_privilege` 中 `create_course`）。
+2. **前端「写小册」入口修复**（`src/components/layouts/CreatorDropdown.vue`）：
+   - 修复首次挂载时 `refreshKey` 已递增导致 `watch` 不触发、`loadCoursePermission` 从不执行、权限恒为锁定的问题：新增 `mounted()` 主动加载一次课程创作权限。
+   - 修复「写小册」跳转路径：原指向不存在的 `/course/publish`（被 `/course/:id` 路由吞掉渲染成课程详情空页），改为创作者中心课程编辑器 `/creator/course/edit`（无 courseId 即新建课程）。
+
+### 验证
+
+- 后端 `GET /content/api/v1/course/author/check-permission`（携带 accToken）返回 `{hasPermission: true, requiredLevel: 7, powerLevel: 7}`。
+- 浏览器实测（账号 11111111111）：
+  - 悬浮「创作者中心」下拉，「写小册」由锁定态（disabled + 锁图标）变为可用态。
+  - 点击「写小册」跳转 `/creator/course/edit`，课程编辑器完整渲染（标题/副标题/摘要/封面/价格/分类/章节目录）。
+  - 课程管理列表页正常（状态筛选/搜索/新建课程）；「新建课程」创建草稿成功落库（`ap_course` 新增 id=2088605792027414529，author_id=1700683778）。
+  - 课程运营：折扣码管理、收入结算页面均正常访问。
+
 ## 2026-08-15 — 个人主页全分栏匿名浏览（动态/关注/收藏集/赞/课程公开接口）
 
 ### 变更

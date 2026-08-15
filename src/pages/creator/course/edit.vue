@@ -262,7 +262,7 @@ export default {
     },
     async addChapter() {
       try {
-        const res = await courseApi.createChapter({ courseId: parseInt(this.courseId) })
+        const res = await courseApi.createChapter({ courseId: this.courseId })
         if (res && res.code === 200 && res.data) {
           await this.loadCourseDetail()
           const newChapter = this.chapters.find(ch => ch.id === res.data.id)
@@ -325,7 +325,7 @@ export default {
       try {
         // 保存课程信息
         await courseApi.updateCourse({
-          id: parseInt(this.courseId),
+          id: this.courseId,
           title: this.courseInfo.title,
           subtitle: this.courseInfo.subtitle,
           description: this.courseInfo.description,

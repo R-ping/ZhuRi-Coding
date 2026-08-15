@@ -215,6 +215,8 @@ Request.prototype = {
 function objToQueryString(obj) {
     var parts = []
     for (var key in obj) {
+        // 跳过 undefined/null 参数，避免序列化为字符串 "undefined"/"null" 导致后端类型转换失败
+        if (obj[key] === undefined || obj[key] === null) continue
         parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(obj[key]))
     }
     return parts.join('&')
