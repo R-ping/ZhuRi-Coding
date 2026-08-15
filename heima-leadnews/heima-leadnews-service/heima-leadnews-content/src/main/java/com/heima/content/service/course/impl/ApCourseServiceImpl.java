@@ -328,7 +328,8 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
         save(course);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("id", course.getId());
+        // 雪花ID超过 JS Number 安全整数范围，必须转字符串返回，避免前端精度丢失
+        result.put("id", String.valueOf(course.getId()));
         result.put("title", course.getTitle());
         return ResponseResult.okResult(result);
     }

@@ -233,7 +233,8 @@ export default {
   },
   methods: {
     async loadCourseDetail() {
-      const courseId = parseInt(this.$route.params.id)
+      // 雪花ID超过 JS Number 安全范围，必须保留字符串形式，避免 parseInt 精度丢失
+      const courseId = this.$route.params.id
       this.loading = true
       try {
         const res = await courseApi.getCourseDetail({ courseId })
@@ -253,7 +254,7 @@ export default {
         const res = await courseApi.getMyCourses({})
         if (res && res.code === 200 && res.data) {
           const list = res.data.list || []
-          const courseId = parseInt(this.$route.params.id)
+          const courseId = this.$route.params.id
           this.isPurchased = list.some(c => c.id === courseId)
         }
       } catch (e) {
@@ -290,7 +291,7 @@ export default {
     },
     async confirmFreeJoin() {
       try {
-        const res = await courseApi.createOrder({ courseId: parseInt(this.$route.params.id) })
+        const res = await courseApi.createOrder({ courseId: this.$route.params.id })
         if (res && res.code === 200) {
           this.isPurchased = true
           toast('已加入课程', 2)
@@ -309,7 +310,7 @@ export default {
       try {
         const res = await courseApi.validateDiscount({
           code,
-          courseId: parseInt(this.$route.params.id)
+          courseId: this.$route.params.id
         })
         if (res && res.code === 200 && res.data) {
           this.discountInfo = res.data
@@ -327,7 +328,7 @@ export default {
       this.paying = true
       try {
         const res = await courseApi.createOrder({
-          courseId: parseInt(this.$route.params.id),
+          courseId: this.$route.params.id,
           discountCode: this.discountCode || undefined
         })
         if (res && res.code === 200 && res.data) {
