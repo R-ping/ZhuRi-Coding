@@ -63,7 +63,10 @@ export default {
             }
         },
         filterMenuItems(items) {
-            return items.map(item => {
+            // 小册审核菜单仅对编辑白名单账号渲染
+            const isEditor = permission.isEditor()
+            const visibleItems = items.filter(item => !(item.editorOnly && !isEditor))
+            return visibleItems.map(item => {
                 const newItem = { ...item }
                 // 检查父级是否需要权限
                 const needParentPermission = item.requiredPermission === 'can_create_course'

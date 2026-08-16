@@ -157,5 +157,59 @@ export default {
   /** 作者打赏收益汇总 */
   getTipRevenue() {
     return request.get('/content/api/v1/tip/my-revenue', {})
+  },
+
+  // ========== 小册申报（作者侧） ==========
+
+  /** 提交小册申报（作者，0→1） */
+  applyBooklet(data) {
+    return request.post(`${API_PREFIX}/manage/apply`, data)
+  },
+
+  /** 我的小册列表（作者） */
+  getMyBooklets(params) {
+    return request.get(`${API_PREFIX}/manage/my-booklets`, params)
+  },
+
+  // ========== 小册编辑审核（编辑白名单，BookletReviewController） ==========
+
+  /** 申报待审列表 */
+  getApplyReviewList(params) {
+    return request.get(`${API_PREFIX}/review/apply-list`, params)
+  },
+
+  /** 通过申报：1→4 */
+  approveApply(data) {
+    return request.post(`${API_PREFIX}/review/apply-approve`, data)
+  },
+
+  /** 拒绝申报：1→2 */
+  rejectApply(data) {
+    return request.post(`${API_PREFIX}/review/apply-reject`, data)
+  },
+
+  /** 上架待审/运营列表（params.status：5 待上架 / 9 已上架 / 3 已下架） */
+  getPublishReviewList(params) {
+    return request.get(`${API_PREFIX}/review/publish-list`, params)
+  },
+
+  /** 上架：5→9 并发布小节 */
+  approvePublish(data) {
+    return request.post(`${API_PREFIX}/review/publish-approve`, data)
+  },
+
+  /** 驳回上架：5→4 */
+  rejectPublish(data) {
+    return request.post(`${API_PREFIX}/review/publish-reject`, data)
+  },
+
+  /** 发布单个/批量小节：0→1 */
+  publishSection(data) {
+    return request.post(`${API_PREFIX}/review/publish-section`, data)
+  },
+
+  /** 下架：9→3 */
+  reviewUnpublish(data) {
+    return request.post(`${API_PREFIX}/review/unpublish`, data)
   }
 }

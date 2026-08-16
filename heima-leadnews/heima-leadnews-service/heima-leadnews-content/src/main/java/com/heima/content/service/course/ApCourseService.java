@@ -39,4 +39,24 @@ public interface ApCourseService extends IService<ApCourse> {
 
     /** 软删除课程 */
     ResponseResult softDelete(Long courseId, Long userId);
+
+    // ===== 小册申报/审核流程 =====
+
+    /** 提交小册申报（作者，0→1），applyContent 为申报内容 JSON 字符串 */
+    ResponseResult submitApply(Long courseId, String applyContent, Long userId);
+
+    /** 提交上架审核（作者，4→5） */
+    ResponseResult submitForReview(Long courseId, Long userId);
+
+    /** 我的小册列表（作者） */
+    ResponseResult getMyBooklets(Long userId, Integer page, Integer size, Byte status);
+
+    /** 编辑状态迁移（编辑专属，走状态机校验），返回成功后课程状态已更新 */
+    ResponseResult editorTransition(Long courseId, byte targetStatus, String reason);
+
+    /** 编辑审核列表（按状态 + 关键词，不分作者，用于申报/上架待审列表） */
+    ResponseResult reviewList(Integer page, Integer size, Byte status, String keyword);
+
+    /** 编辑发布小节（0→1）；chapterIds 为空则发布该小册全部草稿小节 */
+    ResponseResult publishSections(Long courseId, java.util.List<Long> chapterIds);
 }
