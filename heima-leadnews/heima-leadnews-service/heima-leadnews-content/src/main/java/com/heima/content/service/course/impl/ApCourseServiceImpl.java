@@ -446,4 +446,220 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
 
         return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }
+
+    // ==================== 小册申报/审核流程 ====================
+
+    /**
+     * 状态迁移校验（集中约束，禁止非法跳转）
+     * @param course 当前课程
+     * @param targetStatus 目标状态
+     * @param operatorId 操作人ID
+     * @param isEditor 是否为编辑操作
+     * @return 错误信息，null 表示允许迁移
+     */
+    private String transitionTo(ApCourse course, byte targetStatus, Integer operatorId, boolean isEditor) {
+        byte current = course.getStatus();
+
+        if (!isEditor) {
+            // 作者只能操作自己的课程
+            if (!course.getAuthorId().equals(operatorId)) {
+                return "只能操作自己的课程";
+            }
+            // 草稿(0) -> 申报待审(1)：提交申报
+            if (current == 0 && targetStatus == 1) return null;
+            // 申报被拒(2) -> 申报待审(1)：作者修改后重提申报
+            if (current == 2 && targetStatus == 1) return null;
+            // 写作中(4) -> 上架待审(5)：提交上架审核
+            if (current == 4 && targetStatus == 5) return null;
+            return "非法状态迁移";
+        }
+
+        // 编辑操作
+        // 申报待审(1) -> 写作中(4)：通过申报
+        if (current == 1 && targetStatus == 4) return null;
+        // 申报待审(1) -> 申报被拒(2)：拒绝申报
+        if (current == 1 && targetStatus == 2) return null;
+        // 上架待审(5) -> 已上架(9)：上架
+        if (current == 5 && targetStatus == 9) return null;
+        // 上架待审(5) -> 写作中(4)：驳回上架
+        if (current == 5 && targetStatus == 4) return null;
+        // 已上架(9) -> 已下架(3)：下架
+        if (current == 9 && targetStatus == 3) return null;
+        // 已下架(3) -> 已上架(9)：重新上架
+        if (current == 3 && targetStatus == 9) return null;
+        return "非法状态迁移";
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult submitApply(Long courseId, String applyContent, Long userId) {
+        if (courseId == null || userId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        ApCourse course = getById(courseId);
+        if (course == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
+
+        // 校验状态迁移（草稿0→申报1，或申报被拒2→重提1）
+        String error = transitionTo(course, (byte) 1, userId.intValue(), false);
+        if (error != null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, error);
+        }
+
+        course.setStatus((byte) 1);
+        if (applyContent != null) {
+            // 申报内容独立存储，不覆盖 description（小册介绍）
+            course.setApplyContent(applyContent);
+        }
+        course.setApplyTime(new Date());
+        course.setUpdatedTime(new Date());
+        updateById(course);
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult submitForReview(Long courseId, Long userId) {
+        if (courseId == null || userId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        ApCourse course = getById(courseId);
+        if (course == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
+
+        // 写作中(4) -> 上架待审(5)
+        String error = transitionTo(course, (byte) 5, userId.intValue(), false);
+        if (error != null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, error);
+        }
+
+        course.setStatus((byte) 5);
+        course.setUpdatedTime(new Date());
+        updateById(course);
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
+
+    @Override
+    public ResponseResult getMyBooklets(Long userId, Integer page, Integer size, Byte status) {
+        if (userId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+
+        IPage<ApCourse> iPage = new Page<>(page, size);
+        LambdaQueryWrapper<ApCourse> query = new LambdaQueryWrapper<>();
+        query.eq(ApCourse::getAuthorId, userId.intValue());
+        query.eq(ApCourse::getIsDeleted, 0);
+
+        if (status != null) {
+            query.eq(ApCourse::getStatus, status);
+        }
+
+        query.orderByDesc(ApCourse::getUpdatedTime);
+
+        IPage<ApCourse> resultPage = page(iPage, query);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("list", resultPage.getRecords());
+        data.put("total", resultPage.getTotal());
+        return ResponseResult.okResult(data);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult editorTransition(Long courseId, byte targetStatus, String reason) {
+        if (courseId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        ApCourse course = getById(courseId);
+        if (course == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
+
+        // 状态机校验（编辑白名单校验在 Controller 完成，此处只做状态迁移约束）
+        String error = transitionTo(course, targetStatus, null, true);
+        if (error != null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, error);
+        }
+
+        course.setStatus(targetStatus);
+        if (reason != null && !reason.isEmpty()) {
+            // 申报被拒原因写 apply_reason，上架驳回原因写 reason
+            if (targetStatus == 2) {
+                course.setApplyReason(reason);
+            } else {
+                course.setReason(reason);
+            }
+        }
+        if (targetStatus == 9) {
+            course.setPublishedAt(new Date());
+        }
+        course.setReviewTime(new Date());
+        course.setUpdatedTime(new Date());
+        updateById(course);
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
+
+    @Override
+    public ResponseResult reviewList(Integer page, Integer size, Byte status, String keyword) {
+        IPage<ApCourse> iPage = new Page<>(page, size);
+        LambdaQueryWrapper<ApCourse> query = new LambdaQueryWrapper<>();
+        query.eq(ApCourse::getStatus, status);
+        query.eq(ApCourse::getIsDeleted, 0);
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            query.like(ApCourse::getTitle, keyword.trim());
+        }
+
+        query.orderByDesc(ApCourse::getApplyTime);
+        query.orderByDesc(ApCourse::getUpdatedTime);
+
+        IPage<ApCourse> resultPage = page(iPage, query);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("list", resultPage.getRecords());
+        data.put("total", resultPage.getTotal());
+        return ResponseResult.okResult(data);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult publishSections(Long courseId, List<Long> chapterIds) {
+        if (courseId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        ApCourse course = getById(courseId);
+        if (course == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
+
+        LambdaQueryWrapper<ApCourseChapter> chapterQuery = new LambdaQueryWrapper<>();
+        chapterQuery.eq(ApCourseChapter::getCourseId, courseId);
+        if (chapterIds != null && !chapterIds.isEmpty()) {
+            chapterQuery.in(ApCourseChapter::getId, chapterIds);
+        }
+        List<ApCourseChapter> chapters = chapterMapper.selectList(chapterQuery);
+
+        if (chapters.isEmpty()) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "无可发布的小节");
+        }
+
+        Date now = new Date();
+        for (ApCourseChapter ch : chapters) {
+            ch.setStatus(1);
+            ch.setUpdatedTime(now);
+            chapterMapper.updateById(ch);
+        }
+
+        log.info("编辑发布小节: courseId={}, count={}", courseId, chapters.size());
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
 }

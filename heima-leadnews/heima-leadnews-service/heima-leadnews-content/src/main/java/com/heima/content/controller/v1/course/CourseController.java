@@ -153,4 +153,31 @@ public class CourseController {
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
         return apCourseService.updateStatus(courseId, (byte) 3, null);
     }
+
+    // ========== 小册申报（作者侧） ==========
+
+    /** 提交小册申报（作者，0→1），applyContent 为申报表单 JSON 字符串 */
+    @PostMapping("/manage/apply")
+    public ResponseResult submitApply(@RequestBody Map<String, Object> params) {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+        }
+        Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
+        String applyContent = params.get("applyContent") != null ? params.get("applyContent").toString() : null;
+        return apCourseService.submitApply(courseId, applyContent, user.getId().longValue());
+    }
+
+    /** 我的小册列表（作者） */
+    @GetMapping("/manage/my-booklets")
+    public ResponseResult myBooklets(
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer size,
+            @RequestParam(required = false) Byte status) {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+        }
+        return apCourseService.getMyBooklets(user.getId().longValue(), page, size, status);
+    }
 }

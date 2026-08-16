@@ -80,8 +80,8 @@ export default {
                 toast('当前逐力值等级，未达到写小册要求', 2)
                 return
             }
-            // 写小册 -> 创作者中心课程编辑器（无 courseId 即为新建课程）
-            this.handleNavigate('/creator/course/edit')
+            // 写小册 -> 独立全屏三栏编辑器（新窗口打开，不嵌套在 CreatorLayout）
+            this.handleNavigate('/booklet/edit', true)
         }
     }
 }
