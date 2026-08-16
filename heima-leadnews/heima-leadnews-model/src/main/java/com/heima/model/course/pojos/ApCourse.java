@@ -50,6 +50,22 @@ public class ApCourse implements Serializable {
     @TableField("reason")
     private String reason;
 
+    /** 申报审核拒绝原因 */
+    @TableField("apply_reason")
+    private String applyReason;
+
+    /** 小册申报内容（JSON：选题/大纲/简介/样章） */
+    @TableField("apply_content")
+    private String applyContent;
+
+    /** 申报提交时间 */
+    @TableField("apply_time")
+    private Date applyTime;
+
+    /** 编辑审核时间 */
+    @TableField("review_time")
+    private Date reviewTime;
+
     @TableField("category_id")
     private Integer categoryId;
 
@@ -87,6 +103,11 @@ public class ApCourse implements Serializable {
         NORMAL((byte) 0),
         SUBMIT((byte) 1),
         FAIL((byte) 2),
+        OFFLINE((byte) 3),
+        /** 申报通过、写作中 */
+        WRITING((byte) 4),
+        /** 上架待审 */
+        REVIEW((byte) 5),
         PUBLISHED((byte) 9);
 
         byte code;

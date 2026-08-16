@@ -17,6 +17,19 @@ const PERMISSIONS = {
 export const permission = {
   PERMISSIONS,
 
+  // ===== 小册编辑白名单（与后端 EditorConfig.EDITOR_USER_IDS 保持一致） =====
+  EDITOR_USER_IDS: [4],
+
+  /**
+   * 判断当前登录用户是否为小册编辑（账号白名单身份）
+   * 编辑负责：申报审核、上架审核、发布小节、下架
+   */
+  isEditor() {
+    const user = store.getters.userInfo
+    if (!user || !user.userId) return false
+    return this.EDITOR_USER_IDS.includes(Number(user.userId))
+  },
+
   hasPermission(permissionCode) {
     const user = store.getters.getUserInfo
     if (!user) return false

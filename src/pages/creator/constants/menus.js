@@ -42,4 +42,14 @@ export const MenuData = [
       { title: '创作灵感', path: '/creator/growth/inspiration' }
     ]
   },
+  {
+    // 小册审核：仅编辑白名单账号可见（Sidebar 按 editorOnly 过滤）
+    title: '小册审核',
+    icon: 'el-icon-s-check',
+    editorOnly: true,
+    children: [
+      { title: '申报审核', path: '/booklet/review/apply' },
+      { title: '上架审核', path: '/booklet/review/publish' }
+    ]
+  }
   ]

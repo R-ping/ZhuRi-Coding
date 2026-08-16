@@ -5,7 +5,7 @@
  * 拦截未登录用户访问 /creator 开头的页面，重定向到首页
  */
 export function creatorGuard(to, from, next) {
-  if (to.path.startsWith('/creator')) {
+  if (to.path.startsWith('/creator') || to.path.startsWith('/booklet')) {
     const token = localStorage.getItem('ACCESS_TOKEN')
     if (!token) {
       next('/home')
@@ -14,6 +14,25 @@ export function creatorGuard(to, from, next) {
   }
   next()
 }
+
+// ===== 小册编辑器（独立顶层路由，不嵌套在 CreatorLayout，避免侧边栏） =====
+let bookletRoutes = [
+    {
+        path: '/booklet/edit',
+        name: 'BookletEdit',
+        component: () => import('@/pages/creator/booklet/edit.vue')
+    },
+    {
+        path: '/booklet/review/apply',
+        name: 'BookletApplyReview',
+        component: () => import('@/pages/creator/booklet/review/ApplyReview.vue')
+    },
+    {
+        path: '/booklet/review/publish',
+        name: 'BookletPublishReview',
+        component: () => import('@/pages/creator/booklet/review/PublishReview.vue')
+    }
+]
 
 let routes = [
     {
@@ -142,3 +161,6 @@ let routes = [
 ]
 
 export default routes;
+
+// 小册独立路由（全屏编辑器 + 审核页，不嵌套在 CreatorLayout）
+export { bookletRoutes };
