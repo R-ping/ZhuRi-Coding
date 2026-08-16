@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 2026-08-17 — 小册系统上线（独立全屏三栏编辑器 + 简化申报/编辑审核全流程 + 账号白名单编辑入口）
+
+### 变更
+
+1. **独立全屏三栏编辑器**（`src/pages/creator/booklet/edit.vue` + `BookletToc.vue` + `BookletTopBar.vue`）：
+   - 独立顶层路由 `/booklet/edit`（不嵌套 CreatorLayout，避免侧边栏），新窗口打开（`CreatorDropdown.handleCourseClick` 改为 `handleNavigate('/booklet/edit', true)`）。
+   - 布局：顶部工具栏（标题/自动保存状态/操作按钮）+ 左侧小节目录（可折叠隐藏，`tocCollapsed`）+ 中间 Markdown 编辑器（复用例 `ByteMdEditor`）+ 右侧实时预览（可折叠），折叠按钮在编辑器底部工具栏两端（复刻掘金小册参考图）。
+   - 新建无 courseId 自动建草稿（`createCourse`），有 courseId 经 `manageDetail` 加载小册与全部小节；内容变更防抖自动保存。
+2. **ApCourse.Status 状态机扩展**（`heima-leadnews-model/.../ApCourse.java`）：
+   - 新增 `WRITING(4)`（申报通过、写作中）/ `REVIEW(5)`（上架待审）；现有 `NORMAL(0)` 语义扩展为「草稿/申报前」，`SUBMIT(1)` 细化为「申报待审」，复用 `OFFLINE(3)`/`PUBLISHED(9)`。
+   - 状态机：作者 `0→1（提交申报）→4（编辑通过）/ 2（拒绝，改后重提）→5（提交上架审核）→9（编辑上架）/ 4（驳回）`；编辑 `1→4/2、5→9/4、9→3（下架）、3→9（重新上架）`。
+   - `ApCourseServiceImpl.transitionTo` 集中校验状态迁移合法性，禁止非法跳转。
+3. **编辑白名单**（前后端双常量，不落库）：
+   - 后端 `heima-leadnews-content/.../config/EditorConfig.java`：`EDITOR_USER_IDS = [4]`（admin 账号）。
+   - 前端 `src/utils/permission.js` 新增 `isEditor()`；`menus.js` 新增「小册审核」菜单（`isEditorOnly` 标记），`Sidebar.vue` 对非编辑过滤该菜单。
+4. **后端接口**：
+   - 作者侧（`CourseController` 扩展）：`POST /manage/apply`（提交申报 0→1）、`GET /manage/my-booklets`（我的小册列表）。
+   - 编辑侧（新增 `BookletReviewController`，`/api/v1/course/review`，全部校验编辑白名单）：申报待审列表/通过/拒绝、上架待审列表/上架（含批量发布小节）/驳回、发布小节、下架。
+   - 申报内容独立存储 `apply_content` 字段，**不覆盖** `description`（小册介绍），避免两处共用字段互相覆盖。
+5. **数据库迁移**（`heima-leadnews-service/.../db/migrations/`）：
+   - `alter_ap_course_add_booklet_fields.sql`：新增 `apply_reason` / `apply_time` / `review_time`。
+   - `alter_ap_course_add_apply_content.sql`：新增 `apply_content`。
+6. **前端 API 封装**（`src/apis/course.js`）：新增 `applyBooklet` / `getMyBooklets` / `getApplyReviewList` / `approveApply` / `rejectApply` / `getPublishReviewList` / `approvePublish` / `rejectPublish` / `publishSection` / `reviewUnpublish`。
+7. **审核页面**（`src/pages/creator/booklet/review/`）：`ApplyReview.vue`（申报审核，通过/拒绝）、`PublishReview.vue`（上架审核，上架/驳回），编辑白名单可见。
+
+### 验证
+
+- 后端 `mvn compile`（离线模式）通过；前端 `npm run build` 通过（期间修复 `src/routers/creator.js` 中 `bookletRoutes` 重复声明导致的构建失败）。
+- 已推送远端并创建 PR #37（`feat/booklet-system` → `master`），22 文件变更（+3933/-6）。
+- 遗留：PR 待项目负责人合并；合并后需 `git fetch` 同步本地并清理分支。
+
 ## 2026-08-15 — 前端发布课程「稀土掘金社区产品功能深度剖析」（12篇精选文章 + 12章节）
 
 ### 变更
