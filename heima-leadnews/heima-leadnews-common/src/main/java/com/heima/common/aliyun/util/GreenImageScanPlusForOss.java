@@ -122,24 +122,22 @@ public class GreenImageScanPlusForOss {
             HashMap<String, String> resultMap = new HashMap<>();
             // 打印检测结果。
             if (response != null) {
-                if (response.getStatusCode() == 200) {
-                    ImageModerationResponseBody body = response.getBody();
-                    System.out.println("requestId=" + body.getRequestId());
-                    System.out.println("code=" + body.getCode());
-                    System.out.println("msg=" + body.getMsg());
-                    if (body.getCode() == 200) {
-                        ImageModerationResponseBodyData data = body.getData();
-                        System.out.println("data = " + JSON.toJSONString(data,  true));
-                        resultMap.put("level", data.getRiskLevel());
-                        return resultMap;
+                    if (response.getStatusCode() == 200) {
+                        ImageModerationResponseBody body = response.getBody();
+                        log.info("图片审核 requestId={}, code={}, msg={}", body.getRequestId(), body.getCode(), body.getMsg());
+                        if (body.getCode() == 200) {
+                            ImageModerationResponseBodyData data = body.getData();
+                            log.info("图片审核响应数据 data={}", JSON.toJSONString(data,  true));
+                            resultMap.put("level", data.getRiskLevel());
+                            return resultMap;
+                        } else {
+                            log.warn("图片审核未通过 code:{}", body.getCode());
+                            return null;
+                        }
                     } else {
-                        System.out.println("image moderation not success. code:" + body.getCode());
+                        log.warn("图片审核响应异常 status:{}", response.getStatusCode());
                         return null;
                     }
-                } else {
-                    System.out.println("response not success. status:" + response.getStatusCode());
-                    return null;
-                }
             }
         } catch (Exception e) {
             log.error("图片审核发生异常，异常信息", e);

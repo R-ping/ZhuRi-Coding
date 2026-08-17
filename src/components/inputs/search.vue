@@ -98,7 +98,6 @@
                 }
             },
             getBodyStyle:function(){
-                console.log("======"+(this.height-this.radius))
                 return {
                     borderRadius:(this.height-this.radius)+"px",
                     marginLeft:this.leftWidth+'px',
