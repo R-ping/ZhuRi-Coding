@@ -111,20 +111,17 @@ public class GreenImageScanPlus {
             if (response != null) {
                 if (response.getStatusCode() == 200) {
                     ImageModerationResponseBody body = response.getBody();
-                    System.out.println("requestId=" + body.getRequestId());
-                    System.out.println("code=" + body.getCode());
-                    System.out.println("msg=" + body.getMsg());
+                    log.info("图片审核 requestId={}, code={}, msg={}", body.getRequestId(), body.getCode(), body.getMsg());
                     if (body.getCode() == 200) {
                         ImageModerationResponseBodyData data = body.getData();
-                        System.out.println("data = " + JSON.toJSONString(data,  true));
                         resultMap.put("level", data.getRiskLevel());
                         return resultMap;
                     } else {
-                        System.out.println("image moderation not success. code:" + body.getCode());
+                        log.warn("图片审核未通过 code:{}", body.getCode());
                         return null;
                     }
                 } else {
-                    System.out.println("response not success. status:" + response.getStatusCode());
+                    log.warn("图片审核响应异常 status:{}", response.getStatusCode());
                     return null;
                 }
             }

@@ -23,11 +23,6 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class TaskServiceImpl implements TaskService {
 
-    public static void main(String[] args) {
-        TaskinfoLogs taskinfoLogs = new TaskinfoLogs();
-        System.out.println(taskinfoLogs);
-    }
-
     @Autowired
     CacheService cacheService;
 

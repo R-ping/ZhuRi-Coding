@@ -1,4 +1,4 @@
-﻿
+
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
@@ -524,6 +524,10 @@ CREATE TABLE `ap_course` (
   `version` int DEFAULT '1' COMMENT '版本号',
   `sales_count` int DEFAULT '0' COMMENT '销售数量',
   `total_revenue` decimal(10,2) DEFAULT '0.00' COMMENT '累计收入',
+  `apply_reason` varchar(500) DEFAULT '' COMMENT '申报审核拒绝原因',
+  `apply_time` datetime DEFAULT NULL COMMENT '申报提交时间',
+  `review_time` datetime DEFAULT NULL COMMENT '编辑审核时间',
+  `apply_content` text COMMENT '小册申报内容（JSON：选题/大纲/简介/样章）',
   PRIMARY KEY (`id`),
   KEY `idx_category_id` (`category_id`),
   KEY `idx_status` (`status`),

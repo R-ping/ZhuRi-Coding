@@ -32,8 +32,6 @@ const config = {
  */
 export function getOAuthUrl(platform) {
   var cfg = config[platform]
-  console.log(cfg)
-  
   if (!cfg) return '#'
   if (platform === 'github') {
     return cfg.authorizeUrl + '?client_id=' + cfg.clientId +
