@@ -1,6 +1,8 @@
 package com.heima.content.controller.v1.course;
 
+import com.alibaba.fastjson.JSON;
 import com.heima.content.service.course.ApCourseService;
+import com.heima.model.course.dtos.AuthorProfileDto;
 import com.heima.model.course.dtos.CourseDto;
 import com.heima.model.user.pojos.ApUser;
 import com.heima.model.common.dtos.ResponseResult;
@@ -145,7 +147,7 @@ public class CourseController {
 
     // ========== 小册申报（作者侧） ==========
 
-    /** 提交小册申报（作者，0→1），applyContent 为申报表单 JSON 字符串 */
+    /** 提交小册申报（作者，0→1），applyContent 为申请单 JSON 字符串，authorProfile 为作者基础信息 */
     @PostMapping("/manage/apply")
     public ResponseResult submitApply(@RequestBody Map<String, Object> params) {
         ApUser user = AppThreadLocalUtil.getUser();
@@ -154,7 +156,11 @@ public class CourseController {
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
         String applyContent = params.get("applyContent") != null ? params.get("applyContent").toString() : null;
-        return apCourseService.submitApply(courseId, applyContent, user.getId().longValue());
+        // 作者基础信息（可选）：同事务写入 ap_author_profile，允许覆盖回填
+        AuthorProfileDto authorProfile = params.get("authorProfile") != null
+                ? JSON.parseObject(JSON.toJSONString(params.get("authorProfile")), AuthorProfileDto.class)
+                : null;
+        return apCourseService.submitApply(courseId, applyContent, authorProfile, user.getId().longValue());
     }
 
     /** 我的小册列表（作者） */

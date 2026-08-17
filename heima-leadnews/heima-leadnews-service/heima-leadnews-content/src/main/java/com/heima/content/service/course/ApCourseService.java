@@ -1,6 +1,7 @@
 package com.heima.content.service.course;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.heima.model.course.dtos.AuthorProfileDto;
 import com.heima.model.course.dtos.CourseDto;
 import com.heima.model.course.pojos.ApCourse;
 import com.heima.model.common.dtos.ResponseResult;
@@ -42,8 +43,14 @@ public interface ApCourseService extends IService<ApCourse> {
 
     // ===== 小册申报/审核流程 =====
 
-    /** 提交小册申报（作者，0→1），applyContent 为申报内容 JSON 字符串 */
-    ResponseResult submitApply(Long courseId, String applyContent, Long userId);
+    /**
+     * 提交小册申报（作者，0→1）。
+     * @param courseId 小册课程ID
+     * @param applyContent 申请单 JSON（主题/介绍/目标/大纲/进度/样章/渠道/联系方式等），落 apply_content
+     * @param authorProfile 作者基础信息（姓名/职位/履历等），落 ap_author_profile（同事务 upsert）
+     * @param userId 作者用户ID
+     */
+    ResponseResult submitApply(Long courseId, String applyContent, AuthorProfileDto authorProfile, Long userId);
 
     /** 提交上架审核（作者，4→5） */
     ResponseResult submitForReview(Long courseId, Long userId);

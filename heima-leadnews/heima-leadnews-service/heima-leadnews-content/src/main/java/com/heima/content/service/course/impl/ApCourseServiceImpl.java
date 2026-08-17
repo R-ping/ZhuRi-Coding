@@ -10,15 +10,19 @@ import com.heima.content.mapper.course.ApCourseMapper;
 import com.heima.content.mapper.course.ApCourseReadingProgressMapper;
 import com.heima.content.mapper.course.ApUserCourseMapper;
 import com.heima.content.service.course.ApCourseService;
+import com.heima.content.service.course.AuthorProfileService;
 import com.heima.content.service.level.LevelService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.heima.model.course.dtos.AuthorProfileDto;
 import com.heima.model.course.dtos.CourseDto;
 import com.heima.model.course.pojos.ApCourse;
 import com.heima.model.course.pojos.ApCourseChapter;
 import com.heima.model.course.pojos.ApCourseReadingProgress;
 import com.heima.model.level.pojos.ApUserLevel;
 import com.heima.model.user.pojos.ApUserCourse;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -53,7 +57,14 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
     @Autowired
     private LevelService levelService;
 
+    @Autowired
+    private AuthorProfileService authorProfileService;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     private static final int COURSE_AUTHOR_REQUIRED_POWER_LEVEL = 7;
+    /** 申请单主题（小册标题）最大字数 */
+    private static final int APPLY_TITLE_MAX_LEN = 20;
 
     @Override
     public ResponseResult findList(Integer page, Integer size) {
@@ -505,7 +516,7 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ResponseResult submitApply(Long courseId, String applyContent, Long userId) {
+    public ResponseResult submitApply(Long courseId, String applyContent, AuthorProfileDto authorProfile, Long userId) {
         if (courseId == null || userId == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
@@ -515,15 +526,29 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
         }
 
+        // 校验申请单 JSON：主题长度 ≤ 20 字、申请渠道必须在允许集合内（仅当提交了申请单内容时校验）
+        String applyValidateError = validateApplyContent(applyContent);
+        if (applyValidateError != null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, applyValidateError);
+        }
+
         // 校验状态迁移（草稿0→申报1，或申报被拒2→重提1）
         String error = transitionTo(course, (byte) 1, userId.intValue(), false);
         if (error != null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, error);
         }
 
+        // 同事务保存作者基础信息（ap_author_profile，按 user_id upsert，允许覆盖；仅当提交了基础信息时）
+        if (authorProfile != null) {
+            ResponseResult profileResult = authorProfileService.saveProfile(userId.intValue(), authorProfile);
+            if (profileResult != null && profileResult.getCode() != AppHttpCodeEnum.SUCCESS.getCode()) {
+                return profileResult;
+            }
+        }
+
         course.setStatus((byte) 1);
-        if (applyContent != null) {
-            // 申报内容独立存储，不覆盖 description（小册介绍）
+        if (StringUtils.isNotBlank(applyContent)) {
+            // 申请单完整 JSON 独立存储，不覆盖 description（小册介绍）
             course.setApplyContent(applyContent);
         }
         course.setApplyTime(new Date());
@@ -532,6 +557,50 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
 
         return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }
+
+    /**
+     * 校验申请单 JSON：
+     * - title（小册主题）非空且长度 ≤ 20 字
+     * - channel（申请渠道）必须在允许集合内（参照掘金小册官方渠道）
+     * @param applyContent 申请单 JSON；为 null/空 时跳过校验（兼容仅切换状态的旧提交审核流程）
+     * @return 校验失败原因；校验通过或无需校验返回 null
+     */
+    private String validateApplyContent(String applyContent) {
+        if (StringUtils.isBlank(applyContent)) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(applyContent);
+
+            String title = node.hasNonNull("title") ? node.get("title").asText().trim() : "";
+            if (StringUtils.isBlank(title)) {
+                return "小册主题不能为空";
+            }
+            if (title.length() > APPLY_TITLE_MAX_LEN) {
+                return "小册主题不能超过" + APPLY_TITLE_MAX_LEN + "字";
+            }
+
+            String channel = node.hasNonNull("channel") ? node.get("channel").asText().trim() : "";
+            if (StringUtils.isBlank(channel)) {
+                return "申请渠道不能为空";
+            }
+            if (!ALLOWED_APPLY_CHANNELS.contains(channel)) {
+                return "申请渠道不合法";
+            }
+            return null;
+        } catch (Exception e) {
+            return "申请单格式错误";
+        }
+    }
+
+    /** 允许的申请渠道（与掘金小册官方渠道一致） */
+    private static final java.util.Set<String> ALLOWED_APPLY_CHANNELS = java.util.Set.of(
+            "掘金小册微信公众号",
+            "《如何写一本掘金小册》小册文章",
+            "小册姐微信",
+            "掘金社区LV7级及以上用户",
+            "经推荐人介绍和推荐",
+            "其他");
 
     @Override
     @Transactional(rollbackFor = Exception.class)
