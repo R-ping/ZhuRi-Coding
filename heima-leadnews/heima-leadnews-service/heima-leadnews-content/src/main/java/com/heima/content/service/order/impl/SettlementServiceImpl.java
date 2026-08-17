@@ -1,9 +1,11 @@
 package com.heima.content.service.order.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.heima.content.mapper.course.ApCourseMapper;
 import com.heima.content.mapper.course.ApCourseOrderMapper;
 import com.heima.content.mapper.course.ApCourseSettlementMapper;
 import com.heima.content.service.order.SettlementService;
+import com.heima.model.course.pojos.ApCourse;
 import com.heima.model.course.pojos.ApCourseOrder;
 import com.heima.model.course.pojos.ApCourseSettlement;
 import com.heima.model.common.dtos.ResponseResult;
@@ -28,6 +30,9 @@ public class SettlementServiceImpl implements SettlementService {
 
     @Autowired
     private ApCourseOrderMapper orderMapper;
+
+    @Autowired
+    private ApCourseMapper courseMapper;
 
     @Override
     public ResponseResult getMonthlyList(Long authorId) {
@@ -78,14 +83,15 @@ public class SettlementServiceImpl implements SettlementService {
             return;
         }
 
-        // 按作者+课程分组统计
-        Map<String, SettlementGroup> groupMap = new HashMap<>();
+        // 按课程分组统计（每个课程归属一个作者，从课程表取真实作者ID，而非订单买家ID）
+        Map<Long, SettlementGroup> groupMap = new HashMap<>();
         for (ApCourseOrder order : orders) {
-            String key = order.getUserId() + "_" + order.getCourseId();
-            SettlementGroup group = groupMap.computeIfAbsent(key, k -> {
+            SettlementGroup group = groupMap.computeIfAbsent(order.getCourseId(), k -> {
                 SettlementGroup g = new SettlementGroup();
-                g.authorId = order.getUserId();
-                g.courseId = order.getCourseId();
+                // 从课程表查询作者ID：order.getUserId() 是买家，不能用作作者结算
+                ApCourse course = courseMapper.selectById(k);
+                g.authorId = course != null && course.getAuthorId() != null ? course.getAuthorId() : 0;
+                g.courseId = k;
                 return g;
             });
             group.totalSales = group.totalSales.add(order.getPaidAmount());

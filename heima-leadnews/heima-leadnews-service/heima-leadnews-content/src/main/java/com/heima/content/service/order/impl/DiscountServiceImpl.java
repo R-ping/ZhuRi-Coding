@@ -105,6 +105,13 @@ public class DiscountServiceImpl implements DiscountService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean consumeDiscountCode(String code) {
+        if (code == null || code.isEmpty()) return false;
+        return discountMapper.incrementUsedCountAtomic(code) > 0;
+    }
+
+    @Override
     public ResponseResult validateDiscountForPreview(String code, Long courseId) {
         ApCourseDiscount discount = validateDiscount(code, courseId);
         if (discount == null) {

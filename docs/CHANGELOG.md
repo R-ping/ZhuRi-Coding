@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2026-08-17 — 修复结算作者ID与折扣码并发超卖
+
+### 变更
+
+1. **结算作者ID Bug 修复**（`SettlementServiceImpl`）：月度结算时按课程ID分组，从 `ap_course` 表查询真实作者ID，而非错误使用买家（order.userId）作为作者。
+2. **折扣码并发超卖修复**：新增 `incrementUsedCountAtomic` 原子SQL更新（`UPDATE ... WHERE used_count < max_uses`），防止高并发下单多个请求同时扣减导致折扣码超卖。
+
+---
+
 ## 2026-08-17 — 小册系统上线（独立全屏三栏编辑器 + 简化申报/编辑审核全流程 + 账号白名单编辑入口）
 
 ### 变更
