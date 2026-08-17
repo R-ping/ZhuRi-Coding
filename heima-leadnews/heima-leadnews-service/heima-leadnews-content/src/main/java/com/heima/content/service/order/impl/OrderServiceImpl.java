@@ -3,7 +3,6 @@ package com.heima.content.service.order.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.heima.content.mapper.course.ApCourseDiscountMapper;
 import com.heima.content.mapper.course.ApCourseMapper;
 import com.heima.content.mapper.course.ApCourseOrderMapper;
 import com.heima.content.mapper.course.ApUserCourseMapper;
@@ -40,9 +39,6 @@ public class OrderServiceImpl implements OrderService {
 
     @Autowired
     private ApUserCourseMapper userCourseMapper;
-
-    @Autowired
-    private ApCourseDiscountMapper discountMapper;
 
     @Autowired
     private DiscountService discountService;
@@ -155,14 +151,11 @@ public class OrderServiceImpl implements OrderService {
         order.setUpdatedTime(new Date());
         orderMapper.updateById(order);
 
-        // 更新折扣码使用次数
+        // 原子更新折扣码使用次数（防止并发超卖）
         if (order.getDiscountCode() != null && !order.getDiscountCode().isEmpty()) {
-            LambdaQueryWrapper<ApCourseDiscount> discountQuery = new LambdaQueryWrapper<>();
-            discountQuery.eq(ApCourseDiscount::getCode, order.getDiscountCode());
-            ApCourseDiscount discount = discountService.getDiscountByCode(order.getDiscountCode());
-            if (discount != null) {
-                discount.setUsedCount(discount.getUsedCount() + 1);
-                discountMapper.updateById(discount);
+            boolean consumed = discountService.consumeDiscountCode(order.getDiscountCode());
+            if (!consumed) {
+                log.warn("折扣码使用次数已达上限或无效: code={}", order.getDiscountCode());
             }
         }
 
