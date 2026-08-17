@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 2026-08-17 — Code Review 安全加固（数据泄露修复/越权修复/幂等性/自动保存竞态）
+
+### 变更
+
+1. **🔴 公开课程列表数据泄露修复**（`ApCourseServiceImpl.findList`）：移除 `@RequestParam(required=false) Byte status` 参数，服务端强制过滤 `status=9（已上架）` 且 `is_deleted=0`，防止匿名用户遍历草稿/审核中/已下架课程。
+2. **🔴 无鉴权状态变更漏洞修复**（`CourseController`）：
+   - 移除 `PUT /api/v1/course/status`（无作者校验，任何人可改任意课程状态）。
+   - 移除 `DELETE /api/v1/course/{id}`（硬删除，与软删除策略不一致，且无归属校验）。
+   - `/manage/submit` 改为调用 `submitApply`（走状态机 `transitionTo`，含作者归属校验），不再绕过状态机。
+   - `/manage/unpublish` 改为调用 `authorUnpublish`（走状态机 `transitionTo`，含作者归属校验）。
+3. **公开课程详情数据泄露修复**（`getPublicDetail`）：非已上架课程返回 `404`；章节只返回 `status=1（已发布）` 的小节，未发布小节不外泄。
+4. **状态机补充作者下架路径**：`transitionTo` 作者分支新增 `9→3（已上架→已下架）`，作者可下架自己的已上架课程。
+5. **月度结算幂等性保护**（`SettlementServiceImpl.executeMonthlySettlement`）：执行前检查同一月份是否已有结算记录，有则跳过，防止重复触发产生重复结算。
+6. **前端 course.js 重复常量清理**：删除 `COURSE_API_PREFIX`（与 `API_PREFIX` 值完全相同），全文件统一使用 `API_PREFIX`。
+7. **小册编辑器自动保存竞态修复**（`edit.vue`）：
+   - 拆分课程/章节为独立定时器（`_courseSaveTimer`/`_chapterSaveTimer`），避免互相覆盖。
+   - 新增 `_dirty` 脏标记跟踪未保存内容，`beforeunload` 同时检查 `_dirty` 与 `saveStatus`。
+   - 切换小节前先调用 `flushPendingChapterSave` 落盘当前小节，防止防抖窗口内切换导致内容丢失。
+8. **调试文件清理**：删除 `diffstat.txt`。
+
+### 验证
+
+- 后端 `mvn compile` 通过；前端 `npm run build` 通过。
+- 分支 `fix/code-review-security`，等待提交确认。
+
+---
+
 ## 2026-08-17 — 修复结算作者ID与折扣码并发超卖
 
 ### 变更

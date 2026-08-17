@@ -51,14 +51,13 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
     private static final int COURSE_AUTHOR_REQUIRED_POWER_LEVEL = 7;
 
     @Override
-    public ResponseResult findList(Integer page, Integer size, Byte status) {
+    public ResponseResult findList(Integer page, Integer size) {
         IPage<ApCourse> iPage = new Page<>(page, size);
         LambdaQueryWrapper<ApCourse> queryWrapper = new LambdaQueryWrapper<>();
-        
-        if (status != null) {
-            queryWrapper.eq(ApCourse::getStatus, status);
-        }
-        
+        // 公开列表仅返回已上架(9)且未删除的课程，防止泄露草稿/审核中/已下架内容
+        queryWrapper.eq(ApCourse::getIsDeleted, 0);
+        queryWrapper.eq(ApCourse::getStatus, ApCourse.Status.PUBLISHED.getCode());
+
         queryWrapper.orderByDesc(ApCourse::getCreatedTime);
         
         IPage<ApCourse> resultPage = page(iPage, queryWrapper);
@@ -67,45 +66,6 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
         data.put("list", resultPage.getRecords());
         data.put("total", resultPage.getTotal());
         return ResponseResult.okResult(data);
-    }
-
-    @Override
-    public ResponseResult deleteById(Long id) {
-        if (id == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
-        }
-        
-        boolean deleted = removeById(id);
-        
-        if (deleted) {
-            return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
-        }
-        
-        return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
-    }
-
-    @Override
-    public ResponseResult updateStatus(Long id, Byte status, String reason) {
-        if (id == null || status == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
-        }
-        
-        ApCourse apCourse = getById(id);
-        
-        if (apCourse == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
-        }
-        
-        apCourse.setStatus(status);
-        apCourse.setReason(reason);
-        
-        boolean updated = updateById(apCourse);
-        
-        if (updated) {
-            return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
-        }
-        
-        return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR);
     }
 
     @Override
@@ -257,10 +217,15 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
         if (course == null || course.getIsDeleted() == 1) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
         }
+        // 公开详情仅对已上架(9)课程可见，防止泄露写作中/审核中小册内容
+        if (course.getStatus() != ApCourse.Status.PUBLISHED.getCode()) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
 
-        // 查询所有章节
+        // 查询已发布(1)的章节（未发布小节不外泄）
         LambdaQueryWrapper<ApCourseChapter> chapterQuery = new LambdaQueryWrapper<>();
         chapterQuery.eq(ApCourseChapter::getCourseId, courseId);
+        chapterQuery.eq(ApCourseChapter::getStatus, 1);
         chapterQuery.orderByAsc(ApCourseChapter::getSortOrder);
         List<ApCourseChapter> chapters = chapterMapper.selectList(chapterQuery);
 
@@ -447,6 +412,31 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
         return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult authorUnpublish(Long courseId, Long userId) {
+        if (courseId == null || userId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        ApCourse course = getById(courseId);
+        if (course == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
+
+        // 状态机校验：仅作者可下架自己的已上架(9)课程
+        String error = transitionTo(course, (byte) 3, userId.intValue(), false);
+        if (error != null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, error);
+        }
+
+        course.setStatus((byte) 3);
+        course.setUpdatedTime(new Date());
+        updateById(course);
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
+
     // ==================== 小册申报/审核流程 ====================
 
     /**
@@ -471,6 +461,8 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
             if (current == 2 && targetStatus == 1) return null;
             // 写作中(4) -> 上架待审(5)：提交上架审核
             if (current == 4 && targetStatus == 5) return null;
+            // 已上架(9) -> 已下架(3)：作者下架自己的已上架课程
+            if (current == 9 && targetStatus == 3) return null;
             return "非法状态迁移";
         }
 

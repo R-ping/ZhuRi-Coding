@@ -72,6 +72,14 @@ public class SettlementServiceImpl implements SettlementService {
     public void executeMonthlySettlement(String month) {
         log.info("开始执行月度结算: {}", month);
 
+        // 幂等保护：同一月份已存在结算记录则跳过，避免重复执行产生重复结算（收入失真）
+        LambdaQueryWrapper<ApCourseSettlement> existQuery = new LambdaQueryWrapper<>();
+        existQuery.eq(ApCourseSettlement::getSettlementMonth, month);
+        if (settlementMapper.selectCount(existQuery) > 0) {
+            log.warn("月份 {} 已结算过，跳过本次执行，防止重复结算", month);
+            return;
+        }
+
         // 查询上月已支付订单
         LambdaQueryWrapper<ApCourseOrder> orderQuery = new LambdaQueryWrapper<>();
         orderQuery.eq(ApCourseOrder::getStatus, ApCourseOrder.Status.PAID.getCode());

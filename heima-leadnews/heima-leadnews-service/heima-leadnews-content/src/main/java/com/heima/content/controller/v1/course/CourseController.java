@@ -21,25 +21,12 @@ public class CourseController {
 
     // ========== 公开接口 ==========
 
+    /** 公开课程列表：仅返回已上架课程（由服务端强制过滤 status=9，忽略客户端传入的状态） */
     @GetMapping("/list")
     public ResponseResult findList(
             @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer size,
-            @RequestParam(required = false) Byte status) {
-        return apCourseService.findList(page, size, status);
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseResult deleteById(@PathVariable Long id) {
-        return apCourseService.deleteById(id);
-    }
-
-    @PutMapping("/status")
-    public ResponseResult updateStatus(@RequestBody Map<String, Object> params) {
-        Long id = Long.parseLong(params.get("id").toString());
-        Byte status = Byte.parseByte(params.get("status").toString());
-        String reason = params.get("reason") != null ? params.get("reason").toString() : null;
-        return apCourseService.updateStatus(id, status, reason);
+            @RequestParam(defaultValue = "10") Integer size) {
+        return apCourseService.findList(page, size);
     }
 
     @GetMapping("/my")
@@ -140,7 +127,8 @@ public class CourseController {
             return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
-        return apCourseService.updateStatus(courseId, (byte) 1, null);
+        // 提交审核：草稿(0)/被拒(2) -> 审核中(1)，走状态机校验（含作者归属）
+        return apCourseService.submitApply(courseId, null, user.getId().longValue());
     }
 
     /** 下架课程 */
@@ -151,7 +139,8 @@ public class CourseController {
             return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
-        return apCourseService.updateStatus(courseId, (byte) 3, null);
+        // 作者下架自己的已上架课程（9→3），走状态机校验（含作者归属）
+        return apCourseService.authorUnpublish(courseId, user.getId().longValue());
     }
 
     // ========== 小册申报（作者侧） ==========
