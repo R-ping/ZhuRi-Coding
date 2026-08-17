@@ -231,6 +231,8 @@ export default {
     },
     // ===== 选择 =====
     onSelectChapter(ch) {
+      // 切换小节前先落盘当前小节，防止防抖窗口内切换导致内容丢失
+      this.flushPendingChapterSave()
       if (ch === 'intro') {
         this.activeChapterId = 'intro'
       } else if (ch && ch.id) {
@@ -240,12 +242,15 @@ export default {
     // ===== 标题/内容自动保存 =====
     onTitleChange(title) {
       this.course.title = title
+      this._dirty = true
       this.scheduleCourseSave()
     },
     onIntroChange() {
+      this._dirty = true
       this.scheduleCourseSave()
     },
     onChapterChange() {
+      this._dirty = true
       this.scheduleChapterSave()
     },
     onToggleFree(ch) {
@@ -253,21 +258,35 @@ export default {
     },
     scheduleCourseSave() {
       this.saveStatus = 'saving'
-      if (this._saveTimer) clearTimeout(this._saveTimer)
-      this._saveTimer = setTimeout(async () => {
+      if (this._courseSaveTimer) clearTimeout(this._courseSaveTimer)
+      this._courseSaveTimer = setTimeout(async () => {
         const res = await courseApi.updateCourse({
           id: this.course.id,
           title: this.course.title,
           description: this.course.description
         })
         this.saveStatus = res && res.code === 200 ? 'saved' : 'error'
+        if (res && res.code === 200) this._dirty = false
       }, 800)
     },
     scheduleChapterSave() {
       if (!this.activeChapter) return
+      // 锁定当前小节引用：若用户在防抖窗口内切换小节，仍保存原小节内容，避免数据丢失
+      const ch = this.activeChapter
       this.saveStatus = 'saving'
-      if (this._saveTimer) clearTimeout(this._saveTimer)
-      this._saveTimer = setTimeout(() => this.saveChapter(this.activeChapter), 800)
+      if (this._chapterSaveTimer) clearTimeout(this._chapterSaveTimer)
+      this._chapterSaveTimer = setTimeout(() => {
+        this._chapterSaveTimer = null
+        this.saveChapter(ch)
+      }, 800)
+    },
+    /** 切换小节前立即落盘当前小节，防止防抖窗口内切换导致内容丢失 */
+    flushPendingChapterSave() {
+      if (!this._chapterSaveTimer) return
+      clearTimeout(this._chapterSaveTimer)
+      this._chapterSaveTimer = null
+      const ch = this.activeChapter
+      if (ch) this.saveChapter(ch)
     },
     async saveChapter(ch) {
       if (!ch || !ch.id) return
@@ -280,6 +299,7 @@ export default {
           isFree: ch.isFree
         })
         this.saveStatus = res && res.code === 200 ? 'saved' : 'error'
+        if (res && res.code === 200) this._dirty = false
       } catch (e) {
         this.saveStatus = 'error'
       }

@@ -601,6 +601,15 @@
                 this.$router.push('/course')
             },
             selectCategory(category) {
+                // 点击当前已处于的频道分栏时，主动触发列表刷新（而非无操作）
+                var targetPath = category === 'ranking' ? '/hot'
+                    : category === 'following' ? '/home/following'
+                    : category === 'comprehensive' ? '/home'
+                    : `/home/${category}`
+                if (this.currentCategory === category && this.$route.path === targetPath) {
+                    window.dispatchEvent(new CustomEvent('feed-refresh'))
+                    return
+                }
                 this.currentCategory = category
                 this.searchKeyword = ''
                 if (category === 'ranking') {

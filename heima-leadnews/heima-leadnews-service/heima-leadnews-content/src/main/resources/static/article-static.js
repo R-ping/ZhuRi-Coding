@@ -62,12 +62,30 @@
         for (var i = 0; i < parts.length; i++) {
             if (i % 3 === 1) continue; // alt 文本
             if (i % 3 === 2) {
-                var url = parts[i].trim();
+                var url = cleanImageUrl(parts[i].trim());
                 html += '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(parts[i - 1]) + '" class="comment-image">';
                 continue;
             }
             html += escapeHtml(parts[i]);
         }
+        return html;
+    }
+
+    // 去掉图片 URL 中的 ? 及其往后签名参数，仅保留可长期访问的对象地址
+    function cleanImageUrl(u) {
+        if (!u) return '';
+        var idx = u.indexOf('?');
+        return idx > 0 ? u.substring(0, idx) : u;
+    }
+
+    // 渲染评论附带图片列表（独立字段，展示在评论信息下方）
+    function renderPicsHtml(pics) {
+        if (!pics || !pics.length) return '';
+        var html = '<div class="comment-pics">';
+        for (var k = 0; k < pics.length; k++) {
+            html += '<img src="' + escapeHtml(cleanImageUrl(pics[k])) + '" alt="评论图片" class="comment-image">';
+        }
+        html += '</div>';
         return html;
     }
 
@@ -82,6 +100,39 @@
             body: body ? JSON.stringify(body) : undefined
         }).then(function(r) { return r.json(); });
     }
+
+    // ========== 阅读量上报（浏览计数 + 接入等级体系） ==========
+    // 每次打开文章详情页时上报一次浏览（同一篇文章同一天最多计一次，避免刷新刷浏览）
+    function reportRead() {
+        if (!articleId || articleId === '0') return;
+        var today = new Date();
+        var dayStr = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate();
+        var guardKey = 'article_viewed_' + articleId + '_' + dayStr;
+        try {
+            if (localStorage.getItem(guardKey)) return; // 今日已计过
+        } catch (e) { /* ignore */ }
+        apiPost('/content/api/v1/read_behavior', {
+            articleId: articleId,  // 保留字符串，避免雪花ID经 Number() 转换丢精度导致阅读数不累加
+            count: 1,
+            readDuration: 0,
+            percentage: 0,
+            loadDuration: 0
+        }).then(function(res) {
+            try { localStorage.setItem(guardKey, '1'); } catch (e) { /* ignore */ }
+            // 仅当服务端判定"本次计入阅读数"时才累加本地展示值，避免重复浏览/未登录造成展示漂移
+            if (res && res.data && res.data.counted) {
+                incReadCount();
+            }
+        }).catch(function() {
+            // 未登录或网络异常时静默失败，不影响页面
+        });
+    }
+    function incReadCount() {
+        function inc(el) { if (el) { var n = parseInt(el.textContent, 10) || 0; el.textContent = n + 1; } }
+        inc(document.getElementById('readCountHeader'));
+        inc(document.getElementById('readCountSidebar'));
+    }
+    reportRead();
 
     // ========== 轻提示 ==========
     var toastTimer = null;
@@ -632,12 +683,9 @@
     }
     var sideCommentBtn = document.getElementById('sideCommentBtn');
     if (sideCommentBtn) {
+        // 掘金式交互：点击左侧评论栏打开右侧评论抽屉，不打断阅读位置（不再滚动到文末评论区）
         sideCommentBtn.addEventListener('click', function() {
-            var commentSection = document.getElementById('commentSection');
-            if (commentSection) {
-                var top = commentSection.getBoundingClientRect().top + window.pageYOffset - 72;
-                window.scrollTo({ top: top, behavior: 'smooth' });
-            }
+            openCommentDrawer();
         });
     }
 
@@ -688,6 +736,7 @@
     var replyToRootId = null;
     var commentImages = [];   // 主评论框待提交图片
     var replyImages = [];     // 回复框待提交图片
+    var replyLoadState = {};  // 二级回复分页加载状态 { commentId: { cursor, hasMore } }
 
     // 检查登录状态
     function checkCommentLogin() {
@@ -731,6 +780,8 @@
         html += '<span class="comment-user-time">' + formatTime(comment.ctime) + '</span>';
         html += '</div>';
         html += '<div class="comment-content">' + renderContent(comment.content) + '</div>';
+        // 评论附带图片（独立字段 commentPics，展示在评论内容下方）
+        html += renderPicsHtml(comment.commentPics);
         html += '<div class="comment-actions">';
         html += '<button class="comment-action-btn comment-like-btn' + (comment.isDigg ? ' active' : '') + '" data-comment-id="' + comment.commentId + '">';
         html += '<svg viewBox="0 0 24 24"><path d="M2 20h2v-9H2v9zm20-9c0-1.1-.9-2-2-2h-3.17c-.53-1.4-1.53-2.56-2.83-3.09V4c0-1.66-1.34-3-3-3S8 2.34 8 4v1.91C5.94 6.56 4.5 8.69 4.5 11v6.17l-1.83 1.83L4.17 20h12.5c1.66 0 3.08-1.03 3.65-2.5H22v-6.5z"/></svg>';
@@ -742,29 +793,36 @@
         html += '</button>';
         html += '</div>';
 
-        // 子回复
+        // 子回复（含多级嵌套回复，服务端已按所属一级评论聚合在 replyInfos）
         var replies = comment.replyInfos || [];
-        if (replies.length > 0) {
-            var showReplies = replies.slice(0, 2);
-            var hasMoreReplies = replies.length > 2;
-            html += '<div class="reply-list">';
-            showReplies.forEach(function(reply) {
-                var replyUser = reply.userInfo || {};
-                // 二级回复项：支持继续回复，携带 parentId(reply.commentId) 与 rootId(一级评论ID)
-                html += '<div class="reply-item" data-comment-id="' + reply.commentId + '">';
-                html += '<span class="reply-user">' + escapeHtml(replyUser.userName || '匿名') + '：</span>';
-                html += renderContent(reply.content);
-                html += '<button class="reply-action-btn comment-reply-btn" data-comment-id="' + reply.commentId + '" data-root-id="' + comment.commentId + '">回复</button>';
-                html += '</div>';
+        var needMoreBtn = comment.hasMoreReplies || (comment.replyCount > replies.length);
+        if (replies.length > 0 || needMoreBtn) {
+            html += '<div class="reply-list" data-comment-id="' + comment.commentId + '" data-root-id="' + comment.commentId + '">';
+            replies.forEach(function(reply) {
+                html += renderReplyItem(reply, comment.commentId);
             });
-            html += '</div>';
-            if (hasMoreReplies) {
-                html += '<button class="reply-more-btn" data-comment-id="' + comment.commentId + '">查看全部 ' + replies.length + ' 条回复</button>';
+            if (needMoreBtn) {
+                html += '<div class="reply-more"><button type="button" class="reply-more-btn" data-comment-id="' + comment.commentId + '" data-root-id="' + comment.commentId + '">查看全部' + (comment.replyCount || replies.length) + '条回复</button></div>';
             }
+            html += '</div>';
         }
 
         li.innerHTML = html;
         return li;
+    }
+
+    // 渲染单条二级/更深回复（含回复附带图片，继续回复仍可嵌套）
+    function renderReplyItem(reply, rootCommentId) {
+        var replyUser = reply.userInfo || {};
+        var html = '<div class="reply-item" data-comment-id="' + reply.commentId + '">';
+        html += '<div class="reply-body">';
+        html += '<span class="reply-user">' + escapeHtml(replyUser.userName || '匿名') + '：</span>';
+        html += renderContent(reply.content);
+        html += renderPicsHtml(reply.commentPics);
+        html += '</div>';
+        html += '<button class="reply-action-btn comment-reply-btn" data-comment-id="' + reply.commentId + '" data-root-id="' + rootCommentId + '">回复</button>';
+        html += '</div>';
+        return html;
     }
 
     function loadComments(append) {
@@ -932,20 +990,68 @@
 
     function handleShowMoreReplies(e) {
         e.stopPropagation();
-        // 简单实现：重新加载评论列表并展开全部
-        var commentId = e.currentTarget.getAttribute('data-comment-id');
-        // 找到对应的评论项，展开所有回复
-        // 在实际场景中需要调用API获取更多回复，这里简化处理
-        alert('查看更多回复功能开发中');
+        var btn = e.currentTarget;
+        var commentId = btn.getAttribute('data-comment-id');
+        var rootId = btn.getAttribute('data-root-id') || commentId;
+        var replyListEl = btn.closest('.reply-list');
+        if (btn._loading) return;
+        btn._loading = true;
+        btn.disabled = true;
+        btn.textContent = '加载中...';
+        apiGet('/content/api/v1/comment/article/' + articleId + '/replies?rootId=' + encodeURIComponent(rootId) + '&cursor=' + (replyLoadState[commentId] ? replyLoadState[commentId].cursor : '') + '&size=10').then(function(res) {
+            btn._loading = false;
+            btn.disabled = false;
+            if (res && res.code === 200 && res.data) {
+                var list = res.data.list || [];
+                var st = replyLoadState[commentId] || { cursor: 0, hasMore: false };
+                st.cursor = res.data.cursor || 0;
+                st.hasMore = !!res.data.has_more;
+                replyLoadState[commentId] = st;
+
+                // 追加新回复到"查看全部"按钮之前
+                if (replyListEl) {
+                    var moreWrap = btn.closest('.reply-more');
+                    list.forEach(function(reply) {
+                        var wrap = document.createElement('div');
+                        wrap.className = 'reply-item-wrap';
+                        wrap.innerHTML = renderReplyItem(reply, rootId);
+                        if (moreWrap) {
+                            replyListEl.insertBefore(wrap, moreWrap);
+                        } else {
+                            replyListEl.appendChild(wrap);
+                        }
+                    });
+                    bindCommentEvents(); // 重新绑定回复按钮/图片点击
+                }
+
+                if (st.hasMore) {
+                    btn.textContent = '加载更多回复';
+                } else if (moreWrap) {
+                    moreWrap.parentNode.removeChild(moreWrap);
+                } else {
+                    btn.style.display = 'none';
+                }
+            } else {
+                btn.textContent = '查看全部回复';
+                alert('加载回复失败: ' + (res && res.message ? res.message : '未知错误'));
+            }
+        }).catch(function(err) {
+            btn._loading = false;
+            btn.disabled = false;
+            btn.textContent = '查看全部回复';
+            console.error('加载更多回复失败:', err);
+            alert('加载回复失败，请稍后重试');
+        });
     }
 
     function sendReply() {
         var input = document.getElementById('replyInput');
-        var content = buildCommentContent(input.value.trim(), replyImages);
-        if (!content) return;
+        var content = input.value.trim();
+        if (!content && replyImages.length === 0) return;
         if (!replyToCommentId) return;
-        var body = { content: content };
+        var body = { content: content, commentPics: replyImages.slice() };
         if (replyToRootId) {
+            // 评论 ID 为自增主键（非雪花ID），Number 精度安全
             body.rootId = parseInt(replyToRootId);
         }
         var url = '/content/api/v1/comment/comment/' + replyToCommentId + '/reply';
@@ -975,15 +1081,15 @@
                 return;
             }
             var textarea = document.getElementById('commentTextarea');
-            var content = buildCommentContent(textarea.value.trim(), commentImages);
-            if (!content) {
+            var content = textarea.value.trim();
+            if (!content && commentImages.length === 0) {
                 alert('请输入评论内容');
                 return;
             }
             var btn = this;
             btn.disabled = true;
             btn.textContent = '提交中...';
-            apiPost('/content/api/v1/comment/article/' + articleId + '/comment', { content: content }).then(function(res) {
+            apiPost('/content/api/v1/comment/article/' + articleId + '/comment', { content: content, commentPics: commentImages.slice() }).then(function(res) {
                 btn.disabled = false;
                 btn.textContent = '发表评论';
                 if (res && res.code === 200) {
@@ -995,6 +1101,194 @@
                     loadComments(false);
                     commentCount++;
                     updateSidebarCounts();
+                } else {
+                    alert('评论失败: ' + (res.message || '未知错误'));
+                }
+            }).catch(function(err) {
+                btn.disabled = false;
+                btn.textContent = '发表评论';
+                console.error('评论失败:', err);
+                alert('评论失败，请稍后重试');
+            });
+        });
+    }
+
+    // ========== 右侧评论抽屉（掘金式：点击左侧评论栏打开，不打断阅读位置） ==========
+    var commentDrawer = document.getElementById('commentDrawer');
+    var commentDrawerMask = document.getElementById('commentDrawerMask');
+    var drawerCommentCursor = '';
+    var drawerCommentHasMore = false;
+    var drawerCommentLoading = false;
+    var drawerCommentImages = [];
+    var drawerOpen = false;
+
+    function openCommentDrawer() {
+        if (!commentDrawer) return;
+        drawerOpen = true;
+        commentDrawer.classList.add('open');
+        commentDrawerMask.classList.add('open');
+        commentDrawer.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        checkDrawerLogin();
+        updateDrawerCommentCount(commentCount);
+        // 每次打开重新加载，保证数据最新
+        drawerCommentCursor = '';
+        drawerCommentImages = [];
+        renderImagePreview(document.getElementById('drawerCommentImagePreview'), drawerCommentImages);
+        loadDrawerComments(false);
+    }
+
+    function closeCommentDrawer() {
+        if (!commentDrawer || !drawerOpen) return;
+        drawerOpen = false;
+        commentDrawer.classList.remove('open');
+        commentDrawerMask.classList.remove('open');
+        commentDrawer.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+    }
+    if (commentDrawerMask) {
+        commentDrawerMask.addEventListener('click', closeCommentDrawer);
+    }
+    var drawerCloseBtn = document.getElementById('commentDrawerClose');
+    if (drawerCloseBtn) drawerCloseBtn.addEventListener('click', closeCommentDrawer);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && drawerOpen) closeCommentDrawer();
+    });
+
+    function loadDrawerComments(append) {
+        if (drawerCommentLoading) return;
+        drawerCommentLoading = true;
+        var url = '/content/api/v1/comment/article/' + articleId + '/comments?cursor=' + encodeURIComponent(drawerCommentCursor) + '&size=10';
+        apiGet(url).then(function(res) {
+            drawerCommentLoading = false;
+            if (res && res.code === 200 && res.data) {
+                var list = res.data.list || [];
+                drawerCommentCursor = res.data.cursor || '';
+                drawerCommentHasMore = res.data.has_more || false;
+                var container = document.getElementById('drawerCommentList');
+                var emptyEl = document.getElementById('drawerCommentEmpty');
+                var loadMoreBtn = document.getElementById('drawerCommentLoadMore');
+                if (!container) return;
+                if (!append) container.innerHTML = '';
+                if (list.length === 0 && !append) {
+                    emptyEl.style.display = 'block';
+                    loadMoreBtn.style.display = 'none';
+                } else {
+                    emptyEl.style.display = 'none';
+                    list.forEach(function(comment) {
+                        container.appendChild(renderComment(comment));
+                    });
+                    bindCommentEvents();
+                    loadMoreBtn.style.display = drawerCommentHasMore ? 'block' : 'none';
+                }
+            }
+        }).catch(function(err) {
+            drawerCommentLoading = false;
+            console.error('加载评论失败:', err);
+        });
+    }
+    var drawerCommentLoadMore = document.getElementById('drawerCommentLoadMore');
+    if (drawerCommentLoadMore) {
+        drawerCommentLoadMore.addEventListener('click', function() { loadDrawerComments(true); });
+    }
+
+    // 抽屉登录状态（复用主评区的 renderComment/渲染，仅控制禁用态与提示）
+    function checkDrawerLogin() {
+        var textarea = document.getElementById('drawerCommentTextarea');
+        var submitBtn = document.getElementById('drawerCommentSubmitBtn');
+        if (!textarea || !submitBtn) return;
+        var loginTip = document.getElementById('drawerLoginTip');
+        var avatar = document.getElementById('drawerCommentUserAvatar');
+        var emojiBtn = document.getElementById('drawerCommentEmojiBtn');
+        var imageBtn = document.getElementById('drawerCommentImageBtn');
+        if (isLoggedIn()) {
+            textarea.disabled = false;
+            textarea.placeholder = '写下你的评论...';
+            submitBtn.disabled = false;
+            if (loginTip) loginTip.style.display = 'none';
+            if (avatar) {
+                var ui = getUserInfoCache();
+                avatar.src = (ui && (ui.avatar || ui.avatarLarge || ui.headImage)) || '';
+            }
+            if (emojiBtn) emojiBtn.disabled = false;
+            if (imageBtn) imageBtn.disabled = false;
+        } else {
+            textarea.disabled = true;
+            textarea.placeholder = '登录后参与评论';
+            submitBtn.disabled = true;
+            if (loginTip) loginTip.style.display = 'block';
+            if (avatar) avatar.src = '';
+            if (emojiBtn) emojiBtn.disabled = true;
+            if (imageBtn) imageBtn.disabled = true;
+        }
+    }
+
+    function updateDrawerCommentCount(count) {
+        var el = document.getElementById('drawerCommentTitleCount');
+        if (el) el.textContent = count || 0;
+    }
+
+    // 抽屉字数统计
+    var drawerCommentTextarea = document.getElementById('drawerCommentTextarea');
+    if (drawerCommentTextarea) {
+        drawerCommentTextarea.addEventListener('input', function() {
+            var countEl = document.getElementById('drawerCommentCharCount');
+            if (countEl) countEl.textContent = this.value.length;
+        });
+    }
+    // 抽屉登录链接
+    var drawerLoginLink = document.getElementById('drawerLoginLink');
+    if (drawerLoginLink) {
+        drawerLoginLink.addEventListener('click', function(e) { e.preventDefault(); openLoginModal(); });
+    }
+    // 抽屉表情
+    var drawerCommentEmojiBtn = document.getElementById('drawerCommentEmojiBtn');
+    if (drawerCommentEmojiBtn) {
+        drawerCommentEmojiBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            openEmojiPicker(this, drawerCommentTextarea);
+        });
+    }
+    // 抽屉图片（复用 OSS 直传）
+    var drawerCommentImageBtn = document.getElementById('drawerCommentImageBtn');
+    var drawerCommentImageInput = document.getElementById('drawerCommentImageInput');
+    if (drawerCommentImageBtn && drawerCommentImageInput) {
+        drawerCommentImageBtn.addEventListener('click', function() { drawerCommentImageInput.click(); });
+        drawerCommentImageInput.addEventListener('change', function() {
+            var file = drawerCommentImageInput.files[0];
+            if (!file) return;
+            drawerCommentImageInput.value = '';
+            uploadCommentImage(file, function(url) {
+                drawerCommentImages.push(url);
+                renderImagePreview(document.getElementById('drawerCommentImagePreview'), drawerCommentImages);
+            });
+        });
+    }
+    // 抽屉发表评论
+    var drawerCommentSubmitBtn = document.getElementById('drawerCommentSubmitBtn');
+    if (drawerCommentSubmitBtn) {
+        drawerCommentSubmitBtn.addEventListener('click', function() {
+            if (!isLoggedIn()) { openLoginModal(); return; }
+            var content = drawerCommentTextarea.value.trim();
+            if (!content && drawerCommentImages.length === 0) { alert('请输入评论内容'); return; }
+            var btn = this;
+            btn.disabled = true;
+            btn.textContent = '提交中...';
+            apiPost('/content/api/v1/comment/article/' + articleId + '/comment', { content: content, commentPics: drawerCommentImages.slice() }).then(function(res) {
+                btn.disabled = false;
+                btn.textContent = '发表评论';
+                if (res && res.code === 200) {
+                    drawerCommentTextarea.value = '';
+                    drawerCommentImages = [];
+                    renderImagePreview(document.getElementById('drawerCommentImagePreview'), drawerCommentImages);
+                    var countEl = document.getElementById('drawerCommentCharCount');
+                    if (countEl) countEl.textContent = 0;
+                    // 同步各处评论计数 + 刷新抽屉评论列表
+                    commentCount++;
+                    updateSidebarCounts();
+                    updateDrawerCommentCount(commentCount);
+                    drawerCommentCursor = '';
+                    loadDrawerComments(false);
                 } else {
                     alert('评论失败: ' + (res.message || '未知错误'));
                 }
@@ -1022,16 +1316,6 @@
     ];
     var commentEmojiPicker = null;
     var activeEmojiTextarea = null;
-
-    // 构建评论提交内容：文本 + 图片（![image](url) 语法）
-    function buildCommentContent(text, images) {
-        var content = text;
-        if (images && images.length > 0) {
-            if (content) content += '\n';
-            content += images.map(function(u) { return '![image](' + u + ')'; }).join('\n');
-        }
-        return content;
-    }
 
     // OSS web 直传：复用 /content/api/v1/media/oss/post_signature 签名方案
     function uploadCommentImage(file, onDone) {

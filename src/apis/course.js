@@ -100,58 +100,58 @@ export default {
 
   /** 创建订单 */
   createOrder(data) {
-    return request.post(`${COURSE_API_PREFIX}/order/create`, data)
+    return request.post(`${API_PREFIX}/order/create`, data)
   },
 
   /** 查询订单状态 */
   getOrderStatus(orderNo) {
-    return request.get(`${COURSE_API_PREFIX}/order/status`, { orderNo })
+    return request.get(`${API_PREFIX}/order/status`, { orderNo })
   },
 
   /** 我的订单列表 */
   getMyOrders(params) {
-    return request.get(`${COURSE_API_PREFIX}/order/my`, params)
+    return request.get(`${API_PREFIX}/order/my`, params)
   },
 
   // ========== 支付 (course微服务) ==========
 
   /** 获取支付页面URL */
   getPayPageUrl(orderNo) {
-    return `${COURSE_API_PREFIX}/pay/page?orderNo=${orderNo}`
+    return `${API_PREFIX}/pay/page?orderNo=${orderNo}`
   },
 
   // ========== 折扣码管理 (course微服务) ==========
 
   /** 创建折扣码 */
   createDiscount(data) {
-    return request.post(`${COURSE_API_PREFIX}/discount/create`, data)
+    return request.post(`${API_PREFIX}/discount/create`, data)
   },
 
   /** 折扣码列表 */
   getDiscountList(params) {
-    return request.get(`${COURSE_API_PREFIX}/discount/list`, params)
+    return request.get(`${API_PREFIX}/discount/list`, params)
   },
 
   /** 停用折扣码 */
   disableDiscount(data) {
-    return request.post(`${COURSE_API_PREFIX}/discount/disable`, data)
+    return request.post(`${API_PREFIX}/discount/disable`, data)
   },
 
   /** 校验折扣码（下单前预览） */
   validateDiscount(params) {
-    return request.get(`${COURSE_API_PREFIX}/discount/validate`, params)
+    return request.get(`${API_PREFIX}/discount/validate`, params)
   },
 
   // ========== 收入结算 (course微服务) ==========
 
   /** 月度结算列表 */
   getSettlementMonthly() {
-    return request.get(`${COURSE_API_PREFIX}/settlement/monthly`, {})
+    return request.get(`${API_PREFIX}/settlement/monthly`, {})
   },
 
   /** 结算明细 */
   getSettlementDetail(settlementId) {
-    return request.get(`${COURSE_API_PREFIX}/settlement/detail`, { settlementId })
+    return request.get(`${API_PREFIX}/settlement/detail`, { settlementId })
   },
 
   /** 作者打赏收益汇总 */

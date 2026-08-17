@@ -1,5 +1,12 @@
 <template>
     <div class="sidebar">
+        <div class="sidebar-brand">
+            <img src="/static/images/logo-icon.svg" class="brand-logo" alt="逐日Coding">
+            <span class="brand-text" v-if="!collapse">
+                <span class="brand-name">创作中心</span>
+                <span class="brand-sub">CREATOR CENTER</span>
+            </span>
+        </div>
         <div class="sidebar-write-section">
             <div class="write-btn" @click="goPublish">
                 <i class="el-icon-edit"></i> 写文章
@@ -142,24 +149,58 @@ export default {
 @import '../styles/variables.less';
 
 .sidebar-write-section {
-    padding: 16px;
+    padding: 14px 16px 10px;
     .write-btn {
         width: 100%;
-        height: 40px;
-        line-height: 40px;
+        height: 42px;
+        line-height: 42px;
         text-align: center;
-        background-color: #1e80ff;
+        background: @brandGradient;
         color: #fff;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: 500;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
         cursor: pointer;
-        transition: background-color 0.2s;
+        letter-spacing: 1px;
+        box-shadow: 0 6px 14px rgba(30, 128, 255, 0.28);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s;
         &:hover {
-            background-color: #1171ee;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(30, 128, 255, 0.36);
+            filter: brightness(1.05);
+        }
+        &:active {
+            transform: translateY(0);
         }
         i {
             margin-right: 6px;
+        }
+    }
+}
+
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 20px 4px;
+    .brand-logo {
+        width: 30px;
+        height: 30px;
+        flex-shrink: 0;
+    }
+    .brand-text {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.25;
+        .brand-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: @textPrimary;
+        }
+        .brand-sub {
+            font-size: 10px;
+            letter-spacing: 1px;
+            color: @textMuted;
         }
     }
 }

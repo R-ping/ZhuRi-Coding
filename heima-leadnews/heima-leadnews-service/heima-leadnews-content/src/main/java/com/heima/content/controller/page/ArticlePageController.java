@@ -6,6 +6,7 @@ import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.service.level.LevelService;
+import com.heima.content.service.comment.ApCommentService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleContent;
@@ -47,6 +48,9 @@ public class ArticlePageController {
     private LevelService levelService;
 
     @Autowired
+    private ApCommentService apCommentService;
+
+    @Autowired
     private IUserClient userClient;
 
     @Autowired
@@ -82,14 +86,15 @@ public class ArticlePageController {
         model.addAttribute("articleId", id);
         model.addAttribute("title", nullSafe(article.getTitle()));
         model.addAttribute("authorName", nullSafe(article.getAuthorName()));
-        model.addAttribute("authorAvatar", nullSafe(article.getAuthorImage()));
+        // 作者头像：为空时回退到占位头像，避免 <img src=""> 显示裂图
+        model.addAttribute("authorAvatar", defaultAvatar(article.getAuthorImage()));
         // 作者ID（用于正文尾部作者卡片：拉取作者信息、跳转作者主页）
         model.addAttribute("authorId", article.getAuthorId() != null ? article.getAuthorId() : 0L);
         model.addAttribute("publishTime", article.getPublishTime());
         model.addAttribute("readCount", article.getViews() != null ? article.getViews() : 0);
         model.addAttribute("readTime", calculateReadTime(content));
         model.addAttribute("likeCount", article.getLikes() != null ? article.getLikes() : 0);
-        model.addAttribute("commentCount", article.getComment() != null ? article.getComment() : 0);
+        model.addAttribute("commentCount", apCommentService.countTopComments(id));
         model.addAttribute("collectCount", article.getCollection() != null ? article.getCollection() : 0);
         model.addAttribute("tocList", tocList);
         model.addAttribute("articleContentHtml", contentHtml);
@@ -133,9 +138,10 @@ public class ArticlePageController {
         model.addAttribute("authorLevel", powerLevel);
         model.addAttribute("authorLevelTitle", nullSafe(powerTitle));
 
-        // 职位/公司（用户公开信息）
+        // 职位/公司 + 真实头像（用户公开信息；优先实时头像，其次文章冗余头像，最后占位图）
         String position = "";
         String company = "";
+        String userAvatar = "";
         try {
             ResponseResult userResult = userClient.getPublicInfo(authorId);
             if (userResult != null && userResult.getCode() == 200 && userResult.getData() != null) {
@@ -143,12 +149,16 @@ public class ArticlePageController {
                 Map<String, Object> userData = (Map<String, Object>) userResult.getData();
                 position = userData.get("position") != null ? userData.get("position").toString() : "";
                 company = userData.get("company") != null ? userData.get("company").toString() : "";
+                userAvatar = userData.get("avatar") != null ? userData.get("avatar").toString() : "";
             }
         } catch (Exception e) {
             log.warn("获取作者公开信息失败, authorId={}", authorId, e);
         }
         model.addAttribute("authorJobTitle", nullSafe(position));
         model.addAttribute("authorCompany", nullSafe(company));
+        // 覆盖 detail() 早前设置的作者头像：有实时头像用之，否则用文章里存的头像，再否则占位头像
+        model.addAttribute("authorAvatar",
+            defaultAvatar(StringUtils.isNotBlank(userAvatar) ? userAvatar : article.getAuthorImage()));
 
         // 文章数（已发布、未删除）与粉丝数
         long articleCount = apArticleMapper.selectCount(
@@ -182,5 +192,14 @@ public class ArticlePageController {
 
     private String nullSafe(String value) {
         return value != null ? value : "";
+    }
+
+    /** 默认占位头像（灰色圆底 SVGRect），作者头像为空时使用，保证始终可显示 */
+    private static final String DEFAULT_AVATAR =
+        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e0e4ec'/%3E%3Ctext x='50' y='62' font-size='44' text-anchor='middle' fill='%23aab2bf'%3E%E9%BB%98%3C/text%3E%3C/svg%3E";
+
+    /** 返回合法的头像 URL，空字符串/空白时回退到占位头像 */
+    private String defaultAvatar(String avatar) {
+        return StringUtils.isBlank(avatar) ? DEFAULT_AVATAR : avatar;
     }
 }

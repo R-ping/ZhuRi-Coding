@@ -54,6 +54,7 @@ CREATE TABLE `ap_activity` (
 CREATE TABLE `ap_article` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `title` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '标题',
+  `summary` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '摘要',
   `author_id` int unsigned DEFAULT NULL COMMENT '文章作者的ID',
   `author_name` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '作者昵称',
   `channel_id` int unsigned DEFAULT NULL COMMENT '文章所属频道ID',
@@ -66,6 +67,7 @@ CREATE TABLE `ap_article` (
   `tags` json DEFAULT NULL,
   `collection` int unsigned DEFAULT NULL COMMENT '收藏数量',
   `comment` int unsigned DEFAULT NULL COMMENT '评论数量',
+  `comment_open` tinyint(1) NOT NULL DEFAULT '1' COMMENT '是否开放评论 1开放 0关闭',
   `tip_count` int unsigned NOT NULL DEFAULT '0' COMMENT '打赏人数',
   `tip_amount` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '打赏总金额',
   `views` int unsigned DEFAULT NULL COMMENT '阅读数量',
@@ -459,6 +461,7 @@ CREATE TABLE `ap_comment` (
   `parent_id` bigint DEFAULT NULL COMMENT '父评论ID，null表示一级评论',
   `root_id` bigint DEFAULT NULL COMMENT '根评论ID',
   `content` text NOT NULL COMMENT '评论内容',
+  `comment_pics` varchar(2000) DEFAULT '' COMMENT '评论图片URL列表，逗号分隔',
   `like_count` int DEFAULT '0' COMMENT '点赞数',
   `reply_count` int DEFAULT '0' COMMENT '回复数',
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

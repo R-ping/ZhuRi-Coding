@@ -1,12 +1,13 @@
 <template>
     <div class="list-item">
         <span class="title" v-html="displayTitle"></span>
+        <div class="summary" v-if="data.summary">{{data.summary}}</div>
         <div class="item-image">
             <img class="image" v-for="img in data.image" :src="img" :key="img" loading="lazy"/>
         </div>
         <div class="item-l">
             <div class="tag-list" v-if="data.tags && data.tags.length">
-                <span class="tag-item" v-for="tag in data.tags" :key="tag">{{tag}}</span>
+                <span class="tag-item" v-for="tag in data.tags" :key="tag" @click.stop="onTagClick(tag)">{{tag}}</span>
             </div>
             <div class="tags">
                 <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像" loading="lazy" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave" @click.stop="onAuthorClick"/>
@@ -80,6 +81,10 @@
             // 点击作者头像/昵称 -> 跳转目标用户个人主页
             onAuthorClick:function(){
                 this.$emit('author-click', this.data.authorId)
+            },
+            // 点击标签 -> 通知父级跳转标签详情页
+            onTagClick:function(tag){
+                this.$emit('tag-click', tag)
             }
         }
     }

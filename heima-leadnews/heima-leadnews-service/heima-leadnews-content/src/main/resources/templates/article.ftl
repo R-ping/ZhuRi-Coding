@@ -1326,6 +1326,61 @@
         }
         .drawer-mask.open { display: block; }
 
+        /* ========== 右侧评论抽屉（掘金风：点击左侧评论栏弹出，不打断阅读） ========== */
+        .comment-drawer-mask {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.25s ease;
+        }
+        .comment-drawer-mask.open { opacity: 1; visibility: visible; }
+        .comment-drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 400px;
+            max-width: 92vw;
+            background: #fff;
+            z-index: 1001;
+            transform: translateX(100%);
+            transition: transform 0.28s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.08);
+        }
+        .comment-drawer.open { transform: translateX(0); }
+        .comment-drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f1f5;
+        }
+        .comment-drawer-title { font-size: 16px; font-weight: 600; color: #252933; }
+        .comment-drawer-title span { color: #8a919f; font-size: 14px; font-weight: 400; margin-left: 4px; }
+        .comment-drawer-close {
+            background: none;
+            border: none;
+            font-size: 22px;
+            line-height: 1;
+            color: #8a919f;
+            cursor: pointer;
+            padding: 4px;
+        }
+        .comment-drawer-close:hover { color: #252933; }
+        .comment-drawer-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+        }
+
         .action-sidebar {
             position: fixed;
             left: 0;
@@ -2648,7 +2703,7 @@
                             <span class="meta-divider">·</span>
                             <span class="read-count">
                                 <svg class="meta-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" fill="#8a919f"/></svg>
-                                ${readCount!0}阅读
+                                <span id="readCountHeader">${readCount!0}</span>阅读
                             </span>
                             <span class="meta-divider">·</span>
                             <span class="read-time">
@@ -2817,7 +2872,7 @@
                         <div class="stat-label">文章</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-value">${readCount!0}</div>
+                        <div class="stat-value" id="readCountSidebar">${readCount!0}</div>
                         <div class="stat-label">阅读</div>
                     </div>
                     <div class="stat-item">
@@ -2976,6 +3031,46 @@
         </ul>
     </div>
 
+    <!-- 右侧评论抽屉（点击左侧评论栏打开，不打断阅读位置） -->
+    <div class="comment-drawer-mask" id="commentDrawerMask"></div>
+    <aside class="comment-drawer" id="commentDrawer" aria-hidden="true">
+        <div class="comment-drawer-header">
+            <span class="comment-drawer-title">评论 <span id="drawerCommentTitleCount">0</span></span>
+            <button class="comment-drawer-close" id="commentDrawerClose" aria-label="关闭">&times;</button>
+        </div>
+        <div class="comment-drawer-body" id="commentDrawerBody">
+            <div class="comment-input-area">
+                <div class="comment-input-avatar">
+                    <img src="" alt="avatar" id="drawerCommentUserAvatar">
+                </div>
+                <div class="comment-input-wrap">
+                    <textarea id="drawerCommentTextarea" placeholder="写下你的评论..." maxlength="1000"></textarea>
+                    <div class="comment-image-preview" id="drawerCommentImagePreview"></div>
+                    <div class="comment-input-footer">
+                        <div class="comment-footer-left">
+                            <span class="login-tip" id="drawerLoginTip"><a id="drawerLoginLink">登录</a>后参与评论</span>
+                            <div class="comment-toolbar">
+                                <button type="button" class="comment-tool-btn" id="drawerCommentEmojiBtn" title="表情">😊</button>
+                                <button type="button" class="comment-tool-btn" id="drawerCommentImageBtn" title="插入图片">图片</button>
+                                <input type="file" id="drawerCommentImageInput" accept="image/*" style="display:none;">
+                            </div>
+                        </div>
+                        <div class="comment-footer-right">
+                            <span class="comment-char-count"><span id="drawerCommentCharCount">0</span>/1000</span>
+                            <button class="comment-submit-btn" id="drawerCommentSubmitBtn">发表评论</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <ul class="comment-list" id="drawerCommentList"></ul>
+            <div class="comment-empty" id="drawerCommentEmpty" style="display:none;">
+                <svg viewBox="0 0 24 24" width="48" height="48"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" fill="#c9cdd4"/></svg>
+                <div>暂无评论，快来抢沙发吧~</div>
+            </div>
+            <button class="load-more-btn" id="drawerCommentLoadMore" style="display:none;">加载更多评论</button>
+        </div>
+    </aside>
+
     <!-- 举报反馈弹窗 -->
     <div class="modal-overlay" id="reportModalOverlay">
         <div class="modal-container report-modal" id="reportModal">
@@ -3100,9 +3195,10 @@
     </div>
 
     <script>
-        // 使用 ?c 强制按"计算机"格式输出数字，避免 FreeMarker 默认将大整数渲染为带千分位逗号（如 2,087,071,...）导致 API URL 失效
+        // 雪花ID超过 JS Number 安全范围(2^53)，必须作为字符串注入，避免被 JS 解析成 Number 丢精度，
+        // 否则上报阅读量/评论等按 articleId 查询会匹配不到记录（浏览量不累加、评论拉不到）
         window.ARTICLE_ID = "${(articleId!0)?c}";
-        window.AUTHOR_ID = ${(authorId!0)};
+        window.AUTHOR_ID = "${(authorId!0)?c}";
     </script>
     <script>
         // 加载共用交互脚本（方案②：作为内容服务静态资源由网关 /content/article-static.js 统一提供）

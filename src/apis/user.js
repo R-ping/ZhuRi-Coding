@@ -48,6 +48,11 @@ export const removeBlock = (id) => {
   return request.del(`/user/api/v1/user/blocks/${id}`)
 }
 
+// 新增屏蔽（type 1-作者 2-标签）
+export const addBlock = (data) => {
+  return request.post('/user/api/v1/user/blocks', data)
+}
+
 // 获取标签发现列表
 export const getTagsDiscover = (params) => {
   return request.get('/user/api/v1/tags/discover', { params })

@@ -7,11 +7,8 @@ import com.heima.model.common.dtos.ResponseResult;
 
 public interface ApCourseService extends IService<ApCourse> {
 
-    ResponseResult findList(Integer page, Integer size, Byte status);
-
-    ResponseResult deleteById(Long id);
-
-    ResponseResult updateStatus(Long id, Byte status, String reason);
+    /** 公开课程列表：仅返回已上架(9)且未删除的课程，防止泄露草稿/审核中内容 */
+    ResponseResult findList(Integer page, Integer size);
 
     ResponseResult getMyCourses(Long userId, String filter);
 
@@ -39,6 +36,9 @@ public interface ApCourseService extends IService<ApCourse> {
 
     /** 软删除课程 */
     ResponseResult softDelete(Long courseId, Long userId);
+
+    /** 作者下架自己的已上架课程（作者，9→3，走状态机校验） */
+    ResponseResult authorUnpublish(Long courseId, Long userId);
 
     // ===== 小册申报/审核流程 =====
 

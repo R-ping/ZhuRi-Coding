@@ -257,6 +257,11 @@ export default {
       padding: 0 10px;
       line-height: 56px;
       cursor: pointer;
+      transition: color 0.2s;
+
+      &:hover {
+        i { color: @brandBlue; }
+      }
     }
 
     .brand-container {

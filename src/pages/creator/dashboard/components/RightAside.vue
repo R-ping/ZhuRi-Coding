@@ -67,16 +67,35 @@ export default {
 
   .aside-card {
     background: #fff;
-    border-radius: 8px;
-    padding: 16px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    border-radius: @creatorRadius;
+    border: 1px solid @borderLight;
+    padding: 18px;
+    box-shadow: @creatorShadow;
+    transition: box-shadow 0.25s ease;
+
+    &:hover {
+      box-shadow: @creatorShadowHover;
+    }
   }
 
   .aside-title {
     margin: 0 0 12px;
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 700;
     color: @textPrimary;
+    position: relative;
+    padding-left: 10px;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 3px;
+      width: 3px;
+      height: 14px;
+      border-radius: 2px;
+      background: @brandGradient;
+    }
   }
 
   .activity-list {

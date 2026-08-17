@@ -170,4 +170,53 @@ public class TagSubscribeServiceImpl implements TagSubscribeService {
 
         return ResponseResult.okResult();
     }
+
+    /**
+     * 标签详情页：按标签名查询标签详情（id、标签名、关注数、当前用户是否已关注）
+     * 标签不存在时返回错误结果，由前端渲染 404/空态
+     */
+    @Override
+    public ResponseResult tagDetail(String tagName) {
+        if (tagName == null || tagName.trim().isEmpty()) {
+            return ResponseResult.errorResult(503, "标签名称不能为空");
+        }
+        String safeTag = tagName.trim();
+
+        // 通过标签名定位 sys_tags（JSON 形式的文章标签以名称关联）
+        LambdaQueryWrapper<SysTag> tagWrapper = new LambdaQueryWrapper<>();
+        tagWrapper.eq(SysTag::getTagName, safeTag).last("limit 1");
+        SysTag tag = sysTagMapper.selectOne(tagWrapper);
+        if (tag == null) {
+            return ResponseResult.errorResult(503, "标签不存在");
+        }
+
+        ApUser currentUser = AppThreadLocalUtil.getUser();
+        Long userId = currentUser != null ? currentUser.getId().longValue() : null;
+
+        // 关注数：user_tag_relation rel_type=2（关注标签）
+        LambdaQueryWrapper<UserTagRelation> countWrapper = new LambdaQueryWrapper<>();
+        countWrapper.eq(UserTagRelation::getTagId, tag.getId());
+        countWrapper.eq(UserTagRelation::getRelType, 2);
+        Long followCount = userTagRelationMapper.selectCount(countWrapper);
+
+        // 当前用户是否已关注
+        boolean isFollowed = false;
+        if (userId != null) {
+            LambdaQueryWrapper<UserTagRelation> followWrapper = new LambdaQueryWrapper<>();
+            followWrapper.eq(UserTagRelation::getUserId, userId);
+            followWrapper.eq(UserTagRelation::getTagId, tag.getId());
+            followWrapper.eq(UserTagRelation::getRelType, 2);
+            isFollowed = userTagRelationMapper.selectCount(followWrapper) > 0;
+        }
+
+        // null-safe：字符串""、数值0/原值
+        Map<String, Object> map = new HashMap<>();
+        map.put("id", tag.getId() != null ? tag.getId() : 0);
+        map.put("tagName", tag.getTagName() != null ? tag.getTagName() : "");
+        map.put("categoryCode", tag.getCategoryCode() != null ? tag.getCategoryCode() : "");
+        map.put("categoryName", tag.getCategoryName() != null ? tag.getCategoryName() : "");
+        map.put("followerCount", followCount != null ? followCount.longValue() : 0L);
+        map.put("isFollowed", isFollowed);
+        return ResponseResult.okResult(map);
+    }
 }

@@ -202,6 +202,7 @@ export default {
           var tmp = {
             id: item.id,
             title: item.title || '',
+            summary: item.summary || '',
             comment: item.comment || 0,
             views: item.views || 0,
             likes: item.likes || 0,

@@ -24,7 +24,10 @@
 @sidebarLeftWidth: 220px; /* 调整侧边栏宽度从240px改为220px */
 @sideBarWidth: @sidebarLeftWidth;
 
-/* === 新增：创作者中心特有设计令牌（参考juejin-creator-style-report.md） === */
+/* =========================================================
+   创作者中心设计令牌（参考 juejin-creator-style-report）
+   统一整套 creator 的配色、圆角、阴影与微交互，其余页面复用。
+   ========================================================= */
 @colorCreatorHeaderBg: #F8FAFE;        /* 创作者头部背景色 */
 @colorCreatorHeaderBorder: #E5E6EB;  /* 头部底部边框 */
 @colorStatValue: #1E80FF;             /* 数据数值主色 */
@@ -34,3 +37,27 @@
 @borderLight: #f2f3f5;               /* 浅色边框 */
 
 @shadowCreatorHeader: 0 1px 0 0 @colorCreatorHeaderBorder; /* 头部底部阴影线 */
+
+/* === 升级版设计令牌：更现代圆角 / 渐变 / 分层阴影 === */
+@brandBlue2: #1171ee;                  /* 品牌蓝 hover */
+@brandGradientFrom: #1E80FF;           /* 渐变起点 */
+@brandGradientTo: #6AA6FF;             /* 渐变终点 */
+@brandGradient:
+    linear-gradient(135deg, @brandGradientFrom 0%, @brandGradientTo 100%);
+
+/* 大圆角、柔和阴影、悬浮抬升 */
+@creatorRadius: 10px;                  /* 卡片圆角 */
+@creatorRadiusSm: 6px;
+@creatorShadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+@creatorShadowHover: 0 6px 16px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.05);
+@creatorShadowLg: 0 12px 28px rgba(0, 0, 0, 0.12);
+
+/* 状态色（标签） */
+@statusDraftBg: #f4f5f5;   @statusDraftFg: #6b7280;
+@statusReviewBg: #fff7e6;  @statusReviewFg: #e6a23c;
+@statusRejectBg: #fef0f0;  @statusRejectFg: #f56c6c;
+@statusPublishBg: #e8f7ee; @statusPublishFg: #16a34a;
+
+/* 侧边栏激活态 */
+@menuActiveBg: #E8F3FF;
+@menuIconActiveBg: @brandGradient;

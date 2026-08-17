@@ -40,6 +40,10 @@ public class ApComment implements Serializable {
     @TableField("content")
     private String content;
 
+    /** 评论附带图片：URL 逗号分隔，独立字段（不嵌入 content），URL 已清洗去掉签名参数 */
+    @TableField("comment_pics")
+    private String commentPics;
+
     @TableField("like_count")
     private Integer likeCount;
 
