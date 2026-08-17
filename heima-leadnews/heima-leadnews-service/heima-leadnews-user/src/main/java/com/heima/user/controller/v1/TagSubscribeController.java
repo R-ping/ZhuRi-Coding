@@ -36,4 +36,14 @@ public class TagSubscribeController {
     public ResponseResult unfollow(@PathVariable Integer tagId) {
         return tagSubscribeService.unfollow(tagId);
     }
+
+    /**
+     * 标签详情页：按标签名查询标签详情（id、标签名、关注数、当前用户是否已关注）
+     * @param tagName 标签名（URL 编码，可能含特殊字符如 C++、C#）
+     * @return {id, tagName, categoryCode, categoryName, followerCount, isFollowed}
+     */
+    @GetMapping("/{tagName}/detail")
+    public ResponseResult tagDetail(@PathVariable String tagName) {
+        return tagSubscribeService.tagDetail(tagName);
+    }
 }

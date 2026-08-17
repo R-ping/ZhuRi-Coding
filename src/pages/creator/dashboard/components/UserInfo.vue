@@ -3,15 +3,17 @@
     <div class="user-main">
       <img class="user-avatar" :src="headImg" alt="">
       <div class="user-meta">
-        <h3 class="nickname">{{ nickname }}</h3>
+        <div class="greeting">{{ greeting }}，{{ nickname }}</div>
+        <div class="sub-text">欢迎回到逐日Coding创作者中心，今天也要努力创作哦～</div>
         <div class="stats-row">
           <span class="stat-item"><span class="stat-value">{{ fans }}</span> <span class="stat-label">粉丝</span></span>
           <span class="divider"></span>
           <span class="stat-item"><span class="stat-value">{{ follow }}</span> <span class="stat-label">关注</span></span>
           <span class="divider"></span>
-          <span class="stat-item power-link" @click="goToGrade"><span class="stat-value">{{ power }}</span> <span class="stat-label">掘力值</span></span>
+          <span class="stat-item power-link" @click="goToGrade"><span class="stat-value">{{ power }}</span> <span class="stat-label">逐力值</span></span>
+          <span class="divider"></span>
+          <span class="stat-item days-item">在创作的第 {{ days }} 天</span>
         </div>
-        <div class="days">在逐日Coding创作的第 {{ days }} 天</div>
       </div>
     </div>
   </header>
@@ -25,11 +27,21 @@ import defaultAvatar from '@/static/images/avatar_head_1.png'
 export default {
   data() {
     return {
+      // 用户统计数据（粉丝、关注、逐力值、创作天数）
       stats: null
     }
   },
-  computed: {
+computed: {
     ...mapGetters(['userInfo']),
+    // 根据当前时间返回问候语
+    greeting() {
+      const h = new Date().getHours()
+      if (h < 6) return '夜深了'
+      if (h < 12) return '早上好'
+      if (h < 14) return '中午好'
+      if (h < 18) return '下午好'
+      return '晚上好'
+    },
     nickname() {
       const u = this.userInfo || {}
       return u.nickName || '创作者'
@@ -81,12 +93,16 @@ export default {
   @import '../../layout/styles/variables.less';
 
   .creator-header {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    padding: 32px 36px;
-    background-color: @colorCreatorHeaderBg;
+    padding: 28px 36px;
+    background:
+      radial-gradient(600px 140px at 85% -20%, rgba(30, 128, 255, 0.10), transparent 60%),
+      linear-gradient(135deg, #F8FBFF 0%, @colorCreatorHeaderBg 100%);
     border-bottom: 1px solid @colorCreatorHeaderBorder;
+    overflow: hidden;
 
     .user-main {
       display: flex;
@@ -94,18 +110,27 @@ export default {
     }
 
     .user-avatar {
-      width: 64px;
-      height: 64px;
+      width: 68px;
+      height: 68px;
       border-radius: 50%;
       object-fit: cover;
       margin-right: 20px;
+      border: 3px solid #fff;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
     }
 
-    .nickname {
-      margin: 0 0 12px;
-      font-size: 18px;
-      font-weight: 600;
+    .greeting {
+      margin: 0 0 6px;
+      font-size: 22px;
+      font-weight: 700;
       color: @textPrimary;
+      letter-spacing: 0.5px;
+    }
+
+    .sub-text {
+      font-size: 13px;
+      color: @colorStatLabel;
+      margin-bottom: 14px;
     }
 
     .stats-row {
@@ -113,41 +138,41 @@ export default {
       align-items: center;
       font-size: 14px;
       color: @textMuted;
-      margin-bottom: 8px;
 
       .stat-item {
+        display: inline-flex;
+        align-items: baseline;
         .stat-value {
           color: @colorStatValue;
-          font-weight: 600;
+          font-weight: 700;
+          font-size: 18px;
         }
         .stat-label {
           color: @textMuted;
           font-weight: 400;
-          margin-left: 4px;
+          margin-left: 5px;
         }
         &.power-link {
           cursor: pointer;
           transition: color 0.2s;
           &:hover {
             .stat-value {
-              color: @brandBlue;
+              color: @brandBlue2;
             }
           }
+        }
+        &.days-item {
+          color: @textSecondary;
+          font-weight: 500;
         }
       }
 
       .divider {
-        margin: 0 12px;
-        color: @textMuted;
+        margin: 0 14px;
+        width: 1px;
+        height: 18px;
+        background: @colorCreatorHeaderBorder;
       }
     }
-
-    .days {
-      margin-top: 6px;
-      font-size: 14px;
-      color: @colorStatLabel;
-      font-weight: 400;
-    }
-
-  }
+}
 </style>

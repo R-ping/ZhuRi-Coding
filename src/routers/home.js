@@ -29,6 +29,7 @@ const Hot = () => import('@/pages/hot/index.vue')
 const TopicSquare = () => import('@/pages/pin/topics/index.vue')
 const TopicDetail = () => import('@/pages/pin/topic/detail.vue')
 const CircleDetail = () => import('@/pages/pins/circle/detail.vue')
+const TagDetail = () => import('@/pages/tag/detail.vue')
 
 let routes = [
     {
@@ -134,6 +135,11 @@ let routes = [
                 path:'/pins/circle/:id',
                 name:'pins-circle-detail',
                 component:CircleDetail
+            },
+            {
+                path:'/tag/:tagName',
+                name:'tag-detail',
+                component:TagDetail
             },
             {
                 path:'/course',

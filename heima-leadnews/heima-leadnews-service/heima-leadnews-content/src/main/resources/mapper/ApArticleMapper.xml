@@ -5,6 +5,7 @@
     <resultMap id="resultMap" type="com.heima.model.article.pojos.ApArticle">
         <id column="id" property="id"/>
         <result column="title" property="title"/>
+        <result column="summary" property="summary"/>
         <result column="author_id" property="authorId"/>
         <result column="author_name" property="authorName"/>
         <result column="channel_id" property="channelId"/>
@@ -84,6 +85,41 @@
         SET comment = COALESCE(comment, 0) + #{increment}
         WHERE id = #{articleId}
     </update>
+
+    <!-- 标签详情页：分页查询某标签下的已发布文章 -->
+    <select id="selectTagArticleList" resultMap="resultMap">
+        SELECT aa.*
+        FROM `ap_article` aa
+        WHERE aa.status = 9
+          AND aa.is_deleted != 1
+          AND JSON_CONTAINS(aa.tags, JSON_QUOTE(#{tagName}))
+        <choose>
+            <!-- 最热：按点赞、评论、阅读总量排序 -->
+            <when test="sort == 'hottest'">
+                ORDER BY (COALESCE(aa.likes, 0) * 2 + COALESCE(aa.comment, 0) * 3 + COALESCE(aa.views, 0)) DESC,
+                         aa.publish_time DESC, aa.id DESC
+            </when>
+            <!-- 最新：按发布时间排序 -->
+            <when test="sort == 'latest'">
+                ORDER BY aa.publish_time DESC, aa.id DESC
+            </when>
+            <!-- 热门（默认）：按热度分 score 优先，其次阅读量 -->
+            <otherwise>
+                ORDER BY COALESCE(aa.score, 0) DESC, COALESCE(aa.views, 0) DESC,
+                         aa.publish_time DESC, aa.id DESC
+            </otherwise>
+        </choose>
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <!-- 标签详情页：统计某标签下已发布文章总数 -->
+    <select id="countTagArticles" resultType="long">
+        SELECT COUNT(1)
+        FROM `ap_article` aa
+        WHERE aa.status = 9
+          AND aa.is_deleted != 1
+          AND JSON_CONTAINS(aa.tags, JSON_QUOTE(#{tagName}))
+    </select>
 
     <select id="selectRecommendArticles" resultMap="resultMap">
         SELECT

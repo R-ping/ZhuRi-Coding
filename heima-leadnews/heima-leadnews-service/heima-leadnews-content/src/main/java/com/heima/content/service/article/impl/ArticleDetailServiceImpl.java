@@ -10,6 +10,7 @@ import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
 import com.heima.content.mapper.tag.TagMapper;
 import com.heima.content.service.article.ArticleDetailService;
+import com.heima.content.service.comment.ApCommentService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleContent;
@@ -64,6 +65,9 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
 
     @Autowired
     private IUserClient userClient;
+
+    @Autowired
+    private ApCommentService apCommentService;
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -158,7 +162,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         vo.setViewCount(article.getViews() != null ? article.getViews() : 0);
         vo.setCollectCount(article.getCollection() != null ? article.getCollection() : 0);
         vo.setDiggCount(article.getLikes() != null ? article.getLikes() : 0);
-        vo.setCommentCount(article.getComment() != null ? article.getComment() : 0);
+        vo.setCommentCount((int) apCommentService.countTopComments(id));
         vo.setReadTime(readTime);
         vo.setStatus(article.getStatus() != null ? article.getStatus().intValue() : 0);
         vo.setIsOriginal(article.getOrigin() != null && article.getOrigin() ? 1 : 0);
@@ -548,7 +552,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
             vo.setViewCount(article.getViews() != null ? article.getViews() : 0);
             vo.setCollectCount(article.getCollection() != null ? article.getCollection() : 0);
             vo.setDiggCount(article.getLikes() != null ? article.getLikes() : 0);
-            vo.setCommentCount(article.getComment() != null ? article.getComment() : 0);
+            vo.setCommentCount((int) apCommentService.countTopComments(article.getId()));
             vo.setReadTime(calculateReadTime(
                     Optional.ofNullable(apArticleContentMapper.selectOne(
                             new LambdaQueryWrapper<ApArticleContent>()

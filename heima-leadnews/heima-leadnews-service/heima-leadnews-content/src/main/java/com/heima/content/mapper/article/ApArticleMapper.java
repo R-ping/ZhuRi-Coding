@@ -32,4 +32,21 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
      */
     List<ApArticle> selectRecommendArticles(@Param("excludeId") Long excludeId, @Param("cursor") Long cursor, @Param("size") int size);
 
+    /**
+     * 分页查询某个标签（JSON_CONTAINS 匹配 tags 字段）下的已发布文章
+     * @param tagName 标签名
+     * @param sort 排序方式：hot-热门（热度分）、latest-最新（发布时间）、hottest-最热（点赞+评论）
+     * @param offset 起始偏移（从 0 开始）
+     * @param size 每页条数
+     * @return 文章列表
+     */
+    List<ApArticle> selectTagArticleList(@Param("tagName") String tagName, @Param("sort") String sort, @Param("offset") int offset, @Param("size") int size);
+
+    /**
+     * 统计某个标签（JSON_CONTAINS 匹配 tags 字段）下已发布文章的总数
+     * @param tagName 标签名
+     * @return 文章总数
+     */
+    Long countTagArticles(@Param("tagName") String tagName);
+
 }

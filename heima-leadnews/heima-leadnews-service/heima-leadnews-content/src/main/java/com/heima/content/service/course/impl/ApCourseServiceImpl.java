@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.heima.apis.user.IUserClient;
 import com.heima.content.mapper.course.ApCourseChapterMapper;
 import com.heima.content.mapper.course.ApCourseMapper;
 import com.heima.content.mapper.course.ApCourseReadingProgressMapper;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +46,9 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
 
     @Autowired
     private ApCourseChapterMapper chapterMapper;
+
+    @Autowired
+    private IUserClient userClient;
 
     @Autowired
     private LevelService levelService;
@@ -228,6 +233,22 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
         chapterQuery.eq(ApCourseChapter::getStatus, 1);
         chapterQuery.orderByAsc(ApCourseChapter::getSortOrder);
         List<ApCourseChapter> chapters = chapterMapper.selectList(chapterQuery);
+
+        // 作者头像：优先拉取用户真实头像（用户改头像后课程冗余头像会过期），失败/为空时回退课程冗余头像
+        if (StringUtils.isBlank(course.getAuthorAvatar()) && course.getAuthorId() != null) {
+            try {
+                ResponseResult userResult = userClient.getPublicInfo(course.getAuthorId().longValue());
+                if (userResult != null && userResult.getCode() == 200 && userResult.getData() != null) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> userData = (Map<String, Object>) userResult.getData();
+                    if (userData.get("avatar") != null && StringUtils.isNotBlank(userData.get("avatar").toString())) {
+                        course.setAuthorAvatar(userData.get("avatar").toString());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("获取课程作者头像失败, courseId={}, authorId={}", courseId, course.getAuthorId(), e);
+            }
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("course", course);

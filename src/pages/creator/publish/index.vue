@@ -632,6 +632,8 @@
             columnId: this.FormData.column_id || null,
             images: '',
             labels: this.FormData.labels,
+            // 后端 ApArticleDraft.tags 为 JSON 数组(List)，需由逗号分隔的 labels 转换
+            tags: this.FormData.labels ? this.FormData.labels.split(',').map(s => s.trim()).filter(s => s.length > 0) : [],
             topic: this.FormData.topic,
             summary: this.FormData.summary,
             publishTime: this.FormData.publish_time,

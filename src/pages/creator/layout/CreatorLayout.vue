@@ -57,7 +57,8 @@ export default {
     z-index: 1001;
     overflow: visible;
     background-color: @menuBg;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    box-shadow: 1px 0 12px rgba(0, 0, 0, 0.06);
+    border-right: 1px solid @borderLight;
     transition: width 0.3s;
 
     .el-scrollbar__wrap { overflow: visible !important; }

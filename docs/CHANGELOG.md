@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 2026-08-17 — 标签详情页（Tag Detail Page）上线
+
+### 变更
+
+1. **后端-内容模块（标签文章列表）**：
+   - `TagController` 新增 `GET /api/v1/tag/{tagName}/articles`（参数 `page/size/sort`，`sort` 支持 `hot/latest/hottest`）。
+   - `TagService`/`TagServiceImpl` 新增 `getArticles`，复用 `ApArticle.nullSafeToMap()` 返回文章列表（null-safe，字符串`""`、数值0/原值），响应体 `{total, page, size, list}`，`total` 即文章数。
+   - `ApArticleMapper` 新增 `selectTagArticleList`/`countTagArticles`，XML 中基于 `JSON_CONTAINS(ap_article.tags, JSON_QUOTE(#{tagName}))` 且 `status=9、is_deleted!=1` 过滤，三种排序。
+2. **后端-用户模块（标签详情）**：
+   - `TagSubscribeController` 新增 `GET /api/v1/tags/{tagName}/detail`。
+   - `TagSubscribeService`/`TagSubscribeServiceImpl` 新增 `tagDetail`，返回 `{id, tagName, categoryCode, categoryName, followerCount, isFollowed}`，关注数取自 `user_tag_relation(rel_type=2)`；标签不存在返回非 200。
+3. **前端**：
+   - 新增 `src/apis/tag.js`：`getTagDetail/getTagArticles/followTag/unfollowTag`（关注/取关复用用户模块既有接口）。
+   - 新增 `src/pages/tag/detail.vue`：标签头部（名称/关注数/文章数/关注按钮，乐观更新+回滚、未登录弹登录框）、排序栏（热门/最新/最热，默认热门，切换重置）、无限滚动文章列表（复用 `article_0/1/3` 卡片，`window.open('/content/article/{id}')`）、空态与 404。
+   - `src/routers/home.js` 注册路由 `/tag/:tagName`（name `tag-detail`，Layout 子路由）。
+
+### 验证
+
+- 后端 `mvn -q -o -pl heima-leadnews-service/heima-leadnews-content -am compile` 通过。
+- 后端 `mvn -q -o -pl heima-leadnews-service/heima-leadnews-user -am compile` 通过。
+- 前端 `npm run build` 通过。
+
+---
+
 ## 2026-08-17 — Code Review 安全加固（数据泄露修复/越权修复/幂等性/自动保存竞态）
 
 ### 变更

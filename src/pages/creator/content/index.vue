@@ -274,36 +274,70 @@ export default {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
+    padding: 16px 24px;
+    background: #fff;
+    border: 1px solid @borderLight;
+    border-radius: @creatorRadius;
+    box-shadow: @creatorShadow;
 
     .tabs {
       display: flex;
       font-size: 16px;
+      gap: 8px;
       span {
         cursor: pointer;
-        padding: 8px 20px;
-        color: #666;
+        padding: 8px 18px;
+        color: @textSecondary;
+        border-radius: @creatorRadiusSm;
+        font-weight: 500;
+        transition: all 0.2s;
+
+        &:hover {
+          color: @brandBlue;
+          background: @menuActiveBg;
+        }
+
         &.active {
-          color: #1e80ff;
-          border-bottom: 2px solid #1e80ff;
+          color: @brandBlue;
+          background: @menuActiveBg;
+          font-weight: 600;
         }
       }
     }
 
     .search-box {
       width: 280px;
+
+      .el-input__inner {
+        border-radius: @creatorRadiusSm;
+      }
     }
   }
 
   .status-tabs {
     margin-bottom: 16px;
+    display: flex;
+    flex-wrap: wrap;
     .el-tag {
       cursor: pointer;
       margin-right: 8px;
-      padding: 4px 16px;
+      padding: 5px 16px;
+      border-radius: @creatorRadiusSm;
+      background: #fff;
+      border: 1px solid @borderLight;
+      color: @textSecondary;
+      transition: all 0.2s;
+
+      &:hover {
+        border-color: @brandBlue;
+        color: @brandBlue;
+      }
+
       &.active-tab {
-        background-color: #1e80ff;
-        border-color: #1e80ff;
+        background-color: @brandBlue;
+        border-color: @brandBlue;
         color: #fff;
+        font-weight: 500;
       }
     }
   }
@@ -313,80 +347,142 @@ export default {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 80px 0;
+    padding: 72px 0;
+    background: #fff;
+    border: 1px solid @borderLight;
+    border-radius: @creatorRadius;
+    box-shadow: @creatorShadow;
 
     .empty-icon {
-      font-size: 64px;
-      margin-bottom: 16px;
+      font-size: 60px;
+      margin-bottom: 20px;
+      width: 104px;
+      height: 104px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #F1F5FE 0%, #E8F3FF 100%);
     }
 
     .empty-text {
-      font-size: 14px;
-      color: #909399;
+      font-size: 15px;
+      color: @colorStatLabel;
       margin-bottom: 24px;
+    }
+
+    .el-button {
+      border-radius: @creatorRadiusSm;
+      padding: 11px 28px;
+      font-weight: 500;
     }
   }
 
   .article-list {
     background-color: #fff;
-    border-radius: 8px;
-    padding: 16px;
+    border: 1px solid @borderLight;
+    border-radius: @creatorRadius;
+    box-shadow: @creatorShadow;
+    padding: 6px 24px;
 
     .article-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 16px 0;
-      border-bottom: 1px solid #f0f0f0;
+      padding: 18px 0;
+      border-bottom: 1px solid #f0f1f5;
+      transition: transform 0.15s ease;
+
+      &:hover {
+        .article-title {
+          color: @brandBlue;
+        }
+      }
+
       &:last-child {
         border-bottom: none;
       }
 
       .article-content {
         flex: 1;
+        min-width: 0;
 
         .article-title {
-          font-size: 15px;
-          color: #303133;
+          font-size: 16px;
+          color: @textPrimary;
+          font-weight: 500;
           margin-bottom: 8px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          transition: color 0.2s;
+          cursor: pointer;
         }
 
         .article-meta {
           display: flex;
           align-items: center;
           font-size: 12px;
-          color: #909399;
+          color: @colorStatLabel;
 
           .status-tag {
             margin-left: 12px;
-            padding: 2px 8px;
-            border-radius: 4px;
+            padding: 2px 10px;
+            border-radius: 20px;
             font-size: 11px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+
+            &::before {
+              content: '';
+              width: 6px;
+              height: 6px;
+              border-radius: 50%;
+              margin-right: 5px;
+              background: currentColor;
+            }
           }
 
-          .status-draft { background: #f5f5f5; color: #999; }
-          .status-reviewing { background: #fff7e6; color: #d48806; }
-          .status-rejected { background: #fef0f0; color: #f56c6c; }
-          .status-published { background: #f0f9eb; color: #67c23a; }
+          .status-draft { background: @statusDraftBg; color: @statusDraftFg; }
+          .status-reviewing { background: @statusReviewBg; color: @statusReviewFg; }
+          .status-rejected { background: @statusRejectBg; color: @statusRejectFg; }
+          .status-published { background: @statusPublishBg; color: @statusPublishFg; }
         }
       }
 
       .article-actions {
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
         .el-dropdown-link {
           cursor: pointer;
-          color: #909399;
-          &:hover { color: #1e80ff; }
+          color: @colorStatLabel;
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s;
+
+          &:hover {
+            color: @brandBlue;
+            background: @menuActiveBg;
+          }
         }
       }
     }
   }
 
   .pagination {
-    text-align: right;
-    margin-top: 20px;
+    text-align: center;
+    margin-top: 24px;
+    background: #fff;
+    border: 1px solid @borderLight;
+    border-radius: @creatorRadius;
+    padding: 16px 0;
+    box-shadow: @creatorShadow;
   }
 }
 </style>

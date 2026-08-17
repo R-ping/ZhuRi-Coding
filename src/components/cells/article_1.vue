@@ -3,8 +3,9 @@
         <div class="list-lr">
             <div class="item-l">
                 <span class="title" v-html="displayTitle"></span>
+                <div class="summary" v-if="data.summary">{{data.summary}}</div>
                 <div class="tag-list" v-if="data.tags && data.tags.length">
-                    <span class="tag-item" v-for="tag in data.tags" :key="tag">{{tag}}</span>
+                    <span class="tag-item" v-for="tag in data.tags" :key="tag" @click.stop="onTagClick(tag)">{{tag}}</span>
                 </div>
                 <div class="tags">
                     <img v-if="data.authorImage" class="author-avatar" :src="data.authorImage" alt="作者头像" loading="lazy" @mouseenter="onAuthorHover($event)" @mouseleave="onAuthorLeave" @click.stop="onAuthorClick"/>
@@ -82,6 +83,10 @@
             // 点击作者头像/昵称 -> 跳转目标用户个人主页
             onAuthorClick:function(){
                 this.$emit('author-click', this.data.authorId)
+            },
+            // 点击标签 -> 通知父级跳转标签详情页
+            onTagClick:function(tag){
+                this.$emit('tag-click', tag)
             }
         }
     }
@@ -117,6 +122,16 @@
     }
     .title /deep/ font {
         color: #ff0000;
+    }
+    .summary {
+        color: #86909c;
+        font-size: 13px;
+        line-height: 1.6;
+        margin-top: 6px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
     .meta-sep {
         color: #c0c4cc;

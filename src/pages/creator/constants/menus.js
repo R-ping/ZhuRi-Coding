@@ -5,6 +5,7 @@ export const MenuData = [
     icon: 'el-icon-document',
     children: [
       { title: '文章管理', path: '/creator/article/list' },
+      { title: '评论管理', path: '/creator/comment' },
       { title: '专栏管理', path: '/creator/column/list' },
       { title: '沸点管理', path: '/creator/pins/list' },
       {

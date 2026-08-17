@@ -10,6 +10,7 @@ import com.heima.content.mapper.article.ApArticleDraftMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ApArticleDraftService;
 import com.heima.content.service.article.ArticleAutoScanService;
+import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleConfig;
 import com.heima.model.article.pojos.ApArticleContent;
@@ -95,10 +96,10 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
         ApArticleConfig apArticleConfig = new ApArticleConfig(article.getId());
         apArticleConfigMapper.insert(apArticleConfig);
 
-        // 保存文章内容
+        // 保存文章内容（清洗正文图片URL：去掉?签名参数，保留图片固定位置）
         ApArticleContent apArticleContent = new ApArticleContent();
         apArticleContent.setArticleId(article.getId());
-        apArticleContent.setContent(draft.getContent());
+        apArticleContent.setContent(MarkdownUtils.cleanImageUrls(draft.getContent()));
         apArticleContentMapper.insert(apArticleContent);
 
         log.info("从草稿发布文章成功, draftId: {}, articleId: {}", draftId, article.getId());
@@ -127,6 +128,7 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
     private static ApArticle getApArticle(ApArticleDraft draft, ApUser user) {
         ApArticle article = new ApArticle();
         article.setTitle(draft.getTitle());
+        article.setSummary(draft.getSummary());
         article.setAuthorId(draft.getAuthorId() != null ? draft.getAuthorId() : user.getId().longValue());
         article.setChannelId(draft.getChannelId());
         article.setLayout(draft.getLayout() != null ? draft.getLayout().byteValue() : (byte) 0);

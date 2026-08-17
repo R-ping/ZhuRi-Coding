@@ -9,6 +9,8 @@ import com.vladsch.flexmark.util.data.MutableDataSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -18,6 +20,9 @@ import org.jsoup.select.Elements;
  * Markdown 渲染与目录提取工具
  */
 public class MarkdownUtils {
+
+    /** 匹配 Markdown 图片语法 ![alt](url)，并捕获 url 段，用于清洗签名参数 */
+    private static final Pattern IMAGE_PATTERN = Pattern.compile("(!\\[[^\\]]*\\]\\()([^)\\s]+)(\\))");
 
     private static final Parser PARSER;
     private static final HtmlRenderer RENDERER;
@@ -46,7 +51,7 @@ public class MarkdownUtils {
                     if ("text".equals(type) && value != null) {
                         sb.append(value).append("\n\n");
                     } else if ("image".equals(type) && value != null) {
-                        sb.append("![图片](").append(value).append(")\n\n");
+                        sb.append("![图片](").append(cleanImageUrl(value)).append(")\n\n");
                     }
                 }
                 return sb.toString().trim();
@@ -59,14 +64,47 @@ public class MarkdownUtils {
     }
 
     /**
-     * 将 Markdown 转换为 HTML
+     * 将 Markdown 转换为 HTML。
+     * 渲染前会清洗正文图片URL：去掉 ? 及其往后的签名参数，保留图片原始位置。
      */
     public static String toHtml(String markdown) {
         if (markdown == null) {
             return "";
         }
-        Node document = PARSER.parse(markdown);
+        Node document = PARSER.parse(cleanImageUrls(markdown));
         return RENDERER.render(document);
+    }
+
+    /**
+     * 清洗 Markdown 正文中的所有图片 URL，去掉 ? 及其往后的签名参数，保留图片在正文中的固定位置。
+     * 处理前后非图片文本原样保留。
+     */
+    public static String cleanImageUrls(String markdown) {
+        if (markdown == null) {
+            return null;
+        }
+        Matcher m = IMAGE_PATTERN.matcher(markdown);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String url = m.group(2);
+            String cleaned = cleanImageUrl(url);
+            if (cleaned.equals(url)) {
+                m.appendReplacement(sb, Matcher.quoteReplacement(m.group(0)));
+            } else {
+                m.appendReplacement(sb, m.group(1) + Matcher.quoteReplacement(cleaned) + m.group(3));
+            }
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    /** 去掉单个 URL 中的 ? 及其往后参数 */
+    private static String cleanImageUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        int idx = url.indexOf('?');
+        return idx > 0 ? url.substring(0, idx) : url;
     }
 
     /**

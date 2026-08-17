@@ -1,6 +1,6 @@
 @import './variables.less';
 
-// ===== 侧边栏菜单样式 =====
+// ===== 侧边栏菜单样式（modern） =====
 .app-wrapper .sidebar-container {
   .el-menu {
     border: none;
@@ -8,15 +8,19 @@
     width: 100% !important;
     text-align: left;
     background-color: @menuBg;
+    padding: 0 10px;
   }
 
   .el-menu-item,
   .el-submenu__title {
-    padding-left: 24px !important;
+    padding-left: 14px !important;
+    margin: 2px 0;
     color: @textSecondary !important;
-    height: 48px;
-    line-height: 48px;
+    height: 44px;
+    line-height: 44px;
     font-size: 14px;
+    border-radius: @creatorRadiusSm;
+    transition: background-color 0.2s, color 0.2s, transform 0.15s;
 
     &:hover {
       background-color: #F4F6FA !important;
@@ -25,26 +29,43 @@
 
     i {
       color: @textMuted;
+      transition: color 0.2s, transform 0.2s;
     }
   }
 
   .el-menu-item.is-active {
-    background-color: #E8F3FF !important;
+    background: @menuActiveBg !important;
     color: @brandBlue !important;
+    font-weight: 600;
 
     i {
-      color: @brandBlue;
+      color: #fff;
+      background: @menuIconActiveBg;
+      border-radius: 6px;
+      transform: scale(1.05);
     }
   }
 
   .is-active > .el-submenu__title {
     color: @textPrimary !important;
+    font-weight: 600;
+  }
+
+  .el-submenu__title {
+    font-weight: 600;
+    color: @textPrimary !important;
+
+    &:hover {
+      background-color: #F4F6FA !important;
+    }
   }
 
   .nest-menu .el-submenu > .el-submenu__title,
   .el-submenu .el-menu-item {
     min-width: @sideBarWidth !important;
     background-color: @subMenuBg !important;
+    border-radius: @creatorRadiusSm;
+    padding-left: 34px !important;
 
     &:hover {
       background-color: #F4F6FA !important;
@@ -52,8 +73,9 @@
     }
 
     &.is-active {
-      background-color: #E8F3FF !important;
+      background-color: @menuActiveBg !important;
       color: @brandBlue !important;
+      font-weight: 600;
     }
   }
 }
@@ -64,13 +86,30 @@
 
 .el-menu--vertical {
   & > .el-menu {
+    padding: 0 8px;
+
     .svg-icon {
       margin-right: 16px;
     }
 
     .el-menu-item.is-active {
-      background-color: #E8F3FF !important;
+      background-color: @menuActiveBg !important;
       color: @brandBlue !important;
     }
+  }
+}
+
+// 子菜单图标统一置于左侧圆形激活块
+.app-wrapper .sidebar-container {
+  .el-menu-item i,
+  .el-submenu__title i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-right: 10px;
+    border-radius: 6px;
+    font-size: 15px;
   }
 }

@@ -6,11 +6,13 @@ import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.tag.TagMapper;
 import com.heima.content.service.tag.TagService;
 import com.heima.model.article.pojos.ApArticle;
+import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.tag.pojos.ApTag;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -69,5 +71,42 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, ApTag> implements Tag
 
         result.sort((a, b) -> (Integer) b.get("count") - (Integer) a.get("count"));
         return result;
+    }
+
+    /**
+     * 分页查询某个标签下的文章列表，复用文章列表 null-safe 结构
+     * @param tagName 标签名
+     * @param page 页码（从 1 开始）
+     * @param size 每页条数
+     * @param sort hot-热门 latest-最新 hottest-最热
+     */
+    @Override
+    public ResponseResult getArticles(String tagName, Integer page, Integer size, String sort) {
+        // 参数校验与兜底
+        String safeTag = tagName == null ? "" : tagName.trim();
+        int safePage = (page == null || page < 1) ? 1 : page;
+        int safeSize = (size == null || size < 1) ? 20 : Math.min(size, 50);
+        String safeSort = sort;
+        if (!"hot".equals(safeSort) && !"latest".equals(safeSort) && !"hottest".equals(safeSort)) {
+            safeSort = "hot";
+        }
+
+        int offset = (safePage - 1) * safeSize;
+        List<ApArticle> articles = safeTag.isEmpty()
+                ? new ArrayList<>()
+                : apArticleMapper.selectTagArticleList(safeTag, safeSort, offset, safeSize);
+        Long total = safeTag.isEmpty() ? 0L : apArticleMapper.countTagArticles(safeTag);
+
+        // 复用 nullSafeToMap 保证返回字段非 null（字符串""、数值0或原值）
+        List<Map<String, Object>> list = articles.stream()
+                .map(ApArticle::nullSafeToMap)
+                .collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("total", total != null ? total.longValue() : 0L);
+        result.put("page", safePage);
+        result.put("size", safeSize);
+        result.put("list", list);
+        return ResponseResult.okResult(result);
     }
 }

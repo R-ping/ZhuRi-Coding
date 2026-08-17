@@ -50,7 +50,7 @@ export default {
     grid-template-columns: minmax(0, 1fr) 280px;
     gap: 20px;
     padding: 24px;
-    background: @bgGray;
+    background: linear-gradient(180deg, #F1F5FE 0%, @bgGray 220px);
     min-height: calc(100vh - 60px);
 
     .dashboard-main {
@@ -62,21 +62,27 @@ export default {
 
     .dashboard-header {
       background: @colorCreatorHeaderBg;
-      border-bottom: 1px solid @colorCreatorHeaderBorder;
-      border-radius: 8px;
+      border: 1px solid @colorCreatorHeaderBorder;
+      border-radius: @creatorRadius;
       overflow: hidden;
+      box-shadow: @creatorShadow;
       transition: box-shadow 0.25s ease;
+
+      &:hover {
+        box-shadow: @creatorShadowHover;
+      }
     }
 
     .dashboard-card {
       background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      border-radius: @creatorRadius;
+      border: 1px solid @borderLight;
+      box-shadow: @creatorShadow;
       overflow: hidden;
       transition: box-shadow 0.25s ease, transform 0.25s ease;
 
       &:hover {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+        box-shadow: @creatorShadowHover;
         transform: translateY(-2px);
       }
     }

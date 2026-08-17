@@ -142,6 +142,8 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/article-static.js")
             // 文章详情页公开只读接口（未登录也可浏览正文/评论/推荐，利于 SEO 与爬虫）
             // 注意：仅放行只读查询，点赞/收藏/关注/发表评论/回复/点赞评论等写接口仍须登录
+            // 阅读行为上报（浏览量累计）：后端已允许未登录浏览计数（匿名只累计 views，登录才参与等级/历史），故公开放行
+            || path.startsWith("/content/api/v1/read_behavior")
             || path.startsWith("/content/api/v1/article/detail/")
             || (path.startsWith("/content/api/v1/article/")
                 && (path.endsWith("/column")

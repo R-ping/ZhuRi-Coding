@@ -64,6 +64,11 @@ public class ApArticle implements Serializable {
     private String channelName;
 
     /**
+     * 文章简要内容（摘要），用于列表页标题下方展示
+     */
+    private String summary;
+
+    /**
      * 文章布局（封面）  1 无图文章
      *     2 有图文章
      */
@@ -107,6 +112,12 @@ public class ApArticle implements Serializable {
      * 评论数量
      */
     private Integer comment;
+
+    /**
+     * 是否开放评论 1开放 0关闭（创作者中心评论管理）
+     */
+    @TableField("comment_open")
+    private Boolean commentOpen = true;
 
     /**
      * 打赏人数
@@ -257,6 +268,7 @@ public class ApArticle implements Serializable {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", this.id);
         map.put("title", nullSafe(this.title));
+        map.put("summary", nullSafe(this.summary));
         map.put("authorId", this.authorId != null ? this.authorId : "");
         map.put("authorName", nullSafe(this.authorName));
         map.put("channelId", this.channelId != null ? this.channelId : "");
@@ -269,6 +281,7 @@ public class ApArticle implements Serializable {
         map.put("likes", this.likes != null ? this.likes : "");
         map.put("collection", this.collection != null ? this.collection : "");
         map.put("comment", this.comment != null ? this.comment : "");
+        map.put("commentOpen", this.commentOpen != null ? this.commentOpen : true);
         map.put("views", this.views != null ? this.views : "");
         map.put("score", this.score != null ? this.score : "");
         map.put("provinceId", this.provinceId != null ? this.provinceId : "");
