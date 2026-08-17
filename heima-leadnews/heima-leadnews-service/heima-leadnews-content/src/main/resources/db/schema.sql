@@ -275,6 +275,25 @@ CREATE TABLE `ap_author` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_author_profile` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` int NOT NULL COMMENT '用户ID',
+  `real_name` varchar(64) DEFAULT '' COMMENT '姓名',
+  `position` varchar(128) DEFAULT '' COMMENT '个人职位/职业',
+  `resume` text COMMENT '个人履历/简介',
+  `apply_reason` varchar(500) DEFAULT '' COMMENT '申请理由',
+  `contact_wechat` varchar(64) DEFAULT '' COMMENT '联系方式-微信',
+  `contact_email` varchar(128) DEFAULT '' COMMENT '联系方式-常用邮箱',
+  `blogs` varchar(500) DEFAULT '' COMMENT '掘金账号及其他博客/技术媒体',
+  `personal_intro` varchar(500) DEFAULT '' COMMENT '个人自我介绍（用于小册作者页展示）',
+  `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='作者基础信息（供小册申请回填与作者页展示）';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `ap_behavior` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
   `user_id` int NOT NULL COMMENT '用户ID',
@@ -343,7 +362,7 @@ CREATE TABLE `ap_browse_history` (
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_browse_time` (`browse_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=166 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='浏览记录表';
+) ENGINE=InnoDB AUTO_INCREMENT=168 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='浏览记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -469,7 +488,7 @@ CREATE TABLE `ap_comment` (
   KEY `idx_article_id` (`article_id`),
   KEY `idx_parent_id` (`parent_id`),
   KEY `idx_created_time` (`created_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章评论表';
+) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章评论表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -535,7 +554,7 @@ CREATE TABLE `ap_course` (
   KEY `idx_category_id` (`category_id`),
   KEY `idx_status` (`status`),
   KEY `idx_published_at` (`published_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='课程表';
+) ENGINE=InnoDB AUTO_INCREMENT=2089279269193564163 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='课程表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -562,10 +581,11 @@ CREATE TABLE `ap_course_chapter` (
   `status` tinyint DEFAULT '1' COMMENT '0草稿 1已发布',
   `estimated_minutes` int DEFAULT '5' COMMENT '预估阅读时长(分钟)',
   `comment_count` int DEFAULT '0' COMMENT '评论数',
+  `review_note` varchar(500) DEFAULT '' COMMENT '作者提交审核留言',
   PRIMARY KEY (`id`),
   KEY `idx_course_id` (`course_id`),
   KEY `idx_sort_order` (`sort_order`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='课程小节表';
+) ENGINE=InnoDB AUTO_INCREMENT=2089278840963514370 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='课程小节表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -777,7 +797,7 @@ CREATE TABLE `ap_level_privilege` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_level_privilege` (`level_type`,`level_value`,`privilege_code`),
   KEY `idx_level_type` (`level_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=28 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='等级特权表';
+) ENGINE=InnoDB AUTO_INCREMENT=44 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='等级特权表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -941,7 +961,7 @@ CREATE TABLE `ap_user_action_log` (
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_action_type` (`action_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=2087523996590305283 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户行为日志表';
+) ENGINE=InnoDB AUTO_INCREMENT=2089278146546155523 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户行为日志表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1000,7 +1020,7 @@ CREATE TABLE `ap_user_daily_progress` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_date_action` (`user_id`,`stat_date`,`action_code`),
   KEY `idx_user_date` (`user_id`,`stat_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户每日行为进度表';
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户每日行为进度表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1015,7 +1035,7 @@ CREATE TABLE `ap_user_diamond_log` (
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_created_at` (`created_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户钻石交易日志表';
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户钻石交易日志表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1051,7 +1071,7 @@ CREATE TABLE `ap_user_level` (
   `violation_score` int DEFAULT '0' COMMENT '违规扣分',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_id` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2087522678471553027 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户等级表';
+) ENGINE=InnoDB AUTO_INCREMENT=2088496593654218755 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户等级表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1191,7 +1211,7 @@ CREATE TABLE `user_behavior_record` (
   KEY `idx_user_type` (`user_id`,`behavior_type`,`created_time`),
   KEY `idx_target` (`target_type`,`target_id`),
   KEY `idx_user_target` (`user_id`,`target_type`,`target_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=33 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户行为记录表';
+) ENGINE=InnoDB AUTO_INCREMENT=37 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户行为记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;

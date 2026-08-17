@@ -48,11 +48,26 @@
             <el-checkbox v-model="activeChapter.isFree" :true-label="1" :false-label="0" size="small" @change="onToggleFree(activeChapter)">
               设为试读
             </el-checkbox>
+            <span v-if="isChapterLocked" class="section-lock">
+              <i class="el-icon-lock"></i> 系统锁定
+            </span>
+          </div>
+          <div v-if="isChapterLocked" class="editor-lock-banner">
+            <template v-if="activeChapter.status === 2">
+              <div class="lock-banner-title"><i class="el-icon-lock"></i> 该小节正在审核中，系统已锁定</div>
+              <div class="lock-banner-desc">审核通过前无法编辑，仅可在下方预览当前提交的完整内容。</div>
+            </template>
+            <template v-else>
+              <div class="lock-banner-title"><i class="el-icon-lock"></i> 该小节已审核通过，默认锁定</div>
+              <div class="lock-banner-desc">对已审核通过的小节编辑可能混淆原有内容，编辑后需重新提交编审；如无需修改，推荐直接在下方预览浏览。</div>
+              <el-button size="mini" type="primary" plain @click="confirmUnlock">解锁编辑</el-button>
+            </template>
           </div>
           <div class="editor-content-wrap" :class="{ 'no-preview': previewCollapsed }">
             <ByteMdEditor
               v-model="activeChapter.content"
               :placeholder="'正在编辑：' + (activeChapter.title || '未命名章节')"
+              :readonly="isChapterLocked"
               @change="onChapterChange"
             />
           </div>
@@ -142,6 +157,8 @@ export default {
       rejectTarget: '', // reject-apply | reject-publish
       rejectReason: '',
       submitting: false,
+      // 已发布小节的解锁态（每个小节独立，切换/重载节点后复位）
+      chapterUnlocked: false,
       _saveTimer: null,
       _dirty: false
     }
@@ -150,6 +167,13 @@ export default {
     ...mapGetters(['userInfo']),
     activeChapter() {
       return this.chapters.find(c => c.id === this.activeChapterId) || null
+    },
+    // 当前小节是否处于锁定态：草稿(0)自由编辑；审核中(2)恒锁定不可解锁；已发布(1)默认锁定、可解锁
+    isChapterLocked() {
+      if (!this.activeChapter || this.activeChapterId === 'intro') return false
+      if (this.activeChapter.status === 2) return true
+      if (this.activeChapter.status === 1) return !this.chapterUnlocked
+      return false
     },
     introContent: {
       get() {
@@ -218,6 +242,7 @@ export default {
           } else {
             this.activeChapterId = 'intro'
           }
+          this.chapterUnlocked = false
           this.saveStatus = 'saved'
         } else {
           toast((res && res.message) || '加载小册失败', 2)
@@ -233,11 +258,23 @@ export default {
     onSelectChapter(ch) {
       // 切换小节前先落盘当前小节，防止防抖窗口内切换导致内容丢失
       this.flushPendingChapterSave()
+      // 切换小节时复位已发布小节的解锁态，回到默认锁定
+      this.chapterUnlocked = false
       if (ch === 'intro') {
         this.activeChapterId = 'intro'
       } else if (ch && ch.id) {
         this.activeChapterId = ch.id
       }
+    },
+    // 解锁已发布小节：弹框提示风险，确认后放行编辑
+    confirmUnlock() {
+      this.$confirm(
+        '对已审核通过的小节编辑可能混淆原有内容，编辑后需重新提交编审。推荐直接在预览区浏览，确认解锁编辑？',
+        '解锁编辑',
+        { confirmButtonText: '解锁', cancelButtonText: '取消', type: 'warning' }
+      ).then(() => {
+        this.chapterUnlocked = true
+      }).catch(() => {})
     },
     // ===== 标题/内容自动保存 =====
     onTitleChange(title) {
@@ -515,6 +552,39 @@ export default {
 }
 .section-title-input {
   max-width: 400px;
+}
+.section-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #c0c4cc;
+  margin-left: auto;
+}
+.editor-lock-banner {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f5d5a6;
+  background: #fdf6ec;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.editor-lock-banner .lock-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6a23c;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.editor-lock-banner .lock-banner-desc {
+  font-size: 12px;
+  color: #b88230;
+  flex-basis: 100%;
+  margin: 4px 0;
+  line-height: 1.6;
 }
 .editor-content-wrap {
   flex: 1;

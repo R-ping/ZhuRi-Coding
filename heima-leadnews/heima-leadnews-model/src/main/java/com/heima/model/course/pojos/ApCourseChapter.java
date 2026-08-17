@@ -48,4 +48,8 @@ public class ApCourseChapter implements Serializable {
 
     @TableField("comment_count")
     private Integer commentCount;
+
+    /** 作者提交审核留言 */
+    @TableField("review_note")
+    private String reviewNote;
 }

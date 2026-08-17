@@ -17,6 +17,7 @@
       :placeholder="placeholder"
       :locale="locale"
       :uploadImages="uploadImages"
+      :editorConfig="editorConfig"
       @change="handleChange"
     />
   </div>
@@ -48,6 +49,11 @@ export default {
     syncScroll: {
       type: Boolean,
       default: true
+    },
+    // 只读：审核中 / 已发布（默认锁定）的小节禁止编辑
+    readonly: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
@@ -57,12 +63,18 @@ export default {
       uploadImages: null
     };
   },
+  computed: {
+    editorConfig() {
+      return { readOnly: this.readonly };
+    }
+  },
   created() {
     this.uploadImages = this.handleUploadImages.bind(this);
   },
   mounted() {
     this.applySyncScroll();
     this.initScrollIndicator();
+    this.applyReadOnly();
   },
   beforeDestroy() {
     // 断开滚动指示器的 MutationObserver，避免组件销毁后观察器悬挂
@@ -74,6 +86,10 @@ export default {
   watch: {
     syncScroll() {
       this.applySyncScroll();
+    },
+    readonly() {
+      // bytemd 属性重渲染对 CodeMirror 5 实例生效有延迟，直接下发只读状态保证即时锁定
+      this.applyReadOnly();
     }
   },
   methods: {
@@ -82,6 +98,15 @@ export default {
       // 空行规范化在发布时处理
       this.$emit("input", val)
       this.$emit("change", val)
+    },
+    applyReadOnly() {
+      this.$nextTick(() => {
+        // CodeMirror 5 的实例挂在 `.CodeMirror` DOM 节点上，直接 setOption 即时生效
+        const cmEl = this.$el.querySelector('.CodeMirror')
+        if (cmEl && cmEl.CodeMirror) {
+          cmEl.CodeMirror.setOption('readOnly', this.readonly)
+        }
+      })
     },
     applySyncScroll() {
       this.$nextTick(() => {

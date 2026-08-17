@@ -32,6 +32,11 @@
           @keyup.enter="finishEdit(ch)"
           @click.stop
         />
+        <span class="toc-item-status" :class="statusClass(ch.status)">
+          {{ statusText(ch.status) }}
+        </span>
+        <i class="el-icon-lock toc-item-lock" v-if="ch.status === 2" title="审核中，系统锁定"></i>
+        <i class="el-icon-unlock toc-item-lock" v-else-if="ch.status === 1" title="已发布，默认锁定"></i>
         <span class="toc-item-badge" v-if="ch.isFree === 1">试读</span>
         <i class="el-icon-arrow-up toc-item-sort" :class="{ disabled: index === 0 }" @click.stop="move(ch, -1)"></i>
         <i class="el-icon-arrow-down toc-item-sort" :class="{ disabled: index === chapters.length - 1 }" @click.stop="move(ch, 1)"></i>
@@ -59,7 +64,16 @@ export default {
     }
   },
   methods: {
+    // 小节状态：0 草稿 / 1 已发布 / 2 审核中
+    statusText(s) {
+      return { 0: '草稿', 1: '已发布', 2: '审核中' }[s] || '草稿'
+    },
+    statusClass(s) {
+      return { 0: 's-draft', 1: 's-published', 2: 's-reviewing' }[s] || 's-draft'
+    },
     startEdit(ch) {
+      // 已发布/审核中的小节被系统锁定，禁止在目录中改名（避免静默改动已发布内容）
+      if (ch.status === 1 || ch.status === 2) return
       this.editingChapterId = ch.id
       this.$nextTick(() => {
         const input = this.$refs['editInput' + ch.id]
@@ -74,6 +88,10 @@ export default {
       this.$emit('rename', ch)
     },
     handleDelete(ch) {
+      if (ch.status === 1 || ch.status === 2) {
+        this.$message.warning('已发布/审核中的小节被系统锁定，无法删除')
+        return
+      }
       this.$confirm(`确定删除章节「${ch.title || '未命名章节'}」？`, '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -184,6 +202,30 @@ export default {
   background: #1e80ff;
   border-radius: 3px;
   padding: 1px 5px;
+  flex-shrink: 0;
+}
+.toc-item-status {
+  font-size: 11px;
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.toc-item-status.s-draft {
+  color: #999;
+  background: #f0f1f5;
+}
+.toc-item-status.s-published {
+  color: #18a058;
+  background: #e8f8ee;
+}
+.toc-item-status.s-reviewing {
+  color: #e6a23c;
+  background: #fdf6ec;
+}
+.toc-item-lock {
+  color: #c0c4cc;
+  font-size: 12px;
   flex-shrink: 0;
 }
 .toc-item-sort {
