@@ -206,4 +206,42 @@ public class ApCourseChapterServiceImpl implements ApCourseChapterService {
 
         return ResponseResult.okResult(chapter);
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult submitForReview(Long chapterId, String note, Long userId) {
+        if (chapterId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        ApCourseChapter chapter = chapterMapper.selectById(chapterId);
+        if (chapter == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "章节不存在");
+        }
+
+        // 验证课程归属
+        ApCourse course = courseMapper.selectById(chapter.getCourseId());
+        if (course == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
+        if (!course.getAuthorId().equals(userId.intValue())) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "只能操作自己的小册");
+        }
+
+        // 仅草稿(0)可提交审核
+        if (chapter.getStatus() != null && chapter.getStatus() == 1) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "已发布小节无需提交审核");
+        }
+        if (chapter.getStatus() != null && chapter.getStatus() == 2) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "该小节已在审核中");
+        }
+
+        // 草稿(0) -> 审核中(2)
+        chapter.setStatus(2);
+        chapter.setReviewNote(note != null ? note : "");
+        chapter.setUpdatedTime(new Date());
+        chapterMapper.updateById(chapter);
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
 }

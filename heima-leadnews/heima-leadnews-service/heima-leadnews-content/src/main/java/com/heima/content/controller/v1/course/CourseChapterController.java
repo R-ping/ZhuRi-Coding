@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/v1/course/chapter")
 @Slf4j
@@ -52,6 +54,17 @@ public class CourseChapterController {
             return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return chapterService.deleteChapter(id, user.getId().longValue());
+    }
+
+    /** 作者提交小节审核（0草稿→2审核中），body: {chapterId, note} */
+    @PostMapping("/{id}/submit-review")
+    public ResponseResult submitForReview(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+        }
+        String note = body != null && body.get("note") != null ? body.get("note").toString() : null;
+        return chapterService.submitForReview(id, note, user.getId().longValue());
     }
 
     /** 批量更新章节排序 */

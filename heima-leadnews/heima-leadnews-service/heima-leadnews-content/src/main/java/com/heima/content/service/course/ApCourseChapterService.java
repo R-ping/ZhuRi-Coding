@@ -20,4 +20,7 @@ public interface ApCourseChapterService {
 
     /** 公开获取章节详情（用于阅读） */
     ResponseResult getChapterDetail(Long chapterId);
+
+    /** 作者提交小节审核（0草稿→2审核中），可附留言 */
+    ResponseResult submitForReview(Long chapterId, String note, Long userId);
 }

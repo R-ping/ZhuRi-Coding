@@ -69,6 +69,11 @@ export default {
     return request.put(`${API_PREFIX}/chapter/sort`, data)
   },
 
+  /** 作者提交小节审核（0草稿→2审核中），note 为提交留言 */
+  submitChapterReview(id, note) {
+    return request.post(`${API_PREFIX}/chapter/${id}/submit-review`, { note })
+  },
+
   // ========== 公开课程 ==========
 
   /** 课程列表 */

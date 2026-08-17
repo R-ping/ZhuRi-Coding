@@ -51,6 +51,21 @@
 
 ---
 
+## 2026-08-17 — 小册站·申请闭环与小节审核链路
+
+### 变更
+
+1. **申请提交扩展**（`CourseController` + `ApCourseServiceImpl` + 新增 `AuthorProfileController`）：
+   - 提交申请表时同事务保存作者基础信息到 `ap_author_profile`（新增实体 `ApAuthorProfile` / Mapper / `AuthorProfileService` + `AuthorProfileController`，按 `user_id` upsert，允许覆盖回填）。
+   - `submitApply` 扩展入参 `AuthorProfileDto`，校验申请单 JSON：主题（title）≤ 20 字、申请渠道（channel）必须命中官方渠道白名单；完整申请单 JSON 落 `ap_course.apply_content`。
+   - `GET/POST /api/v1/course/author/profile`：读/存作者基础信息（申请页回填复用）。
+2. **小节提交审核**（`CourseChapterController` + `ApCourseChapterService`）：
+   - 新增 `POST /api/v1/course/chapter/{id}/submit-review`：作者提交小节审核，草稿(0)→审核中(2)（沿用 `status`，扩展语义 0草稿/1已发布/2审核中），可附留言 `review_note`（新增字段）。
+   - 前端 `course.js` 新增 `submitChapterReview(id, note)`。
+3. **数据库迁移**：`alter_ap_course_chapter_add_review_note.sql`（`ap_course_chapter` 增 `review_note`）；`create_ap_author_profile.sql`。
+
+---
+
 ## 2026-08-17 — 修复结算作者ID与折扣码并发超卖
 
 ### 变更

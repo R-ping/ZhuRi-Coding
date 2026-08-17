@@ -581,6 +581,7 @@ CREATE TABLE `ap_course_chapter` (
   `status` tinyint DEFAULT '1' COMMENT '0草稿 1已发布',
   `estimated_minutes` int DEFAULT '5' COMMENT '预估阅读时长(分钟)',
   `comment_count` int DEFAULT '0' COMMENT '评论数',
+  `review_note` varchar(500) DEFAULT '' COMMENT '作者提交审核留言',
   PRIMARY KEY (`id`),
   KEY `idx_course_id` (`course_id`),
   KEY `idx_sort_order` (`sort_order`)
