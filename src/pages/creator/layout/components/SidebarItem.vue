@@ -31,12 +31,13 @@
           <el-menu-item
             :index="isItemLocked ? '' : item.path"
             :key="item.path"
-            :class="{ 'is-disabled': isItemLocked }"
+            :class="{ 'is-disabled': isItemLocked, 'booklet-station-item': item.bookletStation }"
             @click.native.stop="handleItemClick(item, $event)"
           >
               <i :class="item.icon"></i>
               <span slot="title" :class="{ 'locked-label': isItemLocked }">{{ item.title }}</span>
               <i v-if="isItemLocked" class="el-icon-lock lock-icon-small"></i>
+              <i v-else-if="item.bookletStation" class="el-icon-right booklet-station-arrow"></i>
           </el-menu-item>
       </template>
   </div>
@@ -151,5 +152,29 @@ export default {
   font-size: 11px;
   margin-left: 4px;
   color: #c0c4cc;
+}
+
+/* 小册站：一级栏目，样式与其它栏目区分（渐变底 + 强调色 + 箭头） */
+.booklet-station-item {
+  margin: 4px 8px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #1e80ff 0%, #4a90ff 100%);
+  color: #fff !important;
+  font-weight: 600;
+  height: 40px;
+  line-height: 40px;
+}
+.booklet-station-item i {
+  color: #fff !important;
+}
+.booklet-station-item.is-active {
+  background: linear-gradient(135deg, #1171ee 0%, #1e80ff 100%);
+  box-shadow: 0 4px 12px rgba(30, 128, 255, 0.35);
+}
+.booklet-station-arrow {
+  float: right;
+  line-height: 40px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85) !important;
 }
 </style>

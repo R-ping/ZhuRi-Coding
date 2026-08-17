@@ -166,7 +166,17 @@ export default {
 
   // ========== 小册申报（作者侧） ==========
 
-  /** 提交小册申报（作者，0→1） */
+  /** 读取作者基础信息（ap_author_profile，无则返回空结构体） */
+  getAuthorProfile() {
+    return request.get(`${API_PREFIX}/author/profile`, {})
+  },
+
+  /** 保存/覆盖作者基础信息（申请页必填项） */
+  saveAuthorProfile(data) {
+    return request.post(`${API_PREFIX}/author/profile`, data)
+  },
+
+  /** 提交小册申报（作者，0→1），data: { courseId, applyContent, authorProfile } */
   applyBooklet(data) {
     return request.post(`${API_PREFIX}/manage/apply`, data)
   },

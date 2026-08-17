@@ -517,13 +517,8 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult submitApply(Long courseId, String applyContent, AuthorProfileDto authorProfile, Long userId) {
-        if (courseId == null || userId == null) {
+        if (userId == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
-        }
-
-        ApCourse course = getById(courseId);
-        if (course == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
         }
 
         // 校验申请单 JSON：主题长度 ≤ 20 字、申请渠道必须在允许集合内（仅当提交了申请单内容时校验）
@@ -532,10 +527,33 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, applyValidateError);
         }
 
-        // 校验状态迁移（草稿0→申报1，或申报被拒2→重提1）
-        String error = transitionTo(course, (byte) 1, userId.intValue(), false);
-        if (error != null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, error);
+        // 申请主题（用于新建草稿/校验）；无申请单时用空串
+        String applyTitle = "";
+        try {
+            if (StringUtils.isNotBlank(applyContent)) {
+                com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(applyContent);
+                if (node.hasNonNull("title")) {
+                    applyTitle = node.get("title").asText().trim();
+                }
+            }
+        } catch (Exception ignored) {
+            // 申请单已被 validateApplyContent 校验，解析失败不会走到这里
+        }
+
+        ApCourse course;
+        if (courseId == null) {
+            // 申请入口可能由未达标作者发起（申请即开通资格），此处新建草稿不校验 Lv7
+            course = createApplyDraftCourse(applyTitle, userId.intValue());
+        } else {
+            course = getById(courseId);
+            if (course == null) {
+                return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+            }
+            // 校验状态迁移（草稿0→申报1，或申报被拒2→重提1）
+            String error = transitionTo(course, (byte) 1, userId.intValue(), false);
+            if (error != null) {
+                return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, error);
+            }
         }
 
         // 同事务保存作者基础信息（ap_author_profile，按 user_id upsert，允许覆盖；仅当提交了基础信息时）
@@ -555,7 +573,41 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
         course.setUpdatedTime(new Date());
         updateById(course);
 
-        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", String.valueOf(course.getId()));
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 为申请作者新建一条小册草稿（不校验逐力值等级；申请即开通资格）
+     * @param title 申请主题（小册标题）
+     * @param authorId 作者用户ID
+     * @return 新建草稿课程
+     */
+    private ApCourse createApplyDraftCourse(String title, int authorId) {
+        ApCourse draft = new ApCourse();
+        draft.setTitle(StringUtils.isNotBlank(title) ? title : "未命名小册");
+        draft.setSubtitle("");
+        draft.setDescription("");
+        draft.setCoverImage("");
+        draft.setPrice(BigDecimal.ZERO);
+        draft.setOriginalPrice(BigDecimal.ZERO);
+        draft.setCategoryId(0);
+        draft.setAuthorId(authorId);
+        draft.setAuthorName("");
+        draft.setAuthorAvatar("");
+        draft.setStatus((byte) 0);
+        draft.setChapterCount(0);
+        draft.setStudyCount(0);
+        draft.setEstimatedHours(BigDecimal.ZERO);
+        draft.setIsDeleted(0);
+        draft.setVersion(1);
+        draft.setSalesCount(0);
+        draft.setTotalRevenue(BigDecimal.ZERO);
+        draft.setCreatedTime(new Date());
+        draft.setUpdatedTime(new Date());
+        save(draft);
+        return draft;
     }
 
     /**

@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-08-18 — 小册站·前端闭环（路由/侧边栏/规则/申请/母站/管理子页/写作锁定）
+
+### 变更
+
+1. **路由与侧边栏并入**（`src/routers/creator.js`、`src/pages/creator/constants/menus.js`、`SidebarItem.vue`）：
+   - 移除「内容管理›课程管理」「课程运营」两处入口；新增一级侧边栏项 **「小册站」**（置于最末，独立样式区分）。
+   - 新增顶层全屏路由：规则页 `/booklet/rules`、申请页 `/booklet/apply`、管理子页 `/booklet/manage`。
+2. **首页「成为作家」入口 + 规则页 + 申请页**（`src/pages/booklet/rules.vue`、`apply.vue`、首页课程分栏）：
+   - 未达 Lv7 / 非作家时课程分栏展示「成为作家」入口 → 规则页 → 申请页；已具备资格则展示「进入小册站」。
+   - 申请页挂载时拉取 `author/profile` 回填基础信息（允许修改覆盖）；提交即保存 profile + 申请单 JSON，成功跳转小册站。
+3. **小册站母站**（`src/pages/creator/booklet/index.vue`）：作者简介卡、数据占位卡（当日销量/总销量/流水/发起结算占位）、我的小册卡片列表（状态 tag：申请中/申请失败/正常/预售/在售/维护中 + 管理维护按钮开新窗 + 申请失败重新申请入口）、写作入口开新窗。
+4. **管理子页**（`src/pages/booklet/manage.vue`）：小册基础信息编辑、小节列表（标题/字数/状态徽标/试读/提交审核留言展示）、小节「提交审核」（弹框留言）、写作入口开新窗。
+5. **写作页锁定改造**（`src/pages/creator/booklet/edit.vue`、`BookletToc.vue`、`ByteMdEditor.vue`）：
+   - 目录每小节展示状态徽标（草稿/已发布/审核中）及锁定图标；已发布/审核中小节禁止在目录改名与删除。
+   - `ByteMdEditor` 新增 `readonly` prop（结合 CodeMirror 5 `readOnly` 即时下发）；审核中(2) 小节恒锁定不可解锁，已发布(1) 默认锁定、可点「解锁」弹框确认后放行编辑，编辑后需重新提交编审。
+6. **数据库**：`schema.sql` 重导出，纳入 `ap_author_profile`、`ap_course_chapter.review_note`、`ap_course.apply_content`（本地 `leadnews_article` 已具备）。
+
+---
+
 ## 2026-08-17 — 标签详情页（Tag Detail Page）上线
 
 ### 变更

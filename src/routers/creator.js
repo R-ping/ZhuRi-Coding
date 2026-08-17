@@ -15,8 +15,23 @@ export function creatorGuard(to, from, next) {
   next()
 }
 
-// ===== 小册编辑器（独立顶层路由，不嵌套在 CreatorLayout，避免侧边栏） =====
+// ===== 小册（独立顶层路由：全屏编辑器/规则页/申请页/管理维护子页，不嵌套 CreatorLayout） =====
 let bookletRoutes = [
+    {
+        path: '/booklet/rules',
+        name: 'BookletRules',
+        component: () => import('@/pages/booklet/rules.vue')
+    },
+    {
+        path: '/booklet/apply',
+        name: 'BookletApply',
+        component: () => import('@/pages/booklet/apply.vue')
+    },
+    {
+        path: '/booklet/manage',
+        name: 'BookletManage',
+        component: () => import('@/pages/booklet/manage.vue')
+    },
     {
         path: '/booklet/edit',
         name: 'BookletEdit',
@@ -94,6 +109,12 @@ let routes = [
                 path: 'course/settlement',
                 name: 'CreatorCourseSettlement',
                 component: () => import('@/pages/creator/course/settlement.vue')
+            },
+            {
+                // 小册站（一级栏目，作者自主运营小册母站）
+                path: 'booklet',
+                name: 'CreatorBooklet',
+                component: () => import('@/pages/creator/booklet/index.vue')
             },
             {
                 path: 'comment',
