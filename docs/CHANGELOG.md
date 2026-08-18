@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 2026-08-18 — 创作者中心侧边栏默认收起
+
+### 变更
+
+- `src/pages/creator/layout/CreatorLayout.vue`：侧边栏默认状态由展开（`collapse: false`）改为收起（`collapse: true`），每次进入/刷新创作者中心均默认收起，用户仍可通过顶栏折叠按钮切换。
+
+### 验证
+
+- `npm run build` 通过。
+
+---
+
 ## 2026-08-18 — 修复头像弹框等级数据读取失败（显示 500、进度条无指针）
 
 ### 根因

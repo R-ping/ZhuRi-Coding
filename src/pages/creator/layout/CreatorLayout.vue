@@ -24,7 +24,7 @@ export default {
   },
   data () {
     return {
-      collapse: false
+      collapse: true
     }
   },
   created () {
