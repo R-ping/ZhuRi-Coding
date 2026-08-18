@@ -23,7 +23,6 @@ export const MenuData = [
     icon: 'el-icon-s-promotion',
     children: [
       { title: '创作等级权益', path: '/creator/growth/grade' },
-      { title: '创作任务', path: '/creator/growth/tasks' },
       { title: '创作灵感', path: '/creator/growth/inspiration' }
     ]
   },

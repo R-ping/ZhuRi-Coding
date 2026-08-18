@@ -3,34 +3,39 @@
         <span class="bar-icon menu-icon">&#xf0c9;</span>
         <Search class="search-comp" type="search" @onClick="onClick" :icon="icon" :height="56" :left-width="15" :right-width="15" placeholder="搜索文章"/>
         <span class="bar-icon login-btn" v-if="!isLoggedIn" @click="showLogin">&#xf007;</span>
-        <div class="user-info" v-if="isLoggedIn" @click="toggleUserDropdown">
-            <div class="notification-bell" @click.stop="goToNotification">
-                <span class="bell-icon">&#xf0f3;</span>
-                <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+        <div class="user-info" v-if="isLoggedIn">
+            <div class="bell-wrapper">
+                <NotificationBell
+                    :unreadTotal="unreadCount"
+                    :unreadCounts="unreadCounts"
+                    @go-to-notification="goToNotification"
+                />
             </div>
-            <img v-if="userAvatar" class="user-avatar" :src="userAvatar" alt="头像" />
-            <span v-else class="bar-icon user-btn">&#xf007;</span>
-            <UserDropdown
-                v-if="showUserDropdown"
-                :userAvatar="userAvatar"
-                :userName="userName"
-                :levelBadge="levelBadge"
-                :formattedDiamond="formattedDiamond"
-                :levelPercent="levelPercent"
-                :formattedLevelText="formattedLevelText"
-                :stats="stats"
-                @go-profile="goToProfile"
-                @go-growth="goToGrowth"
-                @go-follow="goToFollow"
-                @go-likes="goToLikes"
-                @go-collects="goToCollects"
-                @go-checkin="goToCheckin"
-                @go-courses="goToCourses"
-                @go-history="goToHistory"
-                @my-discount="handleMyDiscount"
-                @go-settings="goToSettings"
-                @logout="handleLogout"
-            />
+            <div class="avatar-wrapper" @click="toggleUserDropdown">
+                <img v-if="userAvatar" class="user-avatar" :src="userAvatar" alt="头像" />
+                <span v-else class="bar-icon user-btn">&#xf007;</span>
+                <UserDropdown
+                    v-if="showUserDropdown"
+                    :userAvatar="userAvatar"
+                    :userName="userName"
+                    :levelBadge="levelBadge"
+                    :formattedDiamond="formattedDiamond"
+                    :levelPercent="levelPercent"
+                    :formattedLevelText="formattedLevelText"
+                    :stats="stats"
+                    @go-profile="goToProfile"
+                    @go-growth="goToGrowth"
+                    @go-follow="goToFollow"
+                    @go-likes="goToLikes"
+                    @go-collects="goToCollects"
+                    @go-checkin="goToCheckin"
+                    @go-courses="goToCourses"
+                    @go-history="goToHistory"
+                    @my-discount="handleMyDiscount"
+                    @go-settings="goToSettings"
+                    @logout="handleLogout"
+                />
+            </div>
         </div>
     </div>
 </template>
@@ -38,6 +43,7 @@
 <script>
     import Search from '@/components/inputs/search_buttion';
     import UserDropdown from './UserDropdown.vue'
+    import NotificationBell from './NotificationBell.vue'
     import { toast } from "@/utils/toast"
     import { getUserStatistics } from '@/apis/user'
     import request from '@/common/request'
@@ -45,12 +51,13 @@
 
     export default {
         name: "HomeBar",
-        components: { Search, UserDropdown },
+        components: { Search, UserDropdown, NotificationBell },
         data:()=>{
             return {
                 icon:'\uF002',
                 showUserDropdown: false,
                 unreadCount: 0,
+                unreadCounts: { comment: 0, digg: 0, follow: 0, system: 0 },
                 unreadTimer: null,
                 stats: {
                     followCount: 0,
@@ -118,19 +125,12 @@
                         this.stats.likeCount = data.likeCount || 0
                         this.stats.collectCount = data.collectCount || 0
                         this.diamondCount = data.diamondCount || '0'
-                        if (data.levelInfo) {
-                            const li = data.levelInfo
-                            this.levelBadge = 'ZR.' + (li.dailyLevel || 1)
-                            this.levelScore = li.dailyScore || 0
-                            // Calculate max score for current level
-                            const levelMaxMap = { 1: 150, 2: 300, 3: 500, 4: 800, 5: 1200 }
-                            this.levelMax = levelMaxMap[li.dailyLevel] || 150
-                            // Calculate base score for current level
-                            const levelBaseMap = { 1: 0, 2: 150, 3: 300, 4: 500, 5: 800 }
-                            const base = levelBaseMap[li.dailyLevel] || 0
-                            const currentInLevel = this.levelScore - base
-                            this.levelPercent = Math.min(Math.round(currentInLevel / (this.levelMax - base) * 100), 100)
-                        }
+                        // 注意：接口返回的等级字段位于顶层（levelBadge/levelScore/levelMax/levelPercent/dailyLevel/dailyScore）
+                        // 后端 getUserLevelData 已基于真实等级配置计算好 levelMax 与 levelPercent，前端直接使用即可
+                        this.levelBadge = data.levelBadge || 'ZR.' + (data.dailyLevel || 1)
+                        this.levelScore = data.levelScore || 0
+                        this.levelMax = data.levelMax || 150
+                        this.levelPercent = Math.min(data.levelPercent || 0, 100)
                     }
                 } catch (e) {
                     // Silently fail, use defaults
@@ -186,15 +186,21 @@
                 this.showUserDropdown = false
                 toast('我的优惠功能开发中', 2)
             },
-            goToNotification() {
+            goToNotification(type) {
                 this.showUserDropdown = false
-                this.$router.push('/notification')
+                this.$router.push('/notification?tab=' + (type || ''))
             },
             fetchUnreadCount() {
                 if (!this.isLoggedIn) return
                 request.get(conf.urls.get('notifications_unread'), {}).then(d => {
                     if (d && d.code === 200 && d.data) {
                         this.unreadCount = d.data.total || 0
+                        this.unreadCounts = {
+                            comment: d.data.comment || 0,
+                            digg: d.data.digg || 0,
+                            follow: d.data.follow || 0,
+                            system: d.data.system || 0
+                        }
                     }
                 }).catch(() => {})
             }
@@ -207,9 +213,14 @@
             }
         },
         mounted() {
+            this.fetchUnreadCount()
+            this.unreadTimer = setInterval(() => this.fetchUnreadCount(), 30000)
             this.closeDropdown = (e) => {
-                if (this.showUserDropdown && !this.$el.querySelector('.user-info').contains(e.target)) {
-                    this.showUserDropdown = false
+                if (this.showUserDropdown) {
+                    const avatarEl = this.$el.querySelector('.avatar-wrapper')
+                    if (avatarEl && !avatarEl.contains(e.target)) {
+                        this.showUserDropdown = false
+                    }
                 }
             }
             this.escClose = (e) => {
@@ -219,7 +230,6 @@
             }
             document.addEventListener('click', this.closeDropdown)
             document.addEventListener('keydown', this.escClose)
-            // 站内信按类型清除未读后，立即刷新顶部铃铛总未读数
             this.onUnreadCleared = () => this.fetchUnreadCount()
             window.addEventListener('notification-unread-cleared', this.onUnreadCleared)
         },
@@ -276,10 +286,33 @@
     .user-info {
         display: flex;
         align-items: center;
-        gap: 8px;
-        cursor: pointer;
+        gap: 12px;
         flex-shrink: 0;
         position: relative;
+    }
+    .bell-wrapper {
+        display: inline-flex;
+        align-items: center;
+    }
+    // 深色背景下覆盖 NotificationBell 组件样式
+    .bell-wrapper ::v-deep(.notification-bell) {
+        background-color: transparent;
+    }
+    .bell-wrapper ::v-deep(.notification-bell:hover) {
+        background-color: rgba(255,255,255,0.15);
+    }
+    .bell-wrapper ::v-deep(.bell-icon) {
+        color: #ffffff;
+    }
+    .bell-wrapper ::v-deep(.unread-badge) {
+        background: #ff4d4f;
+        color: #fff;
+    }
+    .avatar-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
     }
     .user-avatar {
         width: 44px;
@@ -287,42 +320,5 @@
         border-radius: 50%;
         border: 2px solid rgba(255,255,255,0.5);
         object-fit: cover;
-    }
-
-    .notification-bell {
-        position: relative;
-        margin-right: 16px;
-        font-size: 20px;
-        color: #515767;
-        cursor: pointer;
-        width: 44px;
-        height: 44px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        transition: background-color 0.2s;
-    }
-    .notification-bell:hover {
-        background-color: rgba(255,255,255,0.15);
-    }
-    .bell-icon {
-        font-family: fontawesome;
-        font-size: 24px;
-        color: #ffffff;
-    }
-    .unread-badge {
-        position: absolute;
-        top: -6px;
-        right: -10px;
-        min-width: 16px;
-        height: 16px;
-        line-height: 16px;
-        text-align: center;
-        background: #ff4d4f;
-        color: #fff;
-        font-size: 10px;
-        border-radius: 8px;
-        padding: 0 4px;
     }
 </style>

@@ -7,14 +7,9 @@
       <!-- 数据概览卡片 -->
       <Article class="dashboard-card dashboard-article" />
 
-      <!-- 创作成长 + 热门话题 两栏 -->
-      <div class="dashboard-bottom">
-        <div class="dashboard-card dashboard-growth">
-          <GrowthTasks />
-        </div>
-        <div class="dashboard-card dashboard-hot">
-          <HotTopics />
-        </div>
+      <!-- 创作任务（全宽） -->
+      <div class="dashboard-card dashboard-task">
+        <GrowthTasks />
       </div>
     </div>
 
@@ -27,7 +22,6 @@
 import UserInfo from './components/UserInfo.vue'
 import Article from './components/Article.vue'
 import GrowthTasks from './components/GrowthTasks.vue'
-import HotTopics from './components/HotTopics.vue'
 import RightAside from './components/RightAside.vue'
 
 export default {
@@ -36,7 +30,6 @@ export default {
     UserInfo,
     Article,
     GrowthTasks,
-    HotTopics,
     RightAside
   }
 }
@@ -61,6 +54,7 @@ export default {
     }
 
     .dashboard-header {
+      flex: 0 0 auto;
       background: @colorCreatorHeaderBg;
       border: 1px solid @colorCreatorHeaderBorder;
       border-radius: @creatorRadius;
@@ -79,31 +73,17 @@ export default {
       border: 1px solid @borderLight;
       box-shadow: @creatorShadow;
       overflow: hidden;
-      transition: box-shadow 0.25s ease, transform 0.25s ease;
-
-      &:hover {
-        box-shadow: @creatorShadowHover;
-        transform: translateY(-2px);
-      }
+      transition: box-shadow 0.25s ease;
     }
 
     .dashboard-article {
-      flex: none;
+      flex: 0 0 auto;
     }
 
-    .dashboard-bottom {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      min-height: 280px;
-    }
-
-    .dashboard-growth {
-      min-height: 280px;
-    }
-
-    .dashboard-hot {
-      min-height: 280px;
+    .dashboard-task {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
     }
 
     .dashboard-aside {
@@ -117,11 +97,6 @@ export default {
       padding: 12px;
 
       .dashboard-main {
-        gap: 12px;
-      }
-
-      .dashboard-bottom {
-        grid-template-columns: 1fr;
         gap: 12px;
       }
 

@@ -11,46 +11,80 @@
           <span class="activity-tag activity-ai">TRAE AI 创造力大赛</span>
         </div>
       </div>
-      <a href="javascript:;" class="more-link">查看更多 ></a>
+      <a href="javascript:;" class="more-link">查看更多 &gt;</a>
     </div>
 
-    <!-- 热门话题 -->
+    <!-- 创作话题（热门 + 推荐话题统一入口） -->
     <div class="aside-card topics-card">
-      <h4 class="aside-title">热门话题</h4>
+      <h4 class="aside-title topics-title">
+        <span>创作话题</span>
+        <span class="refresh-btn" @click="refreshTopics">换一换</span>
+      </h4>
       <div class="topic-list">
         <div
           class="topic-item"
-          v-for="(topic, idx) in topics"
-          :key="idx"
+          v-for="topic in topics"
+          :key="topic.id"
           @click="goTopic(topic)"
         >
           <span class="topic-title">
-            <span class="hash">#</span>{{ topic.title }}
+            <span class="topic-badge" v-if="topic.badge">{{ topic.badge }}</span>
+            <span class="hash">#</span>{{ topic.name }}
           </span>
-          <span class="topic-meta">{{ topic.participate }}k参与 · {{ topic.read }}m阅读</span>
+          <span class="topic-meta">{{ formatCount(topic.participantCount) }}位掘友已发布 · {{ formatCount(topic.viewCount) }}阅读</span>
         </div>
+        <div v-if="topics.length === 0 && !loading" class="empty-tip">暂无创作话题</div>
       </div>
+      <div class="topic-more" @click="goSquare">查看更多话题 &gt;</div>
     </div>
   </aside>
 </template>
 
 <script>
+import { getRecommendTopics } from '@/apis/topic'
+
 export default {
   name: 'RightAside',
   data() {
     return {
-      topics: [
-        { id: 1, title: '每日精选文章', participate: 26, read: 8.6 },
-        { id: 2, title: '日新计划', participate: 29, read: 12.0 },
-        { id: 3, title: '每天一个知识点', participate: 156, read: 58.5 },
-        { id: 4, title: '沸点周刊', participate: 7.6, read: 2.3 },
-        { id: 5, title: '新人报道', participate: 57, read: 43.7 }
-      ]
+      topics: [],
+      page: 0,
+      loading: false
     }
   },
+  mounted() {
+    this.loadTopics()
+  },
   methods: {
+    async loadTopics() {
+      this.loading = true
+      try {
+        const res = await getRecommendTopics(this.page, 5)
+        if (res && res.code === 200 && res.data) {
+          this.topics = res.data.list || []
+        }
+      } catch (e) {
+        console.error('加载创作话题失败:', e)
+      } finally {
+        this.loading = false
+      }
+    },
+    refreshTopics() {
+      this.page++
+      this.loadTopics()
+    },
+    formatCount(num) {
+      if (!num) return '0'
+      if (num >= 10000) {
+        return (num / 1000).toFixed(1) + 'k'
+      }
+      return num.toString()
+    },
     goTopic(topic) {
       this.$router.push(`/pin/topic/${topic.id}`)
+    },
+    goSquare() {
+      this.$router.push('/pin/topics')
     }
   }
 }
@@ -95,6 +129,22 @@ export default {
       height: 14px;
       border-radius: 2px;
       background: @brandGradient;
+    }
+  }
+
+  .topics-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    .refresh-btn {
+      font-size: 12px;
+      font-weight: 400;
+      color: @brandBlue;
+      cursor: pointer;
+      &:hover {
+        opacity: 0.8;
+      }
     }
   }
 
@@ -144,7 +194,7 @@ export default {
   .topic-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
   .topic-item {
@@ -153,6 +203,7 @@ export default {
     padding: 8px 0;
     cursor: pointer;
     border-bottom: 1px solid @borderLight;
+    transition: background-color 0.2s;
 
     &:last-child {
       border-bottom: none;
@@ -169,16 +220,48 @@ export default {
     font-size: 14px;
     font-weight: 500;
     color: @brandBlue;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     transition: color 0.2s;
 
     .hash {
       margin-right: 2px;
+    }
+
+    .topic-badge {
+      display: inline-block;
+      background: #ff6b35;
+      color: #fff;
+      font-size: 11px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-right: 4px;
+      vertical-align: middle;
     }
   }
 
   .topic-meta {
     font-size: 12px;
     color: @colorStatLabel;
+  }
+
+  .empty-tip {
+    padding: 16px 0;
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+  }
+
+  .topic-more {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid @borderLight;
+    text-align: center;
+    font-size: 13px;
+    color: @brandBlue;
+    cursor: pointer;
+
+    &:hover {
+      opacity: 0.8;
+    }
   }
 </style>

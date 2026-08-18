@@ -10,13 +10,11 @@
       </router-link>
     </div>
     <div class="right-menu">
-      <NotificationBell class="right-menu-item" v-if="isLoggedIn" :unreadCount="unreadCount" @go-to-notification="goToNotification" />
+      <NotificationBell class="right-menu-item" v-if="isLoggedIn" :unreadTotal="unreadCount" :unreadCounts="unreadCounts" @go-to-notification="goToNotification" />
       <div class="avatar-container right-menu-item" v-if="isLoggedIn" @click="toggleUserDropdown">
-        <div class="avatar-wrapper">
-          <img class="user-avatar" :src="avatarUrl" alt="头像">
-          <span class="user-name">{{ nickName }}</span>
-          <i class="el-icon-caret-bottom"/>
-        </div>
+        <img v-if="avatarUrl" class="header-avatar" :src="avatarUrl" alt="头像"/>
+        <span v-else class="header-avatar-default">&#xf007;</span>
+        <span class="user-name">{{ nickName }}</span>
         <UserDropdown
           v-if="showUserDropdown"
           :userAvatar="avatarUrl"
@@ -50,7 +48,6 @@ import { clearUser } from '../../utils/store'
 import emitter from '../../utils/event'
 import request from '@/common/request'
 import conf from '@/common/conf'
-import defaultAvatar from '@/static/images/avatar_head_1.png'
 import UserDropdown from '@/components/bars/UserDropdown.vue'
 import NotificationBell from '@/components/bars/NotificationBell.vue'
 import { getUserStatistics } from '@/apis/user'
@@ -65,6 +62,7 @@ export default {
   data() {
     return {
       unreadCount: 0,
+      unreadCounts: { comment: 0, digg: 0, follow: 0, system: 0 },
       unreadTimer: null,
       showUserDropdown: false,
       stats: {
@@ -88,7 +86,7 @@ export default {
       if (this.userInfo && this.userInfo.avatar) {
         return this.userInfo.avatar
       }
-      return defaultAvatar
+      return ''
     },
     nickName () {
       return this.userInfo ? (this.userInfo.nickName || '用户') : '用户'
@@ -119,6 +117,12 @@ export default {
       request.get(conf.urls.get('notifications_unread'), {}).then(d => {
         if (d && d.code === 200 && d.data) {
           this.unreadCount = d.data.total || 0
+          this.unreadCounts = {
+            comment: d.data.comment || 0,
+            digg: d.data.digg || 0,
+            follow: d.data.follow || 0,
+            system: d.data.system || 0
+          }
         }
       }).catch(() => {})
     },
@@ -143,17 +147,12 @@ export default {
           this.stats.likeCount = data.likeCount || 0
           this.stats.collectCount = data.collectCount || 0
           this.diamondCount = data.diamondCount || '0'
-          if (data.levelInfo) {
-            const li = data.levelInfo
-            this.levelBadge = 'ZR.' + (li.dailyLevel || 1)
-            this.levelScore = li.dailyScore || 0
-            const levelMaxMap = { 1: 150, 2: 300, 3: 500, 4: 800, 5: 1200 }
-            this.levelMax = levelMaxMap[li.dailyLevel] || 150
-            const levelBaseMap = { 1: 0, 2: 150, 3: 300, 4: 500, 5: 800 }
-            const base = levelBaseMap[li.dailyLevel] || 0
-            const currentInLevel = this.levelScore - base
-            this.levelPercent = Math.min(Math.round(currentInLevel / this.levelMax * 100), 100)
-          }
+          // 注意：接口返回的等级字段位于顶层（levelBadge/levelScore/levelMax/levelPercent/dailyLevel/dailyScore）
+          // 后端 getUserLevelData 已基于真实等级配置计算好 levelMax 与 levelPercent，前端直接使用即可
+          this.levelBadge = data.levelBadge || 'ZR.' + (data.dailyLevel || 1)
+          this.levelScore = data.levelScore || 0
+          this.levelMax = data.levelMax || 150
+          this.levelPercent = Math.min(data.levelPercent || 0, 100)
         }
       } catch (e) {
         // Silently fail, use defaults
@@ -296,7 +295,7 @@ export default {
 
   .right-menu {
     float: right;
-    height: 100%;
+    height: 60px;
     padding-right: 20px;
     display: flex;
     align-items: center;
@@ -306,43 +305,48 @@ export default {
     }
 
     .right-menu-item {
-      display: inline-block;
-      margin: 0 8px;
+      display: inline-flex;
+      align-items: center;
+      margin: 0 4px;
     }
 
     .avatar-container {
       position: relative;
-      height: 60px;
-      margin-right: 10px;
+      height: auto;
+      margin-right: 0;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
 
-      .avatar-wrapper {
-        cursor: pointer;
-        position: relative;
-        line-height: 60px;
+      .header-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+      .header-avatar-default {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background-color: @brandBlue;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: fontawesome;
+        font-size: 16px;
+        flex-shrink: 0;
+      }
 
-        .user-avatar {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          object-fit: cover;
-          vertical-align: middle;
-          margin-right: 8px;
-        }
-
-        .user-name {
-          font-size: 15px;
-          color: @textPrimary;
-          vertical-align: middle;
-        }
-
-        .el-icon-caret-bottom {
-          cursor: pointer;
-          margin-left: 6px;
-          font-size: 12px;
-          color: @textMuted;
-          vertical-align: middle;
-        }
+      .user-name {
+        font-size: 14px;
+        color: @textPrimary;
+        max-width: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
     }
   }

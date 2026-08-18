@@ -108,21 +108,20 @@ export default {
   .dashboard-stats {
     display: flex;
     flex-direction: column;
-    height: 100%;
 
     .section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 16px 24px;
-      font-size: 14px;
-      font-weight: 500;
-      color: @textSecondary;
+      padding: 12px 20px;
+      font-size: 16px;
+      font-weight: 600;
+      color: @textPrimary;
       border-bottom: 1px solid #f2f3f5;
       flex-shrink: 0;
 
       .more-link {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 400;
         color: @textMuted;
         text-decoration: none;
@@ -137,39 +136,40 @@ export default {
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      padding: 24px;
-      flex: 1;
+      gap: 10px;
+      padding: 12px 16px;
     }
 
     .stat-card {
-      padding: 20px 24px;
-      background: #FFFFFF;
+      padding: 10px 14px;
+      background: #F7F8FA;
+      border: 1px solid transparent;
       border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-      transition: all 0.25s ease;
+      transition: all 0.2s ease;
 
       &:hover {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+        border-color: @brandBlue;
+        background: #F0F6FF;
+        transform: translateY(-1px);
       }
 
       .stat-value {
-        font-size: 28px;
+        font-size: 20px;
         font-weight: 700;
-        color: @textPrimary;
-        margin-bottom: 8px;
+        color: @colorStatValue;
+        margin-bottom: 2px;
         line-height: 1.2;
       }
 
       .stat-label {
-        font-size: 13px;
-        color: @colorStatLabel;
-        margin-bottom: 8px;
+        font-size: 12px;
+        color: @textSecondary;
+        margin-bottom: 2px;
         font-weight: 400;
       }
 
       .stat-compare {
-        font-size: 13px;
+        font-size: 12px;
         color: @colorStatLabel;
         font-weight: 400;
 

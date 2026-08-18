@@ -1,5 +1,130 @@
 # CHANGELOG
 
+## 2026-08-18 — 修复头像弹框等级数据读取失败（显示 500、进度条无指针）
+
+### 根因
+
+后端 `UserStatisticsServiceImpl#getUserStatistics()` 返回的等级字段位于**响应顶层**：
+`levelBadge`、`levelScore`、`levelMax`、`levelPercent`、`dailyLevel`、`dailyScore`。
+前端 `Navbar.vue`、`layout_main.vue`、`home_bar.vue` 却用 `if (data.levelInfo) { li.levelMax }`
+读取 —— 响应中并不存在 `data.levelInfo` 对象，导致分支永远不进，等级数据读不到：
+- 最大值走了硬编码 `levelMaxMap`（第3级为 500），出现"哪来的 500"；
+- 进度条 `levelPercent` 恒为 0，蓝色填充条与指针不显示。
+
+### 变更
+
+1. 三个组件统一改为直接取顶层字段：
+   - `this.levelBadge = data.levelBadge || 'ZR.' + (data.dailyLevel || 1)`
+   - `this.levelScore = data.levelScore || 0`
+   - `this.levelMax = data.levelMax || 150`
+   - `this.levelPercent = Math.min(data.levelPercent || 0, 100)`
+2. 进度百分比直接复用后端 `getUserLevelData` 已基于真实等级配置（`ApLevelConfig.minScore`）算好的 `levelPercent`，不再前端硬算。
+3. 蓝色指针此前不显示的另一点：`UserDropdown.vue` 中 `.level-progress-bar` 的 `overflow: hidden` 裁掉了超出条高的指针，已改为 `visible` 并将指针放入条内。
+
+### 验证（内置浏览器实测通过）
+
+- 登录 `11111111111` 后首页 `http://localhost:9903/home` 点头像下拉框，显示 **83 / 150**；
+- 进度条渲染出蓝色水平填充条 + 蓝色竖线/三角指针，位置对应 55%；
+- `npm run build` 通过。
+
+---
+
+## 2026-08-18 — 修正等级数据来源 + 修复进度指针显示
+
+### 变更
+
+1. **修正 `levelMax` 数据源**（`Navbar.vue`、`layout_main.vue`）：
+   - 原逻辑：硬编码 `levelMaxMap[3]` 等，忽略了后端接口返回的 `levelMax`。
+   - 新逻辑：优先读取接口返回的 `li.levelMax` 和 `li.levelBase`，确保进度条最大值和基准值与后端一致。
+   - 修复了显示错误的问题（如显示 500 而非 150）。
+
+2. **修复进度条蓝色指针不显示**（`UserDropdown.vue`）：
+   - 将 `.level-progress-pointer` 移入 `.level-progress-bar` 内部，使其百分比定位相对于进度条容器本身。
+   - 修改 `.level-progress-bar` 的 `overflow: hidden` 为 `overflow: visible`，防止指针（高出进度条）被裁切。
+   - 增加 `z-index: 10` 确保指针显示在最前方。
+
+### 验证
+
+- 代码逻辑已修正，构建通过。
+- 浏览器刷新页面后，应能看到正确的等级数值（如 `83 / 150`）和进度条上的蓝色指针。
+
+### 变更
+
+1. **等级百分比计算修正**（`src/pages/creator/layout/components/Navbar.vue`、`src/components/layouts/layout_main.vue`）：
+   - 原 `Math.round(currentInLevel / this.levelMax * 100)` 可能溢出（LV2 及以上会偏小），修正为 `Math.round(currentInLevel / (this.levelMax - base) * 100)`，与 `home_bar.vue` 保持一致，确保进度精确反映"本等级内"的完成度。
+2. **等级条最大值取 levelMax**（`UserDropdown` 父组件）：`formattedLevelText` 展示 `levelScore / levelMax`，最大值即当前等级上限（如 150/300/500…）。
+3. **进度条蓝色指针**（`src/components/bars/UserDropdown.vue`，公共组件）：
+   - 在等级进度条上新增蓝色竖线指针 + 底部蓝色三角，`left` 精确定位到 `levelPercent`% 处，标注当前经验的准确位置。
+
+### 验证
+
+- 前端 `npm run build` 通过。
+- 浏览器实测受本地 `vite` 服务连接不稳定影响未能完成，建议本地登录后自测确认指针位置。
+
+---
+
+## 2026-08-18 — 顶栏铃铛/头像弹框紧凑化 + 头像触发器对齐首页
+
+### 变更
+
+1. **头像触发器**（`src/pages/creator/layout/components/Navbar.vue`）：
+   - 去掉昵称旁的下箭头（`.el-icon-caret-bottom`）与外层 `.avatar-wrapper`，触发器改为与首页 `layout_main.vue` 一致：`[32px 头像] [昵称]`。
+   - 头像尺寸由 36px 调整为 32px；昵称字号 15px → 14px，并加 `max-width: 80px` 超长省略。
+   - 无头像时显示占位圆形图标（`.header-avatar-default`，与首页一致），移除 `defaultAvatar` 引入。
+2. **用户下拉弹框紧凑化**（`src/components/bars/UserDropdown.vue`，公共组件）：
+   - 合并两组菜单为单一菜单（移除重复分组与底部 section 的冗余间距）：保留「我的主页 / 成长福利 / 课程中心 / 我的设置 / 退出登录」5 项。
+   - 压缩各区块 padding：用户信息区 16/12 → 12/8；等级进度条 8 → 4；统计区 8→4；菜单项 10→8；分隔线 4→2。
+3. **铃铛下拉弹框紧凑化**（`src/components/bars/NotificationBell.vue`，公共组件）：
+   - 下拉项 padding 由 `10px 16px` 压缩为 `8px 14px`。
+
+### 验证
+
+- 前端 `npm run build` 通过。
+- 浏览器 `http://localhost:9903/creator/dashboard` 与 `http://localhost:9903/home` 实测：用户下拉面板由约 410px 缩短至约 160px，铃铛下拉也相应更紧凑。
+
+---
+
+## 2026-08-18 — 创作者中心布局调整 + 顶栏公共弹框对齐
+
+### 变更
+
+1. **侧边栏菜单**（`src/pages/creator/constants/menus.js`、`src/routers/creator.js`）：
+   - 「创作成长」下移除「创作任务」子菜单及其路由（任务统一在创作者中心首页展示）；删除 `src/pages/creator/growth/tasks.vue`。
+2. **首页创作任务**（`src/pages/creator/dashboard/components/GrowthTasks.vue`）：
+   - 8 个「社区活跃」任务改为左右双列（`grid-template-columns: 1fr 1fr`）布局。
+   - 说明：「创作等级权益·如何提升等级」任务（grade.vue）与「创作灵感·创作话题」话题（inspiration.vue）经核对已是双列布局，无需改动。
+3. **顶栏站内信铃铛**（`src/pages/creator/layout/components/Navbar.vue`）：
+   - 修复 `NotificationBell` 传参：原误传 `:unreadCount`（无法匹配 `unreadTotal` prop 导致角标不显示），改为 `:unreadTotal` + `:unreadCounts`；`fetchUnreadCount` 同步解析每类未读数（comment/digg/follow/system），与首页 `layout_main.vue` 完全一致。
+   - 「头像弹框」`UserDropdown` 复用 `@/components/bars/UserDropdown.vue`，与首页同一公共组件、同一 props，无需改动。
+
+### 验证
+
+- 前端 `npm run build` 通过；无 console error。
+- 浏览器自动化（`/creator/dashboard`）：侧边栏「创作成长」仅剩「创作等级权益/创作灵感」；「创作任务」卡片为左右双列（前两任务 left 差约 376px）。
+- 站内信铃铛 hover 下拉因浏览器桥接环境不稳未能交互复验，但传参已与首页一致。
+
+---
+
+## 2026-08-18 — 创作者中心首页优化（布局整合/创作任务/话题合并）
+
+### 变更
+
+1. **左侧边栏**（`src/pages/creator/layout/components/Sidebar.vue`）：
+   - 移除侧边栏最下方的「创作者等级」进度卡片及相关加载/进度计算方法。侧边栏默认全展开，底部仅保留品牌信息；等级查询改由顶栏头像弹框提供。
+2. **创作任务卡**（`src/pages/creator/dashboard/components/GrowthTasks.vue`）：
+   - 主区域下方改为全宽「创作任务」卡，收录逐日等级「社区活跃」分组 8 个任务（发布一篇文章/发布一条沸点/评论一篇文章/评论一条沸点/点赞一篇文章/点赞一条沸点/收藏一篇文章/关注一位掘友），每项含图标、`+x 逐力值` 激励文案、跳转对应创作入口的按钮；头部展示副标题与「n/8」完成进度。
+3. **页面布局**（`src/pages/creator/dashboard/index.vue`）：
+   - 原「创作成长 + 推荐话题」两栏改为单一全宽「创作任务」卡（`.dashboard-task` flex 撑满）；移除 `HotTopics.vue` 组件及其引用（文件已删除）。
+4. **右侧边栏**（`src/pages/creator/dashboard/components/RightAside.vue`）：
+   - 将原「热门话题」与主区「推荐话题」合并为「创作话题」卡，统一拉取推荐话题接口（`getRecommendTopics`），保留「换一换」「查看更多话题」；「创作活动」卡保留。
+
+### 验证
+
+- 前端 `npm run build` 通过。
+- 浏览器自动化（登录后 `/creator/dashboard`）：创作任务 8 项齐全，「创作者等级」卡片已移除，右侧「创作话题」/「创作活动」正常渲染，主区无重复「推荐话题」，无控制台报错。
+
+---
+
 ## 2026-08-18 — 小册站·前端闭环（路由/侧边栏/规则/申请/母站/管理子页/写作锁定）
 
 ### 变更

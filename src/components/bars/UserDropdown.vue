@@ -1,5 +1,9 @@
 <template>
-    <div class="user-dropdown" @click.stop>
+    <div
+        class="user-dropdown"
+        :style="dropdownStyle"
+        @click.stop
+    >
         <!-- 用户信息区 -->
         <div class="dropdown-user-section" @click="$emit('go-profile')">
             <img v-if="userAvatar" class="dropdown-avatar" :src="userAvatar" alt="头像" />
@@ -18,6 +22,7 @@
             <div class="level-progress-wrap">
                 <div class="level-progress-bar">
                     <div class="level-progress-fill" :style="{ width: levelPercent + '%' }"></div>
+                    <span class="level-progress-pointer" :style="{ left: levelPercent + '%' }"></span>
                 </div>
                 <span class="level-text">{{ formattedLevelText }}</span>
             </div>
@@ -53,18 +58,6 @@
                 <span class="dropdown-icon">&#xf19c;</span>
                 <span class="dropdown-label">课程中心</span>
             </div>
-            <div class="dropdown-item" @click="$emit('my-discount')">
-                <span class="dropdown-icon">&#xf155;</span>
-                <span class="dropdown-label">我的优惠</span>
-            </div>
-            <div class="dropdown-item" @click="$emit('go-history')">
-                <span class="dropdown-icon">&#xf02d;</span>
-                <span class="dropdown-label">我的足迹</span>
-            </div>
-        </div>
-        <div class="dropdown-divider"></div>
-        <!-- 底部 -->
-        <div class="dropdown-bottom-section">
             <div class="dropdown-item" @click="$emit('go-settings')">
                 <span class="dropdown-icon">&#xf013;</span>
                 <span class="dropdown-label">我的设置</span>
@@ -91,6 +84,13 @@ export default {
             type: Object,
             default: () => ({ followCount: 0, likeCount: 0, collectCount: 0 })
         }
+    },
+    computed: {
+        dropdownStyle() {
+            // 使用固定定位时，位置由父组件计算后传入
+            // 这里返回空对象，实际定位由父组件通过绝对定位或 fixed 控制
+            return {};
+        }
     }
 }
 </script>
@@ -105,14 +105,15 @@ export default {
     border-radius: 16px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.15);
     width: 280px;
-    z-index: 200;
+    z-index: 999;
     overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.06);
 }
 
 .dropdown-user-section {
     display: flex;
     align-items: center;
-    padding: 16px 16px 12px;
+    padding: 12px 16px 8px;
     cursor: pointer;
     gap: 12px;
 }
@@ -170,7 +171,7 @@ export default {
 .dropdown-level-bar {
     display: flex;
     align-items: center;
-    padding: 8px 16px;
+    padding: 4px 16px;
     cursor: pointer;
     gap: 8px;
     &:hover { background-color: #f7f8fa; }
@@ -184,19 +185,50 @@ export default {
         display: flex;
         align-items: center;
         gap: 6px;
+        position: relative;
     }
     .level-progress-bar {
         flex: 1;
         height: 6px;
         background: #e4e6eb;
         border-radius: 3px;
-        overflow: hidden;
+        /* 允许 pointer 溢出显示 */
+        overflow: visible;
+        position: relative;
     }
     .level-progress-fill {
         height: 100%;
         background: linear-gradient(90deg, #1e80ff, #4096ff);
         border-radius: 3px;
         transition: width 0.3s;
+        /* 裁切 fill 本身，防止超出圆角 */
+        overflow: hidden;
+        border-radius: 3px;
+    }
+    /* 进度指针：蓝色竖线 + 底部三角，精确指向当前经验所在位置 */
+    .level-progress-pointer {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        transform: translate(-50%, -50%);
+        width: 2px;
+        height: 16px;
+        background-color: #1e80ff;
+        border-radius: 1px;
+        pointer-events: none;
+        transition: left 0.3s;
+        /* 提高层级 */
+        z-index: 10;
+    }
+    .level-progress-pointer::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: -6px;
+        transform: translateX(-50%);
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        border-top: 5px solid #1e80ff;
     }
     .level-text {
         font-size: 11px;
@@ -213,14 +245,14 @@ export default {
 .dropdown-stats {
     display: flex;
     justify-content: space-around;
-    padding: 8px 16px 0;
+    padding: 4px 16px 0;
 }
 .dropdown-stats .stat-item {
     text-align: center;
     cursor: pointer;
-    padding: 8px 12px;
+    padding: 4px 12px;
     border-radius: 8px;
-    &:hover { background: #f7f8fa; }
+    &:hover { background-color: #f7f8fa; }
 }
 .dropdown-stats .stat-value {
     font-size: 18px;
@@ -236,21 +268,21 @@ export default {
 .dropdown-divider {
     height: 1px;
     background: #f2f3f5;
-    margin: 4px 0;
+    margin: 2px 0;
 }
 
 .dropdown-menu-section {
-    padding: 4px 0;
+    padding: 2px 0;
 }
 
 .dropdown-bottom-section {
-    padding: 4px 0;
+    padding: 2px 0;
 }
 
 .dropdown-item {
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    padding: 8px 16px;
     cursor: pointer;
     transition: background-color 0.2s;
     gap: 8px;
