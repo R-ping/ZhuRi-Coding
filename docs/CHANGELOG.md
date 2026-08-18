@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 2026-08-18 — 修复课程提交上架审核接口报错
+
+### 变更
+
+- `heima-leadnews-content/.../controller/v1/course/CourseController.java`：
+  - 修复 `/manage/submit`（提交上架审核）后端路由错误。原实现误调用三参数 `submitApply(courseId, null, userId)`（该方法签名为四参数 `courseId, applyContent, authorProfile, userId`），导致编译失败；且业务语义不符（`submitApply` 为"申报 0→1"）。
+  - 改为调用两参数 `submitForReview(courseId, userId)`，对应"写作中 4 → 上架待审 5"，与前端 `submitForReview` 及状态机校验一致。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile -q` 编译通过。
+
+---
+
 ## 2026-08-18 — 创作者中心侧边栏：一级栏目默认展开
 
 ### 变更

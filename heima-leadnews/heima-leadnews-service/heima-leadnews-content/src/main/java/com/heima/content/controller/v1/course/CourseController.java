@@ -129,8 +129,8 @@ public class CourseController {
             return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
-        // 提交审核：草稿(0)/被拒(2) -> 审核中(1)，走状态机校验（含作者归属）
-        return apCourseService.submitApply(courseId, null, user.getId().longValue());
+        // 提交上架审核（写作中4 -> 上架待审5）：走状态机校验（含作者归属）
+        return apCourseService.submitForReview(courseId, user.getId().longValue());
     }
 
     /** 下架课程 */
