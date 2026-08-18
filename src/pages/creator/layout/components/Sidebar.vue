@@ -14,6 +14,7 @@
         </div>
         <el-menu class="sidebar-el-menu"
             :default-active="defaultRoute"
+            :default-openeds="defaultOpeneds"
              background-color="#ffffff"
              text-color="#515767"
              active-text-color="#1e80ff"
@@ -50,6 +51,10 @@ export default {
     computed: {
         defaultRoute() {
             return this.$route.path
+        },
+        // 默认展开所有带子菜单的一级栏目（如：内容管理、数据中心、创作成长等）
+        defaultOpeneds() {
+            return this.filteredItems.filter(item => item.children && item.children.length > 0).map(item => item.title)
         },
         filteredItems() {
             return this.filterMenuItems(this.items)
