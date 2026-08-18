@@ -51,7 +51,7 @@ public class UserStatisticsServiceImpl implements UserStatisticsService {
             if (levelData != null) {
                 data.put("levelBadge", levelData.getOrDefault("levelBadge", "ZR.1"));
                 data.put("levelScore", levelData.getOrDefault("levelScore", 0));
-                data.put("levelMax", levelData.getOrDefault("levelMax", 150));
+                data.put("levelMax", levelData.getOrDefault("levelMax", 15));
                 data.put("levelPercent", levelData.getOrDefault("levelPercent", 0));
                 data.put("diamondCount", levelData.getOrDefault("diamondCount", 0));
                 data.put("dailyLevel", levelData.getOrDefault("dailyLevel", 1));
@@ -59,7 +59,7 @@ public class UserStatisticsServiceImpl implements UserStatisticsService {
             } else {
                 data.put("levelBadge", "ZR.1");
                 data.put("levelScore", 0);
-                data.put("levelMax", 150);
+                data.put("levelMax", 15);
                 data.put("levelPercent", 0);
                 data.put("diamondCount", 0);
                 data.put("dailyLevel", 1);
@@ -69,7 +69,7 @@ public class UserStatisticsServiceImpl implements UserStatisticsService {
             log.error("获取用户等级数据失败，userId: {}", currentUser.getId(), e);
             data.put("levelBadge", "ZR.1");
             data.put("levelScore", 0);
-            data.put("levelMax", 150);
+            data.put("levelMax", 15);
             data.put("levelPercent", 0);
             data.put("diamondCount", 0);
             data.put("dailyLevel", 1);

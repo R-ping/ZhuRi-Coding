@@ -97,7 +97,8 @@ computed: {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    padding: 28px 36px;
+    flex-shrink: 0;
+    padding: 18px 36px;
     background:
       radial-gradient(600px 140px at 85% -20%, rgba(30, 128, 255, 0.10), transparent 60%),
       linear-gradient(135deg, #F8FBFF 0%, @colorCreatorHeaderBg 100%);
@@ -110,18 +111,18 @@ computed: {
     }
 
     .user-avatar {
-      width: 68px;
-      height: 68px;
+      width: 60px;
+      height: 60px;
       border-radius: 50%;
       object-fit: cover;
-      margin-right: 20px;
+      margin-right: 18px;
       border: 3px solid #fff;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
     }
 
     .greeting {
-      margin: 0 0 6px;
-      font-size: 22px;
+      margin: 0 0 4px;
+      font-size: 20px;
       font-weight: 700;
       color: @textPrimary;
       letter-spacing: 0.5px;
@@ -130,7 +131,7 @@ computed: {
     .sub-text {
       font-size: 13px;
       color: @colorStatLabel;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }
 
     .stats-row {

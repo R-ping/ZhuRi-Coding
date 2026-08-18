@@ -84,8 +84,8 @@
                             />
                         </div>
                         <span v-if="!isLoggedIn" class="header-btn login-btn" @click="showLogin">登录</span>
-                        <NotificationBell v-if="isLoggedIn" :unreadTotal="unreadCount" :unreadCounts="unreadCounts" @go-to-notification="goToNotification" />
-                        <div v-if="isLoggedIn" class="header-user" @click="toggleUserDropdown">
+                        <NotificationBell v-if="isLoggedIn" class="header-menu-item" :unreadTotal="unreadCount" :unreadCounts="unreadCounts" @go-to-notification="goToNotification" />
+                        <div v-if="isLoggedIn" class="header-user header-menu-item" @click="toggleUserDropdown">
                             <img v-if="userAvatar" class="header-avatar" :src="userAvatar" alt="头像"/>
                             <span v-else class="header-avatar-default">&#xf007;</span>
                             <span class="header-username">{{ userName }}</span>
@@ -478,17 +478,12 @@
                         this.stats.likeCount = data.likeCount || 0
                         this.stats.collectCount = data.collectCount || 0
                         this.diamondCount = data.diamondCount || '0'
-                        if (data.levelInfo) {
-                            const li = data.levelInfo
-                            this.levelBadge = 'ZR.' + (li.dailyLevel || 1)
-                            this.levelScore = li.dailyScore || 0
-                            const levelMaxMap = { 1: 150, 2: 300, 3: 500, 4: 800, 5: 1200 }
-                            this.levelMax = levelMaxMap[li.dailyLevel] || 150
-                            const levelBaseMap = { 1: 0, 2: 150, 3: 300, 4: 500, 5: 800 }
-                            const base = levelBaseMap[li.dailyLevel] || 0
-                            const currentInLevel = this.levelScore - base
-                            this.levelPercent = Math.min(Math.round(currentInLevel / this.levelMax * 100), 100)
-                        }
+                        // 注意：接口返回的等级字段位于顶层（levelBadge/levelScore/levelMax/levelPercent/dailyLevel/dailyScore）
+                        // 后端 getUserLevelData 已基于真实等级配置计算好 levelMax 与 levelPercent，前端直接使用即可
+                        this.levelBadge = data.levelBadge || 'ZR.' + (data.dailyLevel || 1)
+                        this.levelScore = data.levelScore || 0
+                        this.levelMax = data.levelMax || 150
+                        this.levelPercent = Math.min(data.levelPercent || 0, 100)
                     }
                 } catch (e) {
                     // Silently fail, use defaults
@@ -979,6 +974,7 @@
             align-items: center;
             gap: 12PX;
             flex-shrink: 0;
+            margin-left: 24PX;
         }
         .web-search-box:focus-within {
             background-color: #ffffff;
@@ -1266,7 +1262,11 @@
             position: relative;
         }
 
-        
+        .header-menu-item {
+            display: inline-flex;
+            align-items: center;
+            margin: 0 4px;
+        }
 
         .desktop-container {
             max-width: 1280PX;
