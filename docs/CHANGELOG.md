@@ -1,10 +1,11 @@
 # CHANGELOG
 
-## 2026-08-18 — 创作者中心侧边栏默认收起
+## 2026-08-18 — 创作者中心侧边栏：默认展开 + 移除底部版权区
 
 ### 变更
 
-- `src/pages/creator/layout/CreatorLayout.vue`：侧边栏默认状态由展开（`collapse: false`）改为收起（`collapse: true`），每次进入/刷新创作者中心均默认收起，用户仍可通过顶栏折叠按钮切换。
+- `src/pages/creator/layout/CreatorLayout.vue`：侧边栏恢复默认展开（`collapse: false`），进入/刷新创作者中心即完整展开"内容管理、数据中心"等所有栏目，可经顶栏按钮收起。
+- `src/pages/creator/layout/components/Sidebar.vue`：移除底部"逐日 Coding · 创作者中心 / 守护每一次创作"版权区及其对应样式，菜单占满剩余空间。
 
 ### 验证
 
