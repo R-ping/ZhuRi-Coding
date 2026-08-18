@@ -108,6 +108,11 @@ export default {
     return request.post(`${API_PREFIX}/order/create`, data)
   },
 
+  /** 免费加入课程（仅限免费小册，直接授予权限，不创建订单） */
+  freeJoin(data) {
+    return request.post(`${API_PREFIX}/order/free-join`, data)
+  },
+
   /** 查询订单状态 */
   getOrderStatus(orderNo) {
     return request.get(`${API_PREFIX}/order/status`, { orderNo })

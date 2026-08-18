@@ -109,6 +109,58 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResponseResult freeJoin(Long courseId, Long userId) {
+        if (courseId == null || userId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        // 校验课程存在且为免费小册（price <= 0）
+        ApCourse course = courseMapper.selectById(courseId);
+        if (course == null || course.getIsDeleted() == 1) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
+        BigDecimal price = course.getPrice() != null ? course.getPrice() : BigDecimal.ZERO;
+        if (price.compareTo(BigDecimal.ZERO) > 0) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "付费小册请先购买");
+        }
+
+        // 幂等：若已有有效权限则直接返回成功
+        LambdaQueryWrapper<ApUserCourse> ucQuery = new LambdaQueryWrapper<>();
+        ucQuery.eq(ApUserCourse::getUserId, userId.intValue());
+        ucQuery.eq(ApUserCourse::getCourseId, courseId);
+        ApUserCourse userCourse = userCourseMapper.selectOne(ucQuery);
+        if (userCourse == null) {
+            // 直接写入用户课程权限，不创建任何订单
+            userCourse = new ApUserCourse();
+            userCourse.setUserId(userId.intValue());
+            userCourse.setCourseId(courseId);
+            userCourse.setAccessType(2); // 免费获得
+            userCourse.setIsActive((byte) 1);
+            userCourse.setIsTrial(0);
+            userCourse.setProgress(BigDecimal.ZERO);
+            userCourse.setLastLearnAt(new Date());
+            userCourse.setCreatedTime(new Date());
+            userCourseMapper.insert(userCourse);
+        } else if (userCourse.getIsActive() == null || userCourse.getIsActive() != (byte) 1) {
+            userCourse.setIsActive((byte) 1);
+            userCourse.setLastLearnAt(new Date());
+            userCourseMapper.updateById(userCourse);
+        }
+
+        // 免费加入联动：更新学习人数 + 加逐日等级经验（失败不影响主流程）
+        try {
+            course.setStudyCount((course.getStudyCount() != null ? course.getStudyCount() : 0) + 1);
+            courseMapper.updateById(course);
+            paymentRewardService.onCoursePurchaseSuccess(userId, courseId, BigDecimal.ZERO, null);
+        } catch (Exception e) {
+            log.error("免费加入联动失败: courseId={}, userId={}", courseId, userId, e);
+        }
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
+
+    @Override
     public ResponseResult getOrderStatus(String orderNo) {
         ApCourseOrder order = getByOrderNo(orderNo);
         if (order == null) {

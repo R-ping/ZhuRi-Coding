@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 2026-08-18 — 课程详情页购买/试读交互完善（免费小册免订单 + 付费免费试读）
+
+### 后端
+
+- `heima-leadnews-content/.../service/order/OrderService.java`：新增 `freeJoin(courseId, userId)`。
+- `heima-leadnews-content/.../service/order/impl/OrderServiceImpl.java`：实现 `freeJoin`——仅允许价格为 0 的免费小册，直接写入 `ap_user_course`（accessType=免费）授予阅读权限，不创建任何订单；幂等处理，并联动更新学习人数、加逐日等级经验。
+- `heima-leadnews-content/.../controller/v1/order/OrderController.java`：新增 `POST /order/free-join`。
+
+### 前端
+
+- `src/apis/course.js`：新增 `freeJoin` 接口。
+- `src/pages/course/detail.vue`：
+  - 免费小册"免费阅读"改调 `freeJoin`（原误用 `createOrder` 会创建待支付订单并跳转支付页）；
+  - 付费小册未购买时，"立即购买"旁新增"免费试读"入口，点击跳转目录中第一个 `is_free=1` 的免费章节；无免费章节则提示。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- `npm run build` 构建通过。
+
+---
+
 ## 2026-08-18 — 修复课程提交上架审核接口报错
 
 ### 变更
