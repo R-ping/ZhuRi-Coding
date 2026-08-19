@@ -9,10 +9,9 @@
         <!-- 移动端子Tab和标签筛选 -->
         <div class="mobile-subheader" v-if="shouldShowSubTabs(tabTitles[currentTab].id)">
             <div class="sub-tabs">
-                <span class="sub-tab" :class="{active: subTabStates[currentTab].current === 'recommend'}"
-                      @click="switchSubTab(currentTab, 'recommend')">推荐</span>
-                <span class="sub-tab" :class="{active: subTabStates[currentTab].current === 'latest'}"
-                      @click="switchSubTab(currentTab, 'latest')">最新</span>
+                <span class="sub-tab" v-for="st in getSubTabs(tabTitles[currentTab].id)" :key="st.key"
+                      :class="{active: subTabStates[currentTab].current === st.key}"
+                      @click="switchSubTab(currentTab, st.key)">{{ st.title }}</span>
             </div>
             <div class="tag-filter" v-if="shouldShowTagFilter(tabTitles[currentTab].id)">
                 <div class="tag-dropdown" @click.stop="toggleTagDropdown(currentTab)">
@@ -83,10 +82,9 @@
           <!-- Web端子Tab和标签筛选 -->
           <div class="desktop-subheader">
               <div class="sub-tabs" v-if="shouldShowSubTabs(tabTitles[currentTab].id)">
-                  <span class="sub-tab" :class="{active: subTabStates[currentTab].current === 'recommend'}"
-                        @click="switchSubTab(currentTab, 'recommend')">推荐</span>
-                  <span class="sub-tab" :class="{active: subTabStates[currentTab].current === 'latest'}"
-                        @click="switchSubTab(currentTab, 'latest')">最新</span>
+                  <span class="sub-tab" v-for="st in getSubTabs(tabTitles[currentTab].id)" :key="st.key"
+                        :class="{active: subTabStates[currentTab].current === st.key}"
+                        @click="switchSubTab(currentTab, st.key)">{{ st.title }}</span>
               </div>
               <div class="tag-filter" v-if="shouldShowTagFilter(tabTitles[currentTab].id)">
                   <div class="tag-dropdown" @click.stop="toggleTagDropdown(currentTab)">
@@ -331,11 +329,10 @@
       },
       getTabIndexByCategory(category) {
         const categoryMap = {
-          'recommend': 0, 'following': 1, 'comprehensive': 2, 'backend': 3,
-          'frontend': 4, 'android': 5, 'ios': 6, 'ai': 7, 'devtools': 8,
-          'coderslife': 9, 'reading': 10, 'ranking': 11
+          'comprehensive': 0, 'backend': 1, 'frontend': 2, 'android': 3,
+          'ios': 4, 'ai': 5, 'devtools': 6, 'coderslife': 7, 'reading': 8
         }
-        return categoryMap[category] !== undefined ? categoryMap[category] : 2
+        return categoryMap[category] !== undefined ? categoryMap[category] : 0
       },
       wxcPanItemClicked(item) {
         if (!item || !item.id) return
@@ -352,7 +349,6 @@
       },
       handleRetry(index) {
         var tabIndex = (index !== undefined) ? index : this.currentTab
-        var tabId = Config.tabTitles[tabIndex].id
         // 重置状态
         this.$set(this.tabStates, tabIndex, {
           loaded: false, loading: false, loadingMore: false,
@@ -362,14 +358,9 @@
         var newList = this.tabList.map(function(tab) { return tab.slice() })
         newList[tabIndex] = []
         this.tabList = newList
-        // 根据子Tab类型重新加载
-        var subTab = this.subTabStates[tabIndex] ? this.subTabStates[tabIndex].current : 'recommend'
-        if (subTab === 'recommend' && this.shouldUseRecommend(tabId)) {
-          this.resetRecommendState(tabIndex)
-          this.recommendLoad(tabIndex)
-        } else {
-          this.load(tabIndex, 1)
-        }
+        // 统一走 recommend 系列接口（subTab 由子分栏状态决定）
+        this.resetRecommendState(tabIndex)
+        this.recommendLoad(tabIndex)
       },
       // ============== 作者信息悬浮卡片 ==============
       onAuthorHover(payload) {

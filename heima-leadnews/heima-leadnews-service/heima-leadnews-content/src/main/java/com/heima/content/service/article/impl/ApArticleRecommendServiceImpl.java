@@ -1,10 +1,15 @@
 package com.heima.content.service.article.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.content.mapper.article.ApArticleMapper;
+import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.service.article.ApArticleRecommendService;
 import com.heima.model.article.dtos.ArticleRecommendDto;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.common.dtos.ResponseResult;
+import com.heima.model.follow.pojos.ApFollow;
+import com.heima.model.user.pojos.ApUser;
+import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +25,8 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 50;
     private static final String UNTAGGED = "__untagged__";
+    private static final String SUB_TAB_RECOMMEND = "recommend";
+    private static final String SUB_TAB_LATEST = "latest";
 
     /** 候选池上限（性能兜底） */
     @Value("${recommend.max-candidates:2000}")
@@ -44,21 +51,93 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
     @Autowired
     private ApArticleMapper apArticleMapper;
 
+    @Autowired
+    private ApFollowMapper apFollowMapper;
+
     @Override
     public ResponseResult recommend(ArticleRecommendDto dto) {
+        // 兼容旧端点：等价于推荐分栏的全站推荐
+        return doRecommend(dto, "all");
+    }
+
+    @Override
+    public ResponseResult recommendAll(ArticleRecommendDto dto) {
+        return doRecommend(dto, "all");
+    }
+
+    @Override
+    public ResponseResult recommendFollow(ArticleRecommendDto dto) {
+        return doRecommend(dto, "follow");
+    }
+
+    @Override
+    public ResponseResult recommendCate(ArticleRecommendDto dto) {
+        return doRecommend(dto, "cate");
+    }
+
+    /**
+     * 统一的推荐入口核心逻辑。
+     * <p>
+     * 三个入口（综合/关注/分类）通过 type 区分语义与数据来源，实现流量分流：
+     * <ul>
+     *   <li>type=all    综合频道：全站候选，channel 固定为 __all__</li>
+     *   <li>type=cate   分类频道：channel 指定具体频道ID</li>
+     *   <li>type=follow 关注分栏：仅查询当前登录用户所关注作者的已发布文章</li>
+     * </ul>
+     * subTab 区分分栏：
+     * <ul>
+     *   <li>recommend 推荐分栏：评分加权 + 配额贪心，产出横向覆盖序列</li>
+     *   <li>latest    最新分栏：按发布时间倒序，SQL 偏移分页</li>
+     * </ul>
+     */
+    private ResponseResult doRecommend(ArticleRecommendDto dto, String type) {
         int size = (dto.getSize() == null || dto.getSize() <= 0) ? DEFAULT_SIZE : Math.min(dto.getSize(), MAX_SIZE);
         int page = (dto.getPage() == null || dto.getPage() < 0) ? 0 : dto.getPage();
         String channel = (dto.getChannel() == null || dto.getChannel().isEmpty()) ? "__all__" : dto.getChannel();
+        String subTab = (dto.getSubTab() == null || dto.getSubTab().isEmpty()) ? SUB_TAB_RECOMMEND : dto.getSubTab();
 
         // seed 作为会话/分页锚点。配额算法为确定性输出，seed 仅用于保持前端分页协议一致
         long seed = (dto.getSeed() != null) ? dto.getSeed() : System.currentTimeMillis();
 
-        // 1. 查询候选池（时间窗口内，评分优先）
+        // 关注分栏：先解析当前登录用户关注的作者ID集合
+        List<Integer> followAuthorIds = null;
+        if ("follow".equals(type)) {
+            ApUser user = AppThreadLocalUtil.getUser();
+            if (user == null || user.getId() == null) {
+                log.info("RecommendFollow: 未登录用户，返回空列表");
+                return ResponseResult.okResult(buildEmptyResponse(seed, page, size));
+            }
+            followAuthorIds = apFollowMapper.selectList(
+                    new LambdaQueryWrapper<ApFollow>().eq(ApFollow::getUserId, user.getId()))
+                    .stream()
+                    .map(ApFollow::getFollowUserId)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (followAuthorIds.isEmpty()) {
+                log.info("RecommendFollow: 用户 {} 未关注任何作者，返回空列表", user.getId());
+                return ResponseResult.okResult(buildEmptyResponse(seed, page, size));
+            }
+        }
+
+        // 解析频道ID（综合/分类入口；关注分栏不按频道过滤）
         Integer channelId = null;
-        if (!"__all__".equals(channel)) {
+        if (!"follow".equals(type) && !"__all__".equals(channel)) {
             try { channelId = Integer.parseInt(channel); } catch (NumberFormatException ignored) {}
         }
-        List<ApArticle> candidates = apArticleMapper.selectRecommendCandidates(channelId, maxCandidates, dto.getTagName(), windowDays);
+
+        // 最新分栏：按发布时间倒序，SQL 偏移分页
+        if (SUB_TAB_LATEST.equals(subTab)) {
+            return loadLatest(dto, size, page, seed, channelId, followAuthorIds, type);
+        }
+
+        // 推荐分栏：查询候选池（时间窗口内，评分优先）
+        List<ApArticle> candidates;
+        if ("follow".equals(type)) {
+            candidates = apArticleMapper.selectRecommendCandidatesByAuthors(followAuthorIds, maxCandidates, windowDays);
+        } else {
+            candidates = apArticleMapper.selectRecommendCandidates(channelId, maxCandidates, dto.getTagName(), windowDays);
+        }
         if (candidates == null || candidates.isEmpty()) {
             log.info("Recommend: no candidates for channel={}, windowDays={}", channel, windowDays);
             return ResponseResult.okResult(buildEmptyResponse(seed, page, size));
@@ -103,8 +182,36 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
         result.put("hasMore", hasMore);
         result.put("total", globalSequence.size());
 
-        log.info("Recommend: candidates={}, seq={}, returned {} articles, hasMore={}, seed={}, channel={}, page={}",
-                candidates.size(), globalSequence.size(), pageResult.size(), hasMore, seed, channel, page);
+        log.info("Recommend: candidates={}, seq={}, returned {} articles, hasMore={}, seed={}, channel={}, page={}, type={}, subTab={}",
+                candidates.size(), globalSequence.size(), pageResult.size(), hasMore, seed, channel, page, type, subTab);
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 最新分栏：按发布时间倒序查询，SQL 偏移分页。
+     * 多取 size+1 条用于探测是否还有更多，避免额外的 count 查询。
+     */
+    private ResponseResult loadLatest(ArticleRecommendDto dto, int size, int page, long seed,
+                                      Integer channelId, List<Integer> authorIds, String type) {
+        int limit = size + 1;
+        int offset = page * size;
+        List<ApArticle> list = apArticleMapper.selectLatestArticles(channelId, dto.getTagName(), authorIds, offset, limit);
+        boolean hasMore = list != null && list.size() > size;
+        List<ApArticle> pageList = (hasMore && list != null) ? list.subList(0, size)
+                : (list != null ? list : Collections.emptyList());
+
+        List<Map<String, Object>> safeList = pageList.stream()
+                .map(ApArticle::nullSafeToMap).collect(Collectors.toList());
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", safeList);
+        result.put("seed", seed);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("hasMore", hasMore);
+        result.put("total", safeList.size());
+
+        log.info("RecommendLatest: returned {} articles, hasMore={}, channel={}, page={}, type={}",
+                safeList.size(), hasMore, channelId, page, type);
         return ResponseResult.okResult(result);
     }
 

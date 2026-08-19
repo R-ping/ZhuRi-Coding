@@ -45,23 +45,31 @@ export default {
   methods: {
     /**
      * 判断某个标签页是否应使用推荐算法
-     * 特殊标签（关注/阅读/排行榜）保留原有行为
+     * 首页所有频道（综合/分类）统一走 recommend 系列接口，始终返回 true
      */
     shouldUseRecommend(tabId) {
-      if (tabId === '__follow__' || tabId === '__latest__' || tabId === '__hot__') {
-        return false
-      }
       return true
     },
 
     /**
-     * 获取推荐API使用的channel参数
+     * 根据频道ID与子分栏确定 recommend 分流接口
+     *   follow -> /recommend_follow 关注分栏（仅综合频道下可选）
+     *   all    -> /recommend_all    综合频道
+     *   cate   -> /recommend_cate   分类频道
      */
-    getRecommendChannel(tabId) {
-      if (tabId === '__recommend__' || tabId === '__all__') {
-        return '__all__'
-      }
-      return String(tabId)
+    getRecommendEndpoint(tabId, subTab) {
+      if (subTab === 'follow') return 'follow'
+      if (tabId === '__all__') return 'all'
+      return 'cate'
+    },
+
+    /**
+     * 获取某个频道页的子分栏配置（用于渲染 推荐/最新/关注 Tab）
+     * 综合频道：推荐/最新/关注；分类频道：推荐/最新
+     */
+    getSubTabs(tabId) {
+      if (tabId === '__all__') return Config.comprehensiveSubTabs
+      return Config.categorySubTabs
     },
 
     load(index, loaddir) {
@@ -117,7 +125,6 @@ export default {
     },
 
     loadnew(index) {
-      var tabId = Config.tabTitles[index].id
       // 记录刷新前文章ID，用于计算「已更新 N 条新内容」
       var oldIds = {}
       var list = this.tabList[index] || []
@@ -125,22 +132,13 @@ export default {
         if (list[i] && list[i].id) oldIds[list[i].id] = true
       }
       var self = this
-      // 推荐标签页：刷新时清空列表并重新生成种子，整体替换
-      if (this.shouldUseRecommend(tabId)) {
-        this.resetRecommendState(index)
-        this.clearTabList(index)
-        var p = this.recommendLoad(index)
-        // recommendLoad 内部已有 loading 判断，可能返回 undefined
-        if (!p || typeof p.then !== 'function') return Promise.resolve()
-        return p.then(function() {
-          self.showRefreshFeedback(index, oldIds)
-        })
-      }
-      // 特殊标签页：保持原有行为，新内容插入列表顶部
-      var state = this.tabStates[index]
-      if (!state || state.loading || state.refreshing) return Promise.resolve()
-      this.$set(state, 'refreshing', true)
-      return this.load(index, 0).then(function() {
+      // 刷新时清空列表并重新生成种子，整体替换
+      this.resetRecommendState(index)
+      this.clearTabList(index)
+      var p = this.recommendLoad(index)
+      // recommendLoad 内部已有 loading 判断，可能返回 undefined
+      if (!p || typeof p.then !== 'function') return Promise.resolve()
+      return p.then(function() {
         self.showRefreshFeedback(index, oldIds)
       })
     },
@@ -267,13 +265,9 @@ export default {
         tagsLoaded: false
       })
 
-      // 所有频道标签页（推荐/综合/后端/前端/Android/iOS/人工智能等）统一使用推荐算法
-      if (this.shouldUseRecommend(tabId)) {
-        this.resetRecommendState(index)
-        this.recommendLoad(index)
-      } else {
-        this.load(index, 1)
-      }
+      // 所有频道标签页（综合/分类）统一使用 recommend 系列接口
+      this.resetRecommendState(index)
+      this.recommendLoad(index)
 
       // Load category tags
       if (this.shouldShowTagFilter(tabId)) {
@@ -307,12 +301,9 @@ export default {
         tagsLoaded: false
       })
 
-      if (this.shouldUseRecommend(tabId)) {
-        this.resetRecommendState(index)
-        this.recommendLoad(index)
-      } else {
-        this.load(index, 1)
-      }
+      // 所有频道标签页（综合/分类）统一使用 recommend 系列接口
+      this.resetRecommendState(index)
+      this.recommendLoad(index)
 
       // Load category tags
       if (this.shouldShowTagFilter(tabId)) {
@@ -349,10 +340,14 @@ export default {
       self.$set(state, 'page', 0)
 
       var tabId = Config.tabTitles[index].id
-      var channel = self.getRecommendChannel(tabId)
+      var subTab = this.subTabStates[index] ? this.subTabStates[index].current : 'recommend'
+      var endpoint = self.getRecommendEndpoint(tabId, subTab)
+      var channel = (endpoint === 'cate') ? String(tabId) : '__all__'
       var reqParams = {
+        endpoint: endpoint,
         channel: channel,
         size: self.params.size || 10,
+        subTab: subTab,
         tagName: self.subTabStates[index] ? self.subTabStates[index].selectedTag : '__all__'
       }
       return Api.recommendLoad(reqParams).then(function(d) {
@@ -401,12 +396,16 @@ export default {
       var nextPage = (state.page || 0) + 1
 
       var tabId = Config.tabTitles[index].id
-      var channel = self.getRecommendChannel(tabId)
+      var subTab = this.subTabStates[index] ? this.subTabStates[index].current : 'recommend'
+      var endpoint = self.getRecommendEndpoint(tabId, subTab)
+      var channel = (endpoint === 'cate') ? String(tabId) : '__all__'
       var reqParams = {
+        endpoint: endpoint,
         channel: channel,
         size: self.params.size || 10,
         seed: state.seed,
-        page: nextPage
+        page: nextPage,
+        subTab: subTab
       }
       Api.recommendLoad(reqParams).then(function(d) {
         self.$set(state, 'loadingMore', false)
@@ -499,13 +498,10 @@ export default {
     },
 
     /**
-     * 判断是否显示子Tab（推荐/最新）
-     * 分类频道(数字ID + __latest__)显示，关注/推荐/综合/排行榜不显示
+     * 判断是否显示子Tab（推荐/最新/关注）
+     * 综合频道显示 推荐/最新/关注，分类频道显示 推荐/最新，全部显示
      */
     shouldShowSubTabs(tabId) {
-      if (tabId === '__follow__' || tabId === '__recommend__' || tabId === '__hot__') {
-        return false
-      }
       return true
     },
 
@@ -521,10 +517,16 @@ export default {
     },
 
     /**
-     * 切换子Tab
+     * 切换子Tab（推荐/最新/关注）
+     * 综合频道可选 关注，走 recommend_follow 分流接口（需登录）
      */
     switchSubTab(index, subTab) {
       if (this.subTabStates[index].current === subTab) return
+      // 关注分栏依赖登录态，未登录先引导登录
+      if (subTab === 'follow' && !(this.$store.getters && this.$store.getters.isLoggedIn)) {
+        this.$store.dispatch('showLogin')
+        return
+      }
       this.$set(this.subTabStates[index], 'current', subTab)
       this.$set(this.subTabStates[index], 'selectedTag', '__all__')
       this.$set(this.subTabStates[index], 'tagsLoaded', false)
@@ -540,12 +542,9 @@ export default {
 
       var tabId = Config.tabTitles[index].id
 
-      if (subTab === 'recommend') {
-        this.resetRecommendState(index)
-        this.recommendLoad(index)
-      } else {
-        this.load(index, 1)
-      }
+      // 推荐/最新/关注 分栏统一走 recommend 系列接口（subTab 参数区分）
+      this.resetRecommendState(index)
+      this.recommendLoad(index)
 
       // Load tags for this category
       if (this.shouldShowTagFilter(tabId)) {
@@ -568,13 +567,9 @@ export default {
       newList[index] = []
       this.tabList = newList
 
-      var subTab = this.subTabStates[index].current
-      if (subTab === 'recommend') {
-        this.resetRecommendState(index)
-        this.recommendLoad(index)
-      } else {
-        this.load(index, 1)
-      }
+      // 标签筛选仅存在于分类频道的 推荐/最新 分栏，统一走 recommend_cate
+      this.resetRecommendState(index)
+      this.recommendLoad(index)
     },
 
     /**

@@ -118,9 +118,9 @@
             <div class="desktop-container">
                 <div class="desktop-sidebar" v-if="!isUserPage && !isPinsPage && !isCoursePage && !isSearchPage">
                     <div class="sidebar-nav">
-                        <div class="nav-item" :class="{ active: currentCategory === 'following' }" @click="selectCategory('following')">
-                            <span class="nav-icon">&#xf004;</span>
-                            <span class="nav-text">关注</span>
+                        <div class="nav-item" :class="{ active: currentCategory === 'ranking' || isHotPage }" @click="selectCategory('ranking')">
+                            <span class="nav-icon">&#xf091;</span>
+                            <span class="nav-text">排行榜</span>
                         </div>
                         <div class="nav-item" :class="{ active: currentCategory === 'comprehensive' }" @click="selectCategory('comprehensive')">
                             <span class="nav-icon">&#xf015;</span>
@@ -157,10 +157,6 @@
                         <div class="nav-item" :class="{ active: currentCategory === 'reading' }" @click="selectCategory('reading')">
                             <span class="nav-icon">&#xf02d;</span>
                             <span class="nav-text">阅读</span>
-                        </div>
-                        <div class="nav-item" :class="{ active: currentCategory === 'ranking' || isHotPage }" @click="selectCategory('ranking')">
-                            <span class="nav-icon">&#xf091;</span>
-                            <span class="nav-text">排行榜</span>
                         </div>
                     </div>
                 </div>
@@ -598,7 +594,6 @@
             selectCategory(category) {
                 // 点击当前已处于的频道分栏时，主动触发列表刷新（而非无操作）
                 var targetPath = category === 'ranking' ? '/hot'
-                    : category === 'following' ? '/home/following'
                     : category === 'comprehensive' ? '/home'
                     : `/home/${category}`
                 if (this.currentCategory === category && this.$route.path === targetPath) {
@@ -608,22 +603,15 @@
                 this.currentCategory = category
                 this.searchKeyword = ''
                 if (category === 'ranking') {
+                    // 排行榜独立页面跳转（参考掘金：排行榜从左侧边栏顶部进入热榜页）
                     this.currentNav = 'home'
                     this.$router.push('/hot')
                     return
                 }
-                if (category === 'following') {
-                    if (!this.isLoggedIn) {
-                        this.showLogin()
-                        return
-                    }
-                    this.currentNav = 'home'
-                    this.$router.push('/home/following')
-                } else if (category === 'comprehensive') {
-                    this.currentNav = 'home'
+                this.currentNav = 'home'
+                if (category === 'comprehensive') {
                     this.$router.push('/home')
                 } else {
-                    this.currentNav = 'home'
                     this.$router.push(`/home/${category}`)
                 }
             },
@@ -635,9 +623,6 @@
                 }
                 if (path === '/hot') {
                     this.currentCategory = 'ranking'
-                    this.currentNav = 'home'
-                } else if (path === '/home/following') {
-                    this.currentCategory = 'following'
                     this.currentNav = 'home'
                 } else if (path === '/home') {
                     this.currentCategory = 'comprehensive'
