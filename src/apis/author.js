@@ -95,3 +95,13 @@ export const getUserHomeLikes = (userId, params = {}) => {
 export const getUserHomeCourses = (userId, params = {}) => {
   return request.get(`/api/v1/user/home/${userId}/courses`, { params })
 }
+
+/**
+ * 获取作者收到的打赏记录（公开）
+ * 展示打赏人（昵称/头像）、金额、留言、时间及被打赏的文章
+ * @param {number|string} userId 目标作者用户ID
+ * @param {Object} params { page, size }
+ */
+export const getUserHomeTips = (userId, params = {}) => {
+  return request.get(`/api/v1/user/home/${userId}/tips`, { params })
+}
