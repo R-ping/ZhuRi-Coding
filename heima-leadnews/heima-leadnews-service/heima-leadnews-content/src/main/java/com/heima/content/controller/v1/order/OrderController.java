@@ -30,17 +30,6 @@ public class OrderController {
         return orderService.createOrder(courseId, discountCode, user.getId().longValue(),payType);
     }
 
-    /** 免费加入课程（仅限免费小册，直接授予权限，不创建订单） */
-    @PostMapping("/free-join")
-    public ResponseResult freeJoin(@RequestBody Map<String, Object> params) {
-        ApUser user = AppThreadLocalUtil.getUser();
-        if (user == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
-        }
-        Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
-        return orderService.freeJoin(courseId, user.getId().longValue());
-    }
-
     /** 查询订单状态 */
     @GetMapping("/status")
     public ResponseResult getOrderStatus(@RequestParam String orderNo) {

@@ -118,7 +118,7 @@
               v-for="chapter in chapters"
               :key="chapter.id"
               class="chapter-item"
-              :class="{ locked: !chapter.isFree && !isPurchased }"
+              :class="{ locked: !isFree && !chapter.isFree && !isPurchased }"
               @click="handleChapterClick(chapter)"
             >
               <div class="chapter-left">
@@ -330,20 +330,21 @@ export default {
       this.$router.push(`/course/${id}`)
     },
     handleChapterClick(chapter) {
-      if (!chapter.isFree && !this.isPurchased) {
+      // 免费小册整本可读；付费小册需免费章节或已购买
+      if (!this.isFree && !chapter.isFree && !this.isPurchased) {
         toast('该章节需要购买后才能阅读', 2)
         return
       }
       this.$router.push(`/course/read/${chapter.id}`)
     },
     handleBuy() {
-      if (!this.$store.getters.isLoggedIn) {
-        this.$store.dispatch('showLogin')
+      if (Number(this.course.price) === 0) {
+        // 免费课程无需加入/下单，未登录用户也可直接阅读
+        this.handleRead()
         return
       }
-      if (Number(this.course.price) === 0) {
-        // 免费课程直接加入
-        this.confirmFreeJoin()
+      if (!this.$store.getters.isLoggedIn) {
+        this.$store.dispatch('showLogin')
         return
       }
       this.showPurchaseModal = true
@@ -352,24 +353,6 @@ export default {
       this.showPurchaseModal = false
       this.discountCode = ''
       this.discountInfo = null
-    },
-    async confirmFreeJoin() {
-      try {
-        // 免费小册直接授予阅读权限，不创建订单
-        const res = await courseApi.freeJoin({ courseId: this.$route.params.id })
-        if (res && res.code === 200) {
-          this.isPurchased = true
-          toast('已加入课程', 2)
-          const firstChapter = this.chapters[0]
-          if (firstChapter) {
-            setTimeout(() => this.$router.push(`/course/read/${firstChapter.id}`), 800)
-          }
-        } else {
-          toast(res && res.message ? res.message : '加入课程失败', 2)
-        }
-      } catch (e) {
-        toast('加入课程失败', 2)
-      }
     },
     // 付费课程免费试读：跳转目录中第一个可免费试读的章节（isFree === 1）
     handleFreeTrial() {
