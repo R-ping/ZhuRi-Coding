@@ -152,6 +152,13 @@
                 >
                     赞
                 </div>
+                <div 
+                    class="tab-item" 
+                    :class="{ 'active': activeTab === 'tips' }"
+                    @click="switchTab('tips')"
+                >
+                    打赏
+                </div>
             </div>
 
             <div class="content-area">
@@ -394,6 +401,33 @@
                         </div>
                     </div>
                 </div>
+
+                <div v-if="activeTab === 'tips'" class="tab-content">
+                    <div v-if="tipRecords.length === 0" class="empty-state">
+                        <div class="empty-icon">💝</div>
+                        <div class="empty-text">暂无打赏记录</div>
+                    </div>
+                    <div v-else class="tip-list">
+                        <div class="tip-item" v-for="tip in tipRecords" :key="tip.id">
+                            <img :src="tip.avatar || defaultAvatar" class="tip-avatar" alt="avatar">
+                            <div class="tip-body">
+                                <div class="tip-header">
+                                    <span class="tip-user">{{ tip.nickName }}</span>
+                                    <span class="tip-amount">打赏了 <b>¥{{ tip.amount }}</b></span>
+                                </div>
+                                <a
+                                    class="tip-article"
+                                    :href="'/content/article/' + tip.articleId"
+                                    @click.prevent="openArticle(tip.articleId)"
+                                >《{{ tip.articleTitle }}》</a>
+                                <div v-if="tip.message" class="tip-message">“{{ tip.message }}”</div>
+                                <div class="tip-meta">
+                                    <span class="tip-time">{{ formatTime(tip.createdTime) }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -481,7 +515,7 @@ import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
 import { getUserAchievements } from '@/apis/achievement'
-import { getUserDynamic, getUserHomeData, getUserHomeArticles, getUserHomeColumns, getUserHomePins, getUserHomeFollowing, getUserHomeFollowers, getUserHomeCollections, getUserHomeLikes, getUserHomeCourses } from '@/apis/author'
+import { getUserDynamic, getUserHomeData, getUserHomeArticles, getUserHomeColumns, getUserHomePins, getUserHomeFollowing, getUserHomeFollowers, getUserHomeCollections, getUserHomeLikes, getUserHomeCourses, getUserHomeTips } from '@/apis/author'
 
 export default {
     name: 'UserProfile',
@@ -540,7 +574,8 @@ export default {
             subscribedColumns: [],
             followedTags: [],
             likedArticles: [],
-            likedPinsList: []
+            likedPinsList: [],
+            tipRecords: []
         }
     },
     computed: {
@@ -583,7 +618,7 @@ export default {
             if (this.$route.query.tab) {
                 const tab = this.$route.query.tab
                 // Normalize tab name
-                const validTabs = ['dynamic', 'article', 'boiling', 'column', 'courses', 'collection', 'follow', 'likes']
+                const validTabs = ['dynamic', 'article', 'boiling', 'column', 'courses', 'collection', 'follow', 'likes', 'tips']
                 if (validTabs.includes(tab)) {
                     this.activeTab = tab
                 }
@@ -710,6 +745,9 @@ export default {
                     break
                 case 'likes':
                     this.fetchLikes()
+                    break
+                case 'tips':
+                    this.fetchTips()
                     break
                 default:
                     break
@@ -908,6 +946,33 @@ export default {
         switchTab(tab) {
             this.activeTab = tab
             this.loadTabContent()
+        },
+        async fetchTips() {
+            const userId = this.profileUserId
+            if (!userId) return
+            try {
+                const res = await getUserHomeTips(userId, { page: 1, size: 20 })
+                if (res && res.code === 200 && res.data) {
+                    const list = res.data.list || []
+                    this.tipRecords = list.map(item => ({
+                        id: item.id,
+                        articleId: item.articleId || '',
+                        articleTitle: item.articleTitle || '',
+                        nickName: item.nickName || '',
+                        avatar: item.avatar || '',
+                        amount: item.amount || 0,
+                        message: item.message || '',
+                        createdTime: item.createdTime || ''
+                    }))
+                }
+            } catch (e) {
+                // Keep empty list when API fails
+            }
+        },
+        openArticle(articleId) {
+            if (!articleId) return
+            // 文章详情走服务端渲染，新开窗口访问
+            window.open('/content/article/' + articleId, '_blank')
         },
         goToSettings() {
             this.$router.push('/user/settings')
@@ -1349,6 +1414,80 @@ export default {
     display: flex;
     gap: 16px;
     font-size: 13px;
+    color: #8a919f;
+}
+
+.tip-list {
+    padding: 8px 0;
+}
+
+.tip-item {
+    display: flex;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid #f2f3f5;
+    &:last-child {
+        border: none;
+    }
+}
+
+.tip-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.tip-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.tip-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.tip-user {
+    font-size: 14px;
+    font-weight: 600;
+    color: #252933;
+}
+
+.tip-amount {
+    font-size: 13px;
+    color: #515767;
+    b {
+        color: #f56a00;
+        font-weight: 600;
+    }
+}
+
+.tip-article {
+    display: inline-block;
+    font-size: 14px;
+    color: #1e80ff;
+    cursor: pointer;
+    margin-bottom: 4px;
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.tip-message {
+    font-size: 13px;
+    color: #515767;
+    background: #f7f8fa;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+}
+
+.tip-meta {
+    font-size: 12px;
     color: #8a919f;
 }
 

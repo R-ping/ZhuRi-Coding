@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-08-19 — 作者个人主页新增「打赏」分栏（打赏感谢名单展示）
+
+### 后端 — 打赏记录查询接口
+
+- `heima-leadnews-content/.../controller/v1/user/UserHomeController.java`：新增 `GET /api/v1/user/home/{userId}/tips` 公开接口，按作者 ID 分页查询 `ap_article_tip_record` 打赏流水（按打赏时间倒序），批量关联 `ap_article` 表加载被打赏文章标题；返回打赏人昵称/头像、打赏金额、打赏留言、打赏时间及文章标题，文章 ID 序列化为字符串防止雪花 ID 精度丢失；`page`/`size` 参数校验（size 上限 50）。
+
+### 前端 — 个人主页打赏分栏
+
+- `src/apis/author.js`：新增 `getUserHomeTips(userId, { page, size })` 请求方法，走 `/api/v1/user/home/{userId}/tips` 公开接口。
+- `src/pages/user/index.vue`：在「赞」分栏后新增「打赏」分栏标签与内容区域，展示打赏人头像/昵称、金额、留言（背景引用样式）、时间及被打赏文章标题（可点击跳转 SSR 文章详情页）；空数据展示「暂无打赏记录」；复用 `profileUserId`（路由参数优先）加载数据。
+
+### 验证
+
+- 数据库核对：`ap_article_tip_record` 表已存在于 `leadnews_article` 库（含数据），字段与迁移脚本 `create_ap_article_tip_tables.sql` 一致。
+- `mvn -pl heima-leadnews-model,heima-leadnews-service/heima-leadnews-content -am compile` 后端编译通过。
+- `npm run build` 前端构建通过。
+
+---
+
 ## 2026-08-19 — 首页左侧边栏重构 + 文章列表 recommend 接口收敛（流量分流）+ 排行榜跳转
 
 ### 前端 — 左侧边栏结构调整

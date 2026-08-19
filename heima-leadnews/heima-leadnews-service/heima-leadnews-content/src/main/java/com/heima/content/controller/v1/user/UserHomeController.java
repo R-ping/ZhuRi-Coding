@@ -10,9 +10,11 @@ import com.heima.content.mapper.course.ApCourseMapper;
 import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
 import com.heima.content.mapper.pins.ApPinsMapper;
+import com.heima.content.mapper.tip.ApArticleTipRecordMapper;
 import com.heima.content.mapper.user.UserBehaviorRecordMapper;
 import com.heima.content.service.article.ArticleStatisticsService;
 import com.heima.model.article.pojos.ApArticle;
+import com.heima.model.article.pojos.ApArticleTipRecord;
 import com.heima.model.behavior.BehaviorType;
 import com.heima.model.behavior.pojos.ApCollection;
 import com.heima.model.behavior.pojos.UserBehaviorRecord;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -78,6 +81,9 @@ public class UserHomeController {
 
     @Autowired
     private ApCourseMapper apCourseMapper;
+
+    @Autowired
+    private ApArticleTipRecordMapper tipRecordMapper;
 
     /**
      * 个人主页头部聚合数据：基本信息（昵称/头像/简介/职位/公司）+ 统计 + 等级
@@ -493,6 +499,68 @@ public class UserHomeController {
             vo.put("publishedAt", c.getPublishedAt() != null ? c.getPublishedAt() : c.getCreatedTime());
             return vo;
         }).collect(Collectors.toList());
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("list", list);
+        data.put("total", result.getTotal());
+        return ResponseResult.okResult(data);
+    }
+
+    /**
+     * 作者收到的打赏记录（公开）
+     * GET /api/v1/user/home/{userId}/tips?page=1&size=10
+     *
+     * <p>按打赏时间倒序分页，展示打赏人（昵称/头像）、打赏金额、打赏留言及被打赏的文章标题。
+     * 数据来源：ap_article_tip_record（公开感谢名单流水）。
+     */
+    @GetMapping("/{userId}/tips")
+    public ResponseResult tips(@PathVariable Long userId,
+                               @RequestParam(defaultValue = "1") Integer page,
+                               @RequestParam(defaultValue = "10") Integer size) {
+        if (userId == null || userId <= 0) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "userId不能为空");
+        }
+        if (page < 1) page = 1;
+        if (size < 1 || size > 50) size = 10;
+
+        // 1. 查询该作者收到的打赏流水（按打赏时间倒序）
+        LambdaQueryWrapper<ApArticleTipRecord> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ApArticleTipRecord::getAuthorId, userId.intValue())
+                .orderByDesc(ApArticleTipRecord::getCreatedTime)
+                .orderByDesc(ApArticleTipRecord::getId);
+        IPage<ApArticleTipRecord> result = tipRecordMapper.selectPage(new Page<>(page, size), wrapper);
+        List<ApArticleTipRecord> records = result.getRecords();
+        if (records == null || records.isEmpty()) {
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("list", new ArrayList<>());
+            empty.put("total", 0);
+            return ResponseResult.okResult(empty);
+        }
+
+        // 2. 批量加载被打赏文章标题
+        List<Long> articleIds = records.stream()
+                .map(ApArticleTipRecord::getArticleId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, ApArticle> articleMap = loadArticleMap(articleIds);
+
+        // 3. 组装打赏记录列表
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (ApArticleTipRecord r : records) {
+            Map<String, Object> vo = new HashMap<>();
+            vo.put("id", r.getId());
+            // 文章ID为雪花ID，序列化为字符串防止精度丢失
+            vo.put("articleId", r.getArticleId() != null ? String.valueOf(r.getArticleId()) : "");
+            ApArticle article = articleMap.get(r.getArticleId());
+            vo.put("articleTitle", article != null ? str(article.getTitle()) : "");
+            vo.put("nickName", str(r.getNickName()));
+            vo.put("avatar", str(r.getAvatar()));
+            vo.put("amount", r.getAmount() != null ? r.getAmount() : BigDecimal.ZERO);
+            vo.put("message", str(r.getMessage()));
+            vo.put("createdTime", r.getCreatedTime() != null ? r.getCreatedTime() : new Date());
+            list.add(vo);
+        }
 
         Map<String, Object> data = new HashMap<>();
         data.put("list", list);
