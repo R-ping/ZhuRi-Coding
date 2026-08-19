@@ -329,11 +329,11 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
         List<ApArticle> pageArticles = articles.subList(start, end);
         for (ApArticle art : pageArticles) {
             Map<String, Object> item = new HashMap<>();
-            item.put("id", art.getId());
+            item.put("id", art.getId() != null ? String.valueOf(art.getId()) : "");
             item.put("type", "article");
             item.put("title", art.getTitle() != null ? art.getTitle() : "");
             item.put("coverImage", art.getCoverImage() != null ? art.getCoverImage() : "");
-            item.put("authorId", art.getAuthorId() != null ? art.getAuthorId() : 0L);
+            item.put("authorId", art.getAuthorId() != null ? String.valueOf(art.getAuthorId()) : "");
             item.put("authorName", art.getAuthorName() != null ? art.getAuthorName() : "");
             item.put("authorImage", art.getAuthorImage() != null ? art.getAuthorImage() : "");
             item.put("channelName", art.getChannelName() != null ? art.getChannelName() : "");

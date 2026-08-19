@@ -37,9 +37,9 @@ public class BrowseHistoryServiceImpl extends ServiceImpl<ApBrowseHistoryMapper,
         List<Map<String, Object>> flatList = new ArrayList<>();
         for (ApBrowseHistory record : records) {
             Map<String, Object> item = new HashMap<>();
-            item.put("id", record.getId());
+            item.put("id", record.getId() != null ? String.valueOf(record.getId()) : "");
             item.put("targetType", record.getTargetType());
-            item.put("articleId", record.getArticleId());
+            item.put("articleId", record.getArticleId() != null ? String.valueOf(record.getArticleId()) : "");
             item.put("articleTitle", record.getArticleTitle());
             item.put("authorName", record.getAuthorName());
             item.put("authorAvatar", record.getAuthorAvatar());

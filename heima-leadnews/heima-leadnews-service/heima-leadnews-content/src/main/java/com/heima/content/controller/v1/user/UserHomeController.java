@@ -147,7 +147,7 @@ public class UserHomeController {
 
         List<Map<String, Object>> list = result.getRecords().stream().map(a -> {
             Map<String, Object> vo = new HashMap<>();
-            vo.put("id", a.getId());
+            vo.put("id", a.getId() != null ? String.valueOf(a.getId()) : "");
             vo.put("title", str(a.getTitle()));
             vo.put("coverImage", str(a.getCoverImage()));
             vo.put("createTime", a.getPublishTime() != null ? a.getPublishTime() : a.getCreatedTime());
