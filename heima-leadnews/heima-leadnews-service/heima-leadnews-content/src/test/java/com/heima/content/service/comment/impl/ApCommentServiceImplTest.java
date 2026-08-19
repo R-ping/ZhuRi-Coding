@@ -175,10 +175,10 @@ class ApCommentServiceImplTest {
     @Test
     @DisplayName("发表评论 - 内容为空时返回错误")
     void testAddArticleCommentEmptyContent() {
-        ResponseResult result = commentService.addArticleComment(TEST_ARTICLE_ID, "");
+        ResponseResult result = commentService.addArticleComment(TEST_ARTICLE_ID, "", Collections.emptyList());
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), result.getCode());
 
-        result = commentService.addArticleComment(TEST_ARTICLE_ID, null);
+        result = commentService.addArticleComment(TEST_ARTICLE_ID, null, Collections.emptyList());
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), result.getCode());
     }
 
@@ -186,7 +186,7 @@ class ApCommentServiceImplTest {
     @DisplayName("发表评论 - 内容超过1000字时返回错误")
     void testAddArticleCommentTooLong() {
         String longContent = "a".repeat(1001);
-        ResponseResult result = commentService.addArticleComment(TEST_ARTICLE_ID, longContent);
+        ResponseResult result = commentService.addArticleComment(TEST_ARTICLE_ID, longContent, Collections.emptyList());
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), result.getCode());
     }
 
@@ -195,7 +195,7 @@ class ApCommentServiceImplTest {
     void testAddArticleCommentNotLoggedIn() {
         threadLocalMock.when(AppThreadLocalUtil::getUser).thenReturn(null);
 
-        ResponseResult result = commentService.addArticleComment(TEST_ARTICLE_ID, TEST_CONTENT);
+        ResponseResult result = commentService.addArticleComment(TEST_ARTICLE_ID, TEST_CONTENT, Collections.emptyList());
         assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), result.getCode());
     }
 
@@ -210,7 +210,7 @@ class ApCommentServiceImplTest {
         doNothing().when(apArticleMapper).updateCommentCount(anyLong(), eq(1));
         doNothing().when(commentAuditService).asyncAuditComment(any());
 
-        ResponseResult result = commentService.addArticleComment(TEST_ARTICLE_ID, TEST_CONTENT);
+        ResponseResult result = commentService.addArticleComment(TEST_ARTICLE_ID, TEST_CONTENT, Collections.emptyList());
         assertEquals(200, result.getCode());
 
         Map<String, Object> data = (Map<String, Object>) result.getData();
@@ -236,7 +236,7 @@ class ApCommentServiceImplTest {
     @Test
     @DisplayName("回复评论 - 内容为空时返回错误")
     void testReplyCommentEmptyContent() {
-        ResponseResult result = commentService.replyComment(TEST_COMMENT_ID, "", TEST_ROOT_ID);
+        ResponseResult result = commentService.replyComment(TEST_COMMENT_ID, "", TEST_ROOT_ID, Collections.emptyList());
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), result.getCode());
     }
 
@@ -245,7 +245,7 @@ class ApCommentServiceImplTest {
     void testReplyCommentParentNotFound() {
         when(apCommentMapper.selectById(TEST_COMMENT_ID)).thenReturn(null);
 
-        ResponseResult result = commentService.replyComment(TEST_COMMENT_ID, TEST_CONTENT, TEST_ROOT_ID);
+        ResponseResult result = commentService.replyComment(TEST_COMMENT_ID, TEST_CONTENT, TEST_ROOT_ID, Collections.emptyList());
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), result.getCode());
     }
 
@@ -260,7 +260,7 @@ class ApCommentServiceImplTest {
         });
         when(apCommentMapper.updateById(any(ApComment.class))).thenReturn(1);
 
-        ResponseResult result = commentService.replyComment(TEST_COMMENT_ID, TEST_CONTENT, TEST_ROOT_ID);
+        ResponseResult result = commentService.replyComment(TEST_COMMENT_ID, TEST_CONTENT, TEST_ROOT_ID, Collections.emptyList());
         assertEquals(200, result.getCode());
 
         Map<String, Object> data = (Map<String, Object>) result.getData();
