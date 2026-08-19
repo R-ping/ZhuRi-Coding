@@ -63,4 +63,37 @@ public class ArticleHomeController {
     public ResponseResult recommend(@RequestBody ArticleRecommendDto dto) {
         return apArticleRecommendService.recommend(dto);
     }
+
+    /**
+     * 综合频道文章列表（流量分流入口1）
+     * 推荐/最新分栏通过 dto.subTab 区分
+     */
+    @PostMapping("/recommend_all")
+    @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 800, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 40, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    public ResponseResult recommendAll(@RequestBody ArticleRecommendDto dto) {
+        return apArticleRecommendService.recommendAll(dto);
+    }
+
+    /**
+     * 关注分栏文章列表（流量分流入口2）
+     * 仅返回当前登录用户所关注作者的文章
+     */
+    @PostMapping("/recommend_follow")
+    @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 500, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 30, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    public ResponseResult recommendFollow(@RequestBody ArticleRecommendDto dto) {
+        return apArticleRecommendService.recommendFollow(dto);
+    }
+
+    /**
+     * 分类频道文章列表（流量分流入口3）
+     * 通过 dto.channel 指定频道ID，推荐/最新分栏通过 dto.subTab 区分
+     */
+    @PostMapping("/recommend_cate")
+    @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 500, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 30, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    public ResponseResult recommendCate(@RequestBody ArticleRecommendDto dto) {
+        return apArticleRecommendService.recommendCate(dto);
+    }
 }

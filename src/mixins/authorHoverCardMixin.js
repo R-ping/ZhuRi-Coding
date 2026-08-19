@@ -65,7 +65,7 @@ export default {
     // 根据触发元素位置计算卡片定位：默认显示在触发元素下方 8px，下方空间不足时翻转到上方
     computeAuthorCardPosition(event) {
       var rect = event.target.getBoundingClientRect()
-      var cardHeight = 300 // 卡片预估高度（宽 232px 时实测约 300px），用于下方空间不足时翻转
+      var cardHeight = 250 // 卡片预估高度（宽 232px 时实测约 300px），用于下方空间不足时翻转
       var cardTop = rect.bottom + 8
       var arrow = 'top'
       if (cardTop + cardHeight > window.innerHeight - 12) {
@@ -145,13 +145,13 @@ export default {
       }
     },
 
-    // 延迟隐藏：鼠标离开悬浮区域 400ms 后关闭卡片
+    // 延迟隐藏：鼠标离开悬浮区域 250ms 后关闭卡片
     scheduleAuthorCardHide() {
       var self = this
       this.cancelAuthorCardHide()
       this.authorCardTimer = setTimeout(function () {
         self.hideAuthorHoverCard()
-      }, 400)
+      }, 250)
     },
 
     hideAuthorHoverCard() {

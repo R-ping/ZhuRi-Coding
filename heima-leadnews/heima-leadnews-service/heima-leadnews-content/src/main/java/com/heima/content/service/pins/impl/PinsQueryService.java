@@ -78,7 +78,8 @@ public class PinsQueryService {
 
     public ResponseResult list(String tab, Integer page, Integer size) {
         ApUser user = getUserOrNull();
-        if ("following".equals(tab)) {
+        // 兼容前端 "follow" 与约定的 "following" 两种取值，二者等同"我关注的用户发的沸点"
+        if ("following".equals(tab) || "follow".equals(tab)) {
             if (user == null) {
                 return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
             }

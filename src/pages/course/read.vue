@@ -20,7 +20,7 @@
             class="chapter-item"
             :class="{ 
               active: currentChapterId === chapter.id,
-              locked: chapter.isFree !== 1 && !isPurchased 
+              locked: isFreeCourse ? false : (chapter.isFree !== 1 && !isPurchased)
             }"
             @click="switchChapter(chapter)"
           >
@@ -121,7 +121,12 @@ export default {
     },
     hasAccess() {
       if (!this.currentChapter) return false
-      return this.currentChapter.isFree === 1 || this.isPurchased
+      // 免费小册整本可直接阅读；付费小册仅免费章节或已购买可读
+      return this.isFreeCourse || this.currentChapter.isFree === 1 || this.isPurchased
+    },
+    // 是否为免费小册（价格为 0）
+    isFreeCourse() {
+      return Number(this.course.price) <= 0
     }
   },
   mounted() {
@@ -172,7 +177,8 @@ export default {
       }
     },
     async switchChapter(chapter) {
-      if (chapter.isFree !== 1 && !this.isPurchased) {
+      // 免费小册可直接切换；付费小册需免费章节或已购买
+      if (chapter.isFree !== 1 && !this.isPurchased && !this.isFreeCourse) {
         toast('该章节需要购买后才能阅读', 2)
         return
       }

@@ -264,25 +264,24 @@ export default {
 }
 
 .card-body {
-  padding: 20px 16px 16px;
+  padding: 16px 16px 14px;
   position: relative;
 }
 
 .author-section {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .author-avatar {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
   border-radius: 50%;
   object-fit: cover;
   background-color: #f0f0f0;
-  margin-bottom: 10px;
   border: 2px solid #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   cursor: pointer;
@@ -295,21 +294,21 @@ export default {
 }
 
 .author-info {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .author-name-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .author-name {
   font-size: 16px;
   font-weight: 600;
   color: #252933;
-  line-height: 1.4;
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -325,9 +324,8 @@ export default {
 .author-level-row {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .level-badge {
@@ -337,7 +335,7 @@ export default {
   padding: 1px 7px;
   border-radius: 4px;
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .level-badge.daily {
@@ -374,10 +372,10 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 0;
+  padding: 10px 0;
   border-top: 1px solid #F2F3F5;
   border-bottom: 1px solid #F2F3F5;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .stat-item {

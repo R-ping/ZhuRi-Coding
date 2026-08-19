@@ -266,10 +266,10 @@ public class ApArticle implements Serializable {
      */
     public Map<String, Object> nullSafeToMap() {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("id", this.id);
+        map.put("id", this.id != null ? String.valueOf(this.id) : "");
         map.put("title", nullSafe(this.title));
         map.put("summary", nullSafe(this.summary));
-        map.put("authorId", this.authorId != null ? this.authorId : "");
+        map.put("authorId", this.authorId != null ? String.valueOf(this.authorId) : "");
         map.put("authorName", nullSafe(this.authorName));
         map.put("channelId", this.channelId != null ? this.channelId : "");
         map.put("channelName", nullSafe(this.channelName));

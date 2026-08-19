@@ -14,6 +14,7 @@
         </div>
         <el-menu class="sidebar-el-menu"
             :default-active="defaultRoute"
+            :default-openeds="defaultOpeneds"
              background-color="#ffffff"
              text-color="#515767"
              active-text-color="#1e80ff"
@@ -28,10 +29,6 @@
                 @handle-locked="handleLockedMenu"
             />
         </el-menu>
-        <div class="sidebar-footer" v-if="!collapse">
-            <div class="footer-text">逐日 Coding · 创作者中心</div>
-            <div class="footer-sub">守护每一次创作</div>
-        </div>
     </div>
 </template>
 
@@ -54,6 +51,10 @@ export default {
     computed: {
         defaultRoute() {
             return this.$route.path
+        },
+        // 默认展开所有带子菜单的一级栏目（如：内容管理、数据中心、创作成长等）
+        defaultOpeneds() {
+            return this.filteredItems.filter(item => item.children && item.children.length > 0).map(item => item.title)
         },
         filteredItems() {
             return this.filterMenuItems(this.items)
@@ -218,25 +219,6 @@ export default {
     .sidebar-el-menu {
       flex: 1;
       overflow-y: auto;
-    }
-
-    .sidebar-footer {
-      flex-shrink: 0;
-      padding: 14px 20px 18px;
-      border-top: 1px solid #f0f1f5;
-      line-height: 1.4;
-
-      .footer-text {
-        font-size: 12px;
-        font-weight: 600;
-        color: @textMuted;
-      }
-
-      .footer-sub {
-        font-size: 11px;
-        color: #c0c4cc;
-        margin-top: 2px;
-      }
     }
 }
 </style>

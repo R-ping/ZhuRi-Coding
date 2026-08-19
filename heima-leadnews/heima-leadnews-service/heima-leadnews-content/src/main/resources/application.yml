@@ -86,7 +86,7 @@ bailian:
 # 文章推荐配置（全局公平 + 多样性配额）
 recommend:
   max-candidates: 2000        # 候选池上限（性能兜底）
-  window-days: 7              # 候选时间窗口（天）
+  window-days: 90             # 候选时间窗口（天），放宽避免陈旧优质内容被硬过滤（评分已含时效衰减）
   max-per-tag: 2              # 每 10 篇同一标签最多 N 篇
   max-per-author: 3           # 每 10 篇同一作者最多 M 篇（0=不限制）
   untagged-bucket: __untagged__ # 无标签文章去向

@@ -21,6 +21,24 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
     List<ApArticle> selectRecommendCandidates(@Param("channelId") Integer channelId, @Param("maxCandidates") int maxCandidates, @Param("tagName") String tagName, @Param("windowDays") int windowDays);
 
     /**
+     * 按作者集合查询推荐候选（关注分栏）
+     * @param authorIds 关注作者ID集合
+     * @param maxCandidates 候选池上限
+     * @param windowDays 候选时间窗口（天）
+     */
+    List<ApArticle> selectRecommendCandidatesByAuthors(@Param("authorIds") List<Integer> authorIds, @Param("maxCandidates") int maxCandidates, @Param("windowDays") int windowDays);
+
+    /**
+     * 分页查询最新文章（按发布时间倒序，latest 分栏）
+     * @param channelId 频道ID，null 表示全站
+     * @param tagName 标签名过滤，null/空 表示不过滤
+     * @param authorIds 作者ID集合（关注分栏），null/空 表示不过滤
+     * @param offset 起始偏移
+     * @param limit 每页条数（传 size+1 用于探测是否还有更多）
+     */
+    List<ApArticle> selectLatestArticles(@Param("channelId") Integer channelId, @Param("tagName") String tagName, @Param("authorIds") List<Integer> authorIds, @Param("offset") int offset, @Param("limit") int limit);
+
+    /**
      * 更新文章评论数（原子递增）
      * @param articleId 文章ID
      * @param increment 增量（+1 或 -1）

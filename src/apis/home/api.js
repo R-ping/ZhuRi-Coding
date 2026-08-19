@@ -39,11 +39,23 @@ Api.prototype = {
             })
         })
     },
-    // 加载推荐数据（基于种子随机洗牌）
+    // 文章列表统一入口（recommend 系列接口，实现流量分流）
+    // params.endpoint 决定分流接口：
+    //   all    -> /recommend_all     综合频道（推荐/最新分栏通过 subTab 区分）
+    //   follow -> /recommend_follow  关注分栏
+    //   cate   -> /recommend_cate    分类频道（推荐/最新分栏通过 subTab 区分）
+    // 推荐/最新分栏通过 params.subTab 区分（recommend-推荐 / latest-最新）
     recommendLoad: function(params) {
+        var url = '/api/v1/article/recommend_all'
+        if (params.endpoint === 'follow') {
+            url = '/api/v1/article/recommend_follow'
+        } else if (params.endpoint === 'cate') {
+            url = '/api/v1/article/recommend_cate'
+        }
         var body = {
             channel: params.channel || '__all__',
-            size: params.size || 10
+            size: params.size || 10,
+            subTab: params.subTab || 'recommend'
         }
         if (params.tagName && params.tagName !== '__all__') {
             body.tagName = params.tagName
@@ -57,7 +69,7 @@ Api.prototype = {
         return store.getEquipmentId().then(function(equipmentId) {
             body.equipmentId = equipmentId
             return new Promise(function(resolve, reject) {
-                articleRequest.post('/api/v1/article/recommend', body, {}).then(function(d) {
+                articleRequest.post(url, body, {}).then(function(d) {
                     resolve(d)
                 }).catch(function(e) {
                     reject(e)

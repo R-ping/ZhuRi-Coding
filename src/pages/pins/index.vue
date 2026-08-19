@@ -8,7 +8,7 @@
                 <div class="sidebar-section">
                     <div 
                         class="sidebar-item" 
-                        :class="{ 'active': activeTab === 'latest' }"
+                        :class="{ 'active': activeTab === 'latest' && !activeCircle }"
                         @click="switchTab('latest')"
                     >
                         <span class="sidebar-icon">&#xf01e;</span>
@@ -16,7 +16,7 @@
                     </div>
                     <div 
                         class="sidebar-item" 
-                        :class="{ 'active': activeTab === 'hot' }"
+                        :class="{ 'active': activeTab === 'hot' && !activeCircle }"
                         @click="switchTab('hot')"
                     >
                         <span class="sidebar-icon">&#xf06d;</span>
@@ -24,7 +24,7 @@
                     </div>
                     <div 
                         class="sidebar-item" 
-                        :class="{ 'active': activeTab === 'follow' }"
+                        :class="{ 'active': activeTab === 'follow' && !activeCircle }"
                         @click="switchTab('follow')"
                     >
                         <span class="sidebar-icon">&#xf0c0;</span>
@@ -34,22 +34,32 @@
 
                 <div class="sidebar-section">
                     <div class="section-title">我的圈子</div>
-                    <div 
-                        class="sidebar-item circle-item"
-                        v-for="circle in myCircles.slice(0, 5)"
-                        :key="circle.id"
-                        :class="{ 'active': activeCircle === circle.id }"
-                        @click="selectCircle(circle)"
-                    >
-                        <span class="sidebar-text">{{ escapeHtml(circle.name) }}</span>
+                    <!-- 未登录：显示登录引导，不发请求（参照掘金） -->
+                    <div class="circle-login-guide" v-if="!isLoggedIn">
+                        <span class="circle-login-text">登录后查看我的圈子</span>
+                        <span class="circle-login-btn" @click="triggerLogin">去登录</span>
                     </div>
-                    <div 
-                        class="sidebar-item more-item"
-                        v-if="myCircles.length > 5"
-                        @click="$router.push('/pins/circles')"
-                    >
-                        <span class="sidebar-text">更多</span>
-                    </div>
+                    <template v-else>
+                        <div 
+                            class="sidebar-item circle-item"
+                            v-for="circle in myCircles.slice(0, 5)"
+                            :key="'my' + circle.id"
+                            :class="{ 'active': activeCircle === circle.id && activeCircleSource === 'my' }"
+                            @click="selectCircle(circle, 'my')"
+                        >
+                            <span class="sidebar-text">{{ escapeHtml(circle.name) }}</span>
+                        </div>
+                        <div 
+                            class="sidebar-item more-item"
+                            v-if="myCircles.length > 5"
+                            @click="$router.push('/pins/circles')"
+                        >
+                            <span class="sidebar-text">更多</span>
+                        </div>
+                        <div class="circle-empty" v-if="myCircles.length === 0">
+                            <span>暂无圈子</span>
+                        </div>
+                    </template>
                 </div>
 
                 <div class="sidebar-section">
@@ -57,9 +67,9 @@
                     <div 
                         class="sidebar-item circle-item"
                         v-for="circle in recommendedCircles.slice(0, 5)"
-                        :key="circle.id"
-                        :class="{ 'active': activeCircle === circle.id }"
-                        @click="selectCircle(circle)"
+                        :key="'rec' + circle.id"
+                        :class="{ 'active': activeCircle === circle.id && activeCircleSource === 'recommend' }"
+                        @click="selectCircle(circle, 'recommend')"
                     >
                         <span class="sidebar-text">{{ escapeHtml(circle.name) }}</span>
                     </div>
@@ -89,8 +99,39 @@
                     />
                 </div>
 
+                <!-- 圈子视图头部：圈子名 + 圈子内排序 tab（参照掘金看圈子沸点） -->
+                <div class="circle-view-header" v-if="activeCircle">
+                    <span class="circle-view-name">圈子 · {{ escapeHtml(circleName) }}</span>
+                    <div class="circle-view-tabs">
+                        <span
+                            class="circle-view-tab"
+                            :class="{ active: circleTab === 'hot' }"
+                            @click="switchCircleTab('hot')"
+                        >最热</span>
+                        <span
+                            class="circle-view-tab"
+                            :class="{ active: circleTab === 'new' }"
+                            @click="switchCircleTab('new')"
+                        >最新</span>
+                        <span
+                            class="circle-view-tab"
+                            :class="{ active: circleTab === 'featured' }"
+                            @click="switchCircleTab('featured')"
+                        >精选</span>
+                    </div>
+                </div>
+
+                <!-- 未登录的"关注"分栏：显示登录引导卡片（参照掘金），不发请求 -->
+                <div class="follow-login-guide" v-else-if="activeTab === 'follow' && !isLoggedIn">
+                    <div class="follow-login-card">
+                        <span class="follow-login-title">登录后查看你关注的动态</span>
+                        <span class="follow-login-desc">关注你感兴趣的人，实时获取他们的沸点更新</span>
+                        <button class="follow-login-btn" @click="triggerLogin">登录 / 注册</button>
+                    </div>
+                </div>
+
                 <!-- 帖子列表 -->
-                <div class="pins-list">
+                <div class="pins-list" v-if="activeCircle || !(activeTab === 'follow' && !isLoggedIn)">
                     <div class="pins-empty" v-if="pinsList.length === 0 && !pinsLoading">
                         <span v-if="pinsError">加载失败，请检查网络后重试</span>
                         <span v-else>暂无内容</span>
@@ -256,7 +297,7 @@
                     </div>
 
                     <!-- 加载更多 -->
-                    <div class="pins-loading" v-if="pinsLoading">
+                    <div class="pins-loading" v-if="pinsLoading || (activeCircle && circleLoading)">
                         <span>加载中...</span>
                     </div>
                     <div class="pins-no-more" v-if="!hasMore && pinsList.length > 0">
@@ -419,11 +460,11 @@
                         class="mycircles-item"
                         v-for="circle in myCircles"
                         :key="circle.id"
-                        :class="{ 'active': activeCircle === circle.id }"
+                        :class="{ 'active': activeCircle === circle.id && activeCircleSource === 'my' }"
                         @click="selectCircleFromMyCircles(circle)"
                     >
                         <span class="mycircles-name">{{ escapeHtml(circle.name) }}</span>
-                        <span class="mycircles-arrow" v-if="activeCircle === circle.id">&#xf0da;</span>
+                        <span class="mycircles-arrow" v-if="activeCircle === circle.id && activeCircleSource === 'my'">&#xf0da;</span>
                     </div>
                 </div>
             </div>
@@ -450,7 +491,7 @@ import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
-import { getMyCircles, getRecommendCircles } from '@/apis/circle'
+import { getMyCircles, getRecommendCircles, getCircleFeed } from '@/apis/circle'
 import {
     getPinsList,
     getSidebar,
@@ -475,7 +516,15 @@ export default {
     data() {
         return {
             activeTab: 'latest',
+            // 当前选中的圈子视图（侧栏选择圈子后在主内容区显示该圈子沸点；null 表示全局沸点列表）
             activeCircle: null,
+            // 当前高亮圈子的来源（'my' 我的圈子 / 'recommend' 推荐圈子），用于"我的圈子与推荐圈子存在相同圈子时只高亮点击的那一处"
+            activeCircleSource: '',
+            // 圈子视图下的标题名与圈子内排序 tab（最热/最新/精选，与圈子详情页一致）
+            circleName: '',
+            circleTab: 'hot',
+            // 圈子外观沸点加载中标记
+            circleLoading: false,
             selectedCircle: null,
             tempSelectedCircle: null,
             selectedTopic: null,
@@ -547,6 +596,11 @@ export default {
         },
         userInfo() {
             return this.$store.state.userInfo || {}
+        },
+        // 是否已登录：沸点页未登录时相关分栏显示登录引导，不发个性化请求
+        isLoggedIn() {
+            const u = this.$store.state.userInfo || {}
+            return !!(u && u.userId)
         },
         // 圈子分类去重：过滤掉接口返回的"推荐圈子"，避免与硬编码的"推荐圈子"重复
         modalCategories() {
@@ -627,6 +681,9 @@ export default {
 
         // ============== 左侧边栏 ==============
         async fetchMyCircles() {
+            // 未登录不请求"我的圈子"，避免出现"加载我的圈子失败"提示（参照掘金：未登录显示登录引导）
+            const curUser = this.$store.state.userInfo || {}
+            if (!curUser.userId) return
             try {
                 const res = await getMyCircles()
                 if (res && res.code === 200 && res.data) {
@@ -665,12 +722,28 @@ export default {
                 toast('加载圈子分类失败', 2)
             }
         },
-        selectCircle(circle) {
-            window.open('/pins/circle/' + circle.id, '_blank')
+        selectCircle(circle, source) {
+            // 不跳转新标签：在当前页面主内容区展示该圈子的沸点（参照掘金）
+            this.circleName = circle.name
+            this.circleTab = 'hot'
+            this.activeCircle = circle.id
+            // 记录高亮来源（'my' / 'recommend'），相同圈子同时出现在两个栏目时只高亮被点击的那一处
+            this.activeCircleSource = source || 'recommend'
+            this.fetchPinsList(true)
         },
         selectCircleFromMyCircles(circle) {
             this.activeCircle = circle.id
+            this.circleName = circle.name
+            this.circleTab = 'hot'
+            this.activeCircleSource = 'my'
             this.showMyCirclesModal = false
+            this.fetchPinsList(true)
+        },
+        // 圈子视图内排序切换（最热/最新/精选，与圈子详情页一致）
+        switchCircleTab(tab) {
+            if (this.circleTab === tab) return
+            this.circleTab = tab
+            this.fetchPinsList(true)
         },
 
         // ============== 右侧边栏 ==============
@@ -693,6 +766,44 @@ export default {
                 this.pinsList = []
                 this.hasMore = true
                 this.noMore = false
+            }
+            // 圈子视图：加载该圈子的沸点（等价圈子详情页）
+            if (this.activeCircle) {
+                this.circleLoading = true
+                try {
+                    const params = {
+                        tab: this.circleTab,
+                        page: this.pinsPage,
+                        size: this.pinsSize
+                    }
+                    const res = await getCircleFeed(this.activeCircle, params)
+                    if (res && res.code === 200 && res.data) {
+                        this.pinsError = false
+                        const data = res.data
+                        const list = data.list || data.records || []
+                        this.pinsList = reset ? list : this.pinsList.concat(list)
+                        this.pinsPage++
+                        this.hasMore = (data.has_more !== undefined) ? data.has_more : (list.length >= this.pinsSize)
+                        if (!this.hasMore) this.noMore = true
+                    } else if (reset) {
+                        this.pinsError = true
+                    }
+                } catch (e) {
+                    if (reset) {
+                        this.pinsList = []
+                        this.pinsError = true
+                    }
+                } finally {
+                    this.circleLoading = false
+                    this.pinsLoading = false
+                }
+                return
+            }
+            // 未登录时"关注"分栏不发请求（参照掘金：显示登录引导卡片，不发个性化请求）
+            if (this.activeTab === 'follow' && !this.isLoggedIn) {
+                this.hasMore = false
+                this.pinsError = false
+                return
             }
             if (!this.hasMore) return
             
@@ -787,10 +898,14 @@ export default {
             }
         },
         switchTab(tab) {
-            if (this.activeTab === tab) return
+            // 已在全局对应 tab 且未在圈子视图时无需重复切换；在圈子视图时点击全局 tab 视为退出圈子
+            if (this.activeTab === tab && !this.activeCircle) return
             this.activeTab = tab
             this.selectedCircle = null
+            // 切换到全局 tab 即退出圈子视图
             this.activeCircle = null
+            this.circleName = ''
+            this.activeCircleSource = ''
             this.fetchPinsList(true)
         },
         handleScroll() {
@@ -1016,6 +1131,10 @@ export default {
         },
 
         // ============== 作者信息悬浮卡片 ==============
+        // 未登录引导卡片：点击"去登录/登录注册"统一弹出登录框
+        triggerLogin() {
+            this.$store.dispatch('showLogin')
+        },
         onAuthorHover(userId, event) {
             if (!userId) return
             this.showAuthorHoverCard(userId, event)
@@ -1144,6 +1263,121 @@ export default {
     padding-left: 32px;
     .sidebar-text {
         color: #1e80ff;
+    }
+}
+
+/* 我的圈子 - 未登录引导 / 空态 */
+.circle-login-guide {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+}
+
+.circle-login-text {
+    font-size: 13px;
+    color: #8a919f;
+}
+
+.circle-login-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    color: #1e80ff;
+    border: 1px solid #1e80ff;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+    transition: all 0.2s;
+    &:hover {
+        color: #fff;
+        background: #1e80ff;
+    }
+}
+
+.circle-empty {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #bfc4cd;
+}
+
+/* 主内容区 - 关注分栏未登录引导卡片 */
+.follow-login-guide {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* 主内容区 - 圈子视图头部（圈子名 + 圈子内排序 tab） */
+.circle-view-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: #fff;
+    border-radius: 8px 8px 0 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.circle-view-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #252933;
+}
+
+.circle-view-tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.circle-view-tab {
+    padding: 4px 12px;
+    font-size: 13px;
+    color: #8a919f;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+    &:hover {
+        color: #1e80ff;
+    }
+    &.active {
+        color: #1e80ff;
+        background: rgba(30,128,255,0.08);
+        font-weight: 600;
+    }
+}
+
+.follow-login-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 56px 24px;
+    gap: 8px;
+}
+
+.follow-login-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #252933;
+}
+
+.follow-login-desc {
+    font-size: 13px;
+    color: #8a919f;
+    margin-bottom: 8px;
+}
+
+.follow-login-btn {
+    padding: 8px 24px;
+    font-size: 14px;
+    color: #fff;
+    background: #1e80ff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    &:hover {
+        background: #1a6fd9;
     }
 }
 

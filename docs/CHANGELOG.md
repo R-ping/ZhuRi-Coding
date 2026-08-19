@@ -1,5 +1,197 @@
 # CHANGELOG
 
+## 2026-08-19 — 首页左侧边栏重构 + 文章列表 recommend 接口收敛（流量分流）+ 排行榜跳转
+
+### 前端 — 左侧边栏结构调整
+
+- `src/pages/home/config.js`：移除独立「关注」频道，将「关注」并入「综合」频道作为分栏（综合 = 推荐/最新/关注）；修正 8 个分类频道 ID 与数据库 `ap_channel` 表一致（人工智能5/开发工具6/代码人生7/阅读8）；新增 `comprehensiveSubTabs`（推荐/最新/关注）与 `categorySubTabs`（推荐/最新）分栏配置。
+- `src/components/layouts/layout_main.vue`：将「排行榜」导航项从底部移至左侧边栏顶部（参考稀土掘金）；移除「关注」导航项；点击「排行榜」跳转 `/hot` 热榜页（`selectCategory('ranking')` → `$router.push('/hot')`），点击当前频道重复点击时触发 `feed-refresh` 列表刷新。
+- `src/pages/home/index.vue`：移动端/桌面端子分栏 Tab（推荐/最新/关注）动态渲染，路由映射与重试逻辑适配新频道结构。
+
+### 前端 — 文章列表接口统一收敛为 recommend 系列
+
+- `src/apis/home/api.js`：新增 `recommendLoad` 统一入口，按 `params.endpoint` 分流到 `/recommend_all`（综合）/ `/recommend_follow`（关注）/ `/recommend_cate`（分类），推荐/最新分栏通过 `params.subTab` 参数区分。
+- `src/pages/home/mixins/feedMixin.js`：新增 `getRecommendEndpoint` / `getSubTabs` / `switchSubTab`；`recommendLoad` / `recommendLoadMore` / `loadnew` / `selectTag` 统一走 recommend 系列接口；`subTabStates` 管理每个频道的分栏状态；关注分栏未登录时引导登录。
+
+### 后端 — 推荐接口分流
+
+- `heima-leadnews-model/.../dtos/ArticleRecommendDto.java`：新增 `subTab`（recommend/latest）与 `type`（all/follow/cate）字段。
+- `heima-leadnews-content/.../controller/v1/article/ArticleHomeController.java`：新增 `/recommend_all`、`/recommend_follow`、`/recommend_cate` 三个分流端点，配置差异化限流（综合通道配额更高，起到分流效果）。
+- `heima-leadnews-content/.../service/article/impl/ApArticleRecommendServiceImpl.java`：`doRecommend` 统一核心逻辑按 `type` 分流；`follow` 通过 `ap_user_follow` 表查询关注作者文章（未登录/未关注返回空列表）；`latest` 分栏走 `selectLatestArticles` 按发布时间倒序 SQL 分页。
+- `heima-leadnews-content/.../mapper/ApArticleMapper.java` + `ApArticleMapper.xml`：新增 `selectLatestArticles`、`selectRecommendCandidatesByAuthors` 查询。
+- `heima-leadnews-app-gateway/.../AuthorizeFilter.java`：`/content/api/v1/article/recommend` 前缀已在公开路径白名单，三个分流端点均可匿名访问（关注接口无 token 时按匿名返回空列表）。
+
+### 验证
+
+- `npm run build` 前端构建通过。
+- `mvn -pl heima-leadnews-model,heima-leadnews-service/heima-leadnews-content -am compile` 后端编译通过。
+
+---
+
+## 2026-08-19 — 文章 ID 精度丢失修复 + 推荐/热榜时间窗口放宽 + 作者热榜跨库 SQL 修复
+
+### 背景
+
+- 首页点击文章进入 SSR 详情页时，前端拿到的文章 ID（如 `2086482486151290882`）因 JavaScript `Number` 类型精度上限（`2^53`）被改写为 `2086482486151291000`，后端查无此文，导致所有文章都渲染为「文章不存在或已被删除」。根因是后端把 Long 型 ID 以数字形式序列化给前端。
+
+### 后端 — ID 统一序列化为字符串
+
+- `heima-leadnews-model/.../pojos/ApArticle.java`：`nullSafeToMap()` 中 `id`、`authorId` 改为 `String.valueOf(...)`（覆盖首页 recommend/load/new/more、标签详情文章列表等以 Map 返回的链路）。
+- `heima-leadnews-model/.../vos/HotArticleVo.java`：移除 `id`/`authorId` 上实验性添加的 `@JsonSerialize(ToStringSerializer)` 注解——该注解与全局 `ConfusionSerializer`（对所有数值型 `id` 字段自动转字符串）冲突，会抛 `Cannot override _serializer` 500；移除后由全局序列化器兜底，热榜接口恢复正常。
+- `heima-leadnews-content/.../service/browse/impl/BrowseHistoryServiceImpl.java`：`getHistoryList` 中 `id`、`articleId` 转字符串（浏览历史）。
+- `heima-leadnews-content/.../controller/v1/user/UserHomeController.java`：`articles` 中 `id` 转字符串（个人主页文章列表）。
+- `heima-leadnews-content/.../service/topic/impl/TopicServiceImpl.java`：`articleFeed` 中 `id`、`authorId` 转字符串（话题文章 Feed）。
+- `heima-leadnews-search/.../service/impl/ArticleSearchServiceImpl.java`：`search` 结果中 `id`、`authorId` 转字符串（搜索结果）。
+
+### 后端 — 推荐/热榜时间窗口与跨库修复
+
+- `heima-leadnews-content/src/main/resources/application.yml` + `ApArticleRecommendServiceImpl.java`：推荐候选时间窗口 `recommend.window-days` 由 7 放宽到 90 天，避免陈旧优质内容被硬过滤导致推荐流空列表（评分排序本身已含时效衰减）。
+- `heima-leadnews-content/.../service/hot/impl/HotServiceImpl.java`：热榜综合/分类时间窗口统一由 3/7 天放宽到 90 天；作者热榜 SQL 的 `INNER JOIN ap_user` 补全跨库前缀为 `INNER JOIN leadnews_user.ap_user`，修复 `BadSqlGrammarException`（content 服务连的是 `leadnews_article` 库，`ap_user` 表在 `leadnews_user` 库）。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过；search 服务运行进程的类文件编译时间晚于源码修改，已包含字符串序列化。
+- `curl`/接口实测：`/content/api/v1/article/load` 返回 200，响应中 `id` 为字符串且与数据库一致；`recommend` 接口恢复正常返回文章列表；热榜/作者热榜接口 200。
+- 浏览器实测：首页点击文章可正常进入 SSR 详情页（PASS），不再出现「文章不存在或已被删除」。
+
+---
+
+## 2026-08-18 — 文章详情页 404 修复（缺失 error/404.ftl 导致 503）
+
+### 后端
+
+- `heima-leadnews-content/.../controller/page/ArticlePageController.java`：文章不存在/已删除时返回视图 `"error/404"`，但 `templates/` 下缺失该模板，FreeMarker 渲染抛异常被全局异常处理器捕获为 503「服务器内部错误」；现补充 `HttpServletResponse` 参数，在返回 404 视图前显式设置 HTTP 404 状态码。
+- `heima-leadnews-content/src/main/resources/templates/error/404.ftl`：**新增**站点风格一致的 404 错误页（复用文章详情页顶栏样式），提示「文章不存在或已被删除」，提供「返回首页 / 返回上一页」入口，与有效文章详情页回归验证均通过。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- 浏览器实测：`/content/article/999999` 由 503 JSON 变为正常渲染 404 页面；有效文章 `/content/article/2087071668418568194` 仍正常渲染。
+
+---
+
+## 2026-08-18 — 沸点"关注"分栏按关注关系过滤修复
+
+- `heima-leadnews-content/.../service/pins/impl/PinsQueryService.java`：`list` 中的 following 分支原本仅匹配 `"following"`，而前端实际传参为 `"follow"`，导致关注分栏落入默认分支返回所有人沸点。现兼容 `"follow"` 与 `"following"` 两种取值，未关注任何用户时返回空列表。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+
+---
+
+## 2026-08-18 — 悬浮卡片布局优化 + 沸点页未登录体验 + 课程未登录阅读
+
+### 前端
+
+- `src/components/search/AuthorHoverCard.vue`：作者信息悬浮卡改为「左头像、右信息」横排布局（`author-section` 由 `column` 改为 `row`），头像 64px→56px，压缩卡片内边距，明显降低整卡高度。
+- `src/mixins/authorHoverCardMixin.js`：悬浮卡鼠标移开后的隐藏延迟 400ms→250ms；同步更新卡片高度预估 300→250。
+- `src/pages/pins/index.vue`：
+  - 新增 `isLoggedIn` computed 与 `triggerLogin()`；
+  - 未登录时「我的圈子」分栏显示「登录后查看我的圈子 + 去登录」登录引导，不发请求（`fetchMyCircles` 加未登录守卫）；
+  - 未登录时「关注」分栏主内容显示居中登录引导卡片，且 `fetchPinsList` 在 `follow` tab 未登录时不再发起请求；
+  - 登录后无圈子时「我的圈子」显示「暂无圈子」空态；无关注时「关注」显示常规空态。
+- `src/pages/course/detail.vue`：`handleBuy` 免费课程判断前置到登录判断之前——未登录用户点击「免费阅读」可直接进入阅读；付费课程「免费试读」与阅读页后端接口本就支持匿名访问，未登录可正常试读/阅读公开章节。
+
+### 验证
+
+- `npm run build` 构建通过。
+- 浏览器实测：未登录沸点页不再发出 `circle/my`、`tab=following` 请求，无「加载我的圈子失败」报错；悬浮卡 flex-direction 为 row、头像 56px、关注/粉丝/按钮保留。
+
+---
+
+## 2026-08-18 — 免费小册免下单直接阅读（移除 free-join 接口）
+
+### 变动
+
+- 免费课程（价格 0）点击"免费阅读"不再调用 `/api/v1/course/order/*` 任何订单相关接口，直接进入第一章阅读。
+- 免费小册在阅读页（`read.vue`）与详情页目录中完全开放所有章节，不再校验购买状态或章节免费标记。
+
+### 前端
+
+- `src/pages/course/detail.vue`：
+  - 移除 `confirmFreeJoin` 方法及 `courseApi.freeJoin` 调用；
+  - `handleBuy`：免费课程直接调用 `handleRead` 进入阅读；
+  - 章节锁定判定改为 `locked: !isFree && !chapter.isFree && !isPurchased`；
+  - `handleChapterClick`：免费课程直接放行所有章节。
+- `src/pages/course/read.vue`：
+  - 新增 `isFreeCourse`（`Number(course.price) <= 0`）；
+  - `hasAccess` 判定与章节切换均对免费小册整本放行。
+- `src/apis/course.js`：删除 `freeJoin` 接口定义。
+
+### 后端
+
+- `heima-leadnews-content/.../controller/v1/order/OrderController.java`：移除 `POST /order/free-join`。
+- `heima-leadnews-content/.../service/order/OrderService.java`：删除 `freeJoin(courseId, userId)` 声明。
+- `heima-leadnews-content/.../service/order/impl/OrderServiceImpl.java`：删除 `freeJoin` 实现。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+
+---
+
+## 2026-08-18 — 课程详情页购买/试读交互完善（免费小册免订单 + 付费免费试读）
+
+### 后端
+
+- `heima-leadnews-content/.../service/order/OrderService.java`：新增 `freeJoin(courseId, userId)`。
+- `heima-leadnews-content/.../service/order/impl/OrderServiceImpl.java`：实现 `freeJoin`——仅允许价格为 0 的免费小册，直接写入 `ap_user_course`（accessType=免费）授予阅读权限，不创建任何订单；幂等处理，并联动更新学习人数、加逐日等级经验。
+- `heima-leadnews-content/.../controller/v1/order/OrderController.java`：新增 `POST /order/free-join`。
+
+### 前端
+
+- `src/apis/course.js`：新增 `freeJoin` 接口。
+- `src/pages/course/detail.vue`：
+  - 免费小册"免费阅读"改调 `freeJoin`（原误用 `createOrder` 会创建待支付订单并跳转支付页）；
+  - 付费小册未购买时，"立即购买"旁新增"免费试读"入口，点击跳转目录中第一个 `is_free=1` 的免费章节；无免费章节则提示。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- `npm run build` 构建通过。
+
+---
+
+## 2026-08-18 — 修复课程提交上架审核接口报错
+
+### 变更
+
+- `heima-leadnews-content/.../controller/v1/course/CourseController.java`：
+  - 修复 `/manage/submit`（提交上架审核）后端路由错误。原实现误调用三参数 `submitApply(courseId, null, userId)`（该方法签名为四参数 `courseId, applyContent, authorProfile, userId`），导致编译失败；且业务语义不符（`submitApply` 为"申报 0→1"）。
+  - 改为调用两参数 `submitForReview(courseId, userId)`，对应"写作中 4 → 上架待审 5"，与前端 `submitForReview` 及状态机校验一致。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile -q` 编译通过。
+
+---
+
+## 2026-08-18 — 创作者中心侧边栏：一级栏目默认展开
+
+### 变更
+
+- `src/pages/creator/layout/components/Sidebar.vue`：为 `el-menu` 增加 `default-openeds`，将带子菜单的一级栏目（内容管理、数据中心、创作成长等）在进入/刷新时默认展开，直接显示其子项。
+
+### 验证
+
+- `npm run build` 通过；内置浏览器实测：内容管理/数据中心/创作成长均默认展开。
+
+---
+
+## 2026-08-18 — 创作者中心侧边栏：默认展开 + 移除底部版权区
+
+### 变更
+
+- `src/pages/creator/layout/CreatorLayout.vue`：侧边栏恢复默认展开（`collapse: false`），进入/刷新创作者中心即完整展开"内容管理、数据中心"等所有栏目，可经顶栏按钮收起。
+- `src/pages/creator/layout/components/Sidebar.vue`：移除底部"逐日 Coding · 创作者中心 / 守护每一次创作"版权区及其对应样式，菜单占满剩余空间。
+
+### 验证
+
+- `npm run build` 通过。
+
+---
+
 ## 2026-08-18 — 修复头像弹框等级数据读取失败（显示 500、进度条无指针）
 
 ### 根因

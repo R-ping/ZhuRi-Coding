@@ -102,12 +102,12 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
         List<Map<String, Object>> list = searchHits.getSearchHits().stream().map(hit -> {
             SearchArticle article = hit.getContent();
             Map<String, Object> map = new HashMap<>();
-            map.put("id", article.getId());
+            map.put("id", article.getId() != null ? String.valueOf(article.getId()) : "");
             map.put("title", article.getTitle());
             map.put("publishTime", article.getPublishTime());
             map.put("layout", article.getLayout());
             map.put("images", article.getImages());
-            map.put("authorId", article.getAuthorId());
+            map.put("authorId", article.getAuthorId() != null ? String.valueOf(article.getAuthorId()) : "");
             map.put("authorName", article.getAuthorName());
             map.put("staticUrl", article.getStaticUrl());
             map.put("content", article.getContent());

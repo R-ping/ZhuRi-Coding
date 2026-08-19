@@ -80,6 +80,60 @@
         LIMIT #{maxCandidates}
     </select>
 
+    <!-- 关注分栏：按关注作者集合查询推荐候选 -->
+    <select id="selectRecommendCandidatesByAuthors" resultMap="resultMap">
+        SELECT
+            aa.*
+        FROM
+            `ap_article` aa
+            INNER JOIN ap_article_config aac ON aa.id = aac.article_id
+        <where>
+            and aac.is_delete != 1
+            and aac.is_down != 1
+            and aac.is_recommend = 1
+            and aa.status = 9
+            <if test="windowDays != null and windowDays > 0">
+                and aa.publish_time &gt;= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
+            </if>
+            <if test="authorIds != null and authorIds.size() > 0">
+                and aa.author_id IN
+                <foreach collection="authorIds" item="aid" open="(" separator="," close=")">
+                    #{aid}
+                </foreach>
+            </if>
+        </where>
+        ORDER BY COALESCE(aa.score, 0) DESC, aa.publish_time DESC, aa.id DESC
+        LIMIT #{maxCandidates}
+    </select>
+
+    <!-- 最新分栏：按发布时间倒序分页查询（综合/分类/关注共用，通过条件区分） -->
+    <select id="selectLatestArticles" resultMap="resultMap">
+        SELECT
+            aa.*
+        FROM
+            `ap_article` aa
+            INNER JOIN ap_article_config aac ON aa.id = aac.article_id
+        <where>
+            and aac.is_delete != 1
+            and aac.is_down != 1
+            and aa.status = 9
+            <if test="channelId != null">
+                and aa.channel_id = #{channelId}
+            </if>
+            <if test="tagName != null and tagName != ''">
+                and JSON_CONTAINS(aa.tags, JSON_QUOTE(#{tagName}))
+            </if>
+            <if test="authorIds != null and authorIds.size() > 0">
+                and aa.author_id IN
+                <foreach collection="authorIds" item="aid" open="(" separator="," close=")">
+                    #{aid}
+                </foreach>
+            </if>
+        </where>
+        ORDER BY aa.publish_time DESC, aa.id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
 <update id="updateCommentCount">
         UPDATE ap_article
         SET comment = COALESCE(comment, 0) + #{increment}
