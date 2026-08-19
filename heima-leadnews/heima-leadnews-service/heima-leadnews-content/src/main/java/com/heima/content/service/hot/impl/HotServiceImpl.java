@@ -53,7 +53,8 @@ public class HotServiceImpl implements HotService {
 
         String channelName = CATEGORY_CHANNEL_MAP.get(category);
         boolean isComprehensive = "comprehensive".equals(category);
-        int days = isComprehensive ? 3 : 7;
+        // 放宽时间窗口，避免陈旧优质内容被硬过滤（分数排序本身已含时效权重）
+        int days = 90;
 
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT a.id, a.title, a.author_id, a.author_name, a.author_image, ")
@@ -147,7 +148,7 @@ public class HotServiceImpl implements HotService {
                      "SUM(d.increment_likes) AS total_likes, " +
                      "SUM(d.increment_collection) AS total_collections " +
                      "FROM user_daily_stats d " +
-                     "INNER JOIN ap_user u ON d.user_id = u.id " +
+                     "INNER JOIN leadnews_user.ap_user u ON d.user_id = u.id " +
                      "WHERE d.stat_date >= NOW() - INTERVAL ? DAY " +
                      "GROUP BY d.user_id, u.id, u.nickname, u.image, u.flag " +
                      "ORDER BY hot_score DESC LIMIT ?";
