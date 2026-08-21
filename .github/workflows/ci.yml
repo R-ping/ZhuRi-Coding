@@ -30,10 +30,10 @@ jobs:
         run: |
           $env:PATH = "D:\JDK\bin;D:\apache-maven-3.9.10\bin;$env:PATH"
           $env:JAVA_HOME = "D:\JDK"
-          # -s 使用阿里云镜像（表内 maven-settings.xml）加速依赖下载；
-          # -Dmaven.repo.local 复用本机已缓存的依赖仓库，避免服务账号 ~/.m2 为空而重新下全量依赖。
-          mvn -B -ntp verify -s maven-settings.xml -Dmaven.repo.local=C:\Users\hudong\.m2\repository `
-            -pl heima-leadnews-service/heima-leadnews-reward,heima-leadnews-service/heima-leadnews-content -am
+          # -s 使用阿里云镜像（表内 maven-settings.xml）加速依赖下载。
+          # 注意：勿在命令行传带反斜杠 Windows 绝对路径的 -D 参数（如 -Dmaven.repo.local=C:\...），
+          # 在 mvn.cmd 批处理下会被误解析为插件前缀导致构建失败；镜像已足够加速依赖获取。
+          mvn -B -ntp verify -s maven-settings.xml -pl heima-leadnews-service/heima-leadnews-reward,heima-leadnews-service/heima-leadnews-content -am
 
       - name: Upload surefire test reports
         uses: actions/upload-artifact@v4
