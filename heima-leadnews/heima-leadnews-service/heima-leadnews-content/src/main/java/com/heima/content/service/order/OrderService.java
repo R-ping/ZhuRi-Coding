@@ -8,8 +8,14 @@ public interface OrderService {
     /** 创建订单 */
     ResponseResult createOrder(Long courseId, String discountCode, Long userId, String payType);
 
-    /** 查询订单状态 */
-    ResponseResult getOrderStatus(String orderNo);
+    /**
+     * 查询订单状态。
+     * <p>仅返回当前登录用户自己名下订单，防止越权查看他人订单。
+     *
+     * @param orderNo 订单号
+     * @param userId  当前登录用户 ID（用于归属校验）
+     */
+    ResponseResult getOrderStatus(String orderNo, Long userId);
 
     /** 我的订单列表 */
     ResponseResult getMyOrders(Long userId, Integer page, Integer size);

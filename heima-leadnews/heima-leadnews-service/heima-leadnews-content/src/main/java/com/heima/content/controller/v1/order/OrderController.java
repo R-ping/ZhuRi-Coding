@@ -33,7 +33,11 @@ public class OrderController {
     /** 查询订单状态 */
     @GetMapping("/status")
     public ResponseResult getOrderStatus(@RequestParam String orderNo) {
-        return orderService.getOrderStatus(orderNo);
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        return orderService.getOrderStatus(orderNo, user.getId().longValue());
     }
 
     /** 我的订单列表 */
