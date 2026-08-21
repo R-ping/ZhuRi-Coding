@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-08-20 — 越权（IDOR）漏洞修复
+
+### 背景
+
+上线前安全审计发现多处越权漏洞：普通接口/管理接口未校验资源归属或操作身份，存在水平越权（查看他人订单/删除他人草稿）与垂直越权（普通用户执行管理操作）风险。
+
+### 修复（content 服务）
+
+- `controller/v1/order/OrderController.java` + `service/order/OrderService.java` + `OrderServiceImpl.java`：`GET /api/v1/course/order/status` 由仅凭 orderNo 查询改为**登录后按当前用户校验订单归属**，防止查看他人订单（含金额/tradeNo 等敏感信息）。
+- `service/article/impl/ApArticleDraftServiceImpl.java`：`deleteDraft` 由直接 `removeById` 改为**校验草稿作者 == 当前登录用户**，防止越权删除他人草稿。
+- `controller/v1/pins/PinsController.java`：`/api/v1/pins/admin/*`（list/deleteById/updateStatus）增加 `EditorConfig.isEditor` **运营身份校验**，防止普通登录用户执行沸点管理操作（垂直越权）。
+- 已核查无风险项：创作者沸点增删（PinsService 已校验作者归属）、评论开关（ApCommentService 校验文章作者）、课程/草稿/专栏管理（均已校验归属）、个人主页公开接口（仅返回昵称/头像/简介，无隐私字段）。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+
+---
+
 ## 2026-08-20 — 沸点页分页/布局/弹窗修复（参照稀土掘金）
 
 ### 前端 — 沸点页 `src/pages/pins/index.vue`

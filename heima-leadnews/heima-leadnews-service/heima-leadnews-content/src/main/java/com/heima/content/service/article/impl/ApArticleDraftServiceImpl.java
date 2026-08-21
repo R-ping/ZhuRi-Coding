@@ -176,6 +176,21 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
 
     @Override
     public ResponseResult deleteDraft(Long id) {
+        if (id == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+        // 归属校验：仅允许删除本人草稿，防止越权删除他人草稿
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        ApArticleDraft draft = getById(id);
+        if (draft == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "草稿不存在");
+        }
+        if (draft.getAuthorId() == null || !draft.getAuthorId().equals(user.getId())) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "无权删除该草稿");
+        }
         removeById(id);
         return ResponseResult.okResult();
     }

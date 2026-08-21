@@ -109,10 +109,14 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public ResponseResult getOrderStatus(String orderNo) {
+    public ResponseResult getOrderStatus(String orderNo, Long userId) {
         ApCourseOrder order = getByOrderNo(orderNo);
         if (order == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "订单不存在");
+        }
+        // 归属校验：仅允许查询本人订单，防止越权查看他人订单（含手机号/金额等敏感信息）
+        if (userId == null || order.getUserId() == null || !userId.equals(order.getUserId().longValue())) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "无权访问该订单");
         }
         return ResponseResult.okResult(order);
     }
