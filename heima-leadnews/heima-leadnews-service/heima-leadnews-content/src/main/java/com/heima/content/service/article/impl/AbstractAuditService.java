@@ -5,6 +5,7 @@ import com.heima.content.service.article.AuditService;
 import com.heima.content.service.article.BailianAiService;
 import com.heima.model.audit.AuditContext;
 import com.heima.model.audit.AuditResult;
+import com.heima.model.audit.AuditServiceUnavailableException;
 import com.heima.model.audit.ImageScanResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,6 +71,9 @@ public abstract class AbstractAuditService implements AuditService {
 
     /**
      * AI违规内容检测
+     *
+     * 安全策略：故障关闭。AI 检测服务不可用时直接抛出异常（由调用方按重试/降级/失败处理），
+     * 绝不将"检测异常"降级为"通过"，防止审核系统故障时违规内容绕过审核直接上架。
      */
     private AuditResult checkViolation(AuditContext context) {
         try {
@@ -83,9 +87,9 @@ public abstract class AbstractAuditService implements AuditService {
             }
             return AuditResult.passed();
         } catch (Exception e) {
-            log.error("AI违规检测异常, entityType={}, entityId={}, 降级通过",
+            log.error("AI违规检测异常, entityType={}, entityId={}, 故障关闭(fail-closed)",
                 context.getEntityType(), context.getEntityId(), e);
-            return AuditResult.passed("AI检测异常，降级通过");
+            throw new AuditServiceUnavailableException("内容审核服务暂不可用，请稍后重试", e);
         }
     }
 

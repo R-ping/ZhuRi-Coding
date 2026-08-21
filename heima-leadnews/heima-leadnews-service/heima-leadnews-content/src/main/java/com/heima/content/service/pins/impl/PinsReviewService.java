@@ -75,6 +75,9 @@ public class PinsReviewService {
             } else {
                 log.info("沸点审核未通过, pinsId={}, reason={}", pins.getId(), result.getReason());
             }
+        } catch (com.heima.model.audit.AuditServiceUnavailableException e) {
+            // 审核服务自身不可用（fail-closed）：不标记为内容违规，保持待审核状态，等待人工/后续重审
+            log.warn("沸点审核服务不可用，保持待审核, pinsId={}", pins.getId(), e);
         } catch (Exception e) {
             log.error("沸点审核异常, pinsId={}", pins.getId(), e);
             try {

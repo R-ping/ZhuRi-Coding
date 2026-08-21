@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 2026-08-21 — 上线前加固：reward 身份越权/审核故障关闭（fail-closed）
+
+### 高危 D1/D2 — reward 服务身份可伪造（资损风险）
+
+上线的业务摸底发现 reward 服务严重越权：`UserAssetsController` 用可被伪造的 `@PathVariable userId` 直接读写任意用户矿石；`Checkin/Lottery/Welfare` 对匿名请求缺省 `userId=1L` 会冒充 ID=1 用户领奖；网关只注入 header 不校验 path 与 token 一致性，reward 又无拦截器——任意登录用户可给任意账号加矿。
+
+修复（reward 服务）：
+- 新增 `RewardTokenInterceptor`：从 `accToken` 解析**可信 userId** 注入线程，忽略可伪造的 header/path；并二次校验 JWT 签名/过期。
+- 新增 `RewardWebMvcConfig`：注册拦截器覆盖全部 `/api/v1/**`。
+- `UserAssetsController`：`ore/add`、`assets`、`ore` 全部改为**仅限服务间 Feign 内部调用**（外部用户返回 403），堵死向任意用户加矿/读资产的漏洞。
+- `CheckinController` / `LotteryController` / `WelfareController`：userId 一律从可信线程取，废弃"匿名缺省 1L"，未登录写操作返回需登录；福利商品列表/详情仍公开。
+- `RewardCheckinFeignController`：连续签到天数接口同样仅限内部调用。
+
+### B4 中危 — 审核系统故障降级通过 → 违规内容可能直接上架
+
+- 重构 `AbstractAuditService.checkViolation`：AI 违规检测异常时由"降级通过"改为**抛 `AuditServiceUnavailableException`（fail-closed）**，杜绝审核服务故障时违规内容绕过审核上架；新增该异常类。
+- 处理链：沸点 `PinsReviewService` 对“审核服务不可用”保持待审核（不误标违规）；评论 `CommentAuditService` 走既有退避重试；专栏 `ColumnAuditService` 异步保持待审。
+
+### 说明
+
+- 沸点异步审核仍为进程内 `@Async`（重启丢失），非"先展示后审核"窗口期，风险低于评论，暂列后续改造项。
+
+---
+
 ## 2026-08-21 — 中危项修复：评论异步审核可靠队列 + 前端 Markdown XSS + 交互并发幂等
 
 ### 后端 — 评论【先展示后审核】窗口期加固（数据库可靠队列）
