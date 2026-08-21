@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  test:
+    name: Self-hosted Build & Test
+    # 自托管 Runner 部署在本机/虚拟机，可访问本地 MySQL 等基础设施，
+    # 使 @SpringBootTest 集成测试（ArticleCommentE2ETest 等）也能真实跑通。
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      # 不复用 setup-java：自托管 Runner 与本机共用 JDK21 与 Maven（~/.m2 缓存可复用），
+      # 在线下载 Temurin JDK 会因网络缓慢卡住数十秒级甚至更久。
+      # 前提：本机已安装 JDK（>=17，兼容项目编译目标）与 Maven，且在 Runner 服务账号 PATH 中；
+      #       MySQL/Redis 等可按需通过 Runner 系统环境变量注入连接信息。
+
+      # 根 pom 位于 heima-leadnews/ 子目录，需切换 working-directory 使 reactor 可见。
+      # reward/content 为上线前重点加固模块；-am 级联构建其依赖模块。
+      # pom 已内置 JaCoCo（prepare-agent + report 绑定 test 阶段），verify 自动产出覆盖率报告。
+      # 若运行核心流程时出现"找不到 mvn/java"：先在此步骤手动接入 JDK 与 Maven 路径。
+      # 自托管 Runner 常以服务账号运行，仅继承系统 PATH；下面显式把本机 JDK/Maven 注入 PATH，
+      # 确保无需在系统环境里额外配置即可运行（Windows 用分号，Linux/macOS 用冒号）。
+      - name: Build, test & generate JaCoCo reports
+        working-directory: heima-leadnews
+        run: |
+          $env:PATH = "D:\JDK\bin;D:\apache-maven-3.9.10\bin;$env:PATH"
+          $env:JAVA_HOME = "D:\JDK"
+          # -s 使用阿里云镜像（表内 maven-settings.xml）加速依赖下载。
+          # 注意：勿在命令行传带反斜杠 Windows 绝对路径的 -D 参数（如 -Dmaven.repo.local=C:\...），
+          # 在 mvn.cmd 批处理下会被误解析为插件前缀导致构建失败；镜像已足够加速依赖获取。
+          mvn -B -ntp verify -s maven-settings.xml -pl heima-leadnews-service/heima-leadnews-reward,heima-leadnews-service/heima-leadnews-content -am
+
+      - name: Upload surefire test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: surefire-reports
+          path: |
+            heima-leadnews/heima-leadnews-service/heima-leadnews-reward/target/surefire-reports
+            heima-leadnews/heima-leadnews-service/heima-leadnews-content/target/surefire-reports
+          if-no-files-found: warn
+
+      # 覆盖率仅展示，暂不设硬门禁（后续覆盖率稳定后再加总量/增量阈值）。
+      - name: Upload JaCoCo coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-reports
+          path: |
+            heima-leadnews/heima-leadnews-service/heima-leadnews-reward/target/site/jacoco
+            heima-leadnews/heima-leadnews-service/heima-leadnews-content/target/site/jacoco
+          if-no-files-found: warn
