@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 2026-08-20 — 支付回调安全修复（验签 + 金额一致性校验）
+
+### 背景
+
+上线前安全审计发现两个致命资金漏洞：支付宝回调接口路径在网关白名单匿名放行，但 `verifySign` 一直 `return true` 且从未在回调处理前调用，`handleNotify` 也未校验回调 `total_amount` 与订单实付金额。攻击者可伪造 `POST /course/pay/notify` 或 `/tip/notify`，携带任意 `out_trade_no` + `trade_status=TRADE_SUCCESS` 绕过支付直接免费获得付费课程/刷打赏。
+
+### 后端修复（content 服务）
+
+- `heima-leadnews-content/.../service/pay/impl/AlipayServiceImpl.java`：
+  - `verifySign()` 由恒 `return true` 改为真实 RSA2 验签（`AlipaySignature.rsaCheckV1`，使用配置的支付宝公钥 `alipay.alipay-public-key`）；未配置公钥时 fail-closed 拒绝（安全性优先）。
+  - `handleNotify()` 增加课程订单金额一致性校验，回调 `total_amount` 与订单 `paidAmount` 不一致即拒绝。
+- `heima-leadnews-content/.../controller/v1/pay/PayController.java`：`/notify` 先收集支付宝通知全部参数并 `verifySign`，验签失败直接 `fail` 不进业务处理。
+- `heima-leadnews-content/.../controller/v1/tip/TipController.java`：打赏 `/notify` 同样先验签再处理。
+- `heima-leadnews-content/.../service/tip/impl/TipServiceImpl.java`：`handleNotify` 增加打赏金额一致性校验（回调金额与订单金额一致）。
+
+### 验证
+
+- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- 生产环境已配置真实支付宝密钥，真实支付回调携带合法签名，验签与金额校验均通过、流程正常。
+- 未配置公钥或验签/金额不一致的回调将被拒收（fail-closed），杜绝伪造回调。
+
+---
+
 ## 2026-08-19 — 作者个人主页新增「打赏」分栏（打赏感谢名单展示）
 
 ### 后端 — 打赏记录查询接口
