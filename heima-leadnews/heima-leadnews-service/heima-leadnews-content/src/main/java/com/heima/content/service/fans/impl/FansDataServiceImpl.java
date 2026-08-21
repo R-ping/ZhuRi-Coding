@@ -11,6 +11,7 @@ import com.heima.model.user.pojos.ApUser;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -162,11 +163,16 @@ public class FansDataServiceImpl implements FansDataService {
             return ResponseResult.okResult(null);
         }
 
-        ApFollow follow = new ApFollow();
-        follow.setUserId(userId);
-        follow.setFollowUserId(targetUserId);
-        follow.setCreatedTime(new Date());
-        apFollowMapper.insert(follow);
+        try {
+            ApFollow follow = new ApFollow();
+            follow.setUserId(userId);
+            follow.setFollowUserId(targetUserId);
+            follow.setCreatedTime(new Date());
+            apFollowMapper.insert(follow);
+        } catch (DuplicateKeyException e) {
+            // 并发下已关注，幂等静默处理
+            log.info("并发关注冲突，幂等跳过, userId={}, targetUserId={}", userId, targetUserId);
+        }
 
         return ResponseResult.okResult(null);
     }
