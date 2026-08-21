@@ -23,6 +23,7 @@ import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
 import com.heima.content.mapper.tag.TagMapper;
+import com.heima.content.service.comment.ApCommentService;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleContent;
 import com.heima.model.article.vos.ArticleColumnVO;
@@ -79,6 +80,9 @@ class ArticleDetailServiceImplTest {
     @Mock
     private IUserClient userClient;
 
+    @Mock
+    private ApCommentService apCommentService;
+
     @InjectMocks
     private ArticleDetailServiceImpl articleDetailService;
 
@@ -98,6 +102,8 @@ class ArticleDetailServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        // 文章详情评论数来自评论服务，默认按测试文章 comment=3 桩化（未触发的测试用 lenient 避免误报）
+        lenient().when(apCommentService.countTopComments(anyLong())).thenReturn(3L);
         // 测试文章
         testArticle = new ApArticle();
         testArticle.setId(TEST_ARTICLE_ID);
@@ -388,8 +394,12 @@ class ArticleDetailServiceImplTest {
     @DisplayName("相关推荐 - 成功返回同频道文章列表")
     void testGetRelatedArticlesSuccess() {
         when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle);
+        // 相关推荐为三阶段策略：作者文章(最多3篇) -> 同频道补齐 -> 全局兜底
+        // 顺序桩映射：作者文章返回 prevArticle，同频道返回 nextArticle，全局兜底为空
         when(apArticleMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(Arrays.asList(prevArticle, nextArticle));
+                .thenReturn(Arrays.asList(prevArticle))
+                .thenReturn(Arrays.asList(nextArticle))
+                .thenReturn(Collections.emptyList());
 
         // Mock 文章内容查询（推荐列表中的文章）
         when(apArticleContentMapper.selectOne(any(LambdaQueryWrapper.class)))
