@@ -1,10 +1,14 @@
 package com.heima.content.service.pay.impl;
 
+import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.DefaultAlipayClient;
+import com.alipay.api.internal.util.AlipaySignature;
 import com.alipay.api.request.AlipayTradePagePayRequest;
 import com.heima.content.service.order.OrderService;
 import com.heima.content.service.pay.AlipayService;
+import com.heima.model.course.pojos.ApCourseOrder;
+import java.math.BigDecimal;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -140,13 +144,66 @@ public class AlipayServiceImpl implements AlipayService {
             return false;
         }
 
+        // 金额一致性校验：仅以服务端订单金额为准，防止回调 total_amount 被篡改
+        if (!verifyAmount(orderNo, totalAmount)) {
+            return false;
+        }
+
         orderService.handlePaySuccess(orderNo, tradeNo);
+        return true;
+    }
+
+    /**
+     * 校验支付回调金额与订单实付金额是否一致（仅信任服务端订单数据）。
+     * 不一致或金额非法时拒绝回调，避免被篡改的 total_amount 完成入账。
+     *
+     * @param orderNo     订单号
+     * @param totalAmount 回调金额（字符串）
+     * @return 一致返回 true，否则 false
+     */
+    private boolean verifyAmount(String orderNo, String totalAmount) {
+        if (totalAmount == null || totalAmount.isEmpty()) {
+            log.error("支付回调缺少金额字段, orderNo={}", orderNo);
+            return false;
+        }
+        ApCourseOrder order = orderService.getByOrderNo(orderNo);
+        if (order == null) {
+            log.error("支付回调订单不存在, orderNo={}", orderNo);
+            return false;
+        }
+        BigDecimal notifyAmount;
+        try {
+            notifyAmount = new BigDecimal(totalAmount);
+        } catch (NumberFormatException e) {
+            log.error("支付回调金额非法, orderNo={}, totalAmount={}", orderNo, totalAmount);
+            return false;
+        }
+        BigDecimal orderAmount = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+        if (notifyAmount.compareTo(orderAmount) != 0) {
+            log.error("支付回调金额不一致, orderNo={}, 回调金额={}, 订单金额={}",
+                    orderNo, totalAmount, order.getPaidAmount());
+            return false;
+        }
         return true;
     }
 
     @Override
     public boolean verifySign(Map<String, String> params) {
-        // 沙箱环境简化验证，生产环境需使用支付宝SDK验证签名
-        return true;
+        // 未配置支付宝公钥时拒绝回调（fail-closed），防止公钥缺失时伪造回调通过
+        if (alipayPublicKey == null || alipayPublicKey.isEmpty()) {
+            log.error("支付宝公钥 alipay.alipay-public-key 未配置，拒绝支付回调");
+            return false;
+        }
+        try {
+            // RSA2 验签：params 为支付宝异步通知的全部参数（去除 sign / sign_type）
+            boolean verified = AlipaySignature.rsaCheckV1(params, alipayPublicKey, "UTF-8", "RSA2");
+            if (!verified) {
+                log.error("支付宝回调验签失败");
+            }
+            return verified;
+        } catch (AlipayApiException e) {
+            log.error("支付宝回调验签异常", e);
+            return false;
+        }
     }
 }
