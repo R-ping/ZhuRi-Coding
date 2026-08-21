@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  test:
+    name: Build & Test (Java 17)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # reward/content 为上线前重点加固模块；-am 级联构建其依赖模块。
+      # pom 已内置 JaCoCo（prepare-agent + report 绑定 test 阶段），verify 自动产出覆盖率报告。
+      - name: Build, test & generate JaCoCo reports
+        run: mvn -B -ntp verify -pl heima-leadnews-service/heima-leadnews-reward,heima-leadnews-service/heima-leadnews-content -am
+
+      - name: Upload surefire test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: surefire-reports
+          path: |
+            heima-leadnews-service/heima-leadnews-reward/target/surefire-reports
+            heima-leadnews-service/heima-leadnews-content/target/surefire-reports
+          if-no-files-found: warn
+
+      # 覆盖率仅展示，暂不设硬门禁（后续覆盖率稳定后再加总量/增量阈值）。
+      - name: Upload JaCoCo coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-reports
+          path: |
+            heima-leadnews-service/heima-leadnews-reward/target/site/jacoco
+            heima-leadnews-service/heima-leadnews-content/target/site/jacoco
+          if-no-files-found: warn
