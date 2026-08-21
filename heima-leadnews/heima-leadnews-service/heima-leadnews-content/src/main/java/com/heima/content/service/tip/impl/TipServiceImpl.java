@@ -143,6 +143,11 @@ public class TipServiceImpl implements TipService {
             return true;
         }
 
+        // 金额一致性校验：仅以服务端订单金额为准，防止回调 total_amount 被篡改
+        if (!verifyAmount(order, totalAmount)) {
+            return false;
+        }
+
         // 1. 更新订单为已支付
         order.setStatus(ApArticleTipOrder.Status.PAID.getCode());
         order.setTradeNo(tradeNo);
@@ -259,6 +264,35 @@ public class TipServiceImpl implements TipService {
         LambdaQueryWrapper<ApArticleTipOrder> query = new LambdaQueryWrapper<>();
         query.eq(ApArticleTipOrder::getOrderNo, orderNo);
         return tipOrderMapper.selectOne(query);
+    }
+
+    /**
+     * 校验打赏回调金额与订单金额是否一致（仅信任服务端订单数据）。
+     * 不一致或金额非法时拒绝回调，避免被篡改的 total_amount 完成入账。
+     *
+     * @param order      已加载的订单（须非空且处于待支付态）
+     * @param totalAmount 支付宝回调金额（字符串）
+     * @return 一致返回 true，否则 false
+     */
+    private boolean verifyAmount(ApArticleTipOrder order, String totalAmount) {
+        if (totalAmount == null || totalAmount.isEmpty()) {
+            log.error("打赏回调缺少金额字段, orderNo={}", order.getOrderNo());
+            return false;
+        }
+        BigDecimal notifyAmount;
+        try {
+            notifyAmount = new BigDecimal(totalAmount);
+        } catch (NumberFormatException e) {
+            log.error("打赏回调金额非法, orderNo={}, totalAmount={}", order.getOrderNo(), totalAmount);
+            return false;
+        }
+        BigDecimal orderAmount = order.getAmount() != null ? order.getAmount() : BigDecimal.ZERO;
+        if (notifyAmount.compareTo(orderAmount) != 0) {
+            log.error("打赏回调金额不一致, orderNo={}, 回调金额={}, 订单金额={}",
+                    order.getOrderNo(), totalAmount, order.getAmount());
+            return false;
+        }
+        return true;
     }
 
     private String generateOrderNo() {

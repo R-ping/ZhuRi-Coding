@@ -1,5 +1,6 @@
 package com.heima.content.controller.v1.tip;
 
+import com.heima.content.service.pay.AlipayService;
 import com.heima.content.service.tip.TipService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
@@ -31,6 +32,9 @@ public class TipController {
     @Autowired
     private TipService tipService;
 
+    @Autowired
+    private AlipayService alipayService;
+
     /** 创建打赏订单（需登录） */
     @PostMapping("/create")
     public ResponseResult create(@RequestBody Map<String, Object> body) {
@@ -55,6 +59,16 @@ public class TipController {
     @PostMapping("/notify")
     @ResponseBody
     public String payNotify(HttpServletRequest request) {
+        // 收集支付宝异步通知全部参数，用于服务端签名校验（rsaCheckV1 需要去除 sign/sign_type 后的完整参数集）
+        Map<String, String> params = new HashMap<>();
+        request.getParameterMap().forEach((key, values) ->
+                params.put(key, values != null && values.length > 0 ? values[0] : ""));
+
+        // 1. 先验签：验签失败直接拒绝，防止伪造打赏回调
+        if (!alipayService.verifySign(params)) {
+            return "fail";
+        }
+
         String tradeNo = request.getParameter("trade_no");
         String orderNo = request.getParameter("out_trade_no");
         String totalAmount = request.getParameter("total_amount");
