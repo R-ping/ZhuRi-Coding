@@ -164,6 +164,7 @@
 import courseApi from '@/apis/course'
 import ByteMdEditor from '@/pages/creator/components/editor/ByteMdEditor.vue'
 import { marked } from 'marked'
+import { sanitizeHtml } from '@/utils/sanitize'
 
 export default {
   name: 'CreatorCourseEdit',
@@ -206,7 +207,8 @@ export default {
     },
     renderedContent() {
       if (!this.activeChapter || !this.activeChapter.content) return ''
-      return marked(this.activeChapter.content)
+      // v-html 渲染前必须 sanitize，防止 Markdown 内嵌脚本等存储型 XSS
+      return sanitizeHtml(marked(this.activeChapter.content))
     }
   },
   mounted() {

@@ -19,6 +19,7 @@ import com.heima.model.user.pojos.ApUser;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -157,16 +158,26 @@ public class ArticleInteractionController {
             collected = false;
             log.info("用户{}取消收藏文章{}", user.getId(), id);
         } else {
-            // 未收藏 → 新增收藏记录
-            ApCollection collection = new ApCollection();
-            collection.setUserId(user.getId());
-            collection.setArticleId(id);
-            collection.setCreatedTime(new Date());
-            apCollectionMapper.insert(collection);
-            // 更新文章收藏数加1
-            apArticleMapper.update(null, new LambdaUpdateWrapper<ApArticle>()
-                    .eq(ApArticle::getId, id)
-                    .setSql("collection = collection + 1"));
+            // 未收藏 → 新增收藏记录；唯一索引 uk_collection_user_article 保证同用户同文章仅一条
+            boolean newlyInserted;
+            try {
+                ApCollection collection = new ApCollection();
+                collection.setUserId(user.getId());
+                collection.setArticleId(id);
+                collection.setCreatedTime(new Date());
+                apCollectionMapper.insert(collection);
+                newlyInserted = true;
+            } catch (DuplicateKeyException e) {
+                // 并发下另一请求已插入收藏记录，幂等视为已收藏，且不再重复累加计数
+                newlyInserted = false;
+                log.info("并发收藏冲突，视为已收藏, userId={}, articleId={}", user.getId(), id);
+            }
+            if (newlyInserted) {
+                // 更新文章收藏数加1
+                apArticleMapper.update(null, new LambdaUpdateWrapper<ApArticle>()
+                        .eq(ApArticle::getId, id)
+                        .setSql("collection = collection + 1"));
+            }
             collected = true;
             log.info("用户{}收藏文章{}", user.getId(), id);
         }
@@ -227,12 +238,17 @@ public class ArticleInteractionController {
             followed = false;
             log.info("用户{}取消关注作者{}", user.getId(), authorId);
         } else {
-            // 未关注 → 新增关注记录
-            ApFollow follow = new ApFollow();
-            follow.setUserId(user.getId());
-            follow.setFollowUserId(authorId);
-            follow.setCreatedTime(new Date());
-            apFollowMapper.insert(follow);
+            // 未关注 → 新增关注记录；唯一索引 uk_follow_user_target 保证同用户关注同一作者仅一条
+            try {
+                ApFollow follow = new ApFollow();
+                follow.setUserId(user.getId());
+                follow.setFollowUserId(authorId);
+                follow.setCreatedTime(new Date());
+                apFollowMapper.insert(follow);
+            } catch (DuplicateKeyException e) {
+                // 并发下另一请求已插入关注记录，幂等视为已关注
+                log.info("并发关注冲突，视为已关注, userId={}, authorId={}", user.getId(), authorId);
+            }
             followed = true;
             log.info("用户{}关注作者{}", user.getId(), authorId);
         }

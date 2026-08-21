@@ -11,6 +11,7 @@ import com.heima.model.behavior.pojos.UserBehaviorRecord;
 import com.heima.model.follow.pojos.ApFollow;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,12 +64,19 @@ public class FollowBehaviorHandler implements BehaviorHandler {
                 .withData("followId", existing.getId());
         }
 
-        // 执行关注
+        // 执行关注；唯一索引 uk_follow_user_target 兜底并发下的先查后插竞态
         ApFollow follow = new ApFollow();
         follow.setUserId(userId);
         follow.setFollowUserId(targetUserId);
         follow.setCreatedTime(new Date());
-        apFollowMapper.insert(follow);
+        try {
+            apFollowMapper.insert(follow);
+        } catch (DuplicateKeyException e) {
+            // 并发下另一请求已插入关注记录，幂等视为已关注
+            log.info("并发关注冲突，视为已关注, userId={}, targetUserId={}", userId, targetUserId);
+            return BehaviorResult.duplicate(BehaviorType.FOLLOW_USER)
+                .withData("followed", true);
+        }
 
         // 记录行为日志
         UserBehaviorRecord record = new UserBehaviorRecord();

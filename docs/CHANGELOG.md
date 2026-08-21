@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 2026-08-21 — 中危项修复：评论异步审核可靠队列 + 前端 Markdown XSS + 交互并发幂等
+
+### 后端 — 评论【先展示后审核】窗口期加固（数据库可靠队列）
+
+- 新增 `ap_comment_audit_task` 待审核队列表（`migrations/add_comment_audit_task.sql`），评论发布时审核任务持久化落库，替代原仅存在于进程内的 `CompletableFuture` 任务，服务重启/崩溃后审核不丢失。
+- 新增实体 `ApCommentAuditTask`（`heima-leadnews-model`）与 Mapper `ApCommentAuditTaskMapper`。
+- 重写 `CommentAuditService`：入队幂等（唯一键 `comment_id` 兜底）、执行前 CAS 抢占（`PENDING→PROCESSING`）避免重复处理、处理异常按指数退避（60s→120s→240s…）重试，重试超限降级通过避免系统故障误删正常评论。
+- 新增 `CommentAuditRecoveryTask` 定时补偿扫描器（`@Scheduled` 每 30s）：兜底重拉待审核评论，与进程内触发共用 CAS 抢占，保证审核最终可达。
+
+### 后端 — 点赞/收藏/关注并发幂等（唯一索引冲突兜底）
+
+- 新增 `migrations/add_uniqueness_for_interaction_tables.sql`：为 `ap_collection(user_id, article_id)` 与 `ap_user_follow(user_id, follow_user_id)` 增加唯一索引，从数据库层杜绝并发重复收藏/关注。
+- 服务层捕获 `DuplicateKeyException` 幂等处理：`ArticleInteractionController` 收藏/关注、`CollectBehaviorHandler`、`FollowBehaviorHandler`、`FansDataServiceImpl`，并发冲突时按「已收藏/已关注」返回，不再报 500 或重复累加计数。
+
+### 前端 — Markdown v-html 存储型 XSS
+
+- `src/pages/creator/course/edit.vue`：`renderedContent` 渲染前经 `sanitizeHtml`（DOMPurify）净化由用户 Markdown 生成的内容（含内嵌 HTML/脚本）。
+
+### 说明
+
+- 沸点、专栏同步审核不受影响（原有同步/异步路径不变）；沸点异步审核同为进程内 `@Async`，已列入后续改造项。
+
+---
+
 ## 2026-08-20 — 越权（IDOR）漏洞修复
 
 ### 背景

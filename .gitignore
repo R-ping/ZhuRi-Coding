@@ -41,6 +41,7 @@ npm-debug.log*
 .gemini/
 .qoder/
 .trae/
+.workbuddy/
 .mcp.json
 opencode.jsonc
 .brooks-lint-history.json

@@ -11,6 +11,7 @@ import com.heima.model.behavior.pojos.UserBehaviorRecord;
 import com.heima.model.behavior.pojos.ApCollection;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,12 +57,19 @@ public class CollectBehaviorHandler implements BehaviorHandler {
                 .withData("collected", true);
         }
 
-        // 执行收藏
+        // 执行收藏；唯一索引 uk_collection_user_article 兜底并发下的先查后插竞态
         ApCollection collection = new ApCollection();
         collection.setUserId(userId);
         collection.setArticleId(targetId);
         collection.setCreatedTime(new Date());
-        apCollectionMapper.insert(collection);
+        try {
+            apCollectionMapper.insert(collection);
+        } catch (DuplicateKeyException e) {
+            // 并发下另一请求已插入收藏记录，幂等视为已收藏
+            log.info("并发收藏冲突，视为已收藏, userId={}, targetId={}", userId, targetId);
+            return BehaviorResult.duplicate(context.getBehaviorType())
+                .withData("collected", true);
+        }
 
         // 记录行为日志
         UserBehaviorRecord record = new UserBehaviorRecord();
