@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2026-08-21 — 高危修复回归测试批次（reward / content）
+- 为上线前高危修复补充 30 个回归用例并修复 1 处被生产改动破坏的旧用例：
+  - reward：`RewardTokenInterceptor`（7 例，身份伪造/无效 token 不注入）与 `UserAssetsController`（8 例，资产/加矿接口外部调用一律 403）。
+  - content：`PinsReviewService`（6 例，B2 沸点可靠队列 CAS 抢占/重复入队幂等/AI 不可用退避重试）、`SettlementServiceImpl`（5 例，A7 结算幂等/重复结算跳过/DuplicateKeyException 兜底）、`AbstractAuditService`（4 例，B4 AI 故障关闭 fail-closed）。
+  - 修复 `ArticleDetailServiceImplTest`：补 `ApCommentService` mock 与评论数桩化、相关推荐改三阶段顺序桩（对齐生产最新策略）。
+- 结果：全量 `mvn test` BUILD SUCCESS，reward 0→15 例、content 61→76 例，核心高危分支均被覆盖。
+
+---
+
 ## 2026-08-21 — 加固批次二：结算幂等兜底 / OSS 清理误删修复 / 沸点可靠审核队列
 
 ### A7 中危 — 月度结算并发竞态
