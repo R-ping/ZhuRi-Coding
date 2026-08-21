@@ -19,9 +19,11 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      # 根 pom 位于 heima-leadnews/ 子目录，需切换 working-directory 使 reactor 可见。
       # reward/content 为上线前重点加固模块；-am 级联构建其依赖模块。
       # pom 已内置 JaCoCo（prepare-agent + report 绑定 test 阶段），verify 自动产出覆盖率报告。
       - name: Build, test & generate JaCoCo reports
+        working-directory: heima-leadnews
         run: mvn -B -ntp verify -pl heima-leadnews-service/heima-leadnews-reward,heima-leadnews-service/heima-leadnews-content -am
 
       - name: Upload surefire test reports
@@ -30,8 +32,8 @@ jobs:
         with:
           name: surefire-reports
           path: |
-            heima-leadnews-service/heima-leadnews-reward/target/surefire-reports
-            heima-leadnews-service/heima-leadnews-content/target/surefire-reports
+            heima-leadnews/heima-leadnews-service/heima-leadnews-reward/target/surefire-reports
+            heima-leadnews/heima-leadnews-service/heima-leadnews-content/target/surefire-reports
           if-no-files-found: warn
 
       # 覆盖率仅展示，暂不设硬门禁（后续覆盖率稳定后再加总量/增量阈值）。
@@ -41,6 +43,6 @@ jobs:
         with:
           name: jacoco-reports
           path: |
-            heima-leadnews-service/heima-leadnews-reward/target/site/jacoco
-            heima-leadnews-service/heima-leadnews-content/target/site/jacoco
+            heima-leadnews/heima-leadnews-service/heima-leadnews-reward/target/site/jacoco
+            heima-leadnews/heima-leadnews-service/heima-leadnews-content/target/site/jacoco
           if-no-files-found: warn
