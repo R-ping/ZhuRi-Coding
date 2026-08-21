@@ -364,13 +364,16 @@ public class PinsQueryService {
         if (keyword != null && !keyword.trim().isEmpty()) {
             wrapper.like(ApTopic::getName, keyword);
         }
-        wrapper.orderByDesc(ApTopic::getPostCount);
+        // 推荐话题置顶（is_recommend=1 在前），同组内按沸点数倒序
+        wrapper.orderByDesc(ApTopic::getIsRecommend)
+               .orderByDesc(ApTopic::getPostCount);
         IPage<ApTopic> result = topicMapper.selectPage(pageParam, wrapper);
         List<Map<String, Object>> voList = result.getRecords().stream().map(t -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", t.getId());
             m.put("name", t.getName() != null ? t.getName() : "");
             m.put("count", t.getPostCount() != null ? t.getPostCount() : 0);
+            m.put("recommend", t.getIsRecommend() != null && t.getIsRecommend() == 1 ? 1 : 0);
             return m;
         }).collect(Collectors.toList());
         Map<String, Object> data = new HashMap<>();

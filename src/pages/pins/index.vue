@@ -427,7 +427,7 @@
                 <div class="topic-search">
                     <input type="text" class="search-input" placeholder="搜索话题名称" v-model="topicSearchKeyword" @input="onTopicSearchInput">
                 </div>
-                <div class="topic-list">
+                <div class="topic-list" @scroll="onTopicScroll">
                     <div 
                         class="topic-item"
                         v-for="topic in topicList"
@@ -435,7 +435,10 @@
                         :class="{ 'selected': selectedTopic && selectedTopic.id === topic.id }"
                         @click="selectTopic(topic)"
                     >
-                        <span class="topic-name">#{{ escapeHtml(topic.name) }}#</span>
+                        <span class="topic-name">
+                            <span class="topic-recommend" v-if="topic.recommend">荐</span>
+                            #{{ escapeHtml(topic.name) }}#
+                        </span>
                         <span class="topic-count">{{ topic.count || 0 }} 沸点</span>
                     </div>
                     <div class="topic-empty" v-if="topicList.length === 0 && !topicLoading">
@@ -443,6 +446,9 @@
                     </div>
                     <div class="topic-loading" v-if="topicLoading">
                         <span>加载中...</span>
+                    </div>
+                    <div class="topic-no-more" v-if="!topicHasMore && topicList.length > 0">
+                        <span>没有更多了</span>
                     </div>
                 </div>
             </div>
@@ -565,6 +571,7 @@ export default {
             topicList: [],
             topicPage: 1,
             topicTotal: 0,
+            topicHasMore: true,
             topicLoading: false,
             
             // 沸点帖子列表
@@ -607,6 +614,11 @@ export default {
             return (this.categories || []).filter(cat => cat.name !== '推荐圈子')
         },
         modalFilteredCircles() {
+            // 搜索关键词非空时：跨分类全量搜索圈子（与圈子分类无关，参照掘金直接搜出具体圈子）
+            if (this.circleSearchKeyword) {
+                const keyword = this.circleSearchKeyword.toLowerCase()
+                return (this.allCircles || []).filter(c => c.name && c.name.toLowerCase().includes(keyword))
+            }
             let result = []
             if (this.circleCategory === 'recommend') {
                 result = this.recommendedCircles
@@ -618,10 +630,6 @@ export default {
                 if (cat && cat.circles) {
                     result = cat.circles
                 }
-            }
-            if (this.circleSearchKeyword) {
-                const keyword = this.circleSearchKeyword.toLowerCase()
-                result = result.filter(c => c.name && c.name.toLowerCase().includes(keyword))
             }
             return result
         }
@@ -638,18 +646,20 @@ export default {
         },
         showTopicSelector(newVal, oldVal) {
             if (newVal && !oldVal) {
-                this.fetchTopics('')
+                this.fetchTopics('', true)
             }
         }
     },
     mounted() {
         this.init()
         this.startRefreshTimer()
-        window.addEventListener('scroll', this.handleScroll)
+        // 项目全局 html/body 高度 100% + overflow-x:hidden，body 才是实际滚动容器，
+        // 须用捕获阶段（第三个参数 true）才能监听到 body 上的 scroll 事件
+        window.addEventListener('scroll', this.handleScroll, true)
     },
     beforeDestroy() {
         this.stopRefreshTimer()
-        window.removeEventListener('scroll', this.handleScroll)
+        window.removeEventListener('scroll', this.handleScroll, true)
     },
     methods: {
         init() {
@@ -759,6 +769,16 @@ export default {
         },
 
         // ============== 沸点列表 ==============
+        // 按 id 去重（定时刷新会插入顶部新沸点，与分页数据可能重叠）
+        dedupPins(list) {
+            const seen = new Set()
+            return (list || []).filter(p => {
+                const id = String(p && p.id)
+                if (!id || seen.has(id)) return false
+                seen.add(id)
+                return true
+            })
+        },
         async fetchPinsList(reset) {
             if (this.pinsLoading) return
             if (reset) {
@@ -769,6 +789,7 @@ export default {
             }
             // 圈子视图：加载该圈子的沸点（等价圈子详情页）
             if (this.activeCircle) {
+                this.pinsLoading = true
                 this.circleLoading = true
                 try {
                     const params = {
@@ -781,7 +802,7 @@ export default {
                         this.pinsError = false
                         const data = res.data
                         const list = data.list || data.records || []
-                        this.pinsList = reset ? list : this.pinsList.concat(list)
+                        this.pinsList = this.dedupPins(reset ? list : this.pinsList.concat(list))
                         this.pinsPage++
                         this.hasMore = (data.has_more !== undefined) ? data.has_more : (list.length >= this.pinsSize)
                         if (!this.hasMore) this.noMore = true
@@ -818,11 +839,12 @@ export default {
                 if (res && res.code === 200 && res.data) {
                     this.pinsError = false
                     const list = res.data.list || res.data || []
-                    const total = res.data.total || 0
+                    // total 经 json-bigint 解析为 BigNumber，统一转 number 参与比较
+                    const total = Number(res.data.total || 0)
                     if (reset) {
                         this.pinsList = list
                     } else {
-                        this.pinsList = this.pinsList.concat(list)
+                        this.pinsList = this.dedupPins(this.pinsList.concat(list))
                     }
                     this.pinsPage++
                     if (this.pinsList.length >= total || list.length < this.pinsSize) {
@@ -874,8 +896,10 @@ export default {
                 this.refreshTimer = null
             }
         },
-        // 静默刷新：仅对“最新”分栏生效，将新出现的沸点插入列表顶部，已存在的不重复
+        // 静默刷新：仅对全局"最新"分栏生效，将新出现的沸点插入列表顶部，已存在的不重复
         async refreshPins() {
+            // 圈子视图下不刷新（列表是圈子沸点，插入全局沸点会污染）
+            if (this.activeCircle) return
             if (this.activeTab !== 'latest') return
             if (this.pinsLoading) return
             try {
@@ -885,8 +909,8 @@ export default {
                     const existingIds = new Set(this.pinsList.map(p => String(p.id)))
                     const newItems = list.filter(p => !existingIds.has(String(p.id)))
                     if (newItems.length > 0) {
-                        this.pinsList = [...newItems, ...this.pinsList]
-                        const total = res.data.total || 0
+                        this.pinsList = this.dedupPins([...newItems, ...this.pinsList])
+                        const total = Number(res.data.total || 0)
                         if (this.pinsList.length >= total) {
                             this.hasMore = false
                             this.noMore = true
@@ -912,16 +936,26 @@ export default {
             if (this.scrollThrottling) return
             this.scrollThrottling = true
             setTimeout(() => { this.scrollThrottling = false }, 200)
-            const scrollTop = window.pageYOffset || document.documentElement.scrollTop
-            const windowHeight = window.innerHeight
-            const documentHeight = document.documentElement.scrollHeight
+            // 实际滚动容器为 body（html/body height:100% 时 window 不滚动，scrollTop 落在 body 上）
+            const scrollTop = document.body.scrollTop || document.documentElement.scrollTop || window.pageYOffset || 0
+            const windowHeight = window.innerHeight || document.documentElement.clientHeight || 0
+            const documentHeight = document.body.scrollHeight || document.documentElement.scrollHeight || 0
             if (scrollTop + windowHeight >= documentHeight - 200) {
                 this.fetchPinsList(false)
             }
         },
 
         // ============== 发布框 - 话题 ==============
-        async fetchTopics(keyword) {
+        // 话题分页加载：reset=true 重置到第一页，否则在末尾追加
+        async fetchTopics(keyword, reset) {
+            if (this.topicLoading) return
+            if (reset) {
+                this.topicPage = 1
+                this.topicList = []
+                this.topicHasMore = true
+            } else if (!this.topicHasMore) {
+                return
+            }
             this.topicLoading = true
             try {
                 const params = {
@@ -931,13 +965,26 @@ export default {
                 }
                 const res = await getTopics(params)
                 if (res && res.code === 200 && res.data) {
-                    this.topicList = res.data.list || []
-                    this.topicTotal = res.data.total || 0
+                    const list = res.data.list || []
+                    this.topicList = reset ? list : this.topicList.concat(list)
+                    this.topicTotal = Number(res.data.total || 0)
+                    this.topicHasMore = this.topicList.length < this.topicTotal
+                    this.topicPage++
+                } else if (reset) {
+                    this.topicList = []
+                    this.topicHasMore = false
                 }
             } catch (e) {
-                this.topicList = []
+                if (reset) this.topicList = []
             } finally {
                 this.topicLoading = false
+            }
+        },
+        // 话题列表滚动到底部时加载下一页
+        onTopicScroll(e) {
+            const el = e.target
+            if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 60) {
+                this.fetchTopics(this.topicSearchKeyword, false)
             }
         },
         onTopicSearchInput() {
@@ -946,7 +993,7 @@ export default {
             }
             this.topicSearchTimer = setTimeout(() => {
                 this.topicPage = 1
-                this.fetchTopics(this.topicSearchKeyword)
+                this.fetchTopics(this.topicSearchKeyword, true)
             }, 300)
         },
         selectTopic(topic) {
@@ -1209,6 +1256,15 @@ export default {
 .pins-sidebar {
     width: 200px;
     flex-shrink: 0;
+}
+
+/* 桌面端：滚动阅读沸点时左右边栏固定（参照掘金沸点页），仅主内容区随滚 */
+.pins-page.is-desktop {
+    .pins-sidebar, .pins-right-sidebar {
+        position: sticky;
+        top: 80PX;
+        align-self: flex-start;
+    }
 }
 
 .sidebar-section {
@@ -2010,6 +2066,12 @@ export default {
     flex-direction: column;
 }
 
+/* 话题弹窗缩小尺寸（参照掘金：中等宽度、列表区域压缩） */
+.topic-modal {
+    width: 480px;
+    max-height: 58vh;
+}
+
 .mycircles-modal {
     width: 400px;
 }
@@ -2196,7 +2258,7 @@ export default {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 12px;
+    padding: 8px 12px;
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -2214,6 +2276,25 @@ export default {
 .topic-name {
     font-size: 14px;
     color: #252933;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* 推荐话题标识（推荐话题置顶显示） */
+.topic-recommend {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    font-size: 12px;
+    color: #fff;
+    background: #fa5151;
+    border-radius: 4px;
+    flex-shrink: 0;
+    box-sizing: border-box;
 }
 
 .topic-count {
@@ -2221,11 +2302,11 @@ export default {
     color: #8a919f;
 }
 
-.topic-empty, .topic-loading {
+.topic-empty, .topic-loading, .topic-no-more {
     text-align: center;
-    padding: 40px 20px;
+    padding: 24px 20px;
     color: #8a919f;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 /* 我的圈子弹窗 */
