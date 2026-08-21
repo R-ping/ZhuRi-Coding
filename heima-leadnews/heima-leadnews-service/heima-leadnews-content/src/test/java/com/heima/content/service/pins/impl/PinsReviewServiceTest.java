@@ -1,6 +1,8 @@
 package com.heima.content.service.pins.impl;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.heima.content.behavior.service.BehaviorEventBus;
 import com.heima.content.mapper.pins.ApPinsAuditTaskMapper;
 import com.heima.content.mapper.pins.ApPinsMapper;
@@ -11,6 +13,7 @@ import com.heima.model.audit.pojos.ApPinsAuditTask;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.pins.pojos.ApPins;
 import com.heima.model.user.pojos.ApUser;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,6 +58,10 @@ class PinsReviewServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
+        // 预热 MybatisPlus 实体表元数据与 lambda 列缓存，使单测不依赖 Spring 上下文或测试执行顺序
+        // （集成测试若在共享 JVM 中先加载 Spring 会自动注册缓存；本单测须自足，CI 无库也能稳定运行）
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApPinsAuditTask.class);
     }
 
     // ==================== 入队 ====================

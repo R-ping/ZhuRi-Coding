@@ -7,11 +7,14 @@ on:
 
 jobs:
   test:
-    name: Build & Test (Java 17)
-    runs-on: ubuntu-latest
+    name: Self-hosted Build & Test (Java 17)
+    # 自托管 Runner 部署在本机/虚拟机，可访问本地 MySQL 等基础设施，
+    # 使 @SpringBootTest 集成测试（ArticleCommentE2ETest 等）也能真实跑通。
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
+      # self-hosted 上同样可用 setup-java 自动安装/复用 JDK17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -19,6 +22,7 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      # 前提：Runner 已安装 Maven；MySQL/Redis 等可按需通过 Runner 系统环境变量注入连接信息。
       # 根 pom 位于 heima-leadnews/ 子目录，需切换 working-directory 使 reactor 可见。
       # reward/content 为上线前重点加固模块；-am 级联构建其依赖模块。
       # pom 已内置 JaCoCo（prepare-agent + report 绑定 test 阶段），verify 自动产出覆盖率报告。
