@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  自托管 Runner CI 专用 Maven 配置：
+  仅用于 CI 加速依赖下载，使用国内镜像（阿里云），避免访问 Maven Central 缓慢。
+  本地开发请继续使用各自 ~/.m2/settings.xml，本文件不参与本地构建。
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                              https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+    <mirrors>
+        <mirror>
+            <id>aliyun-public</id>
+            <name>aliyun public mirror</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <!-- 全部远程仓库都走阿里云公共镜像 -->
+            <mirrorOf>*</mirrorOf>
+        </mirror>
+    </mirrors>
+
+</settings>
