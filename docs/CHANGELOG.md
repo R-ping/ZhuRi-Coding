@@ -1,25 +1,27 @@
 # CHANGELOG
 
-## 2026-08-20 — 支付回调安全修复（验签 + 金额一致性校验）
+## 2026-08-20 — 沸点页分页/布局/弹窗修复（参照稀土掘金）
 
-### 背景
+### 前端 — 沸点页 `src/pages/pins/index.vue`
 
-上线前安全审计发现两个致命资金漏洞：支付宝回调接口路径在网关白名单匿名放行，但 `verifySign` 一直 `return true` 且从未在回调处理前调用，`handleNotify` 也未校验回调 `total_amount` 与订单实付金额。攻击者可伪造 `POST /course/pay/notify` 或 `/tip/notify`，携带任意 `out_trade_no` + `trade_status=TRADE_SUCCESS` 绕过支付直接免费获得付费课程/刷打赏。
+- **分页修复**：项目全局 `html/body` 高度 100% + `overflow-x:hidden` 使 `body` 成为实际滚动容器（`window.scrollY` 恒为 0），原 `window` 冒泡阶段监听永不触发导致沸点分页失效。改为捕获阶段监听 `window.addEventListener('scroll', handler, true)`，并读取 `body.scrollTop` / `body.scrollHeight` 判断是否触底加载。
+- **左右边栏固定**：桌面端给 `.pins-sidebar` / `.pins-right-sidebar` 加 `position: sticky; top: 80PX; align-self: flex-start`，滚动阅读时仅主内容区随滚（参照掘金沸点页）。
+- **圈子搜索跨分类**：「请选择圈子」弹窗输入关键词时改为在 `allCircles`（全量圈子）中直接搜索，与当前圈子分类无关；清空关键词后恢复按分类展示。
+- **话题弹窗分页**：话题列表滚动到底自动加载下一页（`onTopicScroll` + `topicHasMore` 状态），搜索时重置回第一页；解决话题显示不完全的问题。
+- **话题推荐置顶**：话题项支持显示「荐」标识，推荐话题由后端排序置顶。
+- **话题弹窗尺寸缩小**：宽度 600px → 480px，最大高度 70vh → 58vh（参照掘金话题选择弹窗）。
+- **圈子视图并发修复**：`fetchPinsList` 圈子分支补设 `pinsLoading = true` 防止滚动快速触发并发请求导致页码错乱。
+- **定时刷新加固**：`refreshPins` 在圈子视图下跳过（避免把全局沸点插入圈子列表）；插入顶部新沸点与分页拼接后按 id 去重；`total` 统一 `Number()` 转换（`json-bigint` 解析为 BigNumber）。
 
-### 后端修复（content 服务）
+### 后端 — 话题列表接口
 
-- `heima-leadnews-content/.../service/pay/impl/AlipayServiceImpl.java`：
-  - `verifySign()` 由恒 `return true` 改为真实 RSA2 验签（`AlipaySignature.rsaCheckV1`，使用配置的支付宝公钥 `alipay.alipay-public-key`）；未配置公钥时 fail-closed 拒绝（安全性优先）。
-  - `handleNotify()` 增加课程订单金额一致性校验，回调 `total_amount` 与订单 `paidAmount` 不一致即拒绝。
-- `heima-leadnews-content/.../controller/v1/pay/PayController.java`：`/notify` 先收集支付宝通知全部参数并 `verifySign`，验签失败直接 `fail` 不进业务处理。
-- `heima-leadnews-content/.../controller/v1/tip/TipController.java`：打赏 `/notify` 同样先验签再处理。
-- `heima-leadnews-content/.../service/tip/impl/TipServiceImpl.java`：`handleNotify` 增加打赏金额一致性校验（回调金额与订单金额一致）。
+- `PinsQueryService.java`：`/api/v1/pins/topics` 返回字段新增 `recommend`（`is_recommend == 1` 标记），排序改为推荐话题置顶（`is_recommend` 倒序），同组内按 `post_count` 倒序。
 
 ### 验证
 
-- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
-- 生产环境已配置真实支付宝密钥，真实支付回调携带合法签名，验签与金额校验均通过、流程正常。
-- 未配置公钥或验签/金额不一致的回调将被拒收（fail-closed），杜绝伪造回调。
+- `mvn -pl heima-leadnews-model,heima-leadnews-service/heima-leadnews-content -am install -DskipTests` 后端编译通过，内容服务已重启。
+- `npm run build`（临时输出目录）前端构建通过。
+- Playwright 浏览器验证：沸点分页 10→20→30→34 全部加载并显示「没有更多」；左右边栏 sticky 固定（距视口 80px）；圈子输入「打工人」在「推荐圈子」分类下跨分类搜出「打工人的日常」（属职场分类）；话题弹窗 480px、推荐话题带「荐」置顶、滚动加载 20→28 条显示「没有更多」、搜索「AI」命中。
 
 ---
 
