@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 2026-08-21 — 落地 GitHub Actions CI 流水线（self-hosted）
+- 新增 [ci.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/.github/workflows/ci.yml)：`push master` / `PR` 触发，自托管 Runner（本机/虚拟机）连接本地 MySQL 等基础设施，跑通含真库的 `@SpringBootTest` 集成测试。
+- 构建范围：上线前重点加固模块 `reward` + `content`（含级联依赖），`verify` 阶段自动产出 JaCoCo 覆盖率报告，surefire / jacoco 报告作为 artifact 上传。
+- 环境适配：复用本机 JDK21 + Maven（移除在线 `setup-java` 下载，避免网络卡顿），显式注入 PATH/JAVA_HOME；新增 [maven-settings.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/maven-settings.xml) 走阿里云镜像加速依赖。
+- 说明：修复了"带反斜杠 Windows 绝对路径的 `-D` 参数被 `mvn.cmd` 误解析为插件前缀"的构建失败。
+
+---
+
 ## 2026-08-21 — 高危修复回归测试批次（reward / content）
 - 为上线前高危修复补充 30 个回归用例并修复 1 处被生产改动破坏的旧用例：
   - reward：`RewardTokenInterceptor`（7 例，身份伪造/无效 token 不注入）与 `UserAssetsController`（8 例，资产/加矿接口外部调用一律 403）。
