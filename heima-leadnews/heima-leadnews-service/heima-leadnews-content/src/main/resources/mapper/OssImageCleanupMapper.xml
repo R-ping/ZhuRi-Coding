@@ -3,18 +3,28 @@
 <mapper namespace="com.heima.content.mapper.OssImageCleanupMapper">
 
     <select id="findArticleCoverImages" resultType="java.lang.String">
+        <!-- 已发布/将要发布的文章封面才需保留；用 publish_time 而非 created_time，
+             避免"定时发布文章"封面被当脏图删除 -->
         SELECT cover_image FROM ap_article
         WHERE cover_image IS NOT NULL
-        AND created_time BETWEEN #{startTime} AND #{endTime}
+        AND publish_time BETWEEN #{startTime} AND #{endTime}
     </select>
 
     <select id="findArticleContentImages" resultType="java.lang.String">
-        SELECT content FROM ap_article_content
-        WHERE content IS NOT NULL
-        AND created_time BETWEEN #{startTime} AND #{endTime}
+        <!-- ap_article_content 表无时间字段，ap_article 也无 updated_time，
+             无法可靠覆盖"编辑旧文章新增正文图"的窗口，且正文图必须保留。
+             安全策略：只要文章未被删除，其正文图一律视为已引用，不做时间过滤。
+             宁可偶发保留脏图，也绝不误删线上正文图片。 -->
+        SELECT ac.content
+        FROM ap_article_content ac
+        INNER JOIN ap_article a ON ac.article_id = a.id
+        WHERE ac.content IS NOT NULL
+          AND ac.content != ''
+          AND (a.is_deleted = 0 OR a.is_deleted IS NULL)
     </select>
 
     <select id="findPinsImages" resultType="java.lang.String">
+        <!-- 沸点无 updated_time，图片随创建上传；created_time 在窗口内即保留，避免误删 -->
         SELECT image_urls FROM ap_pins
         WHERE image_urls IS NOT NULL
         AND image_urls != ''
@@ -22,15 +32,19 @@
     </select>
 
     <select id="findColumnCoverImages" resultType="java.lang.String">
+        <!-- 专栏有 updated_time：编辑旧专栏新增封面时，该图在 OSS 窗口内、created_time 可能更早，
+             用 updated_time 过滤才能覆盖"编辑新增图"场景，避免误删 -->
         SELECT cover_image FROM ap_column
         WHERE cover_image IS NOT NULL
-        AND created_time BETWEEN #{startTime} AND #{endTime}
+        AND updated_time BETWEEN #{startTime} AND #{endTime}
     </select>
 
     <select id="findCourseCoverImages" resultType="java.lang.String">
+        <!-- 课程有 updated_time：编辑课程新增/更换封面时，该图在 OSS 窗口内、created_time 可能更早，
+             用 updated_time 过滤才能覆盖"编辑新增封面"场景，避免误删 -->
         SELECT cover_image FROM ap_course
         WHERE cover_image IS NOT NULL
-        AND created_time BETWEEN #{startTime} AND #{endTime}
+        AND updated_time BETWEEN #{startTime} AND #{endTime}
     </select>
 
 </mapper>

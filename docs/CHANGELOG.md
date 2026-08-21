@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-08-21 — 加固批次二：结算幂等兜底 / OSS 清理误删修复 / 沸点可靠审核队列
+
+### A7 中危 — 月度结算并发竞态
+- [SettlementServiceImpl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/order/impl/SettlementServiceImpl.java) 在 `executeMonthlySettlement` 插入结算记录处捕获 `DuplicateKeyException` 幂等跳过，配合已存在的 `uk_author_course_month` 唯一约束，杜绝并发请求重复生成结算记录导致收入失真。
+
+### C1 中危 — OSS 脏图清理误删正常图片
+- 修复 [OssImageCleanupMapper.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/mapper/OssImageCleanupMapper.xml)：`findArticleContentImages` 原按 `ap_article_content.created_time` 过滤，但该表无此字段，SQL 必然报错被吞→文章内容图无法进入引用集合→有被误删风险；改为联表 `ap_article` 且不限时间（仅排除已删除），坚持"宁可保留脏图，绝不误删正文图"。
+- 文章封面改 `publish_time`、专栏封面改 `updated_time`、课程封面改 `updated_time`，覆盖"编辑旧内容新增图""定时发布"场景，避免窗口误删。
+
+### B2 中危 — 沸点异步审核可靠队列
+- 新增 `ap_pins_audit_task` 队列表（`migrations/add_pins_audit_task.sql`）+ 实体 `ApPinsAuditTask`（model）+ Mapper + `PinsReviewService` 重写（入队持久化 / CAS 抢占 / 退避重试 / 超限降级）+ `PinsAuditRecoveryTask` 定时补偿（30s）。
+- 沸点由"进程内 @Async"改为"数据库可靠队列"，服务重启/崩溃不会丢审核，避免沸点长期停留待审不可见；审核仍为先审后展。
+
+---
+
 ## 2026-08-21 — 上线前加固：reward 身份越权/审核故障关闭（fail-closed）
 
 ### 高危 D1/D2 — reward 服务身份可伪造（资损风险）

@@ -12,6 +12,7 @@ import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -119,7 +120,14 @@ public class SettlementServiceImpl implements SettlementService {
             settlement.setStatus(0);
             settlement.setCreatedTime(new Date());
 
-            settlementMapper.insert(settlement);
+            // 数据库唯一约束 uk_author_course_month 兜底：并发下已有同作者/课程/月份结算记录时，幂等跳过，避免重复结算
+            try {
+                settlementMapper.insert(settlement);
+            } catch (DuplicateKeyException e) {
+                log.warn("并发结算冲突已存在记录，幂等跳过: authorId={}, courseId={}, month={}",
+                        group.authorId, group.courseId, month);
+                continue;
+            }
             log.info("结算记录: authorId={}, courseId={}, month={}, totalSales={}, authorShare={}",
                     group.authorId, group.courseId, month, group.totalSales, settlement.getAuthorShare());
         }
