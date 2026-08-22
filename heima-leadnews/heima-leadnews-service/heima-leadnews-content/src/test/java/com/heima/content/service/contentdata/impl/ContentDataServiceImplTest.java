@@ -243,4 +243,60 @@ class ContentDataServiceImplTest {
         assertEquals(2, list.size());
         assertEquals(0, list.get(1).get("likeCount"));
     }
+
+    @Test
+    @DisplayName("getColumnDetail - 携带起止日期过滤（覆盖 ge/le 分支）")
+    void testColumnDetailWithDateFilter() {
+        String d = today();
+        Page<ApColumn> page = new Page<>(1, 10);
+        page.setRecords(Arrays.asList(column(1L, 3, now())));
+        page.setTotal(1);
+        when(apColumnMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
+        ResponseResult r = contentDataService.getColumnDetail(5L, d, d, 1, 10);
+        Map<String, Object> data = (Map<String, Object>) r.getData();
+        assertEquals(1, ((List<?>) data.get("list")).size());
+        assertEquals(1L, data.get("total"));
+    }
+
+    @Test
+    @DisplayName("getPinDetail - 携带起止日期过滤（覆盖 endDate 分支）")
+    void testPinDetailWithDateFilter() {
+        String d = today();
+        Page<ApPins> page = new Page<>(1, 10);
+        page.setRecords(Arrays.asList(pin(1L, 8, 2, now())));
+        page.setTotal(1);
+        when(apPinsMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
+        ResponseResult r = contentDataService.getPinDetail(5L, d, d, 1, 10);
+        Map<String, Object> data = (Map<String, Object>) r.getData();
+        assertEquals(1, ((List<?>) data.get("list")).size());
+        assertEquals(1L, data.get("total"));
+    }
+
+    @Test
+    @DisplayName("getArticleDetail - 非法 startDate 触发 parseDate 异常兜底")
+    void testArticleDetailParseDateError() {
+        String d = today();
+        Page<ApArticle> page = new Page<>(1, 10);
+        page.setRecords(Arrays.asList());
+        page.setTotal(0);
+        when(apArticleMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
+        // startDate 非法 → parseDate 捕获异常返回当前时间，接口仍正常返回空列表
+        ResponseResult r = contentDataService.getArticleDetail(5L, "not-a-date", d, 1, 10);
+        Map<String, Object> data = (Map<String, Object>) r.getData();
+        assertEquals(0L, data.get("total"));
+    }
+
+    @Test
+    @DisplayName("getArticleDetail - 非法 endDate 触发 parseDateEnd 异常兜底")
+    void testArticleDetailParseDateEndError() {
+        String d = today();
+        Page<ApArticle> page = new Page<>(1, 10);
+        page.setRecords(Arrays.asList());
+        page.setTotal(0);
+        when(apArticleMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
+        // endDate 非法 → parseDateEnd 捕获异常返回当前时间，接口仍正常返回
+        ResponseResult r = contentDataService.getArticleDetail(5L, d, "not-a-date", 1, 10);
+        Map<String, Object> data = (Map<String, Object>) r.getData();
+        assertEquals(0L, data.get("total"));
+    }
 }

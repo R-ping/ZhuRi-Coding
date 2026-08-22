@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2026-08-22 — content 模块：ContentDataServiceImpl 收尾至 100% 行覆盖，模块整体 41.6%
+- [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java) 由 10 例扩充至 **14 例**：
+  - getColumnDetail / getPinDetail 携带起止日期过滤（覆盖 ge/le 分支 L210、L303）；
+  - getArticleDetail 非法 startDate / endDate 触发 parseDate / parseDateEnd 异常兜底（覆盖 L407-409、L417-419）。
+- `ContentDataServiceImpl` 与 `TopicServiceImpl` 均达 **100% 行覆盖**。
+- content 全量单测 **318 例全绿**，整体行覆盖 3,949/9,491 ≈ **41.6%**，JaCoCo 门禁 0.38 校验通过。
+
+---
+
 ## 2026-08-22 — content 模块：创作中心统计与话题服务补齐，行覆盖 41.5%，门禁棘轮至 0.38
 - 新增 [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java)（10 例）：纯 `@Service`，3 个 mapper 由 `@InjectMocks` 注入。
   - getArticleStatistics / getColumnStatistics / getPinStatistics：当日 vs 前日指标与趋势差、空列表；
