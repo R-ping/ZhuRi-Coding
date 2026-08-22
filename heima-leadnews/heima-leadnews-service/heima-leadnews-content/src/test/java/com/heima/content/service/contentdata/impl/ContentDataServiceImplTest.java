@@ -94,8 +94,10 @@ class ContentDataServiceImplTest {
         return DAY.format(now());
     }
 
-    private Date atTodayStart() {
-        return new Date(System.currentTimeMillis() - 3600_000L); // 今天略早时刻，落在当日区间
+    private Date todayTime() {
+        // 使用当前时刻作为样本发布/创建时间，保证其日期恒为“今日”；
+        // 若用 now()-1h 在午夜前后（00:00~01:00）会落到昨日，导致按日聚合断言翻车（flaky）。
+        return new Date();
     }
 
     // ==================== Article ====================
@@ -103,7 +105,7 @@ class ContentDataServiceImplTest {
     @Test
     @DisplayName("getArticleStatistics - 当日与前日指标及趋势差")
     void testArticleStatistics() {
-        Date t = atTodayStart();
+        Date t = todayTime();
         String d = today();
         when(apArticleMapper.selectList(any(Wrapper.class)))
                 .thenReturn(Arrays.asList(article(1L, 100, 10, 5, 3, t)));
@@ -128,7 +130,7 @@ class ContentDataServiceImplTest {
     @Test
     @DisplayName("getArticleTrend - 逐日趋势含空天数默认值")
     void testArticleTrend() {
-        Date t = atTodayStart();
+        Date t = todayTime();
         String d = today();
         when(apArticleMapper.selectList(any(Wrapper.class)))
                 .thenReturn(Arrays.asList(article(1L, null, null, null, null, t)));
@@ -163,7 +165,7 @@ class ContentDataServiceImplTest {
     @Test
     @DisplayName("getColumnStatistics - 订阅数及趋势")
     void testColumnStatistics() {
-        Date t = atTodayStart();
+        Date t = todayTime();
         String d = today();
         when(apColumnMapper.selectList(any(Wrapper.class)))
                 .thenReturn(Arrays.asList(column(1L, 20, t)));
@@ -177,7 +179,7 @@ class ContentDataServiceImplTest {
     @Test
     @DisplayName("getColumnTrend - 逐日订阅趋势")
     void testColumnTrend() {
-        Date t = atTodayStart();
+        Date t = todayTime();
         String d = today();
         when(apColumnMapper.selectList(any(Wrapper.class)))
                 .thenReturn(Arrays.asList(column(1L, null, t)));
@@ -206,7 +208,7 @@ class ContentDataServiceImplTest {
     @Test
     @DisplayName("getPinStatistics - 点赞/评论数及趋势")
     void testPinStatistics() {
-        Date t = atTodayStart();
+        Date t = todayTime();
         String d = today();
         when(apPinsMapper.selectList(any(Wrapper.class)))
                 .thenReturn(Arrays.asList(pin(1L, 30, 4, t)));
@@ -220,7 +222,7 @@ class ContentDataServiceImplTest {
     @Test
     @DisplayName("getPinTrend - 逐日趋势与空列表")
     void testPinTrend() {
-        Date t = atTodayStart();
+        Date t = todayTime();
         String d = today();
         when(apPinsMapper.selectList(any(Wrapper.class)))
                 .thenReturn(Arrays.asList(pin(1L, null, null, t)));
