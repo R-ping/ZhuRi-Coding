@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 2026-08-22 — content 模块：ContentDataServiceImpl 收尾至 100% 行覆盖，模块整体 41.6%
+- [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java) 由 10 例扩充至 **14 例**：
+  - getColumnDetail / getPinDetail 携带起止日期过滤（覆盖 ge/le 分支 L210、L303）；
+  - getArticleDetail 非法 startDate / endDate 触发 parseDate / parseDateEnd 异常兜底（覆盖 L407-409、L417-419）。
+- `ContentDataServiceImpl` 与 `TopicServiceImpl` 均达 **100% 行覆盖**。
+- content 全量单测 **318 例全绿**，整体行覆盖 3,949/9,491 ≈ **41.6%**，JaCoCo 门禁 0.38 校验通过。
+
+---
+
+## 2026-08-22 — content 模块：创作中心统计与话题服务补齐，行覆盖 41.5%，门禁棘轮至 0.38
+- 新增 [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java)（10 例）：纯 `@Service`，3 个 mapper 由 `@InjectMocks` 注入。
+  - getArticleStatistics / getColumnStatistics / getPinStatistics：当日 vs 前日指标与趋势差、空列表；
+  - getArticleTrend / getColumnTrend / getPinTrend：逐日趋势含空天数默认值、null 指标兜底；
+  - getArticleDetail / getColumnDetail / getPinDetail：分页细节组装、null 字段兜底（views/likes/comment/collection→0）。
+- 新增 [TopicServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/topic/impl/TopicServiceImplTest.java)（17 例）：继承 `ServiceImpl`，私有 `baseMapper` 用反射注入，7 个 `@Autowired` mapper 由 `@InjectMocks` 注入。
+  - recommend：环形缓冲分页（offset=(page*size)%total）、空列表返回空、VO 转换 null 兜底；
+  - square：cursor 分页、过滤、总数/详情分页；
+  - detail：多表关联组装（沸点+文章统计+type2 圈子）、viewCount/participantCount 聚合、availableTabs；
+  - feed：沸点/文章信息流按时间排序、取消关注缓存清理；
+  - search：模糊查询分页；inspiration：灵感随机/人工精选；recommendByTopic：N 条关联推荐。
+- 追加补全 `feed/new`（沸点最新排序+超页截断）与 `feed/article` 全 targetId 为空的兜底分支，`TopicServiceImpl` **行覆盖 100%（99/99）**，`ContentDataServiceImpl` 行覆盖 64/74 ≈ **86.5%**。
+- content 全量单测 **314 例全绿**（较上批 +20），整体行覆盖 3,941/9,491 ≈ **41.5%**。
+- 门禁阈值由 `0.33` 棘轮上调至 `0.38`，JaCoCo check「All coverage checks have been met」校验通过。
+
+---
+
 ## 2026-08-22 — content 模块：文章创作组补齐（新增 4 测试类），修复草稿删除类型缺陷
 - 新增文章创作组单元测试：
   - [ApArticleServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleServiceImplTest.java)（15 例）：load 分页/规则、事件生成(空文章/缺失/成功/入库异常回滚)、updateScore 累加统计并持久化、updateScoreByBehavior、listByAuthorId 作者+频道+标签 JSON_OVERLAPS 过滤、updateArticleStatus 与 ES 联动（成功/失败置重试/无记录）、computeScore null 兜底。
