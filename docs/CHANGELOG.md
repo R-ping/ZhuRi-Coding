@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 2026-08-22 — reward 模块测试补齐（行覆盖率 5% → 66.7%）
+- 新增 5 个测试类共 55 个用例，覆盖 reward 核心业务的安全与幂等诉求：
+  - [SignRewardUtilTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/util/SignRewardUtilTest.java)（10 例）：30 天周期奖励表逐日校验、取模循环、特殊日屏蔽判定、非法入参兜底。
+  - [CheckinServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/service/impl/CheckinServiceImplTest.java)（12 例）：Redis 锁竞争(429)/重复签到(400)/DuplicateKey 兜底、首签与已有 state assets 的 insert/update 分流、补签卡不足与日期范围校验、状态/连续天数查询。
+  - [CheckinControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/controller/v1/CheckinControllerTest.java)（9 例）：未登录一律 NEED_LOGIN 且不调服务，杜绝"匿名缺省 1L"冒签；补签缺 date 校验。
+  - [LotteryServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/service/impl/LotteryServiceImplTest.java)（12 例）：免费次数/矿石余额/十连门槛校验、免费成功抽奖落库、实物领取订单归属校验（防越权）。
+  - [WelfareServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/service/impl/WelfareServiceImplTest.java)（12 例）：下架/库存0/矿石不足/实物缺地址防线、Redis 预扣负库存与乐观锁失败的双重回滚、虚拟商品即时发码。
+- 全量 `mvn verify` BUILD SUCCESS（reward 70 例全绿），JaCoCo 行覆盖率由约 5% 提升至 **66.7%**（741/1111）。
+- 将 reward 门禁阈值由 `0.04` 棘轮上调至 `0.50`，防覆盖率回归。
+
+---
+
 ## 2026-08-21 — CI 增加 JaCoCo 覆盖率门禁
 - 在 reward / content 两模块 pom 追加 jacoco `check` execution（绑定 `verify` 阶段，`LINE`/`COVEREDRATIO`），覆盖率低于阈值即 `verify` 失败，拦截覆盖率回归。
 - 阈值走模块内属性 `jacoco.line.min`，先设为当前真实值作为"防回归底线"，随测试补强棘轮上调：

@@ -14,9 +14,9 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <!-- JaCoCo 门禁底线：总行覆盖率（当前约 5%，先设 0.04 兜底，防止覆盖率归零）。
-             注意：reward 覆盖率严重偏低，真正目标是补测试后逐级上调此值。 -->
-        <jacoco.line.min>0.04</jacoco.line.min>
+        <!-- JaCoCo 门禁底线：reward 模块行覆盖率（当前约 66.7%，设 0.50 兜底防回归）。
+             后续可随测试补充继续上调。 -->
+        <jacoco.line.min>0.50</jacoco.line.min>
     </properties>
 
     <dependencies>
