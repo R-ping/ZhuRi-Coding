@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## 2026-08-23 — gateway 模块：鉴权过滤器全覆盖，整体行覆盖 85%，新增门禁 0.70
+- 新增 [AuthorizeFilterTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java)（8 例）：`mockStatic(AppJwtUtil)` + 请求头注入 Captor。
+  - 公开接口（无 token 匿名放行 / 带有效 token 注入 userId/nickName/image / token 解析失败按匿名放行）；
+  - 非公开接口（无 token → 444、verifyToken=false → 444、解析异常 → 444、有效 token 注入请求头放行）；
+  - 覆盖 URL 编码昵称与 image 空串兜底，`AuthorizeFilter` 行覆盖 96.7%。
+- 新增 [AppJwtUtilTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/util/AppJwtUtilTest.java)（7 例）：verifyToken null/未过期/已过期、generalKey、HS512 真实 token 生成-解析往返、init 空密钥抛异常。
+- gateway 全量单测 **15 例全绿**，整体行覆盖 108/127 ≈ **85%**（AuthorizeFilter 96.7%、AppJwtUtil 100%）。
+- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.70` 与 surefire argLine，verify「All coverage checks have been met」通过。
+
+---
+
+## 2026-08-23 — notification 模块：业务全量补齐，整体行覆盖约 90%，门禁棘轮至 0.80
+- 新增 8 个 controller/websocket/config 测试类：
+  - [ImControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/controller/v1/ImControllerTest.java)（6 例）：会话列表/创建/消息列表/发送/已读 + 未登录传 null。
+  - [NotificationControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/controller/v1/NotificationControllerTest.java)（19 例）：列表/回复/点赞/回关/未读/已读/按类型已读 + 4 个 Feign 内部接口，覆盖参数缺失兜底与 NEED_LOGIN 拦截。
+  - [WebSocketMessageControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/controller/v1/WebSocketMessageControllerTest.java)（8 例）：发送成功（在线/离线分派 ACK 与实时推送）、失败/空数据错误分支、msg_type 默认兜底、已读回执推送。
+  - [AuthHandshakeInterceptorTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/websocket/AuthHandshakeInterceptorTest.java)（8 例）：`mockStatic(AppJwtUtil)` 覆盖握手鉴权缺失/空/无效 token、无 userId、解析异常与成功放行。
+  - [UserInterceptorTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/websocket/UserInterceptorTest.java)（3 例）：CONNECT 带 userId 设 Principal、无 userId/非 CONNECT 不处理。
+  - [SessionManagerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/websocket/SessionManagerTest.java)（4 例）：上线/下线/在线判断/人数统计。
+  - [NotificationWebMvcConfigTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/config/NotificationWebMvcConfigTest.java) 与 [WebSocketConfigTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/config/WebSocketConfigTest.java)：拦截器注册、消息代理、STOMP 端点与入站通道配置。
+- notification 全量单测全绿，整体行覆盖约 **90%**（含 3 个 controller 100%、状态机 100%、拦截器/Config 高覆盖）。
+- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/pom.xml) 将 JaCoCo 门禁由 0.40 棘轮至 `jacoco.line.min=0.80`，verify「All coverage checks have been met」通过。
+
+---
+
+## 2026-08-23 — user 模块：核心服务补齐，整体行覆盖 69.0%，新增门禁 0.60
+- 新增 4 个 service/impl 测试类（46 例），`@Mock` 注入 Feign/OSS/RestTemplate/TokenService 等外部依赖：
+  - [UserProfileServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/test/java/com/heima/user/service/impl/UserProfileServiceImplTest.java)（17 例）：个人资料查询/更新 + 头像上传（类型/大小校验、OSS 异常兜底），OSS URL 校验；
+  - [UserStatisticsServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/test/java/com/heima/user/service/impl/UserStatisticsServiceImplTest.java)（6 例）：文章/等级 Feign 聚合、注册天数、等级数据缺失/异常兜底；
+  - [SocialAuthServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/test/java/com/heima/user/service/impl/SocialAuthServiceImplTest.java)（7 例）：GitHub/微博 token 获取、用户信息拉取、uid 绑定检查；
+  - [SocialLoginServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/test/java/com/heima/user/service/impl/SocialLoginServiceImplTest.java)（10 例）：继承 `ServiceImpl`，baseMapper 反射注入 + TableInfo 初始化；认证/绑定/验证码/绑定状态全分支。
+- service/impl 包各核心类行覆盖 **75.6%~100%**（8/9 类 ≥94.6%）。
+- user 全量单测 **53 → 99 例全绿**，整体行覆盖 657/952 ≈ **69.0%**（此前 33.6%）。
+- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.60`，verify「All coverage checks have been met」通过。
+
+---
+
+## 2026-08-23 — search 模块：核心服务 100% 行覆盖，模块整体 90.9%，新增门禁 0.80
+- 新增 [ArticleSearchServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/test/java/com/heima/search/service/impl/ArticleSearchServiceImplTest.java)（12 例）：纯 `@Service`，`ElasticsearchOperations`/`ApAssociateWordsService`/`IArticleClient` 均 Mock。
+  - search：参数校验、高亮标题与回退原文、minBehotTime 过滤、空结果集、默认分页兜底；
+  - syncArticle：入参校验、成功（Feign 正文回填 + tocList 转换）、Feign 无数据跳过、异常兜底；
+  - updateArticleStatus：成功与 ES 异常分支。
+  - `com.heima.search.service.impl` 包 **行覆盖 100%（148/148）**。
+- 新增 [AppTokenInterceptorTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/test/java/com/heima/search/interceptor/AppTokenInterceptorTest.java)（4 例）：请求头 userId/nickName → 线程本地登录态写入、URL 解码、未登录放行、清理。
+- 新增 [SearchControllersTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/test/java/com/heima/search/controller/v1/SearchControllersTest.java)（5 例）：文章检索默认值补全、历史加载/删除、联想词委托。
+- search 全量单测 **16 → 37 例**，整体行覆盖 190/209 ≈ **90.9%**（此前 27.8%）。
+- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.80` 与 surefire `--add-opens` argLine，verify「All coverage checks have been met」通过。
+
+---
+
 ## 2026-08-22 — content 模块：ContentDataServiceImpl 收尾至 100% 行覆盖，模块整体 41.6%
 - [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java) 由 10 例扩充至 **14 例**：
   - getColumnDetail / getPinDetail 携带起止日期过滤（覆盖 ge/le 分支 L210、L303）；
