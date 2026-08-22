@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## 2026-08-22 — content 模块：文章创作组补齐（新增 4 测试类），修复草稿删除类型缺陷
+- 新增文章创作组单元测试：
+  - [ApArticleServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleServiceImplTest.java)（15 例）：load 分页/规则、事件生成(空文章/缺失/成功/入库异常回滚)、updateScore 累加统计并持久化、updateScoreByBehavior、listByAuthorId 作者+频道+标签 JSON_OVERLAPS 过滤、updateArticleStatus 与 ES 联动（成功/失败置重试/无记录）、computeScore null 兜底。
+  - [ApArticleDraftServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleDraftServiceImplTest.java)（14 例）：草稿 CRUD、publishFromDraft 发布为文章(config/content/删草稿/事务提交后异步审核)、deleteDraft 守卫(空id/未登录/不存在/越权/本人成功)。
+  - [ArticleManageServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ArticleManageServiceImplTest.java)（10 例）：我的文章列表/统计/删除/详情。
+  - [ArticleStatisticsServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ArticleStatisticsServiceImplTest.java)（2 例）：个人主页关注/粉丝/点赞/收藏/阅读/勋章/等级统计聚合。
+- 修复 bug：`ApArticleDraftServiceImpl.deleteDraft` 归属校验原用 `draft.getAuthorId()(Long).equals(user.getId())(Integer)` 恒为 false，导致作者无法删除自己的草稿；改为统一 `longValue()` 比较（[ApArticleDraftServiceImpl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/ApArticleDraftServiceImpl.java)）。
+- content 全量单测 **294 例全绿**（较上批 +24），完整 `verify`（含 JaCoCo check）通过，门禁 `0.33` 校验 ok。
+
+---
+
+## 2026-08-22 — content 模块：个人主页（UserHomeController）补齐，整体行覆盖 36.67%，门禁棘轮至 0.33
+- 新增 [UserHomeControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/controller/v1/user/UserHomeControllerTest.java)（18 例）：@RestController，10 个依赖由 `@InjectMocks` 注入，直调 public 方法。
+  - home：参数校验(PARAM_INVALID)、正常合并用户信息+统计、userClient/统计异常兜底；
+  - articles/columns/pins/courses：公开已发布过滤、分页、VO 组装、page/size 越界夹紧；
+  - following/followers：关注/关注者分页、userBrief 失败过滤 null；
+  - collections：空记录 total=0、正常组装、无对应文章跳过；
+  - likes：type=article/pins/不传分流、空、文章+沸点混合组装、目标缺失跳过；
+  - tips：空记录、正常组装、article 缺失 articleTitle 为空。
+- `UserHomeController` 行覆盖 **94%**（253/269，16 行未覆盖为兜底异常分支外细节）。
+- content 全量单测 **270 例全绿**，整体行覆盖 3,478/9,484 ≈ **36.67%**。
+- 门禁阈值由 `0.30` 棘轮上调至 `0.33`，JaCoCo check「All coverage checks have been met」校验通过。
+
+---
+
 ## 2026-08-22 — content 模块：圈子服务（CircleServiceImpl）补齐，行覆盖率保持 36.7%，门禁棘轮至 0.30
 - 新增 [CircleServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/circle/impl/CircleServiceImplTest.java)（21 例）：普通 @Service，5 个 mapper 由 `@InjectMocks` 注入。
   - recommend：未登录 isJoined=false / 已登录 isJoined=true；
