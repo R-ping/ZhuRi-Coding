@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 2026-08-21 — CI 增加 JaCoCo 覆盖率门禁
+- 在 reward / content 两模块 pom 追加 jacoco `check` execution（绑定 `verify` 阶段，`LINE`/`COVEREDRATIO`），覆盖率低于阈值即 `verify` 失败，拦截覆盖率回归。
+- 阈值走模块内属性 `jacoco.line.min` 便于棘轮上调：reward `0.40`（当前 45.9%）、content `0.12`（当前 14.7%）。
+- 门禁仅作用于 reward/content，避免 `-am` 级联的 0 覆盖率依赖模块误伤；本地 `mvn verify` 已通过。
+
+---
+
 ## 2026-08-21 — 落地 GitHub Actions CI 流水线（self-hosted）
 - 新增 [ci.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/.github/workflows/ci.yml)：`push master` / `PR` 触发，自托管 Runner（本机/虚拟机）连接本地 MySQL 等基础设施，跑通含真库的 `@SpringBootTest` 集成测试。
 - 构建范围：上线前重点加固模块 `reward` + `content`（含级联依赖），`verify` 阶段自动产出 JaCoCo 覆盖率报告，surefire / jacoco 报告作为 artifact 上传。
