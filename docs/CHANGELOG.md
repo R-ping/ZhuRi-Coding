@@ -2,8 +2,11 @@
 
 ## 2026-08-21 — CI 增加 JaCoCo 覆盖率门禁
 - 在 reward / content 两模块 pom 追加 jacoco `check` execution（绑定 `verify` 阶段，`LINE`/`COVEREDRATIO`），覆盖率低于阈值即 `verify` 失败，拦截覆盖率回归。
-- 阈值走模块内属性 `jacoco.line.min` 便于棘轮上调：reward `0.40`（当前 45.9%）、content `0.12`（当前 14.7%）。
-- 门禁仅作用于 reward/content，避免 `-am` 级联的 0 覆盖率依赖模块误伤；本地 `mvn verify` 已通过。
+- 阈值走模块内属性 `jacoco.line.min`，先设为当前真实值作为"防回归底线"，随测试补强棘轮上调：
+  - reward：`0.04`（**真实行覆盖率仅约 5%**，之前 CI 首撞 0.40 阈值失败；门禁倒逼补测试）
+  - content：`0.12`（当前约 14.7%，含 MySQL 真库集成测试）
+- 修复 reward 覆盖率测不准的根因：surefire 未配置 `argLine=@{argLine}`，jacoco 探针挂载不稳定（干净/增量构建曾测得 0.05 与 0.459 两套结果）；现与 content 对齐补上 `@{argLine}`（并一并补 Mockito inline 所需 open 参数）。
+- 门禁仅作用于 reward/content，避免 `-am` 级联的 0 覆盖率依赖模块误伤；本地 `clean verify` 已通过。
 
 ---
 
