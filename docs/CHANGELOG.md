@@ -1,5 +1,83 @@
 # CHANGELOG
 
+## 2026-08-22 — content 模块：圈子服务（CircleServiceImpl）补齐，行覆盖率保持 36.7%，门禁棘轮至 0.30
+- 新增 [CircleServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/circle/impl/CircleServiceImplTest.java)（21 例）：普通 @Service，5 个 mapper 由 `@InjectMocks` 注入。
+  - recommend：未登录 isJoined=false / 已登录 isJoined=true；
+  - square：列表+总数(page/size)+空列表；
+  - hot：按 display_order 保序 JOIN、Banner 配置圈子缺失跳过、空配置返回空；
+  - detail：存在/不存在返回 null；
+  - join：重复加入抛异常、新加入自增成员数、圈子不存在不更新；
+  - leave：未加入抛异常、退出自减不为负；
+  - feed：featured 精选(关联沸点保序+空)、hot 沸点点赞降序、new 沸点时间降序+空；
+  - myCircles：无加入返回空 / 返回已加入圈子；
+  - listByCategory：已登录/未登录 isJoined。
+- `CircleServiceImpl` 行覆盖 **100%**（121 行，0 未覆盖）。
+- clean verify 通过（避免旧 exec 数据干扰报告），整体行覆盖 3,478/9,484 ≈ **36.7%**。
+- 门禁阈值由 `0.27` 棘轮上调至 `0.30`，防覆盖率回归。
+- 注意：JUnit 触发 best-effort / fail-closed 异常时终端会输出大量 ERROR 堆栈，属测试预期，不影响构建结果。
+
+---
+
+## 2026-08-22 — content 模块：内容数据看板（ContentDataServiceImpl）+ 话题（TopicServiceImpl）补齐，行覆盖率 25.83% → 36.7%
+- 新增 [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java)（10 例）：纯数据聚合服务，依赖三 Mapper 由 `@InjectMocks` 注入。
+  - 文章：统计(当前区间 vs 前一天增减/空列表零值)、按天趋势、明细(日期过滤+分页+null 指标按 0)；
+  - 专栏：统计(数量+订阅增减)、趋势、明细(id/标题/订阅数)；
+  - 沸点：统计(数量+点赞/评论增减)、趋势、明细(分页+内容)。
+  - 说明：`parseDate/parseDateEnd` 的 catch 属不可达防御分支（上游 `getPreviousDay` 已先校验格式），未强行覆盖。
+- `ContentDataServiceImpl` 行覆盖达到 **95%**（260 行）。
+- 新增 [TopicServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/topic/impl/TopicServiceImplTest.java)（14 例）：继承 `ServiceImpl`，`baseMapper` 反射注入，其余 7 个 Mapper 由 `@InjectMocks` 注入。
+  - recommend：环形缓冲(offset 回卷)、空列表；
+  - square：hot/new 排序、keyword 过滤、size+1 探测 has_more 截断、cursor 推进；
+  - detail：不存在返回 null、沸点+文章浏览/参与聚合、type=1/2 的 tabs 差异、关联圈子(含圈子缺失名称兜底)；
+  - feed：文章分栏(article_hot 阅读量降序/article_new 时间降序/空关联)、沸点(hot 点赞序 + has_more 截断)；
+  - search：空关键字返回空、VO 转换；
+  - inspirationTopics：themeType 过滤 + participants/view 排序；
+  - recommendedTopics：excludeId 排除 + limit 分页。
+- `TopicServiceImpl` 行覆盖 **88%**（289 行）。
+- content 全量 verify 通过，JaCoCo 行覆盖率提升至 **36.7%**（3,478/9,484）。
+- 门禁阈值由 `0.23` 棘轮上调至 `0.27`，防覆盖率回归。
+
+---
+
+## 2026-08-22 — content 模块：小册章节核心（ApCourseChapterServiceImpl）补齐，行覆盖率 24.59% → 25.83%
+- 新增 [ApCourseChapterServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/course/impl/ApCourseChapterServiceImplTest.java)（22 例）：
+  - createChapter/updateChapter/deleteChapter：参数缺失、课程/章节不存在、非作者、已上架(PUBLISHED=9)禁编、默认排序与节数重算、部分字段更新；
+  - updateSort：参数缺失、归属不一致的小节只跳过不更新；
+  - getChapterDetail、submitForReview：参数缺失、不存在、非作者、已发布(1)/审核中(2)拦截、草稿(0)→审核中(2)并写审核备注。
+- `ApCourseChapterServiceImpl` 行覆盖达到 **100%（119/119）**。
+- content 全量 15 个测试类 **192 例全绿**（含前序新增）；JaCoCo 行覆盖率提升至 **25.83%**（2451/9490）。
+- 门禁阈值由 `0.21` 棘轮上调至 `0.23`，防覆盖率回归。
+
+---
+
+## 2026-08-22 — content 模块测试补齐：课程核心（ApCourseServiceImpl）+ 沸点查询（PinsQueryService），行覆盖率 17.1% → 24.6%
+- 修复并跑通 [ApCourseServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/course/impl/ApCourseServiceImplTest.java)（38 例）：
+  - 根因修复：MyBatis-Plus 3.5.7 的 `setBaseMapper` 在 Mockito `@InjectMocks` 下注入失败（`baseMapper can not be null`），改用反射直接写 ServiceImpl 私有 `baseMapper` 字段，跨版本稳定。
+  - 覆盖：公开列表仅上架、详情作者头像回退、我的课程三类过滤器、学习进度 新建/更新/完成率按章节比例重算、创作归属校验、上架保护、软删、申报 applyContent 校验(空主题/超长/非法渠道/非法JSON)、状态机合法/非法跳转(草稿→申报、写作中→上架待审等)。
+- 新增 [PinsQueryServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/pins/impl/PinsQueryServiceTest.java)（26 例）：沸点查询核心。
+  - 列表 tab 分流(following 未登录拦截/hot/latest)、热度排序按 赞+评论+分享+作者等级加权、
+  - 详情(参数缺失/不存在/正常)、浏览自增(异常吞掉)、侧边栏(游客/登录统计+精选前3+推荐话题兜底)、
+  - 评论列表(热序/时间序/带子回复)、话题列表(带/不带关键字)、圈子按分类分组、链接预览(空URL/非法段/正常)、
+  - 工具方法 `calcHotScore`/`getUserOrNull`/`convertToVOList`/`convertToVO`/`parseStringList`/`convertCommentToVO`。
+- 全部 14 个单元测试类执行通过（170 例全绿）；JaCoCo 行覆盖率由约 17.1% 提升至 **24.59%**（2334/9490）。
+- 将 content 门禁阈值由 `0.15` 棘轮上调至 `0.21`，防覆盖率回归。
+
+---
+
+## 2026-08-22 — content 模块测试补齐（评论审核 + 逐日等级积分，行覆盖率 15.1% → 17.1%）
+- 修复并跑通 [CommentAuditServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/comment/impl/CommentAuditServiceTest.java)（13 例）：采用 MybatisPlus `TableInfoHelper` 预热 lambda 列缓存，单测 CI 无库自足；修正 `verify` 中裸值/匹配器混用。
+  - 覆盖"先展示后审核"窗口的可靠性：任务幂等入队(DuplicateKey 忽略)、CAS 抢占失败不重复执行、通过回调给作者发通知、违规软删评论并联系统通知、退避重试与补偿拉取。
+- 新增 [LevelActionServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelActionServiceTest.java)（17 例）：逐日等级/积分核心。
+  - `recordAction`：有效行为加分落库、0 分行为忽略、升级时发权限与钻石；
+  - `recordActionWithLimit`：今日次数/积分双上限拦截、正常加分；
+  - `recordPaymentAction`：金额<=0 拒绝、超额按每日上限截断、金额即经验(支持小数)；
+  - `checkIn`：重复签到拦截、积分打满不可签、签到加 2 分；
+  - `recordPassiveAction`：被动行为每日进度 upsert、未配置行为跳过。
+- 全部 11 个单元测试类执行通过；JaCoCo 行覆盖率由约 15.1% 提升至 **17.1%**（1626/9490）。
+- 将 content 门禁阈值由 `0.12` 棘轮上调至 `0.15`，防覆盖率回归。
+
+---
+
 ## 2026-08-22 — reward 模块测试补齐（行覆盖率 5% → 66.7%）
 - 新增 5 个测试类共 55 个用例，覆盖 reward 核心业务的安全与幂等诉求：
   - [SignRewardUtilTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/util/SignRewardUtilTest.java)（10 例）：30 天周期奖励表逐日校验、取模循环、特殊日屏蔽判定、非法入参兜底。
