@@ -14,8 +14,8 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <!-- JaCoCo 门禁：总行覆盖率最低值（0.30=30%，当前约 36.7%，留余量防抖动）。随测试补强逐步上调。 -->
-        <jacoco.line.min>0.30</jacoco.line.min>
+        <!-- JaCoCo 门禁：总行覆盖率最低值（0.33=33%，当前约 36.7%，留余量防抖动）。随测试补强逐步上调。 -->
+        <jacoco.line.min>0.33</jacoco.line.min>
     </properties>
 
     <dependencies>
