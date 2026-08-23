@@ -49,6 +49,7 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 在浏览器测试过程中，涉及到文章上传时，除了自己编写内容，你还可以用“参考资料”里的文档，通过import接口文档导入形式完成，尽量让每个文章内容信息有图片、有封面（路径是，C:\Users\hudong\OneDrive\图片\本机照片\素材图片，随机一张即可），文章的必填项不能遗漏。
 本项目先不关注移动端业务。
+支付宝沙箱环境买家账号：fyfmja1112@sandbox.com，登录/支付密码：111111
 
 ------
 
