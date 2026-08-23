@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 2026-08-23 — B4 内容审核 fail-closed 收紧：AI 服务不可用不再"降级通过"
+- 问题定位：摸底清单 B4「AI 审核异常降级通过」的实际根因在两条链路的**共流传入点** `BailianAiServiceImpl`——`comprehensiveAudit`(文章) 与 `checkViolation`(评论/沸点/专栏) 在 AI 调用失败或无有效响应时把结果伪装成"通过"(`success=true, is_violation=false`)，导致上层的 fail-closed 形同虚设（`AbstractAuditService` 的 `AuditServiceUnavailableException` 永远不会触发）。
+- 后端改动：
+  - [BailianAiServiceImpl.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/BailianAiServiceImpl.java)：`comprehensiveAudit`/`checkViolation` 仅在解析到**有效审核结果**时置 `success=true`；异常或响应解析失败/无响应时保持 `success=false`，删除了"降级通过"分支。
+  - [AIViolationProcessor.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/processor/AIViolationProcessor.java)：`success!=true` 或抛异常时 `return false`（拒审→文章不入库/不上架），并写入"内容审核服务暂不可用"原因。
+  - [AbstractAuditService.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/AbstractAuditService.java) `checkViolation`：`success!=true` 时抛 `AuditServiceUnavailableException`（与既有 fail-closed 文档策略对齐，真正触发）。
+- 测试：
+  - [AbstractAuditServiceTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/AbstractAuditServiceTest.java)：为通过/违规 mock 补 `success=true`，新增「服务不可用返回 success=false → fail-closed 抛异常」用例（6 例）。
+  - [AIViolationProcessorTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/processor/AIViolationProcessorTest.java)（新增）：空内容跳过 / success=false 拒审 / 违规拒审 / 通过 / 异常拒审 5 例。
+- 说明：评论/沸点默认"先展后审"、重试超限后仍走各自既有 `DEGRADED_PASSED`（属 B2/B3 产品窗口，本次不改）；文章路径为硬 fail-closed（不发布）。
+
+---
+
 ## 2026-08-23 — 应用首页内容展示优化：点击产品名回到首页 & 重复点击子分栏均触发文章列表重查
 - API/Bug 背景：此前「已处于综合首页 /home 时点击产品名（逐日Coding）」因路由无变化（同路由 push 为 no-op）不触发查询；「已选中 推荐/最新 子分栏后再点同一分栏」被 `switchSubTab` 的 `current===subTab` 早退跳过。
 - 前端改动：

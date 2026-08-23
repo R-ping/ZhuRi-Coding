@@ -129,14 +129,17 @@ public class BailianAiServiceImpl implements BailianAiService {
 
                     log.info("Comprehensive AI audit completed for articleId={}, is_violation={}, qualityScore={}, isTech={}",
                             article.getId(), result.get("is_violation"), result.get("qualityScore"), result.get("isTechContent"));
+                    // 仅在获取到有效审核结果时标记成功；否则保持 success=false 走 fail-closed，防止故障时违规内容放行
+                    result.put("success", true);
+                } else {
+                    log.warn("AI综合审核响应解析失败, articleId={}", article.getId());
                 }
+            } else {
+                log.warn("AI综合审核无响应, articleId={}", article.getId());
             }
-            result.put("success", true);
         } catch (Exception e) {
-            log.error("Comprehensive AI audit failed for articleId={}: {}", article.getId(), e.getMessage(), e);
-            // 审核失败不阻塞流程，降级通过
-            result.put("success", true);
-            result.put("is_violation", false);
+            // fail-closed：AI 审核服务不可用时保持 success=false，绝不降级为"通过"
+            log.error("Comprehensive AI audit failed, fail-closed, articleId={}: {}", article.getId(), e.getMessage(), e);
         }
 
         return result;
@@ -182,13 +185,17 @@ public class BailianAiServiceImpl implements BailianAiService {
 
                     log.info("AI violation check completed for entityId={}, is_violation={}, type={}",
                             entityId, result.get("is_violation"), result.get("violation_type"));
+                    // 仅在获取到有效审核结果时标记成功；否则保持 success=false 走 fail-closed
+                    result.put("success", true);
+                } else {
+                    log.warn("AI违规检测响应解析失败, entityId={}", entityId);
                 }
+            } else {
+                log.warn("AI违规检测无响应, entityId={}", entityId);
             }
-            result.put("success", true);
         } catch (Exception e) {
-            log.error("AI violation check failed for entityId={}: {}", entityId, e.getMessage(), e);
-            result.put("success", true);
-            result.put("is_violation", false);
+            // fail-closed：AI 审核服务不可用时保持 success=false，绝不降级为"通过"
+            log.error("AI violation check failed, fail-closed, entityId={}: {}", entityId, e.getMessage(), e);
         }
 
         return result;

@@ -31,6 +31,13 @@ public class AIViolationProcessor implements ArticleAuditProcessor {
         log.info("开始AI综合审核, articleId={}", article.getId());
         try {
             Map<String, Object> auditResult = bailianAiService.comprehensiveAudit(article, content);
+            // fail-closed：AI 服务不可用或无有效审核结果时拒绝通过，防止故障时违规文章被直接上架
+            if (auditResult == null || !Boolean.TRUE.equals(auditResult.get("success"))) {
+                String reason = "内容审核服务暂不可用，请稍后重试";
+                context.putExtra("failReason", reason);
+                log.warn("AI综合审核服务不可用，fail-closed 拒绝通过, articleId={}", article.getId());
+                return false;
+            }
             if (auditResult != null) {
                 // 违规检测不通过则终止审核流程
                 if (Boolean.TRUE.equals(auditResult.get("is_violation"))) {
@@ -48,7 +55,9 @@ public class AIViolationProcessor implements ArticleAuditProcessor {
                         article.getId(), auditResult.get("qualityScore"), auditResult.get("isTechContent"));
             }
         } catch (Exception e) {
-            log.error("AI综合审核异常, articleId={}, 降级通过", article.getId(), e);
+            context.putExtra("failReason", "内容审核服务暂不可用，请稍后重试");
+            log.error("AI综合审核异常，fail-closed 拒绝通过, articleId={}", article.getId(), e);
+            return false;
         }
 
         return true;
