@@ -91,9 +91,10 @@ class AbstractAuditServiceTest {
     }
 
     @Test
-    @DisplayName("B4 - AI判定违规: 返回失败并触发 handleFailed")
+    @DisplayName("B4 - 判违规: AI判定违规返回失败并触发 handleFailed")
     void testAuditAiViolation() {
         Map<String, Object> aiResult = new HashMap<>();
+        aiResult.put("success", true);
         aiResult.put("is_violation", true);
         aiResult.put("violation_type", "涉政");
         aiResult.put("violation_reason", "包含敏感词");
@@ -109,9 +110,10 @@ class AbstractAuditServiceTest {
     }
 
     @Test
-    @DisplayName("B4 - AI判定不违规: 审核通过并触发 handlePassed")
+    @DisplayName("B4 - 判不违规: AI判定不违规审核通过并触发 handlePassed")
     void testAuditAiNotViolation() {
         Map<String, Object> aiResult = new HashMap<>();
+        aiResult.put("success", true);
         aiResult.put("is_violation", false);
         when(bailianAiService.checkViolation(anyLong(), anyString(), anyString()))
                 .thenReturn(aiResult)
@@ -121,6 +123,22 @@ class AbstractAuditServiceTest {
 
         assertTrue(result.isPassed());
         assertTrue(auditService.passedCalled);
+        assertFalse(auditService.failedCalled);
+    }
+
+    @Test
+    @DisplayName("B4 - AI服务不可用(返回success=false): fail-closed 抛出 AuditServiceUnavailableException，不降级通过")
+    void testAuditAiServiceUnavailableFailClosed() {
+        Map<String, Object> aiResult = new HashMap<>();
+        aiResult.put("success", false); // AI 服务不可用的结果
+        aiResult.put("is_violation", false);
+        when(bailianAiService.checkViolation(anyLong(), anyString(), anyString())).thenReturn(aiResult);
+
+        assertThrows(AuditServiceUnavailableException.class,
+                () -> auditService.audit(contextWithContent()));
+
+        // 异常降级路径不得误触发"审核通过/审核失败"回调
+        assertFalse(auditService.passedCalled);
         assertFalse(auditService.failedCalled);
     }
 
