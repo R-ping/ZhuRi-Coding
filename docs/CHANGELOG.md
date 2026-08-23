@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-08-23 — reward 权限安全（D1 越权 / D2 匿名冒充）运行时实证拦截通过
+- 实证方式：本地经 `AppJwtUtil` + `JWT_SECRET` 自造「攻击者 token」(userId=9999)/「本人 token」(userId=1)，经网关(51601)发起 5 条攻击向量，**全部被拦截**（详见 [上线就绪度业务摸底清单.md](file:///e:/heima-leadnews-portal/heima-leadnews-app/docs/上线就绪度业务摸底清单.md) P4）。
+- D1 用户资产越权：`/reward/api/v1/reward/user/{他人id}/ore/add`、`.../assets` —— 无 token 匿名→网关 **444**；带合法 token→reward 拦截器注入用户后 `UserAssetsController.isExternalCall()` → **403 该接口仅限服务内部调用**（仅服务间 Feign 直连放行）。
+- D2 匿名冒充 ID=1：`/reward/api/v1/sign/checkin` 无 token 或伪造 `userId` 头→网关 **444**；`CheckinController.requireUserId()` 对匿名 `NEED_LOGIN`（仅信任拦截器从 accToken 解析的 userId，废弃原"缺省 1L"）。
+- 正常路径不受损：本人 token 调 `/sign/status`、`/sign/today` 均 **200**。
+- 部署提示：资产写接口以「服务端口不对外」保证内部性，上线时服务端口应仅内网可达（由网关暴露），或对内部接口增加服务间鉴权头。
+
+---
+
+## 2026-08-23 — 支付宝支付回调地址动态化（去除显式 notify/return 配置，按场景 base-url/web-base-url 拼接）
+- 移除 [application.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/application.yml) 中显式的 `notify-url` / `return-url` 配置，仅保留 `base-url`（网关对外，经 `ALIPAY_BASE_URL` 注入）与 `web-base-url`（前端 SPA，经 `ALIPAY_WEB_BASE_URL` 注入）。内网穿透域名变更时只需改环境变量，无需改动代码。
+- 支付场景各自拼接绝对地址：
+  - 课程支付 [PayController](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/controller/v1/pay/PayController.java)：异步通知 = `base-url + /content/api/v1/course/pay/notify`（回打网关），回跳 = `web-base-url + /course/{courseId}`（前端课程页）。
+  - 文章打赏 [TipServiceImpl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/tip/impl/TipServiceImpl.java)：通知/回跳均基于 `base-url`。
+- 精简 [AlipayService](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/pay/AlipayService.java)：移除引用已删字段的 3 参 `generatePayPage` 重载，统一使用 5 参方法由业务场景传入拼接好的 URL；同步更新 [AlipayServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/pay/impl/AlipayServiceImplTest.java)（去掉已删除字段注入、改 5 参调用）。`mvn test` 通过。
+
+---
+
 ## 2026-08-23 — content 模块第六轮：支付/订单域核心补齐，整体行覆盖约 66%，门禁 0.62 保持达标
 - content 模块 `mvn verify` 通过（门禁 `jacoco.line.min=0.62`），共 **673** 例单测全绿。
 - 新增 5 个 service/impl 测试类（支付/订单域核心——折扣码、订单、结算、支付联动、支付宝）：
