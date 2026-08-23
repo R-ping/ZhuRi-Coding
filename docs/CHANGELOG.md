@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 2026-08-23 — 修复 login_auth 异常输入被误报为"服务器错误 503"
+- 问题定位（运行时实证）：网关路由正常，异常输入触发的其实是 user 服务内部异常被全局处理器误标记。复现根因两条：
+  1. [ApUserLoginController.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/main/java/com/heima/user/controller/v1/ApUserLoginController.java) `login()` 直接 `phoneOrEmail.contains("@")`，请求体缺 `phoneOrEmail` 时 NPE（实测堆栈 `NullPointerException: ... "phoneOrEmail" is null`）→ 被 `ExceptionCatch` 通用分支兜成 HTTP 500 / code 503"服务器内部错误"。
+  2. 畸形 JSON 触发 `HttpMessageNotReadableException`，未被 [ExceptionCatch.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/main/java/com/heima/common/exception/ExceptionCatch.java) 单独处理，同样被当作服务器错误。
+- 后端改动：
+  - `ApUserLoginController.login()`：`phoneOrEmail` 判空，缺失返回 `PARAM_REQUIRE`（不再 NPE）。
+  - `ExceptionCatch`：新增 `@ExceptionHandler(HttpMessageNotReadableException.class)`，坏 JSON 返回 `PARAM_INVALID` + HTTP 400（公共模块，所有服务收益）。
+- 验证：`{}` → `code:500 缺少参数`；坏 JSON → `code:501 无效参数`；正常手机密码登录（业务错 `code:2 密码错误`）不受影响。`mvn test`（user/common）通过。
+
+---
+
 ## 2026-08-23 — 应用首页内容展示优化：点击产品名回到首页 & 重复点击子分栏均触发文章列表重查
 - API/Bug 背景：此前「已处于综合首页 /home 时点击产品名（逐日Coding）」因路由无变化（同路由 push 为 no-op）不触发查询；「已选中 推荐/最新 子分栏后再点同一分栏」被 `switchSubTab` 的 `current===subTab` 早退跳过。
 - 前端改动：
