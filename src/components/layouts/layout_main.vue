@@ -575,6 +575,11 @@
             goToHome() {
                 this.currentNav = 'home'
                 this.searchKeyword = ''
+                // 已在综合首页时，点击产品名/首页再次触发主动刷新，重新查询文章列表
+                if (this.$route.path === '/home') {
+                    window.dispatchEvent(new CustomEvent('feed-refresh'))
+                    return
+                }
                 this.$router.push('/home')
                 this.$nextTick(() => {
                     this.loadCheckinStatus()
