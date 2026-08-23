@@ -521,12 +521,13 @@ export default {
      * 综合频道可选 关注，走 recommend_follow 分流接口（需登录）
      */
     switchSubTab(index, subTab) {
-      if (this.subTabStates[index].current === subTab) return
       // 关注分栏依赖登录态，未登录先引导登录
       if (subTab === 'follow' && !(this.$store.getters && this.$store.getters.isLoggedIn)) {
         this.$store.dispatch('showLogin')
         return
       }
+      // 注意：即使点击当前已选中的子分栏（推荐/最新/关注），也走主动刷新，
+      // 重新生成种子并查询文章列表，而非直接 return 跳过请求。
       this.$set(this.subTabStates[index], 'current', subTab)
       this.$set(this.subTabStates[index], 'selectedTag', '__all__')
       this.$set(this.subTabStates[index], 'tagsLoaded', false)

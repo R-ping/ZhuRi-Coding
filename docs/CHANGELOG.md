@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2026-08-23 — 应用首页内容展示优化：点击产品名回到首页 & 重复点击子分栏均触发文章列表重查
+- API/Bug 背景：此前「已处于综合首页 /home 时点击产品名（逐日Coding）」因路由无变化（同路由 push 为 no-op）不触发查询；「已选中 推荐/最新 子分栏后再点同一分栏」被 `switchSubTab` 的 `current===subTab` 早退跳过。
+- 前端改动：
+  - [layout_main.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/layouts/layout_main.vue#L575-L588) `goToHome`：已在 `/home` 时点击产品名/首页 → `dispatchEvent(new CustomEvent('feed-refresh'))`，走 `handleGlobalRefresh → loadnew(currentTab)` 重置种子重新查询；否则正常 `router.push('/home')`。
+  - [feedMixin.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/home/mixins/feedMixin.js#L523-L530) `switchSubTab`：移除 `current===subTab` 早退，改为「重复点击当前子分栏也重置种子并重新请求」；`follow` 分栏未登录仍先引导登录。
+- 回归：`npm run build` 通过（Vite 构建成功，仅 chunk 体积提示非错误）。
+
+---
+
 ## 2026-08-23 — reward 权限安全（D1 越权 / D2 匿名冒充）运行时实证拦截通过
 - 实证方式：本地经 `AppJwtUtil` + `JWT_SECRET` 自造「攻击者 token」(userId=9999)/「本人 token」(userId=1)，经网关(51601)发起 5 条攻击向量，**全部被拦截**（详见 [上线就绪度业务摸底清单.md](file:///e:/heima-leadnews-portal/heima-leadnews-app/docs/上线就绪度业务摸底清单.md) P4）。
 - D1 用户资产越权：`/reward/api/v1/reward/user/{他人id}/ore/add`、`.../assets` —— 无 token 匿名→网关 **444**；带合法 token→reward 拦截器注入用户后 `UserAssetsController.isExternalCall()` → **403 该接口仅限服务内部调用**（仅服务间 Feign 直连放行）。
