@@ -52,8 +52,6 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
 
     @Autowired(required = false)
     private BehaviorEventBus behaviorEventBus;
-    @Autowired
-    private ImageHandle imageHandle;
     @Override
     public ResponseResult getCommentList(CommentDto dto) {
         if (dto == null || dto.getArticleId() == null) {
@@ -684,7 +682,7 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             if (p == null || p.trim().isEmpty()) {
                 continue;
             }
-            String c = imageHandle.handleUrlSuffix(p.trim());
+            String c = ImageHandle.handleUrlSuffix(p.trim());
             if (c.isEmpty()) {
                 continue;
             }

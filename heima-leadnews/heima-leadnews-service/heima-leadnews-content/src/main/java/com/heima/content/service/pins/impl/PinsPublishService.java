@@ -2,6 +2,7 @@ package com.heima.content.service.pins.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.apis.notification.INotificationClient;
+import com.heima.common.com.ImageHandle;
 import com.heima.content.mapper.circle.ApCircleMapper;
 import com.heima.content.mapper.pins.ApPinsMapper;
 import com.heima.content.mapper.topic.TopicMapper;
@@ -93,7 +94,7 @@ public class PinsPublishService {
         pins.setUserName(user.getNickname() != null ? user.getNickname() : "");
         pins.setUserAvatar(user.getImage() != null ? user.getImage() : "");
         pins.setContent(dto.getContent());
-        pins.setImageUrls(dto.getImageUrls() != null ? String.join(",", dto.getImageUrls()) : "");
+        pins.setImageUrls(dto.getImageUrls() != null ? String.join(",", ImageHandle.handleUrlSuffix(dto.getImageUrls())) : "");
         pins.setTopicTags(dto.getTopicTags() != null ? String.join(",", dto.getTopicTags()) : "");
         pins.setTopicId(dto.getTopicId());
         pins.setCircleId(dto.getCircleId());

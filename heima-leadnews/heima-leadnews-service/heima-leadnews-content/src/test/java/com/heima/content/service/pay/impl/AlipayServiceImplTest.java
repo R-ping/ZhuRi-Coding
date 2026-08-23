@@ -49,15 +49,13 @@ class AlipayServiceImplTest {
         ReflectionTestUtils.setField(alipayService, "gatewayUrl", "http://localhost:1");
         ReflectionTestUtils.setField(alipayService, "privateKey", "");
         ReflectionTestUtils.setField(alipayService, "alipayPublicKey", "PUB_KEY");
-        ReflectionTestUtils.setField(alipayService, "notifyUrl", "http://n");
-        ReflectionTestUtils.setField(alipayService, "returnUrl", "http://r");
     }
 
     // ---------- generatePayPage ----------
     @Test
     @DisplayName("无凭据时回退到本地模拟支付页")
     void generateMockPayPageWhenNoCredential() {
-        String html = alipayService.generatePayPage(orderNo, "课程", "100.00");
+        String html = alipayService.generatePayPage(orderNo, "课程", "100.00", "http://localhost:51601/n", "http://localhost:9901/r");
         assertTrue(html.contains("支付宝沙箱支付"));
         assertTrue(html.contains(orderNo));
         assertTrue(html.contains("100.00"));
@@ -68,7 +66,7 @@ class AlipayServiceImplTest {
     void generateMockPayPageWhenAlipayDown() {
         ReflectionTestUtils.setField(alipayService, "appId", "app-123");
         ReflectionTestUtils.setField(alipayService, "privateKey", "fake-private-key");
-        String html = alipayService.generatePayPage(orderNo, "课程", "100.00");
+        String html = alipayService.generatePayPage(orderNo, "课程", "100.00", "http://localhost:51601/n", "http://localhost:9901/r");
         // 假凭据无法完成真实 RSA2 签名/网关交互，SDK 抛异常后应兜底返回模拟页
         assertTrue(html.contains("支付宝沙箱支付"));
     }

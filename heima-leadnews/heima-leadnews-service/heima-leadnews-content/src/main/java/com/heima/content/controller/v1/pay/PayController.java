@@ -21,11 +21,11 @@ public class PayController {
     @Autowired
     private OrderService orderService;
 
-    /** 支付异步通知地址（支付宝服务端回调，需外网可达） */
-    @Value("${alipay.notify-url}")
-    private String notifyUrl;
+    /** 网关对外地址前缀（ALIPAY_BASE_URL）：用于拼装支付异步通知绝对地址（支付宝服务端回调，需外网可达） */
+    @Value("${alipay.base-url:http://localhost:51601}")
+    private String payBaseUrl;
 
-    /** 前端 Web 地址前缀，用于拼装课程支付成功后的回跳地址（课程页是前端 Vue SPA） */
+    /** 前端 Web 地址前缀（ALIPAY_WEB_BASE_URL）：用于拼装课程支付成功后的回跳地址（课程页是前端 Vue SPA） */
     @Value("${alipay.web-base-url:http://localhost:9901}")
     private String webBaseUrl;
 
@@ -43,7 +43,8 @@ public class PayController {
         }
 
         String subject = "课程购买 - " + order.getCourseId();
-        // 支付成功后回跳到前端课程详情页（使用前端对外地址，而非后端网关地址）
+        // 支付异步通知回打后端网关（baseUrl），回跳到前端课程详情页（webBaseUrl，前端 Vue SPA）
+        String notifyUrl = payBaseUrl + "/content/api/v1/course/pay/notify";
         String returnUrl = webBaseUrl + "/course/" + order.getCourseId();
         return alipayService.generatePayPage(orderNo, subject, order.getPaidAmount().toString(), notifyUrl, returnUrl);
     }

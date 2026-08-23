@@ -40,19 +40,8 @@ public class AlipayServiceImpl implements AlipayService {
     @Value("${alipay.alipay-public-key}")
     private String alipayPublicKey;
 
-    @Value("${alipay.notify-url}")
-    private String notifyUrl;
-
-    @Value("${alipay.return-url}")
-    private String returnUrl;
-
     @Autowired
     private OrderService orderService;
-
-    @Override
-    public String generatePayPage(String orderNo, String subject, String amount) {
-        return generatePayPage(orderNo, subject, amount, notifyUrl, returnUrl);
-    }
 
     @Override
     public String generatePayPage(String orderNo, String subject, String amount, String notifyUrl, String returnUrl) {
