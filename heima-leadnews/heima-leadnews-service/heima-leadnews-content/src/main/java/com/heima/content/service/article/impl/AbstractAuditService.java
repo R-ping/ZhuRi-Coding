@@ -80,7 +80,13 @@ public abstract class AbstractAuditService implements AuditService {
             Map<String, Object> result = bailianAiService.checkViolation(
                 context.getEntityId(), context.getTitle(), context.getContent());
 
-            if (result != null && Boolean.TRUE.equals(result.get("is_violation"))) {
+            // fail-closed：AI 服务不可用或无有效审核结果时抛出异常（由调用方重试/处理），
+            // 绝不将"检测异常"降级为"通过"，防止审核系统故障时违规内容放行
+            if (result == null || !Boolean.TRUE.equals(result.get("success"))) {
+                throw new AuditServiceUnavailableException("内容审核服务暂不可用，请稍后重试");
+            }
+
+            if (Boolean.TRUE.equals(result.get("is_violation"))) {
                 String violationType = (String) result.getOrDefault("violation_type", "违规内容");
                 String violationReason = (String) result.getOrDefault("violation_reason", "内容违反社区规范");
                 return AuditResult.failed(violationType, violationType + ": " + violationReason);
