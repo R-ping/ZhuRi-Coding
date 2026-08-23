@@ -1,5 +1,66 @@
 # CHANGELOG
 
+## 2026-08-23 — content 模块第六轮：支付/订单域核心补齐，整体行覆盖约 66%，门禁 0.62 保持达标
+- content 模块 `mvn verify` 通过（门禁 `jacoco.line.min=0.62`），共 **673** 例单测全绿。
+- 新增 5 个 service/impl 测试类（支付/订单域核心——折扣码、订单、结算、支付联动、支付宝）：
+  - [DiscountServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/order/impl/DiscountServiceImplTest.java)（约 13 例，97%）：折扣码创建缺省补齐/编码/上限/启用状态、列表、禁用、validateDiscount 校验（过期/停用/超额/不匹配课程）、consumeDiscountCode 幂等与失败。
+  - [OrderServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/order/impl/OrderServiceImplTest.java)（15 例，98.5%）：createOrder 参数校验/课程不存在/折扣码无效/FIXED 与 PERCENTAGE 计算/金额下溢归零/默认支付方式、getOrderStatus 归属防越权、getMyOrders 分页、handlePaySuccess 全链路（原子消费折扣码、课程学习人数/营收、新购/续购权限、联动异常隔离）、getByOrderNo。
+  - [SettlementServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/order/impl/SettlementServiceImplTest.java)（10 例，99%）：月度结算幂等(已结算跳过)、无订单提前返回、按课程分组 70/30 分成、作者缺失 authorId 兜底 0、并发 DuplicateKeyException 幂等跳过、getMonthlyList 汇总与 getSettlementDetail。
+  - [PaymentRewardServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/payment/impl/PaymentRewardServiceImplTest.java)（9 例，97.7%）：购课/打赏成功加逐日经验 + 发系统通知，等级服务异常与通知/课程查询失败降级不影响支付主流程。
+  - [AlipayServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/pay/impl/AlipayServiceImplTest.java)（9 例，91%）：凭据齐全生成真实支付表单/凭据或生成失败回退模拟页、回调验签/金额一致性/订单状态校验（防篡改）。
+- 修复 [OrderServiceImplTest.createOrderPercentageDiscount](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/order/impl/OrderServiceImplTest.java#L152-L165)：百分比折扣产出 80.0/20.0（scale=1），改用 `compareTo` 做刻度无关的数值断言。
+
+---
+
+## 2026-08-23 — content 模块第五轮：逐力值/钻石/权限补齐，整体行覆盖提升至约 65%，门禁棘轮至 0.62
+- content 模块整体行覆盖提升至 **65.12%**（覆盖 6181 / 总 9491），verify「All coverage checks have been met」通过（门禁 0.62）。
+- 新增 3 个 service/impl 测试类（等级体系剩余核心）：
+  - [LevelPowerServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelPowerServiceTest.java)（8 例）：逐力值计算常规/等级不变、等级升级触发权限重算与钻石奖励、发布文章达日限额(上限2)短路、发布/互动(like/comment/favorite=1)/阅读(折算÷100)/兜底各 changeType、实际值<=0 处理、入明细与等级落库、简化入口 calculatePower 委托。
+  - [LevelDiamondServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelDiamondServiceTest.java)（5 例）：无等级配置/无钻石奖励跳过、正常发放并落明细日志、远程返回异常/null 时安全降级。
+  - [LevelPermissionServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelPermissionServiceImplTest.java)（9 例）：hasPermission 判定、getUserPermissions、升级授予(空记录新建/已过期重置)、降级回收、等级不跨门槛不变更、基础权限首次分配(7项)/已有跳过。
+- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/pom.xml) 将 JaCoCo 门禁棘轮至 `jacoco.line.min=0.62`。
+
+---
+
+## 2026-08-23 — content 模块第四轮：等级体系核心补齐，整体行覆盖提升至约 64%，门禁棘轮至 0.60
+- content 模块整体行覆盖提升至 **63.55%**（覆盖 6032 / 总 9491），verify「All coverage checks have been met」通过（门禁 0.60）。
+- 新增 2 个 service/impl 测试类（等级体系核心——逐日/逐力两套等级）：
+  - [LevelQueryServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelQueryServiceTest.java)（10 例）：getUserLevel 命中/新建默认落库、getUserLevelInfo 逐日/逐力标题与权限、getUserLevelData 矿石远端获取与异常降级、下一级门槛存在/回退 dailyLevel×150、升级百分比计算、getLevelConfigs、calculateLevel 命中/回落最高级/无配置返回 1。
+  - [LevelPrivilegeServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelPrivilegeServiceTest.java)（6 例）：getLevelPrivileges 登录/未登录分支、等级规格与按 needJscoreLevel 分组、priv_status 解锁判断、descJson 正常/空/非法解析；getUserInfoPack 用户信息与成长信息回填、当前/下一级门槛匹配、Feign 异常降级、未登录空态。
+- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/pom.xml) 将 JaCoCo 门禁棘轮至 `jacoco.line.min=0.60`。
+
+---
+
+## 2026-08-23 — content 模块第三轮：个人动态/沸点互动补齐，整体行覆盖提升至约 62%
+- content 模块整体行覆盖提升至 **61.62%**（覆盖 5848 / 总 9491），verify「All coverage checks have been met」通过（门禁 0.55）。
+- 新增 2 个测试类：
+  - [UserDynamicControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/controller/v1/user/UserDynamicControllerTest.java)（12 例）：userId 空/0 迁移取当前用户、未登录 NEED_LOGIN、size 下限/上限；文章/沸点/关注三类动态 VO 组装与描述/封面/URL/阅读格式化；目标数据缺失或用户信息异常时丢弃、targetUserId 缺失回退 targetId 的正确组装；firstImage 对空/逗号/JSON 数组解析。
+  - [PinsInteractionServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/pins/impl/PinsInteractionServiceTest.java)（17 例）：like/unlike 守卫与幂等、跨用户触发事件、本人操作不触发、事件异常降级、沸点缺失；评论未登录/内容校验/1000 字上限、纯文本与纯图（表情包）评论、回复递增父级回复数、事件降级；share 参数/目标不存在/正常递增分享数。
+- 修复 [UserDynamicControllerTest.followFallbackTargetId](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/controller/v1/user/UserDynamicControllerTest.java#L243-L256)：断言由「空列表」修正为验证 targetUserId 缺失时回退 targetId=500 的组装结果。
+
+---
+
+## 2026-08-23 — content 模块第二轮：推荐/专栏服务补齐，整体行覆盖提升至约 59%，门禁棘轮至 0.55
+- content 模块整体行覆盖由 56.4% 提升至 **58.97%**（覆盖 5597 / 总 9491），549 例单测全绿，verify「All coverage checks have been met」通过。
+- 新增 2 个 service/impl 测试类：
+  - [ApArticleRecommendServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java)（10 例）：四入口委托与默认参数归一、follow 分栏（未登录/未关注/有关注）、latest 分栏 hasMore 两种边界、推荐分栏多候选全局序列与跨页分页、标签/作者配额贪心及配额不足追加降级、computeBaseScore 对数归一化与 logNorm 边界。`@Value` 通过 ReflectionTestUtils 注入。
+  - [ColumnServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/column/impl/ColumnServiceImplTest.java)（13 例）：列表（未登录/过滤/分页）、统计四段 count、创建参数校验与异步审核、更新/删除各守卫分支与成功路径、asyncReviewColumn 封面审核与异常捕获、getStatusCode 各 status。`ServiceImpl` baseMapper 反射注入 + ApColumn TableInfo 初始化。
+- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/pom.xml) 将 JaCoCo 门禁二次棘轮至 `jacoco.line.min=0.55`。
+
+---
+
+## 2026-08-23 — content 模块：粉丝/打赏/热门/标签/浏览服务补齐，整体行覆盖提升至约 56%，门禁棘轮至 0.50
+- content 模块整体行覆盖由约 41.5% 提升至 **56.4%**（覆盖 5351 / 总 9491），527 例单测全绿。
+- 新增 5 个 service/impl 测试类，聚焦此前近零覆盖的核心业务服务：
+  - [FansDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/fans/impl/FansDataServiceImplTest.java)（11 例）：未登录兜底、粉丝统计/趋势、列表与头像分页（含用户信息缺失回退、回关判定）、关注（自关注/重复/并发 `DuplicateKeyException` 幂等降级）。
+  - [TipServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/tip/impl/TipServiceImplTest.java)（18 例）：下单参数/金额/文章/自打赏校验、支付页生成、回调（非成功/订单缺失/状态异常/金额不一致/金额非法/合法入账 + 用户信息降级）、汇总/列表/收益。
+  - [HotServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/hot/impl/HotServiceImplTest.java)（8 例）：热门文章（综合/分类/登录收藏态）、收藏榜、作者榜（周期/质量文章/粉丝/回关）、规则文案与 limit 兜底。
+  - [TagServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/tag/impl/TagServiceImplTest.java)（6 例）：标签列表关键字过滤、分类标签聚合排序、标签文章分页与参数兜底（`ServiceImpl` baseMapper 反射注入）。
+  - [BrowseHistoryServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/browse/impl/BrowseHistoryServiceImplTest.java)（6 例）：浏览历史分页扁平化、逻辑删除、上报（参数校验/已存在更新/不存在插入）。
+- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/pom.xml) 将 JaCoCo 门禁由 0.38 棘轮至 `jacoco.line.min=0.50`，verify「All coverage checks have been met」通过。
+
+---
+
 ## 2026-08-23 — gateway 模块：鉴权过滤器全覆盖，整体行覆盖 85%，新增门禁 0.70
 - 新增 [AuthorizeFilterTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java)（8 例）：`mockStatic(AppJwtUtil)` + 请求头注入 Captor。
   - 公开接口（无 token 匿名放行 / 带有效 token 注入 userId/nickName/image / token 解析失败按匿名放行）；
