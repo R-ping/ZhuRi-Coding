@@ -35,8 +35,13 @@ public class ApUserLoginController {
     @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 30, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     @RateLimit(dimension = RateLimit.Dimension.IP, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public ResponseResult login(@RequestBody LoginDto dto) {
-        // 确定具体流程
+        // 参数校验：phoneOrEmail 为登录入口必填，缺失时直接返回业务错误，
+        // 避免后续 phoneOrEmail.contains() 空指针被全局处理器误报为"服务器错误 503"
         String phoneOrEmail = dto.getPhoneOrEmail();
+        if (StrUtil.isBlank(phoneOrEmail)) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_REQUIRE);
+        }
+        // 确定具体流程
         String tag;
         if (phoneOrEmail.contains("@")) {
             // 邮箱+密码登录

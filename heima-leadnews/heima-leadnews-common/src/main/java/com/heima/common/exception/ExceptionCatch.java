@@ -5,6 +5,7 @@ import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -43,6 +44,18 @@ public class ExceptionCatch {
             // 解析失败使用默认错误信息
         }
         return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, errorMsg);
+    }
+
+    /**
+     * 处理请求体不可读（Bad JSON / 缺少必需字段）异常
+     * 这类属于客户端输入错误，应返回 4xx 业务错误，而非被通用 Exception 分支误报为"服务器错误 503"
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseBody
+    public ResponseResult handleMessageNotReadable(HttpMessageNotReadableException e, HttpServletResponse response) {
+        log.warn("请求体不可读: {}", e.getMessage());
+        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
     }
 
     /**
