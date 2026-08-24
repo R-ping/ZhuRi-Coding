@@ -1,5 +1,6 @@
 package com.heima.content.service.tag;
 
+import com.heima.model.article.dtos.TagCountDTO;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.tag.pojos.ApTag;
 import java.util.List;
@@ -13,6 +14,15 @@ public interface TagService {
      * @return
      */
     List<ApTag> findList(String keyword);
+
+    /**
+     * 分类文章标签 TopN 聚合
+     * @param categoryId 分类ID（频道ID）
+     * @param keyword 标签名模糊过滤，null/空 表示不过滤
+     * @param size TopN 条数
+     * @return 标签名与数量的聚合列表（非 null）
+     */
+    List<TagCountDTO> topByCategory(Integer categoryId, String keyword, int size);
 
     /**
      * 查询指定分类下文章使用的标签及其数量

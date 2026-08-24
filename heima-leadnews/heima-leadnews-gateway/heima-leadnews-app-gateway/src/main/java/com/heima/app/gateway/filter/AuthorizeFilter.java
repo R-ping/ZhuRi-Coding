@@ -133,11 +133,8 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/topics/")
             || path.startsWith("/content/api/v1/article/recommend")
             || (path.startsWith("/content/api/v1/article/")&&path.endsWith("/recommend"))
-            // 标签只读接口（分栏标签列表 /by-category、按分类聚合 /category-top、标签详情文章列表 /{tagName}/articles）
-            // 注意：content 模块 /tag/ 下全部为 GET 只读查询，故整体前缀放行利于 SEO；写操作未定义于该前缀
-            || path.startsWith("/content/api/v1/tag/")
-            // 标签详情页头部信息（用户模块 /tags/{tagName}/detail 为 GET 只读；关注/取关 /tags/follow/** 仍须登录）
-            || (path.startsWith("/user/api/v1/tags/") && path.endsWith("/detail"))
+            || path.startsWith("/content/api/v1/tag/by-category")
+            || path.startsWith("/content/api/v1/tag/category-top")
             || path.startsWith("/content/api/v1/article/load")
             || path.startsWith("/content/api/v1/circle")
             // 文章详情页（FTL 服务端渲染）浏览器导航加载，无法携带 accToken，公开访问利于 SEO

@@ -195,4 +195,19 @@
         LIMIT #{size}
     </select>
 
+    <!-- 分类文章标签 TopN 聚合：解析 ap_article.tags JSON 数组，按分类与可选关键字统计各标签数量 -->
+    <select id="selectTopTagsByCategory" resultType="com.heima.model.article.dtos.TagCountDTO">
+        SELECT jt.tag AS tagName, COUNT(*) AS count
+        FROM ap_article a,
+             JSON_TABLE(a.tags, '$[*]' COLUMNS (tag VARCHAR(64) PATH '$')) jt
+        WHERE a.status = 9
+          AND a.channel_id = #{categoryId}
+          <if test="keyword != null and keyword != ''">
+            AND jt.tag LIKE CONCAT('%', #{keyword}, '%')
+          </if>
+        GROUP BY jt.tag
+        ORDER BY count DESC, jt.tag ASC
+        LIMIT #{size}
+    </select>
+
 </mapper>
