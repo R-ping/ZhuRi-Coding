@@ -608,9 +608,13 @@
                 this.currentCategory = category
                 this.searchKeyword = ''
                 if (category === 'ranking') {
-                    // 排行榜独立页面跳转（参考掘金：排行榜从左侧边栏顶部进入热榜页）
+                    // 排行榜为独立热榜页：未登录弹登录框（不发跳转请求），已登录新窗口打开（对齐掘金）
+                    if (!this.isLoggedIn) {
+                        this.showLogin()
+                        return
+                    }
                     this.currentNav = 'home'
-                    this.$router.push('/hot')
+                    window.open('/hot', '_blank')
                     return
                 }
                 this.currentNav = 'home'
