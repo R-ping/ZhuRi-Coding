@@ -28,6 +28,20 @@ public class TagController {
     }
 
     /**
+     * 分类文章标签 TopN 聚合接口
+     * @param categoryId 分类ID（频道ID）
+     * @param keyword 标签名模糊过滤，null/空 表示不过滤
+     * @param size TopN 条数，默认 15
+     * @return 标签名与数量的聚合列表（字段 tagName/count）
+     */
+    @GetMapping("/category-top")
+    public ResponseResult categoryTop(@RequestParam(required = false) Integer categoryId,
+                                      @RequestParam(required = false) String keyword,
+                                      @RequestParam(defaultValue = "15") int size) {
+        return ResponseResult.okResult(tagService.topByCategory(categoryId, keyword, size));
+    }
+
+    /**
      * 标签详情页：分页查询某标签下的文章列表
      * @param tagName 标签名（URL 编码，可能含特殊字符如 C++、C#）
      * @param page 页码（从 1 开始）

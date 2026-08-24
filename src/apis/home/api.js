@@ -90,10 +90,10 @@ Api.prototype = {
             url = conf.urls.get('loadmore')
         return url
     },
-    // 按分类获取标签列表
-    getTagsByCategory: function(categoryId) {
+    // 按分类获取标签列表（支持关键字搜索，size 固定取 top15）
+    getTagsByCategory: function(categoryId, keyword) {
         return new Promise((resolve, reject) => {
-            articleRequest.get('/api/v1/tag/by-category', { params: { categoryId } }).then((d) => {
+            articleRequest.get('/api/v1/tag/category-top', { params: { categoryId, keyword, size: 15 } }).then((d) => {
                 resolve(d)
             }).catch((e) => {
                 reject(e)

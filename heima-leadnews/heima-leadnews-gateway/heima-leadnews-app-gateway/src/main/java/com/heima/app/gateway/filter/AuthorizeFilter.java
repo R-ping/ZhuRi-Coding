@@ -134,6 +134,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/article/recommend")
             || (path.startsWith("/content/api/v1/article/")&&path.endsWith("/recommend"))
             || path.startsWith("/content/api/v1/tag/by-category")
+            || path.startsWith("/content/api/v1/tag/category-top")
             || path.startsWith("/content/api/v1/article/load")
             || path.startsWith("/content/api/v1/circle")
             // 文章详情页（FTL 服务端渲染）浏览器导航加载，无法携带 accToken，公开访问利于 SEO

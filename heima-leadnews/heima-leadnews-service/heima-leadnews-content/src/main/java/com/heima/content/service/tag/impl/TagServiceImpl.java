@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.tag.TagMapper;
 import com.heima.content.service.tag.TagService;
+import com.heima.model.article.dtos.TagCountDTO;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.tag.pojos.ApTag;
@@ -108,5 +109,18 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, ApTag> implements Tag
         result.put("size", safeSize);
         result.put("list", list);
         return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 分类文章标签 TopN 聚合，返回必要非 null（空用空列表）
+     * @param categoryId 分类ID（频道ID）
+     * @param keyword 标签名模糊过滤，null/空 表示不过滤
+     * @param size TopN 条数，小于等于 0 时兜底为 15
+     */
+    @Override
+    public List<TagCountDTO> topByCategory(Integer categoryId, String keyword, int size) {
+        if (categoryId == null) return new ArrayList<>();
+        if (size <= 0) size = 15;
+        return apArticleMapper.selectTopTagsByCategory(categoryId, keyword, size);
     }
 }

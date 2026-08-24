@@ -92,6 +92,10 @@
                       <span class="tag-arrow" :class="{up: tagDropdownOpen === currentTab}">&#9662;</span>
                   </div>
                   <div class="tag-panel" v-if="tagDropdownOpen === currentTab && subTabStates[currentTab].tags.length > 0">
+                      <div class="tag-search-box">
+                          <input class="tag-search-input" type="text" placeholder="搜索标签"
+                                 v-model="tagSearchKeyword" @input="onTagSearchInput" />
+                      </div>
                       <div class="tag-option" :class="{active: subTabStates[currentTab].selectedTag === '__all__'}"
                            @click="selectTag(currentTab, '__all__'); tagDropdownOpen = -1">全部</div>
                       <div class="tag-option" v-for="tag in subTabStates[currentTab].tags" :key="tag.tagName"
@@ -213,7 +217,10 @@
       refreshToast: { visible: false, text: '' },
       refreshToastTimer: null,
       // 三个点菜单：当前展开菜单所属的文章 id
-      activeMenuId: -1
+      activeMenuId: -1,
+      // 分类标签下拉搜索框：输入关键字与防抖计时器
+      tagSearchKeyword: '',
+      tagSearchTimer: null
     }),
     computed: {
       load_new_text: function () { return this.$lang.load_new_text },
@@ -340,12 +347,23 @@
         window.open('/content/article/' + item.id, '_blank')
       },
       toggleTagDropdown(index) {
+        // 打开下拉时清空搜索词并重置计时器，重新拉取全量 top15
+        if (this.tagSearchKeyword) this.tagSearchKeyword = ''
+        if (this.tagSearchTimer) { clearTimeout(this.tagSearchTimer); this.tagSearchTimer = null }
         if (this.tagDropdownOpen === index) {
           this.tagDropdownOpen = -1
         } else {
           this.tagDropdownOpen = index
-          this.loadCategoryTags(index)
+          this.loadCategoryTags(index, '')
         }
+      },
+      // 标签搜索输入防抖：300ms 后按关键字重新拉取标签
+      onTagSearchInput() {
+        if (this.tagSearchTimer) clearTimeout(this.tagSearchTimer)
+        var self = this
+        this.tagSearchTimer = setTimeout(function() {
+          self.loadCategoryTags(self.currentTab, self.tagSearchKeyword)
+        }, 300)
       },
       handleRetry(index) {
         var tabIndex = (index !== undefined) ? index : this.currentTab
