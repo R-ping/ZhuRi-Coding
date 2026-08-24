@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.tag.TagMapper;
+import com.heima.model.article.dtos.TagCountDTO;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.tag.pojos.ApTag;
@@ -22,6 +23,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -100,6 +104,48 @@ class TagServiceImplTest {
         // java 出现 3 次排第一
         assertEquals("java", result.get(0).get("tagName"));
         assertEquals(3, result.get(0).get("count"));
+    }
+
+    // ---------- topByCategory ----------
+    @Test
+    @DisplayName("topByCategory 空关键字按计数降序返回 TopN")
+    void topByCategory_ordersByCountWhenKeywordBlank() {
+        TagCountDTO java = new TagCountDTO();
+        java.setTagName("Java");
+        java.setCount(3);
+        TagCountDTO vue = new TagCountDTO();
+        vue.setTagName("Vue");
+        vue.setCount(2);
+        when(apArticleMapper.selectTopTagsByCategory(eq(1), eq(null), eq(15)))
+                .thenReturn(List.of(java, vue));
+
+        List<TagCountDTO> result = tagService.topByCategory(1, null, 15);
+        assertEquals(2, result.size());
+        // 顺序应为 Java,Vue（按 count 降序）
+        assertEquals("Java", result.get(0).getTagName());
+        assertEquals("Vue", result.get(1).getTagName());
+    }
+
+    @Test
+    @DisplayName("topByCategory 关键字体透传且默认 size 兜底为 15")
+    void topByCategory_passesKeywordAndDefaultSize() {
+        TagCountDTO java = new TagCountDTO();
+        java.setTagName("Java");
+        java.setCount(1);
+        when(apArticleMapper.selectTopTagsByCategory(eq(1), eq("Ja"), eq(15)))
+                .thenReturn(List.of(java));
+
+        tagService.topByCategory(1, "Ja", 0);
+        // size 兜底为 15，keyword 透传为 "Ja"
+        verify(apArticleMapper).selectTopTagsByCategory(eq(1), eq("Ja"), eq(15));
+    }
+
+    @Test
+    @DisplayName("topByCategory 分类为空返回空列表且不越界调用")
+    void topByCategory_returnsEmpty_whenCategoryNull() {
+        List<TagCountDTO> result = tagService.topByCategory(null, null, 15);
+        assertEquals(0, result.size());
+        verify(apArticleMapper, never()).selectTopTagsByCategory(any(), anyString(), org.mockito.ArgumentMatchers.anyInt());
     }
 
     // ---------- getArticles ----------

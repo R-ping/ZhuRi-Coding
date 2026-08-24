@@ -2,6 +2,7 @@ package com.heima.content.mapper.article;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.heima.model.article.dtos.ArticleHomeDto;
+import com.heima.model.article.dtos.TagCountDTO;
 import com.heima.model.article.pojos.ApArticle;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
@@ -66,5 +67,16 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
      * @return 文章总数
      */
     Long countTagArticles(@Param("tagName") String tagName);
+
+    /**
+     * 分类文章标签 TopN 聚合：统计某分类（channel_id=categoryId）下已发布文章（status=9）各标签出现次数，按次数降序、标签名升序返回前 size 条
+     * @param categoryId 分类ID（频道ID）
+     * @param keyword 标签名模糊过滤，null/空 表示不过滤
+     * @param size TopN 条数
+     * @return 标签名与数量的聚合列表
+     */
+    List<TagCountDTO> selectTopTagsByCategory(@Param("categoryId") Integer categoryId,
+                                              @Param("keyword") String keyword,
+                                              @Param("size") int size);
 
 }

@@ -574,15 +574,14 @@ export default {
     },
 
     /**
-     * 加载分类标签列表
+     * 加载分类标签列表（支持关键字搜索；始终重新拉取，便于搜索时刷新）
      */
-    loadCategoryTags(index) {
+    loadCategoryTags(index, keyword) {
       var tabId = Config.tabTitles[index].id
       if (!this.shouldShowTagFilter(tabId)) return
-      if (this.subTabStates[index].tagsLoaded) return
 
       var self = this
-      Api.getTagsByCategory(tabId).then(function(d) {
+      Api.getTagsByCategory(tabId, keyword).then(function(d) {
         if (d && d.code === 200) {
           var tags = d.data || []
           self.$set(self.subTabStates[index], 'tags', tags)
