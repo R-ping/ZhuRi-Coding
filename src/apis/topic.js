@@ -2,7 +2,7 @@ import request from '@/common/article_request'
 
 // 推荐话题（换一换）
 export const getRecommendTopics = (page = 0, size = 5) => {
-  return request.get('/api/v1/topics/recommend', { params: { page, size } })
+  return request.get('/api/v1/topics/recommend-topics', { params: { page, size } })
 }
 
 // 话题广场列表
