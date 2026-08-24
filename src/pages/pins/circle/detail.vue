@@ -65,8 +65,8 @@
                         </div>
                         <div class="feed-content">{{ pin.content }}</div>
                         <div class="feed-actions">
-                            <span class="feed-action">👍 {{ pin.likeCount || 0 }}</span>
-                            <span class="feed-action">💬 {{ pin.commentCount || 0 }}</span>
+                            <span class="feed-action" :class="{ 'active': pin.liked }" @click="toggleLike(pin)">👍 {{ pin.likeCount || 0 }}</span>
+                            <span class="feed-action" @click="goToPinDetail(pin)">💬 {{ pin.commentCount || 0 }}</span>
                         </div>
                     </div>
                     <div class="empty-state" v-if="feedList.length === 0 && !loading">
@@ -93,9 +93,10 @@ import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
+import { requireLogin } from '@/utils/login'
 import RecommendTopics from '@/components/RecommendTopics.vue'
 import PinsPublishModal from '@/pages/creator/pins/components/PinsPublishModal.vue'
-import { publishPins } from '@/apis/pins'
+import { publishPins, likePins } from '@/apis/pins'
 import { getCircleDetail, joinCircle, leaveCircle, getCircleFeed } from '@/apis/circle'
 
 export default {
@@ -177,7 +178,29 @@ export default {
             this.hasMore = true
             this.fetchFeed()
         },
+        // 沸点点赞/取消点赞（需登录）
+        async toggleLike(pin) {
+            if (!requireLogin()) return
+            const newLiked = !pin.liked
+            try {
+                const res = await likePins({ pinsId: pin.id, liked: newLiked })
+                if (res && res.code === 200) {
+                    this.$set(pin, 'liked', newLiked)
+                    this.$set(pin, 'likeCount', (pin.likeCount || 0) + (newLiked ? 1 : -1))
+                    if (pin.likeCount < 0) this.$set(pin, 'likeCount', 0)
+                }
+            } catch (e) {
+                toast('点赞失败', 2)
+            }
+        },
+        // 点击评论/沸点项跳转沸点详情页
+        goToPinDetail(pin) {
+            if (pin && pin.id) {
+                window.open('/pins/detail/' + pin.id, '_blank')
+            }
+        },
         async toggleJoin() {
+            if (!requireLogin()) return
             try {
                 if (this.circleInfo.isJoined) {
                     const res = await leaveCircle(this.circleId)
@@ -199,6 +222,7 @@ export default {
             }
         },
         openPublishModal() {
+            if (!requireLogin()) return
             // 预填当前圈子
             this.selectedCircle = {
                 id: this.circleId,
@@ -211,6 +235,7 @@ export default {
             this.publishContent = ''
         },
         async handleCirclePublish(data) {
+            if (!requireLogin()) return
             try {
                 this.publishing = true
                 const res = await publishPins(data)
@@ -442,6 +467,9 @@ export default {
     font-size: 13px;
     color: #8a919f;
     cursor: pointer;
+    &.active {
+        color: #e5383b;
+    }
 }
 
 .empty-state, .loading-state {

@@ -85,8 +85,8 @@
             </div>
             <div class="feed-content">{{ item.content }}</div>
             <div class="feed-meta">
-              <span>{{ item.likeCount || 0 }}赞</span>
-              <span>{{ item.commentCount || 0 }}评论</span>
+              <span class="feed-stat" :class="{ 'active': item.liked }" @click="toggleLike(item)">👍 {{ item.likeCount || 0 }}</span>
+              <span class="feed-stat" @click="goToPinDetail(item)">💬 {{ item.commentCount || 0 }}</span>
               <span>{{ formatTime(item.createdTime) }}</span>
             </div>
           </div>
@@ -136,8 +136,9 @@
 import { getTopicDetail, getTopicFeed } from '@/apis/topic'
 import RecommendTopics from '@/components/RecommendTopics.vue'
 import PinsPublishModal from '@/pages/creator/pins/components/PinsPublishModal.vue'
-import { publishPins } from '@/apis/pins'
+import { publishPins, likePins } from '@/apis/pins'
 import { toast } from '@/utils/toast'
+import { requireLogin } from '@/utils/login'
 
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 
@@ -262,6 +263,7 @@ export default {
       return d.toLocaleDateString()
     },
     openPublish() {
+      if (!requireLogin()) return
       // 预填当前话题并弹出发布框
       this.selectedTopic = { id: this.topicId, name: this.topic.name }
       this.showPublishModal = true
@@ -270,8 +272,30 @@ export default {
       this.showPublishModal = false
       this.publishContent = ''
     },
+    // 沸点点赞/取消点赞（需登录）
+    async toggleLike(item) {
+      if (!requireLogin()) return
+      const newLiked = !item.liked
+      try {
+        const res = await likePins({ pinsId: item.id, liked: newLiked })
+        if (res && res.code === 200) {
+          this.$set(item, 'liked', newLiked)
+          this.$set(item, 'likeCount', (item.likeCount || 0) + (newLiked ? 1 : -1))
+          if (item.likeCount < 0) this.$set(item, 'likeCount', 0)
+        }
+      } catch (e) {
+        toast('点赞失败', 2)
+      }
+    },
+    // 点击评论/沸点项跳转沸点详情页
+    goToPinDetail(item) {
+      if (item && item.id) {
+        window.open('/pins/detail/' + item.id, '_blank')
+      }
+    },
     async handlePublish(data) {
       if (this.publishing) return
+      if (!requireLogin()) return
       this.publishing = true
       try {
         const res = await publishPins(data)
@@ -492,6 +516,12 @@ export default {
         gap: 16px;
         font-size: 13px;
         color: #86909c;
+        .feed-stat {
+          cursor: pointer;
+          &.active {
+            color: #e5383b;
+          }
+        }
       }
     }
   }

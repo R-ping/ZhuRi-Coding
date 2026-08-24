@@ -248,6 +248,7 @@
 
 <script>
 import { toast } from '@/utils/toast'
+import { requireLogin } from '@/utils/login'
 import { getPinsDetail, getPinsList, getComments, createComment, likePins, incrPinView } from '@/apis/pins'
 import { uploadFile } from '@/common/oss_upload'
 
@@ -396,6 +397,7 @@ export default {
             this.fetchComments(true)
         },
         async submitComment() {
+            if (!requireLogin()) return
             if (!this.canSubmit) return
             this.submitting = true
             try {
@@ -498,6 +500,7 @@ export default {
             })
         },
         async toggleCommentLike(comment) {
+            if (!requireLogin()) return
             const newLiked = !comment.liked
             try {
                 const res = await likePins({ pinsId: comment.id, liked: newLiked })
@@ -528,6 +531,7 @@ export default {
 
         // ============== 沸点操作 ==============
         async toggleLike() {
+            if (!requireLogin()) return
             if (!this.pin) return
             const newLiked = !this.pin.liked
             try {
