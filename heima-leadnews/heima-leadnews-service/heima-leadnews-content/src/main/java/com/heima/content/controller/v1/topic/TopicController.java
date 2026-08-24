@@ -15,9 +15,11 @@ public class TopicController {
     @Autowired
     private TopicService topicService;
 
-    @GetMapping("/recommend")
-    public ResponseResult recommend(@RequestParam(defaultValue = "0") int page,
-                                    @RequestParam(defaultValue = "5") int size) {
+    // 侧栏“推荐话题(换一换)”：路径命令为 recommend-topics，避免与文章列表的
+    // /article/recommend_all|recommend_cate|recommend_follow 系列在抓包时混淆
+    @GetMapping("/recommend-topics")
+    public ResponseResult recommendTopics(@RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "5") int size) {
         return ResponseResult.okResult(topicService.recommend(page, size));
     }
 
