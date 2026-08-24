@@ -3,6 +3,7 @@ package com.heima.content.service.course.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.content.mapper.course.ApCourseChapterMapper;
 import com.heima.content.mapper.course.ApCourseMapper;
+import com.heima.content.mapper.course.ApUserCourseMapper;
 import com.heima.content.service.course.ApCourseChapterService;
 import com.heima.model.course.dtos.ChapterDto;
 import com.heima.model.course.dtos.ChapterSortDto;
@@ -10,11 +11,15 @@ import com.heima.model.course.pojos.ApCourse;
 import com.heima.model.course.pojos.ApCourseChapter;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.heima.model.user.pojos.ApUser;
+import com.heima.model.user.pojos.ApUserCourse;
+import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Date;
 
 @Service
@@ -26,6 +31,9 @@ public class ApCourseChapterServiceImpl implements ApCourseChapterService {
 
     @Autowired
     private ApCourseMapper courseMapper;
+
+    @Autowired
+    private ApUserCourseMapper userCourseMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -202,6 +210,36 @@ public class ApCourseChapterServiceImpl implements ApCourseChapterService {
         ApCourseChapter chapter = chapterMapper.selectById(chapterId);
         if (chapter == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "章节不存在");
+        }
+
+        // ---- 阅读权限校验（免费整本 / 试读节可匿名阅读；付费非试读节需登录且已购） ----
+        // 1. 查询所属课程：免费整本=价格<=0（价格为空视为免费兜底）
+        ApCourse course = courseMapper.selectById(chapter.getCourseId());
+        boolean isFreeCourse = course == null
+                || course.getPrice() == null
+                || course.getPrice().compareTo(BigDecimal.ZERO) <= 0;
+        // 2. 字段判定：is_free=1 表示该小节为免费/试读节
+        boolean isTrialChapter = chapter.getIsFree() != null && chapter.getIsFree() == 1;
+
+        // 免费整本或试读节：未登录也可阅读（公开只读）
+        if (isFreeCourse || isTrialChapter) {
+            return ResponseResult.okResult(chapter);
+        }
+
+        // 付费非试读节：需登录后操作
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null || user.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+
+        // 已登录但须已购买该课程（有效购买记录）
+        LambdaQueryWrapper<ApUserCourse> qw = new LambdaQueryWrapper<>();
+        qw.eq(ApUserCourse::getUserId, user.getId().intValue());
+        qw.eq(ApUserCourse::getCourseId, chapter.getCourseId());
+        qw.eq(ApUserCourse::getIsActive, (byte) 1);
+        Long purchaseCount = userCourseMapper.selectCount(qw);
+        if (purchaseCount == null || purchaseCount <= 0) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "该章节需购买后阅读");
         }
 
         return ResponseResult.okResult(chapter);

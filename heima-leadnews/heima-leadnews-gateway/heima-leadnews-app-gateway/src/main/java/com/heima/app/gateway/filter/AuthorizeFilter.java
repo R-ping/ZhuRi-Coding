@@ -163,6 +163,10 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/course/pay/notify")
             || path.startsWith("/content/api/v1/course/my")
             || path.startsWith("/content/api/v1/course/detail")
+            // 课程章节只读阅读接口（未登录也可读免费小册整本与付费小册的免费/试读小节）。
+            // 注意：仅放行 {id}/detail 只读详情，章节的增改删/排序/投稿审核等写接口仍须登录；
+            // 后端 getChapterDetail 已做付费非试读节的登录+已购校验，匿名只可读免费内容。
+            || path.matches("/content/api/v1/course/chapter/\\d+/detail")
             // 成就勋章公开只读接口（未登录也可浏览他人主页勋章）
             || path.matches("/content/api/v1/user/\\d+/achievements")
             // 个人主页公开只读接口（未登录也可浏览他人主页基本信息/统计/等级及分栏内容）
