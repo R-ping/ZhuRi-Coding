@@ -463,7 +463,8 @@
       // 点击文章卡片上的标签 -> 进入标签详情页
       onTagClick(tag) {
         if (!tag) return
-        this.$router.push('/tag/' + encodeURIComponent(tag))
+        // 免登录、新窗口打开标签详情页（SPA 路由 /tag/:tagName），不再 SPA 内嵌或要求登录
+        window.open('/tag/' + encodeURIComponent(tag), '_blank')
       },
       // ============== 三个点菜单 ==============
       // 鼠标移入"三个点"打开菜单
