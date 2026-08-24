@@ -227,6 +227,35 @@ class AuthorizeFilterTest {
     }
 
     @Test
+    @DisplayName("课程章节只读详情、无 token → 匿名放行（免费/试读阅读）")
+    void testCourseChapterDetailPublicNoToken() {
+        ServerWebExchange exchange = exchange("/content/api/v1/course/chapter/2089278840963514370/detail", null);
+        ServerHttpResponse response = exchange.getResponse();
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(exchange)).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(chain).filter(exchange);
+        verify(response, never()).setComplete();
+    }
+
+    @Test
+    @DisplayName("课程章节写接口、无 token → 拦截（返回 444）")
+    void testCourseChapterWriteNoToken() {
+        ServerWebExchange exchange = exchange("/content/api/v1/course/chapter/create", null);
+        ServerHttpResponse response = exchange.getResponse();
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(any())).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(response).setStatusCode(HttpStatusCode.valueOf(444));
+        verify(response).setComplete();
+        verify(chain, never()).filter(any());
+    }
+
+    @Test
     @DisplayName("getOrder → 返回 0（最高优先级）")
     void testOrder() {
         assertEquals(0, filter.getOrder());

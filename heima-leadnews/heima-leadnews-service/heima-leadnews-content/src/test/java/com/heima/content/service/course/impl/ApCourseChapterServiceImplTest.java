@@ -2,12 +2,16 @@ package com.heima.content.service.course.impl;
 
 import com.heima.content.mapper.course.ApCourseChapterMapper;
 import com.heima.content.mapper.course.ApCourseMapper;
+import com.heima.content.mapper.course.ApUserCourseMapper;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.course.dtos.ChapterDto;
 import com.heima.model.course.dtos.ChapterSortDto;
 import com.heima.model.course.pojos.ApCourse;
 import com.heima.model.course.pojos.ApCourseChapter;
+import com.heima.model.user.pojos.ApUser;
+import com.heima.utils.thread.AppThreadLocalUtil;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +19,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,6 +48,8 @@ class ApCourseChapterServiceImplTest {
     private ApCourseChapterMapper chapterMapper;
     @Mock
     private ApCourseMapper courseMapper;
+    @Mock
+    private ApUserCourseMapper userCourseMapper;
 
     @InjectMocks
     private ApCourseChapterServiceImpl chapterService;
@@ -52,6 +59,11 @@ class ApCourseChapterServiceImplTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
+    }
+
+    @AfterEach
+    void tearDown() {
+        AppThreadLocalUtil.clear();
     }
 
     // ---------- 辅助 ----------
@@ -346,9 +358,95 @@ class ApCourseChapterServiceImplTest {
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(),
                 chapterService.getChapterDetail(1L).getCode());
 
+        // 课程不存在视为免费兜底 → 匿名可读
         when(chapterMapper.selectById(2L)).thenReturn(chapter(2L, 10L, 1));
         ApCourseChapter vo = (ApCourseChapter) chapterService.getChapterDetail(2L).getData();
         assertEquals(2L, vo.getId());
+    }
+
+    // ==================== getChapterDetail 阅读权限 ====================
+
+    /** 免费整本（价格为0）→ 匿名放行 */
+    @Test
+    @DisplayName("getChapterDetail - 免费整本匿名可读")
+    void testAnonymousCanReadFreeCourse() {
+        ApCourseChapter ch = chapter(3L, 10L, 1);
+        when(chapterMapper.selectById(3L)).thenReturn(ch);
+        ApCourse free = authorCourse(99, (byte) 9);
+        free.setPrice(BigDecimal.ZERO);
+        when(courseMapper.selectById(10L)).thenReturn(free);
+
+        ResponseResult r = chapterService.getChapterDetail(3L);
+        assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
+    }
+
+    /** 付费课程的免费/试读节（is_free=1）→ 匿名放行 */
+    @Test
+    @DisplayName("getChapterDetail - 付费课程试读节匿名可读")
+    void testAnonymousCanReadTrialSection() {
+        ApCourseChapter ch = chapter(4L, 10L, 1);
+        ch.setIsFree((byte) 1);
+        when(chapterMapper.selectById(4L)).thenReturn(ch);
+        ApCourse paid = authorCourse(99, (byte) 9);
+        paid.setPrice(new BigDecimal("9.9"));
+        when(courseMapper.selectById(10L)).thenReturn(paid);
+
+        ResponseResult r = chapterService.getChapterDetail(4L);
+        assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
+    }
+
+    /** 付费非试读节：匿名 → 需登录 */
+    @Test
+    @DisplayName("getChapterDetail - 付费非试读节匿名需登录")
+    void testAnonymousCannotReadPaidSection() {
+        ApCourseChapter ch = chapter(5L, 10L, 1);  // is_free=0
+        when(chapterMapper.selectById(5L)).thenReturn(ch);
+        ApCourse paid = authorCourse(99, (byte) 9);
+        paid.setPrice(new BigDecimal("9.9"));
+        when(courseMapper.selectById(10L)).thenReturn(paid);
+
+        ResponseResult r = chapterService.getChapterDetail(5L);
+        assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), r.getCode());
+    }
+
+    /** 付费非试读节：已登录未购 → 需购买 */
+    @Test
+    @DisplayName("getChapterDetail - 付费非试读节已登录未购需购买")
+    void testLoggedInNotPurchasedCannotReadPaidSection() {
+        ApCourseChapter ch = chapter(6L, 10L, 1);
+        when(chapterMapper.selectById(6L)).thenReturn(ch);
+        ApCourse paid = authorCourse(99, (byte) 9);
+        paid.setPrice(new BigDecimal("9.9"));
+        when(courseMapper.selectById(10L)).thenReturn(paid);
+
+        ApUser user = new ApUser();
+        user.setId(100);
+        AppThreadLocalUtil.setUser(user);
+        when(userCourseMapper.selectCount(any())).thenReturn(0L);
+
+        ResponseResult r = chapterService.getChapterDetail(6L);
+        assertEquals(AppHttpCodeEnum.NO_OPERATOR_AUTH.getCode(), r.getCode());
+        AppThreadLocalUtil.clear();
+    }
+
+    /** 付费非试读节：已登录且已购 → 放行 */
+    @Test
+    @DisplayName("getChapterDetail - 付费非试读节已购可读")
+    void testLoggedInPurchasedCanReadPaidSection() {
+        ApCourseChapter ch = chapter(7L, 10L, 1);
+        when(chapterMapper.selectById(7L)).thenReturn(ch);
+        ApCourse paid = authorCourse(99, (byte) 9);
+        paid.setPrice(new BigDecimal("9.9"));
+        when(courseMapper.selectById(10L)).thenReturn(paid);
+
+        ApUser user = new ApUser();
+        user.setId(100);
+        AppThreadLocalUtil.setUser(user);
+        when(userCourseMapper.selectCount(any())).thenReturn(1L);
+
+        ResponseResult r = chapterService.getChapterDetail(7L);
+        assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
+        AppThreadLocalUtil.clear();
     }
 
     // ==================== submitForReview ====================
