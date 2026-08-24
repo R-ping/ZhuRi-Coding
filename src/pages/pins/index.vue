@@ -341,6 +341,7 @@
                         class="featured-item"
                         v-for="pins in sidebarData.featuredPins || []"
                         :key="pins.id"
+                        @click="goToDetail(pins)"
                     >
                         <img :src="pins.userAvatar || defaultAvatar" class="featured-avatar" alt="avatar">
                         <div class="featured-info">
@@ -497,6 +498,7 @@ import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
+import { requireLogin } from '@/utils/login'
 import { getMyCircles, getRecommendCircles, getCircleFeed } from '@/apis/circle'
 import {
     getPinsList,
@@ -1021,6 +1023,7 @@ export default {
         // ============== 发布 ==============
         async handlePublish(data) {
             if (this.publishing) return
+            if (!requireLogin()) return
             this.publishing = true
             try {
                 const res = await publishPinsApi(data)
@@ -1045,6 +1048,7 @@ export default {
 
         // ============== 沸点交互 ==============
         async toggleLike(pins) {
+            if (!requireLogin()) return
             const newLiked = !pins.liked
             try {
                 const res = await likePins({ pinsId: pins.id, liked: newLiked })
@@ -1083,6 +1087,7 @@ export default {
             }
         },
         async submitComment(pins) {
+            if (!requireLogin()) return
             if (!this.commentInput.trim()) return
             const content = this.commentInput.trim()
             try {
@@ -1153,6 +1158,7 @@ export default {
             }
         },
         async toggleCommentLike(pins, comment) {
+            if (!requireLogin()) return
             const newLiked = !comment.liked
             try {
                 const res = await likePins({ pinsId: comment.id, liked: newLiked })
@@ -1949,6 +1955,7 @@ export default {
     gap: 8px;
     padding: 8px 0;
     border-bottom: 1px solid #f2f3f5;
+    cursor: pointer;
     &:last-child {
         border: none;
     }
