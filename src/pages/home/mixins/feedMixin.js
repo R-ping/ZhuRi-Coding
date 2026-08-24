@@ -118,6 +118,12 @@ export default {
     },
 
     loadmore(index) {
+      // 桌面端统一由 recommendLoadMore 接管，杜绝 legacy 加载更多(/load/more)
+      var tabId = Config.tabTitles[index] ? Config.tabTitles[index].id : null
+      if (this.isDesktop && tabId !== null && this.shouldUseRecommend(tabId)) {
+        this.recommendLoadMore(index)
+        return
+      }
       var state = this.tabStates[index]
       if (!state || state.loadingMore || state.noMore) return
       this.$set(state, 'loadingMore', true)
@@ -238,7 +244,10 @@ export default {
     },
 
     switchTab(index) {
-      if (this.currentTab === index) return
+      // 仅当目标分栏已是当前分栏且已加载过数据时才跳过；
+      // 首载场景(currentTab 默认即为 index 但 loaded=false)必须继续走 recommendLoad，
+      // 否则桌面端刷新应用首页当前默认分栏不会发起文章列表请求
+      if (this.currentTab === index && this.tabStates[index].loaded) return
       this.currentTab = index
       this.params.loaddir = 1
       this.params.index = index
