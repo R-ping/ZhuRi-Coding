@@ -178,6 +178,18 @@ class ApArticleRecommendServiceImplTest {
         assertEquals(0, ((List<?>) data.get("list")).size());
     }
 
+    @Test
+    @DisplayName("latest 返回真实总数 total（countLatestArticles 兜底）")
+    void latestReturnsRealTotal() {
+        // 本页仅剩 1 条，但全量总数为 7 —— total 应是真实总数而非当页条数
+        when(apArticleMapper.selectLatestArticles(any(), any(), any(), anyInt(), anyInt()))
+                .thenReturn(List.of(article(9L, "a", 0, 0, 0, 0, 0)));
+        when(apArticleMapper.countLatestArticles(any(), any(), any())).thenReturn(7L);
+        Map<?, ?> data = (Map<?, ?>) recommendService.recommendAll(dto(2, 1, "__all__", "latest")).getData();
+        assertEquals(7L, data.get("total"));
+        assertEquals(1, ((List<?>) data.get("list")).size());
+    }
+
     // ---------- recommend 分栏：正常序列 ----------
     @Test
     @DisplayName("recommend 多候选输出全局序列并跨页 hasMore")

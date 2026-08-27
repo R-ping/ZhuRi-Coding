@@ -1,6 +1,8 @@
 package com.heima.content.service.order.impl;
 
+import com.heima.apis.reward.IRewardClient;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.heima.content.mapper.course.ApCourseMapper;
@@ -18,6 +20,7 @@ import com.heima.model.course.pojos.ApCourseOrder.PayType;
 import com.heima.model.user.pojos.ApUserCourse;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,9 +49,12 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private PaymentRewardService paymentRewardService;
 
+    @Autowired
+    private IRewardClient rewardClient;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ResponseResult createOrder(Long courseId, String discountCode, Long userId, String payType) {
+    public ResponseResult createOrder(Long courseId, String discountCode, String couponItemCode, Long userId, String payType) {
         if (courseId == null || userId == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
@@ -63,9 +69,28 @@ public class OrderServiceImpl implements OrderService {
 
         BigDecimal discountAmount = BigDecimal.ZERO;
         ApCourseDiscount discount = null;
+        String usedCouponCode = null;
 
-        // 校验折扣码
-        if (discountCode != null && !discountCode.isEmpty()) {
+        // 优先使用抽奖获得的通用5折券（全课程通用，收取后校验 reward 侧持有数量）
+        if (couponItemCode != null && !couponItemCode.isEmpty()) {
+            ResponseResult holdResult = rewardClient.getVirtualAssetHold(userId, couponItemCode);
+            Map<String, Object> holdData = holdResult != null && holdResult.getData() != null
+                    ? (Map<String, Object>) holdResult.getData() : Collections.emptyMap();
+            Object qtyObj = holdData.get("quantity");
+            int quantity = qtyObj instanceof Number ? ((Number) qtyObj).intValue() : 0;
+            if (quantity < 1) {
+                return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "道具不足，无法使用该折扣券");
+            }
+            Object rateObj = holdData.get("discountRate");
+            double discountRate = rateObj instanceof Number ? ((Number) rateObj).doubleValue() : 1.0d;
+            // payable 比例：5折券 rate=0.5 → 折扣金额 = 原价 * (1 - 0.5)
+            discountAmount = originalAmount.multiply(
+                    BigDecimal.valueOf(Math.max(0.0d, Math.min(1.0d, 1.0d - discountRate)))
+            );
+            usedCouponCode = couponItemCode;
+            log.info("课程下单使用5折券: userId={}, courseId={}, coupon={}, rate={}, discount={}",
+                    userId, courseId, couponItemCode, discountRate, discountAmount);
+        } else if (discountCode != null && !discountCode.isEmpty()) {
             discount = discountService.validateDiscount(discountCode, courseId);
             if (discount == null) {
                 return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "折扣码无效或已过期");
@@ -99,6 +124,7 @@ public class OrderServiceImpl implements OrderService {
         order.setPaidAmount(paidAmount);
         order.setTotalAmount(paidAmount);
         order.setDiscountCode(discountCode != null ? discountCode : "");
+        order.setCouponItemCode(usedCouponCode != null ? usedCouponCode : "");
         order.setStatus(ApCourseOrder.Status.PENDING.getCode());
         order.setCreatedTime(new Date());
         order.setUpdatedTime(new Date());
@@ -144,22 +170,40 @@ public class OrderServiceImpl implements OrderService {
             return;
         }
 
-        if (order.getStatus() != ApCourseOrder.Status.PENDING.getCode()) {
-            log.warn("订单状态异常: {}, status={}", orderNo, order.getStatus());
+        // ★ 幂等：用"条件更新"原子抢占 PENDING→PAID，
+        // 只有受影响行数==1 才继续发奖，杜绝支付宝重复通知/并发回调导致的重复放权、重复加销量。
+        Date now = new Date();
+        int updated = orderMapper.update(null, new LambdaUpdateWrapper<ApCourseOrder>()
+                .eq(ApCourseOrder::getOrderNo, orderNo)
+                .eq(ApCourseOrder::getStatus, ApCourseOrder.Status.PENDING.getCode())
+                .set(ApCourseOrder::getStatus, ApCourseOrder.Status.PAID.getCode())
+                .set(ApCourseOrder::getTradeNo, tradeNo)
+                .set(ApCourseOrder::getPayTime, now)
+                .set(ApCourseOrder::getUpdatedTime, now));
+        if (updated != 1) {
+            log.warn("订单非待支付态或已被处理，跳过幂等后续: orderNo={}, status={}", orderNo, order.getStatus());
             return;
         }
-
-        order.setStatus(ApCourseOrder.Status.PAID.getCode());
-        order.setTradeNo(tradeNo);
-        order.setPayTime(new Date());
-        order.setUpdatedTime(new Date());
-        orderMapper.updateById(order);
 
         // 原子更新折扣码使用次数（防止并发超卖）
         if (order.getDiscountCode() != null && !order.getDiscountCode().isEmpty()) {
             boolean consumed = discountService.consumeDiscountCode(order.getDiscountCode());
             if (!consumed) {
                 log.warn("折扣码使用次数已达上限或无效: code={}", order.getDiscountCode());
+            }
+        }
+
+        // 核销抽奖获得的通用5折券（reward 侧原子扣减持有数量，防止超核）
+        if (order.getCouponItemCode() != null && !order.getCouponItemCode().isEmpty()) {
+            try {
+                ResponseResult consumeResult = rewardClient.consumeVirtualAsset(
+                        order.getUserId().longValue(), order.getCouponItemCode(), 1);
+                if (consumeResult == null || consumeResult.getCode() != 200) {
+                    log.warn("5折券核销失败，需补偿: orderNo={}, coupon={}",
+                            orderNo, order.getCouponItemCode());
+                }
+            } catch (Exception e) {
+                log.error("5折券核销异常: orderNo={}, coupon={}", orderNo, order.getCouponItemCode(), e);
             }
         }
 

@@ -46,18 +46,11 @@ public class SimilarityProcessor implements ArticleAuditProcessor {
         context.setHighSimilarity(isHighSimilarity);
 
         // 更新文章推荐状态（高相似度标记为不推荐）
+        // 使用幂等 upsert：依赖 uk_article_id 唯一索引兜底并发首次插入，避免重复行
         try {
-            ApArticleConfig config = apArticleConfigMapper.selectOne(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ApArticleConfig>()
-                    .eq("article_id", article.getId()));
-            if (config == null) {
-                config = new ApArticleConfig(article.getId());
-                config.setIsRecommend(!isHighSimilarity);
-                apArticleConfigMapper.insert(config);
-            } else {
-                config.setIsRecommend(!isHighSimilarity);
-                apArticleConfigMapper.updateById(config);
-            }
+            ApArticleConfig config = new ApArticleConfig(article.getId());
+            config.setIsRecommend(!isHighSimilarity);
+            apArticleConfigMapper.insertOrUpdateRecommend(config);
             log.info("更新文章推荐状态, articleId={}, isRecommend={}", article.getId(), !isHighSimilarity);
         } catch (Exception e) {
             log.error("更新文章配置失败, articleId={}", article.getId(), e);

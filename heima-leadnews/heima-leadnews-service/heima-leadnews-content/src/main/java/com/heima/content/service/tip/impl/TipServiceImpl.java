@@ -148,12 +148,20 @@ public class TipServiceImpl implements TipService {
             return false;
         }
 
-        // 1. 更新订单为已支付
-        order.setStatus(ApArticleTipOrder.Status.PAID.getCode());
-        order.setTradeNo(tradeNo);
-        order.setPayTime(new Date());
-        order.setUpdatedTime(new Date());
-        tipOrderMapper.updateById(order);
+        // ★ 幂等：用"条件更新"原子抢占 PENDING→PAID，
+        // 只有受影响行数==1 才继续发奖/加汇总，杜绝支付宝重复通知/并发回调导致的重复打赏流水、重复总额。
+        Date now = new Date();
+        int updated = tipOrderMapper.update(null, new LambdaUpdateWrapper<ApArticleTipOrder>()
+                .eq(ApArticleTipOrder::getOrderNo, orderNo)
+                .eq(ApArticleTipOrder::getStatus, ApArticleTipOrder.Status.PENDING.getCode())
+                .set(ApArticleTipOrder::getStatus, ApArticleTipOrder.Status.PAID.getCode())
+                .set(ApArticleTipOrder::getTradeNo, tradeNo)
+                .set(ApArticleTipOrder::getPayTime, now)
+                .set(ApArticleTipOrder::getUpdatedTime, now));
+        if (updated != 1) {
+            log.warn("打赏订单非待支付态或已被处理，跳过幂等后续: orderNo={}", orderNo);
+            return true;
+        }
 
         // 2. 写入打赏流水（公开感谢名单），冗余打赏人昵称与头像
         ApArticleTipRecord record = new ApArticleTipRecord();

@@ -23,9 +23,13 @@ public class UserInterceptor implements ChannelInterceptor {
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
         if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
-            String userId = accessor.getFirstNativeHeader("userId");
+            // 从握手阶段由 AuthHandshakeInterceptor 校验 token 后写入的 sessionAttributes 读取真实身份，
+            // 不再信任客户端连接帧携带的裸 userId，防止伪装他人身份订阅 /user/queue 定向推送。
+            Object userId = accessor.getSessionAttributes() != null
+                    ? accessor.getSessionAttributes().get("userId")
+                    : null;
             if (userId != null) {
-                accessor.setUser(new StompPrincipal(userId));
+                accessor.setUser(new StompPrincipal(userId.toString()));
             }
         }
         return message;

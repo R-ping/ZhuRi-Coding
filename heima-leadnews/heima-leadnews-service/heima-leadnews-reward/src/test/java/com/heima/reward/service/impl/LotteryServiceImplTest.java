@@ -31,6 +31,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,7 +42,8 @@ import static org.mockito.Mockito.when;
  * 核心诉求：
  * 1. 抽奖所需的矿石/免费次数校验，防止资产不足强行抽奖（资损）；
  * 2. 实物奖品领取的归属校验，防止越权领取他人订单；
- * 3. 免费成功抽奖的扣矿石、记录、每日状态落库链路完整。
+ * 3. 免费成功抽奖的扣矿石、记录、每日状态落库链路完整；
+ * 4. 实物奖品库存占用与售罄降级兜底（限量充足发放/售罄降级矿石/不限量不占用）。
  */
 class LotteryServiceImplTest {
 
@@ -78,6 +80,19 @@ class LotteryServiceImplTest {
         p.setMaxOre(500);
         p.setStatus(1);
         p.setIsPhysical(false);
+        return p;
+    }
+
+    private LotteryPrizePool physicalPrize() {
+        LotteryPrizePool p = new LotteryPrizePool();
+        p.setId("p9");
+        p.setName("实体徽章");
+        p.setType(3);
+        p.setProbability(new BigDecimal("1.0"));   // 概率=1.0，保证抽中它（rand<1 恒选中）
+        p.setMinOre(0);
+        p.setMaxOre(0);
+        p.setStatus(1);
+        p.setIsPhysical(true);
         return p;
     }
 
@@ -143,7 +158,125 @@ class LotteryServiceImplTest {
         verify(drawRecordMapper).insert(any(LotteryDrawRecord.class));
     }
 
+    @Test
+    @DisplayName("draw - 付费单抽原子扣成本矿石，中奖矿石原子累加")
+    void testDrawPaidUsesAtomicOreOps() {
+        LotteryDailyState daily = new LotteryDailyState();
+        daily.setId(1L);
+        daily.setFreeUsed(false);
+        daily.setDrawCount(3);
+        when(dailyStateMapper.selectOne(any())).thenReturn(daily);
+        UserAssets assets = new UserAssets();
+        assets.setUserId(userId);
+        assets.setOreBalance(1000);   // 足够单抽200
+        when(userAssetsMapper.selectById(userId)).thenReturn(assets);
+        when(prizePoolMapper.selectList(any())).thenReturn(Collections.singletonList(orePrize()));
+        when(userAssetsMapper.deductOreBalance(userId, 200)).thenReturn(1);
+        // addOreBalance 无需 stub，Mockito 返回默认0；仅验证调用
+
+        ResponseResult result = lotteryService.draw(userId, "single", false);
+
+        assertEquals(200, result.getCode());
+        // 成本用带余额检查的原子扣减，而非读改写
+        verify(userAssetsMapper).deductOreBalance(userId, 200);
+        // 抽中矿石奖励用原子累加（min=500,max=500 → oreAmount=500）
+        verify(userAssetsMapper).addOreBalance(userId, 500);
+        // 资产写回不含矿石（矿石已原子落库），仅更新幸运值；免费净矿石展示正确
+        Map<String, Object> data = (Map<String, Object>) result.getData();
+        assertEquals(1300, data.get("remainingOre"));   // 1000 - 200 + 500
+    }
+
+    // ==================== draw - 实物库存占用 / 售罄降级 ====================
+
+    @Test
+    @DisplayName("draw - 实物限量且库存充足：原子占用成功并发发实物")
+    void testDrawPhysicalStockAvailable() {
+        LotteryPrizePool physical = physicalPrize();
+        physical.setTotalStock(5);
+        when(dailyStateMapper.selectOne(any())).thenReturn(null);
+        when(prizePoolMapper.selectList(any())).thenReturn(Collections.singletonList(physical));
+        when(prizePoolMapper.deductStock("p9")).thenReturn(1);   // 占用成功
+
+        ResponseResult result = lotteryService.draw(userId, "single", true);
+
+        assertEquals(200, result.getCode());
+        assertFirstPrizeType(result, "physical");
+        verify(prizePoolMapper).deductStock("p9");
+        verify(physicalOrderMapper).insert(any(LotteryPhysicalOrder.class));
+        verify(broadcastMapper).insert(any(LotteryBroadcastMessage.class));
+    }
+
+    @Test
+    @DisplayName("draw - 实物售罄/并发抢空：降级为矿石兜底且不创建实物订单")
+    void testDrawPhysicalStockDepletedDowngradeToOre() {
+        LotteryPrizePool physical = physicalPrize();
+        physical.setTotalStock(5);
+        when(dailyStateMapper.selectOne(any())).thenReturn(null);
+        when(prizePoolMapper.selectList(any())).thenReturn(Collections.singletonList(physical));
+        when(prizePoolMapper.deductStock("p9")).thenReturn(0);   // 库存已被并发抽完
+
+        ResponseResult result = lotteryService.draw(userId, "single", true);
+
+        assertEquals(200, result.getCode());
+        // 分发结果应为矿石（降级兜底），而非 physical
+        assertFirstPrizeType(result, "ore");
+        verify(prizePoolMapper).deductStock("p9");
+        // 关键：绝不创建实物订单与中奖播报，杜绝"中奖实物却发不出"
+        verify(physicalOrderMapper, never()).insert(any(LotteryPhysicalOrder.class));
+        verify(broadcastMapper, never()).insert(any(LotteryBroadcastMessage.class));
+    }
+
+    @Test
+    @DisplayName("draw - 实物不限量(null/-1)：不占用库存直接发放实物")
+    void testDrawPhysicalUnlimitedNoDeduct() {
+        LotteryPrizePool physical = physicalPrize();
+        physical.setTotalStock(-1);   // 不限量
+        when(dailyStateMapper.selectOne(any())).thenReturn(null);
+        when(prizePoolMapper.selectList(any())).thenReturn(Collections.singletonList(physical));
+
+        ResponseResult result = lotteryService.draw(userId, "single", true);
+
+        assertEquals(200, result.getCode());
+        assertFirstPrizeType(result, "physical");
+        // 不限量不应发起库存占用
+        verify(prizePoolMapper, never()).deductStock(anyString());
+        verify(physicalOrderMapper).insert(any(LotteryPhysicalOrder.class));
+    }
+
+    /** 断言返回结果中第一抽的奖品类型为期望的字符串（ore/virtual/physical） */
+    private void assertFirstPrizeType(ResponseResult result, String expected) {
+        Map<String, Object> data = (Map<String, Object>) result.getData();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) data.get("results");
+        assertEquals(1, results.size());
+        assertEquals(expected, results.get(0).get("prizeType"));
+    }
+
     // ==================== claimPhysical ====================
+
+    @Test
+    @DisplayName("claimPhysical - 手机号格式不正确返回400")
+    void testClaimPhysicalInvalidPhone() {
+        Map<String, Object> body = orderBody(1L);
+        body.put("phone", "12345");
+        ResponseResult result = lotteryService.claimPhysical(userId, body);
+        assertEquals(400, result.getCode());
+        verify(physicalOrderMapper, never()).updateById(any(LotteryPhysicalOrder.class));
+    }
+
+    @Test
+    @DisplayName("claimPhysical - 收货人/地址超长或为空返回400")
+    void testClaimPhysicalInvalidNameOrAddress() {
+        // 收货人超长
+        Map<String, Object> bodyLongName = orderBody(1L);
+        bodyLongName.put("receiverName", "张".repeat(21));
+        assertEquals(400, lotteryService.claimPhysical(userId, bodyLongName).getCode());
+
+        // 地址超长
+        Map<String, Object> bodyLongAddr = orderBody(1L);
+        bodyLongAddr.put("address", "路".repeat(121));
+        assertEquals(400, lotteryService.claimPhysical(userId, bodyLongAddr).getCode());
+    }
 
     @Test
     @DisplayName("claimPhysical - 缺少订单ID返回400")

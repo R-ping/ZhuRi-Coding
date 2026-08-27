@@ -200,6 +200,13 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
         List<ApArticle> pageList = (hasMore && list != null) ? list.subList(0, size)
                 : (list != null ? list : Collections.emptyList());
 
+        // 真实总数：仅当本页有数据时额外一次 count（复用同一过滤条件），空结果免查询
+        long totalCount = 0;
+        if (list != null && !list.isEmpty()) {
+            Long c = apArticleMapper.countLatestArticles(channelId, dto.getTagName(), authorIds);
+            totalCount = c != null ? c : 0;
+        }
+
         List<Map<String, Object>> safeList = pageList.stream()
                 .map(ApArticle::nullSafeToMap).collect(Collectors.toList());
         Map<String, Object> result = new HashMap<>();
@@ -208,7 +215,7 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
         result.put("page", page);
         result.put("size", size);
         result.put("hasMore", hasMore);
-        result.put("total", safeList.size());
+        result.put("total", totalCount);
 
         log.info("RecommendLatest: returned {} articles, hasMore={}, channel={}, page={}, type={}",
                 safeList.size(), hasMore, channelId, page, type);

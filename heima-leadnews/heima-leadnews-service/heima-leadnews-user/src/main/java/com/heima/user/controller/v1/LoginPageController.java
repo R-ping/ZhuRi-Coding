@@ -9,10 +9,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 /**
  * 登录页面控制器 - 使用 FreeMarker 模板渲染登录页
  * <p>
- * 三种登录方式：
- * 1. 微信公众号：扫码关注 → 发送"登录" → 获取验证码 → 登录
- * 2. 微博 OAuth：跳转微博授权页 → 回调获取 code → 登录
- * 3. GitHub OAuth：跳转 GitHub 授权页 → 回调获取 code → 登录
+ * 三种登录方式： 1. 微信公众号：扫码关注 → 发送"登录" → 获取验证码 → 登录 2. 微博 OAuth：跳转微博授权页 → 回调获取 code → 登录 3. GitHub OAuth：跳转 GitHub 授权页 → 回调获取
+ * code → 登录
  */
 @Slf4j
 //@Controller
@@ -49,14 +47,14 @@ public class LoginPageController {
      */
     private String buildWeiboAuthUrl() {
         OAuthProperties.Weibo weibo = oAuthProperties.getWeibo();
-        if (isEmpty(weibo.getClientId()) || isEmpty(weibo.getRedirectUri())) {
+        if (isEmpty(weibo.getClientId()) || isEmpty(weibo.getRedirectHttp())) {
             log.warn("微博 OAuth 参数未配置，clientId 或 redirectUri 为空");
             return "#";
         }
         return weibo.getAuthorizeUrl()
-                + "?client_id=" + weibo.getClientId()
-                + "&response_type=code"
-                + "&redirect_uri=" + weibo.getRedirectUri();
+            + "?client_id=" + weibo.getClientId()
+            + "&response_type=code"
+            + "&redirect_uri=" + weibo.getRedirectHttp() + weibo.getRedirectUri();
     }
 
     /**
@@ -64,13 +62,13 @@ public class LoginPageController {
      */
     private String buildGithubAuthUrl() {
         OAuthProperties.Github github = oAuthProperties.getGithub();
-        if (isEmpty(github.getClientId()) || isEmpty(github.getRedirectUri())) {
+        if (isEmpty(github.getClientId()) || isEmpty(github.getRedirectHttp())) {
             log.warn("GitHub OAuth 参数未配置，clientId 或 redirectUri 为空");
             return "#";
         }
         return github.getAuthorizeUrl()
-                + "?client_id=" + github.getClientId()
-                + "&redirect_uri=" + github.getRedirectUri();
+            + "?client_id=" + github.getClientId()
+            + "&redirect_uri=" + github.getRedirectHttp() + github.getRedirectUri();
 //                + "&scope=user:email";
     }
 

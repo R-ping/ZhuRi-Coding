@@ -33,7 +33,7 @@ public class BehaviorContext {
     private Map<String, Object> extra = new HashMap<>();
 
     /** 扩展属性（后置处理器之间传递数据） */
-    private Map<String, Object> attributes = new HashMap<>();
+    private final Map<String, Object> attributes = new HashMap<>();
 
     public BehaviorContext() {}
 

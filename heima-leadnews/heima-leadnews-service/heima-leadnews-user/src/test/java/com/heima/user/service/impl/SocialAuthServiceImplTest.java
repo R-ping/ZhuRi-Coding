@@ -7,7 +7,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpEntity;
@@ -77,7 +76,7 @@ class SocialAuthServiceImplTest {
         void testGithubSuccess() {
             buildService();
             oAuthProperties.getGithub().setClientId("github-client");
-            oAuthProperties.getGithub().setRedirectUri("https://cb/github");
+            oAuthProperties.getGithub().setRedirectHttp("https://cb/github");
             when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(Map.class)))
                     .thenReturn(new ResponseEntity<>(body("access_token", "gh-token-1"), HttpStatus.OK));
 
@@ -118,7 +117,7 @@ class SocialAuthServiceImplTest {
         void testWeiboSuccess() {
             buildService();
             oAuthProperties.getWeibo().setClientId("weibo-client");
-            oAuthProperties.getWeibo().setRedirectUri("https://cb/weibo");
+            oAuthProperties.getWeibo().setRedirectHttp("https://cb/weibo");
             Map<String, Object> b = new HashMap<>();
             b.put("access_token", "wb-token");
             b.put("uid", "12345");
@@ -154,7 +153,7 @@ class SocialAuthServiceImplTest {
             when(restTemplate.exchange(anyString(), any(), any(HttpEntity.class), eq(Map.class)))
                     .thenReturn(new ResponseEntity<>(info, HttpStatus.OK));
 
-            Map<String, Object> r = socialAuthService.getUserInfo("gh-token");
+            Map<String, Object> r = socialAuthService.getPlatFormUserInfo("gh-token");
 
             assertEquals("octocat", r.get("login"));
         }

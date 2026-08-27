@@ -1,5 +1,270 @@
 # CHANGELOG
 
+## 2026-08-28 — 双等级体系/事件总线并发安全加固（防刷分·防重复签到·防丢计数）
+
+### 1. 双等级体系 TOCTOU 越上限刷分 / 重复签到（S5 高）
+- 问题：`LevelActionService` 的 `recordAction`/`recordActionWithLimit`/`checkIn`/`grantScore` 在 `@Transactional` 内"先查后写"（`getTodayActionCount`→判断、`getTodayScore`→截断、`checkIn`→查当日签到次数）。并发请求可同时越过**每日行为次数上限**、**每日积分上限**，并让签到被**重复发放**（资产/积分被刷）。
+- 修复：在三个事务入口（`recordAction`/`recordActionWithLimit`/`checkIn`）先对用户等级行加**悲观行锁** `SELECT ... FOR UPDATE`（新增 [ApUserLevelMapper.selectByUserIdForUpdate](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/level/ApUserLevelMapper.java)），串行化同一用户"上限校验 + 加分落库"，从根上杜绝并发越限。
+- 变更文件：
+  - [LevelActionService.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/level/impl/LevelActionService.java)：三个入口加锁 + 新增 `lockUserLevel` 私有方法。
+  - [ApUserLevelMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/level/ApUserLevelMapper.java)：新增 `selectByUserIdForUpdate` 行锁查询。
+  - [LevelActionServiceTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelActionServiceTest.java)：新增"S5 先加行锁再校验、以锁后实例落库"与"checkIn 锁先于签到查询"单测。
+
+### 2. 事件总线热点分并发丢计数（M5 中）
+- 问题：`ArticleScoreProcessor.incrementField` 用 `selectById` + 字段自增 + `updateById`（整行回写）的"读-改-写"，注释称"直接SQL"实为回写；并发互动下**计数可能丢失**，且每次 3 次 DB 往返。
+- 修复：改为**单条原子 UPDATE** `ap_article SET {field}=COALESCE({field},0)+1, score=...`（依赖 MySQL 左到右赋值），一次往返完成计数递增 + 热度分重算，杜绝并发丢计数。
+- 变更文件：
+  - [ApArticleMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java) + [ApArticleMapper.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/mapper/ApArticleMapper.xml)：新增 `updateInteractionAndScore`。
+  - [ArticleScoreProcessor.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/behavior/service/impl/ArticleScoreProcessor.java)：删除读-改-写，改调原子方法；字段名白名单限定防注入。
+  - [ArticleScoreProcessorTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/behavior/service/impl/ArticleScoreProcessorTest.java)：重写为原子方法单测。
+
+### 3. AI 审核链 ap_article_config 唯一索引兜底（L2）
+- 问题：`SimilarityProcessor` / `PowerBonusProcessor` 采用"先查后插"创建 `ap_article_config`，并发首次发布同一配置时若不加唯一索引会插入**重复行**（原 `idx_article_id` 为普通索引无法兜底）。
+- 修复：`article_id` 升级为唯一索引 `uk_article_id`（迁移脚本 [alter_ap_article_config_add_unique_article_id.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/db/migrations/alter_ap_article_config_add_unique_article_id.sql)，已在 `leadnews_article` 执行并重导出 `schema.sql`）；应用层改用幂等写入 [ApArticleConfigMapper.insertOrUpdateRecommend](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleConfigMapper.java)（`INSERT ... ON DUPLICATE KEY UPDATE is_recommend`，保留其余字段），两个 Processor 删除"查后插/整行更新"，并发首次插入由唯一键兜底。
+- 变更文件：
+  - [SimilarityProcessor.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/processor/SimilarityProcessor.java) / [PowerBonusProcessor.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/processor/PowerBonusProcessor.java)：推荐状态改为幂等 upsert。
+  - [ApArticleConfigMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleConfigMapper.java)：新增 `insertOrUpdateRecommend`。
+  - [SimilarityProcessorTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/processor/SimilarityProcessorTest.java)（新增）：覆盖高/低相似度 upsert 取值、空内容不落库、外部异常不落库。
+  - [schema.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/db/schema.sql)：重导出，`ap_article_config` 带 `uk_article_id`。
+
+### 4. 推荐算法 latest 分栏 total 真实总数（低）
+- 问题：`loadLatest` 返回的 `total` 用 `safeList.size()`（当页已过滤后的条数），末页/多页时并非真实总数，与 recommend 分栏口径不一致。
+- 修复：新增 [ApArticleMapper.countLatestArticles](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java)（与 `selectLatestArticles` 同一过滤条件），仅当本页有数据时多一次 count，`total` 返回真实总数，空结果免查询。
+- 变更文件：[ApArticleMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java) + [ApArticleMapper.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/mapper/ApArticleMapper.xml) + [ApArticleRecommendServiceImpl.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImpl.java) + [ApArticleRecommendServiceImplTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java)（新增真实总数单测）。
+
+## 2026-08-28 — 支付/兑换/抽奖/社交登录安全加固（防资损·防超发·防CSRF）
+
+### 背景
+针对支付与奖励经济链路做业务漏洞审计，定位并修复多类非原子/越权/超发隐患。重点是让「支付回调幂等」「兑换原子扣减」「抽奖实物防超发」「OAuth 回调防 CSRF」四处达成可落地的安全闭环，且与既有纵深防御（验签+金额二次比对、Redis 预扣+DB 乐观锁）保持一致。
+
+### 1. 支付回调幂等（课程 + 打赏）
+- [OrderServiceImpl.handlePaySuccess](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/order/impl/OrderServiceImpl.java)：以「条件更新 `WHERE status=PENDING`」原子抢占 `PENDING→PAID`，`updated!=1` 直接跳过后续，杜绝支付宝重复通知/并发回调造成重复放权、重复加销量、重复核销。
+- [TipServiceImpl.handleNotify](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/tip/impl/TipServiceImpl.java)：同构改造打赏回调，幂等抢占成功才写流水、`tip_count/tip_amount` 用 `setSql` 原子累加。
+- 金额二次校验沿用既有防线：支付宝回调先 `rsaCheckV1` 验签（公钥缺失 fail-closed），再以服务端 `paidAmount`/`amount` 用 `compareTo` 比对，不信任回调 `total_amount`。
+
+### 2. 兑换原子扣减
+- [WelfareServiceImpl.exchange](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/WelfareServiceImpl.java)：矿石扣减改用带余额检查的原子 SQL `UserAssetsMapper.deductOreBalance`（`WHERE ore_balance >= amount`）；扣矿失败抛异常触发事务回滚，catch 回滚 Redis 预扣，保证 **DB 库存 / Redis / 矿石余额** 三者回滚一致。
+- 移除原非原子的 `exchanged_count` 读改写，交由 `WelfareGoodsMapper.updateStock`（`stock-1, exchanged_count+1`）在同一 UPDATE 内原子完成。
+- 新增单测 [WelfareServiceImplTest.testExchangeAtomicOreDeductFailRollsBackRedis](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/service/impl/WelfareServiceImplTest.java)：固化「扣矿返回0→抛异常→回滚Redis→不产生订单」。
+
+### 3. 转盘抽奖实物防超发
+- 奖池新增 `total_stock`（-1 不限量 / 0 售罄 / >0 剩余），迁移脚本 [alter_lottery_prize_pool_add_total_stock.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/resources/db/migrations/alter_lottery_prize_pool_add_total_stock.sql)（已在 `leadnews_reward` 执行）。
+- [LotteryPrizePoolMapper.deductStock](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/mapper/LotteryPrizePoolMapper.java)：`WHERE total_stock>0` 原子占用一件（并发不超发）。
+- [LotteryServiceImpl.occupyOrDowngrade](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：实物发放前先占用库存；售罄/并发抢空则降级为矿石兜底，杜绝"中奖实物却发不出"；`getDashboard` 返回实物 `stock` 供前端限量展示。
+- [LotteryServiceImpl.draw](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：抽奖成本矿石改用带余额检查的原子扣减 `deductOreBalance`，中奖矿石用 `addOreBalance` 原子累加，资产写回仅更新幸运值（修复并发下矿石重复消耗/累加丢失）；`claimPhysical` 增加收货人/手机号/地址的格式与长度校验。
+
+### 4. 社交登录 OAuth 回调防 CSRF
+- [oauth.js getOAuthUrl](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/common/oauth.js)：发起授权时生成**随机 state**（`platform:随机串`）写入 `sessionStorage`，替换原静态 `state=platform`（无防护价值）。
+- [oauth_callback/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/oauth_callback/index.vue)：回调带回的 `state` 必须与会话发起时一致，否则拒绝登录/绑定，拦截"用攻击者 code 诱导受害者回调"的登录 CSRF。兼容旧调用（无随机 state 时仍按平台路径放行）。
+
+### 验收
+- `mvn -pl heima-leadnews-service/heima-leadnews-reward compile` 通过；reward 单测 `WelfareServiceImplTest`、`LotteryServiceImplTest` 全通过。
+- `LotteryServiceImplTest` 覆盖实物占用/降级（限量充足/售罄降级/不限量）及付费抽奖原子扣矿/累加、`claimPhysical` 格式校验共 18 例，`WelfareServiceImplTest` 13 例，全部通过。
+- 迁移脚本已在本地 `leadnews_reward` 库执行（`total_stock` 列已存在，默认 -1）。
+
+## 2026-08-28 — 站内信与 IM 业务安全加固（按优先级 S1–S4 + M1/M2）
+
+### 背景
+检查站内信及 IM 业务后定位到 4 个严重安全隐患（S1–S4）与 2 个一致性问题（M1/M2）。按修复优先级逐项修复，重点解决 WebSocket 身份伪造、跨会话越权、会话并发重复创建、实时推送失效及未读计数不一致。
+
+### S1 发送者身份可信化（身份伪造）
+- [WebSocketMessageController.handleMessage](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/controller/v1/WebSocketMessageController.java)：发送者身份改为从 `SimpMessageHeaderAccessor` 会话属性取 **握手 Token 校验后写入的 userId**，丢弃客户端 payload 中的 `sender_id`，杜绝冒充他人发送。
+
+### S2 握手身份统一（不信任裸 Header）
+- [UserInterceptor.preSend](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/websocket/UserInterceptor.java)：CONNECT 帧仅从 `sessionAttributes.get("userId")` 设置 Principal，不再读取客户端 header 中的 userId。
+
+### S3 会话归属校验 + 消息边界（越权）
+- [ImServiceImpl.getPeerUserId](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：新增会话成员归属校验；`listMessages` / `markRead` 非成员返回 `NO_OPERATOR_AUTH(3000)`。
+- [WebSocketMessageController.handleReadReceipt](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/controller/v1/WebSocketMessageController.java)：已读人以认证身份为准，对端由会话归属推导，避免越权推送已读回执。
+- [ImServiceImpl.sendMessage](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：消息内容限 2000 字。
+
+### S4 会话并发创建保护
+- [ImServiceImpl.getOrInsertSession](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：利用 `im_sessions.session_key` 唯一索引 + 捕获 `DuplicateKeyException` 回读既有会话。
+- 新增迁移脚本 [alter_im_sessions_add_unique_session_key.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/resources/db/migrations/alter_im_sessions_add_unique_session_key.sql)：`session_key` 加唯一索引 `uk_session_key`。
+
+### 实时推送生命周期补齐
+- 新增 [WebSocketEventListener](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/websocket/WebSocketEventListener.java)：监听 `SessionConnectedEvent` / `SessionDisconnectEvent`，连接建立调用 `SessionManager.userOnline`、断开调用 `userOffline`，使接收者在线实时推送真正生效。
+
+### M1/M2 未读计数一致性
+- [NotificationServiceImpl.unreadCount](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/service/impl/NotificationServiceImpl.java)：未读数以 **DB 为唯一事实源**，缓存整包数据（total + 各类型）；`incrUnreadCache` / `markTypeRead` 命中后整体失效缓存，下次按 DB 重建，杜绝 total 与各类型之和不一致及扣减负数。
+
+### 验收
+- notification 模块新增/适配单测：`ImServiceImplTest`（含 getPeerUserId、会话并发）、`WebSocketMessageControllerTest`（认证身份 + 已读归属）、`UserInterceptorTest`（不信任裸 Header）、`NotificationServiceImplTest`（整包缓存 + 失效重建）。
+- `mvn -pl heima-leadnews-service/heima-leadnews-notification test` 全量通过。
+
+## 2026-08-27 — 抽奖闭环③：前端「我的收获」完善（惊喜好物 / 我的道具）
+
+### 背景
+签到→矿石→抽奖→兑换链路本体已闭环，但此前 **抽到实体奖品后前端无处查看/领取**（侧边栏「我的收获」占位提示"开发中"）。本次补齐抽奖侧前端闭环：抽中实体 → 结果弹窗跳「我的收获」→「惊喜好物」展示 →「去兑换」进入兑换详情页填写收货地址 → 状态流转为「备货中」。
+
+### 后端改动（reward）
+- [LotteryServiceImpl.getMyPrizes](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：返回字段补充 `prizeId`、`iconUrl`（奖品池索引回填）、`virtualItemCode`（虚拟道具）、`orderStatusNum`（数字状态，供前端状态样式判断）；状态文案统一为 待填地址/备货中/运送中/已收货/已过期。
+- 新增 [LotteryServiceImpl.getPhysicalOrderDetail](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：按订单号返回实体奖品详情（奖品名/图标/状态/已填地址/物流单号），供兑换详情页展示，含用户归属校验。
+- [LotteryController](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/controller/v1/LotteryController.java)：新增 `GET /api/v1/lottery/physical-order/{orderId}`。
+
+### 前端改动
+- 新增「我的收获」页 [harvest/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/user/harvest/index.vue)：分栏「惊喜好物」（实体奖品）与「我的道具」（虚拟奖品）；实体奖品按状态展示「去兑换」（待填地址）/「备货中」等，虚拟奖品标「已发放」。路由 `/user/center/harvest`。
+- 复用兑换详情页 [redeem.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/user/welfare/redeem.vue)：新增 `source` 双模式——`lottery` 模式加载实体订单、**不显示矿石数**、走 `claim-physical` 提交地址（不扣矿石）、按钮文案「确认领取」、成功提示「进入备货状态」。路由 `/user/center/harvest/redeem/:id`。
+- 抽奖结果弹窗 [LotteryResultModal.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/lottery/LotteryResultModal.vue)：抽中实体时出现「去查看我的收获」按钮。
+- 各用户中心页面（成长/逐日签到/抽奖/兑换）侧边栏「我的收获」由"开发中"占位改为跳转 `/user/center/harvest`。
+
+### 运行时验证（实证全链路）+ 修复
+起网关/5 个服务 + 前端，真实账号（userId=1700683778）走通 **抽奖保底实物 → 我的收获惊喜好物 → 去兑换 → 填地址 → 备货中** 全链路：
+1. 往空的 `lottery_prize_pool` 补 8 条奖品（随机矿石/随机盲盒/课程5折券/马克杯/小夜灯/金币眼罩/周边徽章/Switch），此前空表导致前端转盘只能用占位数据。
+2. 修复 [oauth.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/common/oauth.js)：`get.env(CPOlAR_BASE_URL)` 未定义 `get` 导致整个入口 `ReferenceError` → 前端白屏；回退为正确 OAuth 回调地址。
+3. 修复 [LotteryServiceImpl.claimPhysical](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：`(String) body.get("orderId")` 强转前端传入的数字抛 `ClassCastException` → HTTP 500；改为 `String.valueOf` 兼容数字/字符串。
+4. 实测断言：draw 幸运值 5990→0；`lottery_physical_orders` status 由待填地址(1)→备货中(2)，收货信息落库；「我的收获」页面状态联动（待填地址+「去兑换」↔ 备货中+「物品状态跟随物流同步」），物品信息区不显示矿石数。
+
+### 验收
+- reward 模块 `mvn compile` 通过；前端 `vite build` 通过；抽奖→兑换→备货中原生链路运行期全部通过。
+
+## 2026-08-27 — 虚拟道具体验闭环：抽奖入账 + 课程5折券下单抵扣
+
+### 背景
+上一轮补齐了抽奖→兑换的实体物品链路，但虚拟道具（课程5折券）此前只记在抽奖记录字段里，**不真正入账、也无使用消费场景**，属于"看得见用不上"。本次打通虚拟道具闭环：抽中 → 入账持有 → 「我的道具」展示 → 课程下单选购 → 支付成功核销。
+
+### 后端改动（reward）
+- 新增持有表 [user_virtual_assets](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/resources/db/migrations/add_user_virtual_assets.sql)：`(user_id,item_code)` 唯一，持有数量可累加/扣减。
+- `lottery_prize_pool` 新增 `discount_rate` 字段（全课程通用折扣比例，0.5=5折），`prize_course`(course50) 置 0.5000。
+- 新增 [UserVirtualAsset](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/entity/UserVirtualAsset.java) 实体 + [UserVirtualAssetMapper](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/mapper/UserVirtualAssetMapper.java)（`credit` 幂等累加、`consume` 数量守卫原子扣减）。
+- 新增 [VirtualAssetService](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/VirtualAssetService.java) + [VirtualAssetServiceImpl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/VirtualAssetServiceImpl.java)：入账/我的道具聚合查询/持有校验/核销。
+- [LotteryServiceImpl.draw](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：抽中 `type=2` 虚拟道具时调用 `virtualAssetService.credit` 同事务入账。
+- 新增 [VirtualAssetController](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/controller/v1/VirtualAssetController.java)：
+  - `GET /api/v1/virtual-assets`（外部，我的道具）
+  - `GET/ POST /api/v1/reward/user/{userId}/virtual-asset/hold|consume`（内部 Feign，非外部访问，防越权）。
+
+### 后端改动（content + feign）
+- [IRewardClient](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-feign-api/src/main/java/com/heima/apis/reward/IRewardClient.java) 新增 `getVirtualAssetHold` / `consumeVirtualAsset`，[RewardClient](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/feign/RewardClient.java) 与 [fallback](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-feign-api/src/main/java/com/heima/apis/reward/fallback/IRewardClientFallback.java) 同步实现。
+- `ap_course_order` 新增 `coupon_item_code` 字段（[迁移脚本](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/db/migrations/alter_course_order_add_coupon_item_code.sql)），实体 [ApCourseOrder](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-model/src/main/java/com/heima/model/course/pojos/ApCourseOrder.java) 增加 `couponItemCode`。
+- [OrderServiceImpl.createOrder](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/order/impl/OrderServiceImpl.java)：支持 `couponItemCode`，下单前 Feign 校验持有量与折扣率并计算折扣金额（折扣券与折扣码二选一，券优先）；`handlePaySuccess` 支付成功后 Feign 核销（原子扣减防止超核，失败仅告警留补偿）。
+
+### 前端改动
+- [course/detail.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/course/detail.vue)：购买弹窗加载"我的折扣券"，5折券可选可取消（与折扣码互斥），实付 = 原价×折扣率，下单传 `couponItemCode`。
+- [harvest/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/user/harvest/index.vue)：「我的道具」分栏改走聚合持有接口，展示数量；`discountRate<1` 的课程券显示「去使用」→ 跳 `/course`。
+
+### 验收
+- reward/content 模块 `mvn compile` 通过；`OrderServiceImplTest` 新增虚拟道具用例（下单折扣、无券下单、持有不足、支付核销）通过；前端 `vite build` 通过。
+- 数据库迁移已执行：`user_virtual_assets` 建表 + `discount_rate` 字段 + `coupon_item_code` 字段落库；奖池 `prize_course`(course50) 折扣率 0.5 生效。
+
+## 2026-08-26 — 可观测性落地③：日志集中（Loki + Promtail + Grafana）
+
+### 背景
+链路追踪（①）与指标监控（②）已落地，剩余最后一块——**日志管理**。此前日志散落在各服务文件（`e:/logs/leadnews.*.log`），排查问题需逐台机器 `tail/grep`，无法按服务/级别/时间集中检索。选型上放弃 ELK（Elasticsearch + Logstash + Kibana 全家桶内存/磁盘占用高，对本地项目太重），改用 **Loki + Promtail**：Loki 与 Prometheus 同源（标签索引 + 压缩原文，不建全文索引），Promtail 与 Grafana 也复用既有组件，整体资源占用和上手成本都低得多。
+
+### 日志侧改造（各服务 logback）
+- **[logback-spring.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/main/resources/logback-spring.xml)**：统一由 pattern 日志切到 **LogstashEncoder 结构化 JSON 输出**，字段含 `@timestamp`、`message`、`level`、`logger_name`、`thread_name`、`service`（customFields）、`traceId`/`spanId`（MDC，来自上一块 Micrometer Tracing）。滚转为 `leadnews.{yyyy-MM-dd}.log`（10MB/30 个文件），异步 Appender 避免日志 IO 阻塞业务。
+- 同一份 logback 配置按同构方式覆盖 6 个服务兜底 JSON 字段 `service` = 各自服务名。
+
+### 监控组件（[monitoring](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring) 目录，本地一键启动）
+- **Loki（[loki.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/loki/loki.yml)）**：单机模式，监听 3100；TSDB 索引（schema v13）+ filesystem 对象存储；`allow_structured_metadata: true`、pattern ingester 开启；`ingestion_rate_mb: 16` 兜底。
+- **Promtail（[promtail.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/promtail/promtail.yml)）**：按 `e:/logs/leadnews.*.log` 通配采集全部服务日志。pipeline 用 `json` stage 提取 `service/level/traceId` → 仅 `service`/`level` 提升为索引标签 → `timestamp` stage 以日志内 `@timestamp` 为准（RFC3339Nano）。`grpc_listen_port: 0` 规避与 Loki 的 9095 冲突；positions 落盘支持断点续读。
+- **Grafana（[provisioning/datasources/loki.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/grafana/provisioning/datasources/loki.yml)）**：Loki 数据源自动化注册（uid=`loki-main`），与 Prometheus 数据源并存，Explore 中可直接 LogQL 检索。
+
+### 关键设计与踩坑：trace_id 高基数问题
+- Sematext/官方明确 trace_id 属**高基数**（每条请求唯一），若提升为标签会让 Loki 按 trace 拆出无限增长的数据流 → 索引/存储/查询全面劣化。初版配置曾将 `traceId` 一并 `labels` 提升，实测流分裂严重（同一条日志被拆成数百个流）。
+- 修复：`traceId` 仅留在 JSON 原文，查询时用 LogQL 运行时解析——`{service="leadnews-content"} | json | traceId="6a8d..."` 仍然可以精确定位单链路日志。也尝试过 promtail `metadata` stage（Loki 3.x structured metadata），但官方 2.9.8 二进制未带该扩展，故采用 JSON 原文方案。
+
+### 验证（运行时实证）
+- 端口就绪：Loki 3100 / Promtail 9081 / Grafana 3000 / Prometheus 9090 全监听；Loki `/ready` 返回 ready。
+- 数据链路：Grafana API 确认双数据源（`Loki: loki-main` + `Prometheus: prometheus-main`）并存；Loki `/loki/api/v1/labels` 返回 `app/service/service_name/level/filename/...` 标签；LogQL 实测 6 个服务日志均已入库（gateway/content/search/user/reward/notification），`trace_id` 标签已从新流中消失。
+- Promtail 重启后 `positions.yaml` 已落盘，二次重启可断点续读，不会全量重推。
+
+### 备注
+- 该方案与 ELK 的差异：Loki 不索引日志全文，只索引标签 + 压缩原文，Query 靠 LogQL 过滤，因此 CPU/内存占用远低于 ES；适合标签维度检索而非全文搜索场景。
+- 生产建议：Loki 配置对象存储（S3/minio）替代本地 filesystem、开启多副本；Promtail 升级 3.x 后可将 traceId 提升为 structured metadata（不膨胀流、仍可索引过滤）。
+- `.gitignore` 已追加 `loki-dist/`、`promtail-dist/`（二进制）、`loki/data/`（运行数据）、`promtail/positions.yaml`，仓库仅跟踪配置。
+
+## 2026-08-25 — 可观测性落地②：指标监控（Prometheus + Grafana）
+
+### 背景
+链路追踪（①）解决"某一笔请求跨服务怎么串起来"，但无法回答"系统整体负载如何、哪类接口变慢、内存是否告急"。本次落地第二块——**指标监控**：各服务通过 Micrometer 暴露标准 Prometheus 格式指标，Prometheus 周期性抓取存储，Grafana 出大盘可视化。三个运行中服务（gateway/content/search）已实测出图，user/reward/notification 未启动不影响整体架构。
+
+### 后端改动
+- **依赖（[pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/pom.xml)）**：父 POM 引入 `micrometer-registry-prometheus`，Micrometer 注册表自动装配为 Prometheus 格式（兼容上一块已引入的 Actuator）。所有服务/网关通过 Actuator 暴露 `/actuator/prometheus`。
+- **配置（各服务 / 网关 application.yml）**：`management.endpoints.web.exposure.include` 追加 `prometheus`（与 `health,info` 并列）。**注：暴露端点需重启对应服务生效。**
+
+### 监控组件（[monitoring](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring) 目录，均为本地一键启动，不侵入代码）
+- **Prometheus（[prometheus.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/prometheus/prometheus.yml)）**：`scrape_interval: 10s`；6 个抓取 job（网关 51601 / content 51802 / search 51804 / user 51780 / reward 51905 / notification 51807），每 job 以 `app` 标签标注服务名，`metrics_path: /actuator/prometheus`。端口均按各服务 `application.yml` 实际配置核对过。
+- **Grafana**：
+  - 数据源自动注册（[provisioning/datasources/prometheus.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/grafana/provisioning/datasources/prometheus.yml)）：`http://127.0.0.1:9090`，`isDefault: true`，uid=`prometheus-main`。
+  - 自定义大盘 [leadnews-dashboard.json](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/grafana/leadnews-dashboard.json)：10 个面板——服务存活（up）、HTTP QPS（`rate(http_server_requests_seconds_count[1m])`）、P50/P95/P99 延迟（`histogram_quantile`）、HTTP 错误率、JVM 堆内存（`jvm_memory_used_bytes`）、CPU 使用率（`system_cpu_usage`）等，支持按 `app` 变量筛选。
+
+### 验证（运行时实证）
+- Prometheus Targets API：gateway / content / search **up**（repeated 4 次抓取均成功），user / reward / notification 显示 down（服务未启动，预期行为）。
+- PromQL 实测有真实数据：`sum by (app) (rate(http_server_requests_seconds_count[5m]))` 返回三服务 QPS（gateway≈0.12、search≈0.10、content≈0.09，来自脚本触发的搜索流量）。
+- Grafana：数据源 Prometheus 已注册且 `isDefault=True`；大盘 `leadnews-observability`（7b97c82）导入成功，访问 `http://127.0.0.1:3000/d/leadnews-observability/7b97c82` 出图。
+
+### 备注
+- 索引/查询语句均为只读观测，不影响业务代码与运行时行为。
+- Prometheus 数据为内存 TSDB（未配置持久化保留策略），重启即清空；生产建议挂载 `storage.tsdb.retention.time`。
+- `.gitignore` 已排除 `monitoring/` 下的二进制安装包（`grafana-dist/`、`prometheus-dist/`、`*.zip`）与 Prometheus 运行数据（`prometheus/data/`），仓库仅跟踪配置文件。
+
+## 2026-08-25 — 可观测性落地①：分布式链路追踪（Micrometer Tracing + Zipkin）
+
+### 背景
+项目已可在本地完整上线，但缺少上线后必备的可观测能力。本次落地第一块——**调用链路追踪**：生产环境一次请求会跨网关 → search → content/user 多个服务，需要能按 traceId 串起整条调用链，定位慢调用与故障链路。后续指标（Prometheus）与日志集中（ELK）另行规划。
+
+### 后端改动（全链路，网关 + 5 个业务服务）
+- **依赖（[pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/pom.xml)）**：父 POM 引入 `spring-boot-starter-actuator`、`micrometer-tracing-bridge-brave`、`zipkin-reporter-brave`；网关与服务模块统一引入 Actuator，使 `ServerHttpObservationFilter` 挂载，HTTP 请求进入观测链路并向下游传播追踪头。
+- **配置（各服务 / 网关 application.yml）**：新增 `management.tracing.sampling.probability: 1.0`（本地全量采样，生产建议 0.1~0.5）与 `management.zipkin.tracing.endpoint: http://localhost:9411/api/v2/spans`，开启 Brave + Zipkin 上报。移除各服务无效的 `feign.observation.enabled` 配置。
+- **日志（各服务 [logback-spring.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/main/resources/logback-spring.xml)）**：统一日志 pattern 中 MDC 字段为 `traceId`/`spanId`，使每条日志携带当前链路上下文，跨服务日志可按 traceId 关联。
+- **关键修复——Feign 调用未生成 CLIENT span（链路中断）**：
+  - 根因：Spring Cloud OpenFeign 4.1+ 已移除内置 `FeignObservationAutoConfiguration`，且未引入 `feign-micrometer`，导致 search→content 的 Feign 调用不产生 CLIENT span，trace 上下文在下游中断。
+  - 方案：heima-leadnews-feign-api 引入 `io.github.openfeign:feign-micrometer:13.3`；新增 [FeignObservationConfiguration.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-feign-api/src/main/java/com/heima/apis/config/FeignObservationConfiguration.java)，以全局 `FeignBuilderCustomizer` 注册 `MicrometerObservationCapability`，所有 Feign 客户端接入 Micrometer Observation（CLIENT span + traceId 头传播）。
+
+### 验证（运行时实证）
+- Zipkin UI（`http://localhost:9411`）：搜索请求生成包含网关 / search / content 等服务的完整 trace。示例链路 `traceId=6a8d912662187e643407c8cd9bffc501`：search 服务 SERVER span（`id=3407c8cd9bffc501`）+ CLIENT span（`id=283b380e848ce9ae`），content 服务 SERVER span（`id=1bc69e8b7696726f`、`parentId=283b380e848ce9ae`），父子 span 关系正确、上下文传播正常。
+- 各服务日志输出含一致 `traceId`/`spanId`，可按 traceId 跨服务 grep 整条链路。
+
+### 备注
+- Zipkin 为本地单机版（`docker run -d -p 9411:9411 openzipkin/zipkin`），生产可替换为集群或云托管。
+- 已发布长期建议：`traceId` 随网关日志/响应头返回前端（`X-Trace-Id`），便于用户报障时快速定位。
+
+## 2026-08-25 — 新增面试准备核心点文档
+- 新增 [docs/面试准备-项目核心亮点.md](docs/面试准备-项目核心亮点.md)：基于代码实证提炼 10 条"项目重中之重"核心点，每条含一句话概括 / 业务背景 / 技术实现（附 file_path:line_number）/ 面试追问点，末尾附 30 秒自我介绍版本。
+- 与既有 [docs/面试项目经历素材-核心业务亮点.md](docs/面试项目经历素材-核心业务亮点.md)（完整素材库）互补：新文档定位为面试前速记清单，突出"无 MQ 可靠异步最终一致性、课程状态机、沸点热度、通知未读计数、内容静态化 SEO"等补充视角。
+- 无代码改动，仅文档。
+
+## 2026-08-24 — 修复搜索结果页文章点击 404（ES 索引雪花 ID 精度丢失）
+- 问题：搜索页点任意文章跳详情页均 404（"文章不存在或已被删除"），但同一文章从文章列表打开正常。
+- 根因（运行时实证）：`app_info_article` 索引曾被一次性回填脚本以 **JS Number** 解析 19 位雪花 ID 写入 `_id`，触发 JS Number（双精度，安全整数上限 ~9e15）舍入 → 精度丢失。例如 DB 真实 ID `2086403442600767490`，ES `_id` 存成 `2086403442600767500`；`2086449569626734593`→`2086449569626734600`，仅末位或末两位不同。搜索返回的 `id` 是错误的舍入值，跳转 `/article/:id` 时后端查库查不到 → 404。正常发布链路（Java Long + `searchClient.syncArticle`）写的是精确 ID，不受影响。
+- 修复（数据侧重建）：新增一次性脚本 [reindex_es_articles.cjs](file:///e:/heima-leadnews-portal/heima-leadnews-app/reindex_es_articles.cjs)，从 MySQL 以 **`CAST AS CHAR`** 导出已发布文章（`ap_article` status=9 + 最新草稿正文），清空旧索引（`_delete_by_query match_all`）后按**精确字符串 `_id`** 重建。`_source.id`/`authorId` 同样以字符串提交，借助 ES long 字段原生强转，避免二次精度丢失。共重建 12 篇，BULK 成功 12/12。
+- 验证：搜索服务 `POST /api/v1/search`（idType=1）返回 `code=200`，`id` 与 DB 完全一致（如 `2086893096533925890`），跳转文章详情不再 404。ES 端 `_id` 与 DB 逐条吻合。
+
+## 2026-08-24 — 搜索结果页为课程/标签/用户分栏定制独立组件（对齐稀土掘金）
+- 背景：搜索接口已收敛为单一 `/api/v1/search`（`id_type` 分栏）后，课程/标签/用户分栏仍复用文章卡片渲染，字段不匹配。本次为三类分栏定制独立组件，对齐掘金搜索页的卡片视觉：
+  - [SearchResultCourse.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/search/SearchResultCourse.vue)（小册风格）：左竖封面 + 右标题(高亮)/副标题 + 作者头像昵称 + 章节数·学习人数 + 右下价格（0 元显示"免费"）。点击打开 `/course/:id`。
+  - [SearchResultTag.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/search/SearchResultTag.vue)（标签风格）：渐变蓝 `#` 图标 + 标签名(高亮) + "文章数·关注数" + "＋订阅"按钮。点击打开 `/tag/:name`。
+  - [SearchResultUser.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/search/SearchResultUser.vue)（用户风格）：圆形头像 + 昵称(高亮/品牌蓝) + 关注/粉丝数(容错) + "＋关注"按钮。点击跳转 `/user/:id`。
+- [sanitize.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/utils/sanitize.js)：新增 `highlight(text, keyword)` 安全高亮函数——先 HTML 转义再包裹 `<em>`，避免标题/昵称注入 XSS，正则元字符已转义。
+- [search_result/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/search_result/index.vue)：`load()` 对课程/标签/用户分栏原样写入各分栏数组（不再走文章字段转换），模板按 `currentTab` 用 `<template v-if>` 分发渲染对应组件；新增 `onOpenCourse`/`onOpenTag`/`onOpenUser` 跳转与 `onFollowUser` 关注交互（复用 [follow.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/apis/follow.js) 的 `/api/v1/follow/do`，未登录提示弹登录框，乐观更新失败回滚）。
+- 说明：标签订阅按钮暂为占位（后端无订阅接口）；用户 search 返回暂无 followCount/isFollowed 字段，卡片对缺失元信息自动隐藏。
+- 验证：`npm run build` 通过（exit 0，仅 chunk size 提示）。
+
+## 2026-08-24 — 搜索结果页搜索图标失效修复 + 搜索接口改名 + 沸点话题接口对齐
+- 搜索图标修复（前端 [search_result/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/search_result/index.vue)）：`/search_result` 与首页共用同名 `Layout`，切换不同 `keyword`（仅路由 query 变化）时 `SearchResult` 组件实例被 Vue Router 复用，`created()` 不会重新执行，导致图标点击不发起搜索。新增 `watch: '$route.query.keyword'`，感知关键词变化后重置分页/列表并重新 `load()`。
+- 搜索接口改名（避免与联想词混）：文章搜索完整路径由 `/api/v1/article/search/search` 缩短为 `/api/v1/article/search`，与 `/api/v1/associate/search` 同级语义。改动：后端 [ArticleSearchController.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/main/java/com/heima/search/controller/v1/ArticleSearchController.java) 方法映射 `/search` → 空路径；前端 [conf.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/common/conf.js) URL 更新；网关单测 [AuthorizeFilterTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java) 断言路径同步（网关白名单用 `startsWith("/search/api/v1/article/search")` 仍命中，无需改动）。**需重启 search 服务与网关生效。**
+- 沸点话题接口对齐（前端 [topic.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/apis/topic.js)）：`getRecommendTopics` 请求路径由 `/api/v1/topics/recommend` 修正为 `/api/v1/topics/recommend-topics`，与后端 `TopicController` 当前映射一致。
+
+## 2026-08-24 — 搜索结果页搜索报错修复（ES 索引缺 publishTime 导致排序崩溃 + 游客搜索放行）
+- 问题：搜索结果页再次搜索报 `UncategorizedElasticsearchException: [es/search] failed: [search_phase_execution_exception] all shards failed`。
+- 根因（运行时实证）：`app_info_article` 索引为陈旧的手工创建，mapping 与文档均**缺失 `publishTime`**。`ArticleSearchServiceImpl.search` 无条件 `sort by publishTime`（Controller 还会把 `minBehotTime` 缺省为 now，触发对其 `range` 过滤），对不存在字段排序 → ES 报 `No mapping found for [publishTime] in order to sort on` → 所有分片失败。此时索引仅有 2 篇残缺文档（缺标题/作者名），而 DB 中已发布(状态9)文章有 11 篇未同步。
+- 数据侧处理：重建 `app_info_article` 索引（`publishTime` 映射为 `date / epoch_millis`，标题/正文为 `text`，其余字段按实体对齐），并从 DB `ap_article` + `ap_article_content` 一次性回填全部 11 篇已发布文章（含 `publishTime` 时间戳、标题、作者、正文 markdown）。ES 未安装 ik 分词插件（仅 x-pack），故映射沿用默认 standard 分词，未启用实体中的 `ik_max_word`。
+- 网关（[AuthorizeFilter.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/main/java/com/heima/app/gateway/filter/AuthorizeFilter.java)）：按需求放行 `/search/api/v1/article/search` 匿名只读搜索（与 `associate/search` 联想一致，利于 SEO 与浏览）。并新增对应单测 [AuthorizeFilterTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java)。
+- 验证：搜索服务直接调用 `/api/v1/article/search/search` 返回 `code=200`，并按 `publishTime` 倒序；ES 排序查询恢复（文档数 11）。网关模块 `mvn test` 通过。**网关需重启后白名单生效。**
+- 运行修复脚本：临时 reindex 脚本与数据文件（`reindex-search.js`/`search_articles.tsv`）已用后清理，未留在仓库。
+
+## 2026-08-24 — 文章发布后异步链路报错修复（乐观锁未注册 + search 未启动）
+- 后端（[ContentApplication.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/ContentApplication.java)）：`MybatisPlusInterceptor` 补回 `OptimisticLockerInnerInterceptor`。根因：`TaskinfoLogs.version` 标注 `@Version`，但 content 服务未注册乐观锁拦截器，导致 `updateById`（`TaskServiceImpl.updateDb`）触发 `Parameter 'MP_OPTLOCK_VERSION_ORIGINAL' not found` 绑定异常。修复后与 DB（`version` 默认 0、非空）相匹配，任务日志状态更新按设计走乐观锁，异常消除。
+- 环境项：`leadnews-search` 未注册实例导致 Feign `updateArticleStatus` 503。代码已有兜底（`pub_status=1` + 本地消息表 20s 重试），待启动搜索服务后自动重放同步，无需改代码。
+
+## 2026-08-24 — 文章详情页左侧行为栏视觉优化 & 导入文章 NoClassDefFoundError 修复
+- 前端（[article.ftl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/templates/article.ftl)）：
+  - 左侧行为工具栏（`.action-sidebar`）改为距左 `24px` 留白，脱离屏幕边缘；四周统一圆角 + 柔和投影，不再贴死最左边。
+  - 行为元素语义化配色，告别"全黑无区分"：未激活图标统一中性灰；点赞=红、评论=蓝、收藏=金、分享=绿、举报=红(警示)、沉浸/设置/回顶=灰；悬停与激活由品牌蓝 `#1e80ff` 高亮并加浅蓝底。同时补齐暗色模式下的图标提亮与高亮配色。
+- 后端（[pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/pom.xml)）：`lang3.version` `3.5` → `3.17.0`。根因：content 服务运行时 classpath 中 commons-lang3 被父 POM 降为 `3.5`（缺 `org.apache.commons.lang3.SystemProperties` 类，该类 3.16.0 才引入），导入文章（引入 Apache Tika 解析链路）触发 `NoClassDefFoundError`。升级后全模块统一解析到含该类版本。
+- 验证：`mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 通过（含 model/common/utils/feign-api/file-starter）。
+
 ## 2026-08-23 — 修复 login_auth 异常输入被误报为"服务器错误 503"
 - 问题定位（运行时实证）：网关路由正常，异常输入触发的其实是 user 服务内部异常被全局处理器误标记。复现根因两条：
   1. [ApUserLoginController.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/main/java/com/heima/user/controller/v1/ApUserLoginController.java) `login()` 直接 `phoneOrEmail.contains("@")`，请求体缺 `phoneOrEmail` 时 NPE（实测堆栈 `NullPointerException: ... "phoneOrEmail" is null`）→ 被 `ExceptionCatch` 通用分支兜成 HTTP 500 / code 503"服务器内部错误"。

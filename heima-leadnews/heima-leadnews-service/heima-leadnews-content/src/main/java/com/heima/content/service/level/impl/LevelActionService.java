@@ -67,6 +67,7 @@ public class LevelActionService {
         }
 
         ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
+        userLevel = lockUserLevel(userId, userLevel);
         grantScore(userLevel, userId, actionType, BigDecimal.valueOf(score), actionDetail);
     }
 
@@ -96,11 +97,12 @@ public class LevelActionService {
      * 记录行为（含限制校验，返回结果）— score 为本次期望获得的经验值
      */
     @Transactional(rollbackFor = Exception.class)
-    private Map<String, Object> recordActionWithLimit(Long userId, String actionType, BigDecimal score,
+    protected Map<String, Object> recordActionWithLimit(Long userId, String actionType, BigDecimal score,
         String actionDetail) {
         Map<String, Object> result = new HashMap<>();
 
         ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
+        userLevel = lockUserLevel(userId, userLevel);
 
         String today = new java.sql.Date(System.currentTimeMillis()).toString();
 
@@ -143,6 +145,11 @@ public class LevelActionService {
         Map<String, Object> result = new HashMap<>();
 
         String today = new java.sql.Date(System.currentTimeMillis()).toString();
+
+        // 悲观行锁：串行化同一用户当日签到，防止并发重复签到（TOCTOU）
+        ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
+        userLevel = lockUserLevel(userId, userLevel);
+
         LambdaQueryWrapper<ApUserActionLog> logQuery = new LambdaQueryWrapper<>();
         logQuery.eq(ApUserActionLog::getUserId, userId);
         logQuery.eq(ApUserActionLog::getActionType, "daily_checkin");
@@ -155,8 +162,6 @@ public class LevelActionService {
             result.put("score", BigDecimal.ZERO);
             return result;
         }
-
-        ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
 
         Integer dailyLimit = DAILY_ACTION_LIMIT.get("daily_checkin");
         if (dailyLimit != null && todayCheckinCount >= dailyLimit) {
@@ -222,6 +227,18 @@ public class LevelActionService {
      */
     public void recordPassiveAction(Long userId, String actionType) {
         upsertDailyProgress(userId, actionType);
+    }
+
+    /**
+     * 悲观行锁：按用户串行化"上限校验 + 加分落库"，防止并发下 TOCTOU 越上限刷分与重复签到。
+     * <p>
+     * 必须在事务内调用（三个入口方法均已加 @Transactional）。调用前先 getUserLevel 保证记录已存在，
+     * 因此本方法返回的非空锁定实例覆盖原实例继续使用。
+     * </p>
+     */
+    private ApUserLevel lockUserLevel(Long userId, ApUserLevel userLevel) {
+        ApUserLevel locked = userLevelMapper.selectByUserIdForUpdate(userId);
+        return locked != null ? locked : userLevel;
     }
 
     /**

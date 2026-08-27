@@ -39,6 +39,8 @@ public class ApCourseOrder implements Serializable {
     private BigDecimal totalAmount;
     @TableField("discount_code")
     private String discountCode;
+    @TableField("coupon_item_code")
+    private String couponItemCode;
     @TableField("pay_method")
     private PayType payMethod;
 

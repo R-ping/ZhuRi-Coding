@@ -13,6 +13,8 @@ public interface LotteryService {
     ResponseResult claimPhysical(Long userId, Map<String, Object> body);
     /** 获取我的收获列表 */
     ResponseResult getMyPrizes(Long userId, Integer page, Integer size, String type);
+    /** 获取实物订单详情（用于抽奖兑换详情页） */
+    ResponseResult getPhysicalOrderDetail(Long userId, Long orderId);
     /** 获取中奖播报 */
     ResponseResult getBroadcast();
 }

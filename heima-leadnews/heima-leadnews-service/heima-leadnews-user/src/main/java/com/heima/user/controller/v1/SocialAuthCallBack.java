@@ -38,8 +38,8 @@ public class SocialAuthCallBack {
         log.info("收到 code: {}", code);
         try {
             String accessToken = socialAuthService.getAccessToken2Github(code);
-            Map<String, Object> userInfo = socialAuthService.getUserInfo(accessToken);
-            String platFormUid = String.valueOf(userInfo.get("id"));
+            Map<String, Object> platFormUserInfo = socialAuthService.getPlatFormUserInfo(accessToken);
+            String platFormUid = String.valueOf(platFormUserInfo.get("id"));
             SocialAuthDto socialAuthDto = getSocialAuthDto(platFormUid,"github");
             return socialLoginService.socialAuth(socialAuthDto);
         } catch (Exception e) {

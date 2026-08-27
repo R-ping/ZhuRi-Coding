@@ -22,7 +22,8 @@ public class OAuthProperties {
         /** 微博应用 Client ID */
         private String clientId;
         /** 微博回调地址 */
-        private String redirectUri;
+        private String redirectHttp;// https://8d58228.r40.cpolar.top
+        private String redirectUri;// /oauth/callback
         /** 微博授权地址 */
         private String authorizeUrl = "https://api.weibo.com/oauth2/authorize";
     }
@@ -32,6 +33,7 @@ public class OAuthProperties {
         /** GitHub 应用 Client ID */
         private String clientId;
         /** GitHub 回调地址 */
+        private String redirectHttp;
         private String redirectUri;
         /** GitHub 授权地址 */
         private String authorizeUrl = "https://github.com/login/oauth/authorize";

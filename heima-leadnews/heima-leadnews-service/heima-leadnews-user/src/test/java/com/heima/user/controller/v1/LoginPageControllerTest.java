@@ -54,9 +54,9 @@ class LoginPageControllerTest {
     @DisplayName("微博/GitHub 均配置 → 拼接授权URL并回填Model")
     void testLoginPageFull() {
         props.getWeibo().setClientId("w-client");
-        props.getWeibo().setRedirectUri("https://cb/weibo");
+        props.getWeibo().setRedirectHttp("https://cb/weibo");
         props.getGithub().setClientId("g-client");
-        props.getGithub().setRedirectUri("https://cb/github");
+        props.getGithub().setRedirectHttp("https://cb/github");
         props.getWechat().setQrcodeUrl("img/wechat.png");
 
         Map<String, Object> attrs = modelAttrs();
@@ -72,7 +72,7 @@ class LoginPageControllerTest {
     @DisplayName("微博参数缺失 → 微博URL回退为 #，但GitHub正常")
     void testWeiboMissing() {
         props.getGithub().setClientId("g-client");
-        props.getGithub().setRedirectUri("https://cb/github");
+        props.getGithub().setRedirectHttp("https://cb/github");
 
         Map<String, Object> attrs = modelAttrs();
 
@@ -84,7 +84,7 @@ class LoginPageControllerTest {
     @DisplayName("GitHub参数缺失 → GitHubURL回退为 #")
     void testGithubMissing() {
         props.getWeibo().setClientId("w-client");
-        props.getWeibo().setRedirectUri("https://cb/weibo");
+        props.getWeibo().setRedirectHttp("https://cb/weibo");
 
         Map<String, Object> attrs = modelAttrs();
 

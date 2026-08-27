@@ -18,4 +18,9 @@ public interface ImService {
     ResponseResult sendMessage(Long senderId, ImMessageDto dto);
 
     ResponseResult markRead(Long userId, ImReadDto dto);
+
+    /**
+     * 校验指定会话是否属于该用户，属于则返回会话对端用户ID，否则返回 null（用于越权防护）。
+     */
+    Long getPeerUserId(Long sessionId, Long userId);
 }

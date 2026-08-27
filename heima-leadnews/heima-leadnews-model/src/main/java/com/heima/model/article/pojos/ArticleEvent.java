@@ -19,7 +19,7 @@ public class ArticleEvent {
     private Byte maxRetryCount; // 最大重试次数
     private Date retryTime; // 重试时间
 
-    private Byte minioStatus; // minio状态，0初始化，1为还未成功，2已成功
+//    private Byte minioStatus; // minio状态，0初始化，1为还未成功，2已成功
 
     private Byte esStatus; // es状态，0初始化，1为还未成功，2已成功
 

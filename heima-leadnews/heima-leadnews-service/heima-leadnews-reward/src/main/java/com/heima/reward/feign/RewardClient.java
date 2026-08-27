@@ -5,6 +5,7 @@ import com.heima.model.common.dtos.ResponseResult;
 import com.heima.reward.entity.UserAssets;
 import com.heima.reward.mapper.UserAssetsMapper;
 import com.heima.reward.service.CheckinService;
+import com.heima.reward.service.VirtualAssetService;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +19,8 @@ public class RewardClient implements IRewardClient {
     private UserAssetsMapper userAssetsMapper;
     @Autowired
     private CheckinService checkinService;
+    @Autowired
+    private VirtualAssetService virtualAssetService;
 
     /**
      * 获取用户资产（矿石余额）
@@ -77,5 +80,26 @@ public class RewardClient implements IRewardClient {
     @Override
     public ResponseResult getContinuousCheckinDays(@PathVariable("userId") Long userId) {
         return checkinService.getContinuousCheckinDays(userId);
+    }
+
+    /**
+     * 校验用户是否持有指定虚拟道具并返回折扣比例（课程下单前调用）
+     */
+    @GetMapping("/user/{userId}/virtual-asset/hold")
+    @Override
+    public ResponseResult getVirtualAssetHold(@PathVariable("userId") Long userId,
+        @RequestParam("itemCode") String itemCode) {
+        return virtualAssetService.getHold(userId, itemCode);
+    }
+
+    /**
+     * 核销用户虚拟道具（课程支付成功后调用）
+     */
+    @PostMapping("/user/{userId}/virtual-asset/consume")
+    @Override
+    public ResponseResult consumeVirtualAsset(@PathVariable("userId") Long userId,
+        @RequestParam("itemCode") String itemCode,
+        @RequestParam(value = "count", defaultValue = "1") int count) {
+        return virtualAssetService.consume(userId, itemCode, count);
     }
 }

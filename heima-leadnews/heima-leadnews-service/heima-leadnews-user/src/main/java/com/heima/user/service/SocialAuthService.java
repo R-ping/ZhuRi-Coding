@@ -3,7 +3,7 @@ package com.heima.user.service;
 import java.util.Map;
 
 public interface SocialAuthService {
-     Map<String, Object> getUserInfo(String accessToken);
+     Map<String, Object> getPlatFormUserInfo(String accessToken);
 
     String getAccessToken2Github(String code);
 

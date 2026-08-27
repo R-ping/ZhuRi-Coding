@@ -215,6 +215,7 @@ class TipServiceImplTest {
     @DisplayName("handleNotify 合法回调完成入账与流水与汇总")
     void handleNotifyOk() {
         when(tipOrderMapper.selectOne(any())).thenReturn(order(ApArticleTipOrder.Status.PENDING.getCode()));
+        when(tipOrderMapper.update(any(), any())).thenReturn(1); // CAS 抢占 PENDING→PAID
         when(userClient.getBasicInfo(anyLong())).thenReturn(
                 ResponseResult.okResult(Map.of("nickname", "赏主", "avatar", "a.png")));
         when(tipRecordMapper.insert(any(ApArticleTipRecord.class))).thenReturn(1);
@@ -222,7 +223,7 @@ class TipServiceImplTest {
 
         boolean ok = tipService.handleNotify("TN", "T123", "5", "TRADE_SUCCESS");
         assertTrue(ok);
-        verify(tipOrderMapper).updateById(any(ApArticleTipOrder.class));
+        verify(tipOrderMapper).update(any(), any()); // 条件更新抢占
         verify(tipRecordMapper).insert(any(ApArticleTipRecord.class));
         verify(articleMapper).update(any(), any());
         verify(paymentRewardService).onArticleRewardSuccess(anyLong(), any(), any(), eq("T123"));
@@ -232,6 +233,7 @@ class TipServiceImplTest {
     @DisplayName("handleNotify 用户信息获取异常时降级为空昵称头像")
     void handleNotifyUserClientException() {
         when(tipOrderMapper.selectOne(any())).thenReturn(order(ApArticleTipOrder.Status.PENDING.getCode()));
+        when(tipOrderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
         when(userClient.getBasicInfo(anyLong())).thenThrow(new RuntimeException("down"));
         when(tipRecordMapper.insert(any(ApArticleTipRecord.class))).thenReturn(1);
         when(articleMapper.update(any(), any())).thenReturn(1);

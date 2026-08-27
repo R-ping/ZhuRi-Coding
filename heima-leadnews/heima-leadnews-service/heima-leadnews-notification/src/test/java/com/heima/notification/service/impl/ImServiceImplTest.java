@@ -19,6 +19,7 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.lang.reflect.Field;
@@ -152,11 +153,52 @@ class ImServiceImplTest {
         @DisplayName("会话不存在 → 创建新会话并返回")
         void testCreate() {
             when(imSessionMapper.selectBySessionKey("100_200")).thenReturn(null);
+            when(imSessionMapper.insert(any(ImSession.class))).thenReturn(1);
             when(userClient.getPublicInfo(200L)).thenReturn(ResponseResult.okResult(peerInfoData("李四", "b")));
 
             imService.getOrCreateSession(100L, 200L);
             // insert 时用户1=min(100,200)=100, 用户2=200
             verify(imSessionMapper).insert(ArgumentMatchers.<ImSession>argThat(s -> s.getUser1Id() == 100L && s.getUser2Id() == 200L));
+        }
+
+        @Test
+        @DisplayName("并发插入撞唯一索引 → 捕获 DuplicateKeyException 回读既有会话")
+        void testCreateDuplicate() {
+            when(imSessionMapper.selectBySessionKey("100_200"))
+                    .thenReturn(null)                          // 第一次查无既有会话
+                    .thenReturn(session(10L, 100L, 200L, 1, 0)); // 冲突后回读到的既有会话
+            when(imSessionMapper.insert(any(ImSession.class)))
+                    .thenThrow(new DuplicateKeyException("uk_session_key dup"));
+            when(userClient.getPublicInfo(200L)).thenReturn(ResponseResult.okResult(peerInfoData("李四", "b")));
+
+            imService.getOrCreateSession(100L, 200L);
+            // 未抛异常，返回的是回读的既有会话
+            verify(imSessionMapper, times(2)).selectBySessionKey("100_200");
+        }
+    }
+
+    @Nested
+    @DisplayName("getPeerUserId 会话归属校验")
+    class GetPeerUserId {
+        @Test
+        @DisplayName("会话不存在 → 返回 null")
+        void testSessionMissing() {
+            when(imSessionMapper.selectById(10L)).thenReturn(null);
+            assertNull(imService.getPeerUserId(10L, 100L));
+        }
+
+        @Test
+        @DisplayName("会话成员 → 返回对方 id")
+        void testMember() {
+            when(imSessionMapper.selectById(10L)).thenReturn(session(10L, 100L, 200L, 1, 0));
+            assertEquals(200L, imService.getPeerUserId(10L, 100L));
+        }
+
+        @Test
+        @DisplayName("非会话成员（越权） → 返回 null")
+        void testNonMember() {
+            when(imSessionMapper.selectById(10L)).thenReturn(session(10L, 100L, 200L, 1, 0));
+            assertNull(imService.getPeerUserId(10L, 300L));
         }
     }
 
@@ -166,6 +208,7 @@ class ImServiceImplTest {
         @Test
         @DisplayName("正常：倒序返回并计算 next_cursor")
         void testOk() {
+            when(imSessionMapper.selectById(10L)).thenReturn(session(10L, 100L, 200L, 1, 0));
             ImMessage m1 = msg(1L, 100L, 200L, "hi");
             ImMessage m2 = msg(2L, 100L, 200L, "yo");
             // 返回顺序 [m1, m2]，服务端会 reverse 成 [m2, m1]；size=2 → 条数==limit → hasMore=true
@@ -184,10 +227,20 @@ class ImServiceImplTest {
         @Test
         @DisplayName("size 为空 → 默认 20")
         void testDefaultSize() {
+            when(imSessionMapper.selectById(10L)).thenReturn(session(10L, 100L, 200L, 1, 0));
             when(imMessageMapper.selectBySessionId(10L, null, 20)).thenReturn(List.of());
 
             Map<String, Object> data = (Map<String, Object>) imService.listMessages(100L, 10L, null, null).getData();
             assertEquals(false, data.get("has_more"));
+        }
+
+        @Test
+        @DisplayName("非会话成员 → 无权访问（3000）")
+        void testNonMember() {
+            when(imSessionMapper.selectById(10L)).thenReturn(session(10L, 100L, 200L, 1, 0));
+            ResponseResult r = imService.listMessages(300L, 10L, null, null);
+            assertEquals(AppHttpCodeEnum.NO_OPERATOR_AUTH.getCode(), r.getCode());
+            verify(imMessageMapper, never()).selectBySessionId(anyLong(), any(), any());
         }
     }
 
@@ -287,15 +340,16 @@ class ImServiceImplTest {
         }
 
         @Test
-        @DisplayName("会话不存在 → 仅 markRead，不更新会话")
-        void testSessionNull() {
+        @DisplayName("非会话成员 → 无权操作（3000），不触达消息与会话")
+        void testNonMember() {
             ImReadDto dto = new ImReadDto();
             dto.setSessionId(10L);
             dto.setLastReadId(5L);
-            when(imSessionMapper.selectById(10L)).thenReturn(null);
+            when(imSessionMapper.selectById(10L)).thenReturn(session(10L, 100L, 200L, 0, 3));
 
-            imService.markRead(100L, dto);
-            verify(imMessageMapper).markRead(10L, 5L, 100L);
+            ResponseResult r = imService.markRead(300L, dto);
+            assertEquals(AppHttpCodeEnum.NO_OPERATOR_AUTH.getCode(), r.getCode());
+            verify(imMessageMapper, never()).markRead(anyLong(), anyLong(), anyLong());
             verify(imSessionMapper, never()).updateById(any(ImSession.class));
         }
     }

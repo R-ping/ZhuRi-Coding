@@ -7,7 +7,6 @@ import com.heima.model.user.pojos.ApUserSocial;
 import com.heima.user.config.OAuthProperties;
 import com.heima.user.mapper.ApUserSocialMapper;
 import com.heima.user.service.SocialAuthService;
-import jakarta.annotation.Resource;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +34,7 @@ public class SocialAuthServiceImpl implements SocialAuthService {
     private RestTemplate restTemplate;
     @Autowired
     private ApUserSocialMapper apUserSocialMapper;
+
     @Override
     public String getAccessToken2Github(String code) {
         // 1. 从系统环境变量读取 client_secret
@@ -50,7 +50,7 @@ public class SocialAuthServiceImpl implements SocialAuthService {
         params.add("client_id", githubConfig.getClientId());
         params.add("client_secret", clientSecret);
         params.add("code", code);
-        params.add("redirect_uri", githubConfig.getRedirectUri());
+        params.add("redirect_uri", githubConfig.getRedirectHttp());
         // 如果reqParams不为空，将其中的值全追加到params中
         // 3. 设置请求头，要求返回 JSON
         HttpHeaders headers = new HttpHeaders();
@@ -86,7 +86,7 @@ public class SocialAuthServiceImpl implements SocialAuthService {
         params.add("client_secret", clientSecret);
         params.add("grant_type", "authorization_code");
         params.add("code", code);
-        params.add("redirect_uri", weiboConfig.getRedirectUri());
+        params.add("redirect_uri", weiboConfig.getRedirectHttp() + weiboConfig.getRedirectUri());
 
         // 3. 设置请求头
         HttpHeaders headers = new HttpHeaders();
@@ -113,7 +113,7 @@ public class SocialAuthServiceImpl implements SocialAuthService {
     }
 
     @Override
-    public Map<String, Object> getUserInfo(String accessToken) {
+    public Map<String, Object> getPlatFormUserInfo(String accessToken) {
         // 5. 用 access_token 获取用户信息
         HttpHeaders userHeaders = new HttpHeaders();
         userHeaders.set("Authorization", "Bearer " + accessToken);
@@ -129,7 +129,7 @@ public class SocialAuthServiceImpl implements SocialAuthService {
     /**
      * 检查 uid 是否绑定
      */
-    public boolean checkUidBound(String uid,String platform){
+    public boolean checkUidBound(String uid, String platform) {
         ApUserSocial apUserSocial = apUserSocialMapper.selectOne(
             Wrappers.<ApUserSocial>lambdaQuery()
                 .eq(ApUserSocial::getPlatformUid, uid)

@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -76,6 +77,21 @@ class AuthorizeFilterTest {
     @DisplayName("公开接口、无 token → 匿名放行")
     void testPublicNoToken() {
         ServerWebExchange exchange = exchange("/api/v1/login", null);
+        ServerHttpResponse response = exchange.getResponse();
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(exchange)).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(chain).filter(exchange);
+        verify(response, never()).setComplete();
+    }
+
+    @Test
+    @DisplayName("统一搜索聚合接口公开只读、无 token（文章/课程/标签/用户按 idType 分发）→ 匿名放行")
+    void testUnifiedSearchPublicNoToken() {
+        // 同一路径 /search/api/v1/search，白名单仅按路径放行，与 idType 无关
+        ServerWebExchange exchange = exchange("/search/api/v1/search", null);
         ServerHttpResponse response = exchange.getResponse();
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         when(chain.filter(exchange)).thenReturn(Mono.empty());

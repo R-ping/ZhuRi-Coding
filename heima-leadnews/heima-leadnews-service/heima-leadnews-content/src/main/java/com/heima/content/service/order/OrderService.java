@@ -5,8 +5,16 @@ import com.heima.model.common.dtos.ResponseResult;
 
 public interface OrderService {
 
-    /** 创建订单 */
-    ResponseResult createOrder(Long courseId, String discountCode, Long userId, String payType);
+    /**
+     * 创建订单。
+     *
+     * @param courseId        课程ID
+     * @param discountCode    课程专属折扣码（可空）
+     * @param couponItemCode  抽奖获得的通用5折券道具代码（如 course50，可空；与折扣码二选一）
+     * @param userId          用户ID
+     * @param payType         支付方式
+     */
+    ResponseResult createOrder(Long courseId, String discountCode, String couponItemCode, Long userId, String payType);
 
     /**
      * 查询订单状态。

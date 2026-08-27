@@ -17,6 +17,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 
 import java.math.BigDecimal;
@@ -174,6 +175,25 @@ class LevelActionServiceTest {
         assertEquals("无效的行为类型", result.get("message"));
     }
 
+    @Test
+    @DisplayName("recordActionWithLimit - S5修复:先加悲观行锁再校验上限,并以锁后实例落库")
+    void testActionWithLimitAcquiresRowLock() {
+        ApUserLevel fresh = level(1, BigDecimal.ZERO);
+        when(levelQueryService.getUserLevel(userId)).thenReturn(level(1, BigDecimal.ZERO));
+        when(levelQueryService.calculateLevel(eq(1), any(BigDecimal.class))).thenReturn(1);
+        when(userLevelMapper.selectByUserIdForUpdate(userId)).thenReturn(fresh);
+        when(actionLogMapper.selectCount(any())).thenReturn(0L);
+
+        Map<String, Object> result = levelActionService.recordActionWithLimit(userId, "publish_article", "发文章");
+
+        assertTrue((Boolean) result.get("success"));
+        // 锁必须在上限校验之前获取（校验是 selectCount/selectList，均在锁的同一事务内）
+        Mockito.inOrder(userLevelMapper, actionLogMapper)
+                .verify(userLevelMapper).selectByUserIdForUpdate(userId);
+        // 加分落库使用的是锁读取后的行实例，而非校验前缓存的旧实例
+        verify(userLevelMapper).updateById(fresh);
+    }
+
     // ==================== recordPaymentAction ====================
 
     @Test
@@ -253,6 +273,24 @@ class LevelActionServiceTest {
         assertTrue((Boolean) result.get("success"));
         assertEquals(2, ((BigDecimal) result.get("score")).intValue());
         verify(actionLogMapper).insert((ApUserActionLog) any());
+    }
+
+    @Test
+    @DisplayName("checkIn - S5修复:先加行锁再查当日签到次数,杜绝并发重复签到")
+    void testCheckInLocksBeforeCount() {
+        when(levelQueryService.getUserLevel(userId)).thenReturn(level(1, BigDecimal.ZERO));
+        when(levelQueryService.calculateLevel(eq(1), any(BigDecimal.class))).thenReturn(1);
+        when(userLevelMapper.selectByUserIdForUpdate(userId)).thenReturn(level(1, BigDecimal.ZERO));
+        when(actionLogMapper.selectCount(any())).thenReturn(0L);
+        when(actionLogMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = levelActionService.checkIn(userId);
+        assertTrue((Boolean) result.get("success"));
+
+        // 关键时序：行锁获取必须先于当日签到次数查询与落库
+        var inOrder = Mockito.inOrder(userLevelMapper, actionLogMapper);
+        inOrder.verify(userLevelMapper).selectByUserIdForUpdate(userId);
+        inOrder.verify(actionLogMapper).insert(org.mockito.ArgumentMatchers.any(ApUserActionLog.class));
     }
 
     // ==================== grantScore - 等级提升分支 ====================

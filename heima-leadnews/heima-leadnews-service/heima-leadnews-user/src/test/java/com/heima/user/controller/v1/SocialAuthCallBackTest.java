@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -43,7 +42,7 @@ class SocialAuthCallBackTest {
         when(socialAuthService.getAccessToken2Github("code-g")).thenReturn("at");
         Map<String, Object> info = new HashMap<>();
         info.put("id", 12345L);
-        when(socialAuthService.getUserInfo("at")).thenReturn(info);
+        when(socialAuthService.getPlatFormUserInfo("at")).thenReturn(info);
         when(socialLoginService.socialAuth(any(SocialAuthDto.class)))
                 .thenReturn(ResponseResult.okResult(null));
 

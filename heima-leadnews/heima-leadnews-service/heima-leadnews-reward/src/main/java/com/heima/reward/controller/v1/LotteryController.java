@@ -60,4 +60,10 @@ public class LotteryController {
     public ResponseResult broadcast() {
         return lotteryService.getBroadcast();
     }
+
+    /** 获取实物订单详情（用于抽奖兑换详情页） */
+    @GetMapping("/physical-order/{orderId}")
+    public ResponseResult physicalOrderDetail(@PathVariable Long orderId) {
+        return requireUserId(userId -> lotteryService.getPhysicalOrderDetail(userId, orderId));
+    }
 }
