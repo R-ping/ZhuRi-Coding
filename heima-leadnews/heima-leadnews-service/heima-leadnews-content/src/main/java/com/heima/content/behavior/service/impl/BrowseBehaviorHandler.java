@@ -2,10 +2,12 @@ package com.heima.content.behavior.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.content.behavior.service.BehaviorHandler;
+import com.heima.content.mapper.interaction.ApBrowseHistoryMapper;
 import com.heima.content.mapper.user.UserBehaviorRecordMapper;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.behavior.BehaviorResult;
 import com.heima.model.behavior.BehaviorType;
+import com.heima.model.behavior.pojos.ApBrowseHistory;
 import com.heima.model.behavior.pojos.UserBehaviorRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +26,9 @@ public class BrowseBehaviorHandler implements BehaviorHandler {
 
     @Autowired
     private UserBehaviorRecordMapper behaviorRecordMapper;
+
+    @Autowired
+    private ApBrowseHistoryMapper apBrowseHistoryMapper;
 
     @Override
     public BehaviorType getType() {
@@ -70,6 +75,30 @@ public class BrowseBehaviorHandler implements BehaviorHandler {
         record.setCreatedTime(new Date());
         record.setUpdatedTime(new Date());
         behaviorRecordMapper.insert(record);
+
+        // 文章浏览历史（ap_browse_history，永久去重：同一用户对同一文章仅保留一条，供"已读去重/浏览历史"使用）
+        if (context.getTargetType() != null && context.getTargetType() == 1) {
+            try {
+                LambdaQueryWrapper<ApBrowseHistory> historyQuery = new LambdaQueryWrapper<>();
+                historyQuery.eq(ApBrowseHistory::getUserId, userId.longValue());
+                historyQuery.eq(ApBrowseHistory::getArticleId, targetId);
+                ApBrowseHistory history = apBrowseHistoryMapper.selectOne(historyQuery);
+                if (history == null) {
+                    ApBrowseHistory browseHistory = new ApBrowseHistory();
+                    browseHistory.setUserId(userId.longValue());
+                    browseHistory.setArticleId(targetId);
+                    browseHistory.setReadCount(1);
+                    browseHistory.setBrowseTime(new Date());
+                    apBrowseHistoryMapper.insert(browseHistory);
+                } else {
+                    history.setBrowseTime(new Date());
+                    history.setReadCount(history.getReadCount() == null ? 1 : history.getReadCount() + 1);
+                    apBrowseHistoryMapper.updateById(history);
+                }
+            } catch (Exception e) {
+                log.warn("记录文章浏览历史失败, userId={}, articleId={}", userId, targetId, e);
+            }
+        }
 
         log.info("用户{}浏览了{} {}", userId,
             getTargetTypeName(context.getTargetType()), targetId);

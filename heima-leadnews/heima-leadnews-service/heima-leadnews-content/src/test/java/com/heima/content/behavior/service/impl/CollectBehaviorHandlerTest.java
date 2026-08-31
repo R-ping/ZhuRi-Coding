@@ -1,5 +1,6 @@
 package com.heima.content.behavior.service.impl;
 
+import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
 import com.heima.content.mapper.user.UserBehaviorRecordMapper;
 import com.heima.model.behavior.BehaviorContext;
@@ -39,6 +40,8 @@ class CollectBehaviorHandlerTest {
     private ApCollectionMapper apCollectionMapper;
     @Mock
     private UserBehaviorRecordMapper behaviorRecordMapper;
+    @Mock
+    private ApArticleMapper apArticleMapper;
 
     @InjectMocks
     private CollectBehaviorHandler handler;
@@ -170,6 +173,9 @@ class CollectBehaviorHandlerTest {
         ArgumentCaptor<UserBehaviorRecord> recCaptor = ArgumentCaptor.forClass(UserBehaviorRecord.class);
         verify(behaviorRecordMapper).updateById(recCaptor.capture());
         assertEquals(0, recCaptor.getValue().getStatus());
+
+        // 文章热度分同步更新（collection -1）
+        verify(apArticleMapper).updateInteractionAndScore(2002L, "collection", -1);
     }
 
     @Test

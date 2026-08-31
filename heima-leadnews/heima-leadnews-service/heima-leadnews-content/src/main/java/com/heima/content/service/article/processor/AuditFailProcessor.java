@@ -35,6 +35,9 @@ public class AuditFailProcessor {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** 系统级审核异常（辅助环节重试耗尽或未预期异常）的终态失败原因，用于告知作者重新提交 */
+    public static final String SYSTEM_ERROR_REASON = "系统审核异常，审核未完成，请稍后重新提交";
+
     /**
      * 处理审核失败
      * @param article 文章实体

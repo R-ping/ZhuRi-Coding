@@ -41,9 +41,13 @@ public class RedissonDelayQueue {
 
     @PostConstruct
     public void init() {
-        // 启动默认队列的消费者
-        startConsumer("TASK_FIRST_EXECUTE_DELAY_QUEUE");
-        startConsumer("TASK_LAST_EXECUTE_DELAY_QUEUE");
+        // 启动默认队列的消费者；Redis 不可用时优雅降级（记日志跳过），避免拖垮整个应用上下文
+        try {
+            startConsumer("TASK_FIRST_EXECUTE_DELAY_QUEUE");
+            startConsumer("TASK_LAST_EXECUTE_DELAY_QUEUE");
+        } catch (Exception e) {
+            log.error("初始化延迟队列消费者失败，Redis 可能不可用，相关延迟任务降级跳过", e);
+        }
     }
 
     @PreDestroy
@@ -77,6 +81,9 @@ public class RedissonDelayQueue {
         if (!blockingQueues.containsKey(queueName)) {
             RBlockingQueue<String> blockingQueue = redissonClient.getBlockingQueue(queueName);
             RDelayedQueue<String> delayedQueue = redissonClient.getDelayedQueue(blockingQueue);
+            if (blockingQueue == null || delayedQueue == null) {
+                throw new IllegalStateException("Redisson 队列初始化返回空对象，queueName=" + queueName);
+            }
             blockingQueues.put(queueName, blockingQueue);
             delayedQueues.put(queueName, delayedQueue);
             log.info("Redisson queue initialized: {}", queueName);

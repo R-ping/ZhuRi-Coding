@@ -38,7 +38,7 @@
 <!--    <mysql.version>5.1.46</mysql.version>-->
 <!--    <mybatis.spring.version>2.0.1</mybatis.spring.version>-->
     <mybatis.plus.version>3.5.7</mybatis.plus.version>
-    <lang3.version>3.5</lang3.version>
+    <lang3.version>3.17.0</lang3.version>
     <jsoup.version>1.17.2</jsoup.version>
     <fastjson.version>2.0.53</fastjson.version>
     <aliyun.oss.version>3.17.4</aliyun.oss.version>
@@ -56,6 +56,23 @@
       <groupId>net.logstash.logback</groupId>
       <artifactId>logstash-logback-encoder</artifactId>
       <version>7.4</version>
+    </dependency>
+    <!-- 分布式链路追踪：Micrometer Tracing（Brave 桥接）+ Zipkin 上报，版本由 Boot BOM 管理。
+         依赖注入后自动为 Servlet/WebFlux/Feign 生成 traceId/spanId 并写入 MDC，上报 Zipkin 聚合调用链 -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-tracing-bridge-brave</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.zipkin.reporter2</groupId>
+      <artifactId>zipkin-reporter-brave</artifactId>
+    </dependency>
+    <!-- 指标监控：Prometheus 注册表（Micrometer）。注册后暴露 /actuator/prometheus（需配合
+         management.endpoints.web.exposure.include 开启端点），由 Prometheus 周期性抓取；
+         同时自动收集 JVM/HTTP/Feign/Redis/DB 连接池等指标，版本由 Boot BOM 管理 -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
     <!-- lombok -->
     <dependency>

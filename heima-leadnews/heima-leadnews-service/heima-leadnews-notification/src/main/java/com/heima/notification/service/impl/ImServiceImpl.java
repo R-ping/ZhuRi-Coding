@@ -14,6 +14,7 @@ import com.heima.notification.service.ImService;
 import com.heima.notification.service.ImStateMachine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,18 +83,7 @@ public class ImServiceImpl implements ImService {
         }
 
         String sessionKey = buildSessionKey(userId, peerId);
-        ImSession session = imSessionMapper.selectBySessionKey(sessionKey);
-        if (session == null) {
-            session = new ImSession();
-            session.setSessionKey(sessionKey);
-            session.setUser1Id(Math.min(userId, peerId));
-            session.setUser2Id(Math.max(userId, peerId));
-            session.setIsActive(0);
-            session.setUser1UnreadCount(0);
-            session.setUser2UnreadCount(0);
-            session.setCreatedAt(LocalDateTime.now());
-            imSessionMapper.insert(session);
-        }
+        ImSession session = getOrInsertSession(sessionKey, userId, peerId);
 
         Map<String, Object> result = new HashMap<>();
         result.put("session_id", session.getId());
@@ -161,6 +151,12 @@ public class ImServiceImpl implements ImService {
 
     @Override
     public ResponseResult listMessages(Long userId, Long sessionId, Long cursor, Integer size) {
+        if (sessionId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+        if (getPeerUserId(sessionId, userId) == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "无权访问该会话");
+        }
         int limit = (size == null || size <= 0) ? 20 : Math.min(size, 50);
         List<ImMessage> messages = imMessageMapper.selectBySessionId(sessionId, cursor, limit);
         Collections.reverse(messages);
@@ -200,21 +196,13 @@ public class ImServiceImpl implements ImService {
         if (dto.getContent() == null || dto.getContent().trim().isEmpty()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
+        if (dto.getContent().trim().length() > 2000) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "消息内容过长（最多2000字）");
+        }
 
         String sessionKey = buildSessionKey(senderId, receiverId);
 
-        ImSession session = imSessionMapper.selectBySessionKey(sessionKey);
-        if (session == null) {
-            session = new ImSession();
-            session.setSessionKey(sessionKey);
-            session.setUser1Id(Math.min(senderId, receiverId));
-            session.setUser2Id(Math.max(senderId, receiverId));
-            session.setIsActive(0);
-            session.setUser1UnreadCount(0);
-            session.setUser2UnreadCount(0);
-            session.setCreatedAt(LocalDateTime.now());
-            imSessionMapper.insert(session);
-        }
+        ImSession session = getOrInsertSession(sessionKey, senderId, receiverId);
 
         ImStateMachine.SendPermission permission = imStateMachine.checkPermission(senderId, receiverId, session);
         if (permission == ImStateMachine.SendPermission.LIMIT_REACHED) {
@@ -260,6 +248,9 @@ public class ImServiceImpl implements ImService {
         if (dto.getSessionId() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
+        if (getPeerUserId(dto.getSessionId(), userId) == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "无权操作该会话");
+        }
         Long lastReadId = dto.getLastReadId() != null ? dto.getLastReadId() : Long.MAX_VALUE;
         imMessageMapper.markRead(dto.getSessionId(), lastReadId, userId);
 
@@ -281,5 +272,52 @@ public class ImServiceImpl implements ImService {
 
     private String buildSessionKey(Long uid1, Long uid2) {
         return Math.min(uid1, uid2) + "_" + Math.max(uid1, uid2);
+    }
+
+    @Override
+    public Long getPeerUserId(Long sessionId, Long userId) {
+        if (sessionId == null || userId == null) {
+            return null;
+        }
+        ImSession session = imSessionMapper.selectById(sessionId);
+        if (session == null) {
+            return null;
+        }
+        boolean isMember = session.getUser1Id().equals(userId) || session.getUser2Id().equals(userId);
+        if (!isMember) {
+            return null;
+        }
+        return session.getUser1Id().equals(userId) ? session.getUser2Id() : session.getUser1Id();
+    }
+
+    /**
+     * 查询（不存在则创建）会话。
+     * <p>利用 im_sessions.session_key 唯一索引 + 捕获 DuplicateKeyException，在并发调用下避免插入重复会话，
+     * 冲突时回读既有会话返回。
+     */
+    private ImSession getOrInsertSession(String sessionKey, Long uid1, Long uid2) {
+        ImSession session = imSessionMapper.selectBySessionKey(sessionKey);
+        if (session != null) {
+            return session;
+        }
+        session = new ImSession();
+        session.setSessionKey(sessionKey);
+        session.setUser1Id(Math.min(uid1, uid2));
+        session.setUser2Id(Math.max(uid1, uid2));
+        session.setIsActive(0);
+        session.setUser1UnreadCount(0);
+        session.setUser2UnreadCount(0);
+        session.setCreatedAt(LocalDateTime.now());
+        try {
+            imSessionMapper.insert(session);
+            return session;
+        } catch (DuplicateKeyException e) {
+            // 并发下 session_key 已被其他请求创建，回读既有会话
+            ImSession existing = imSessionMapper.selectBySessionKey(sessionKey);
+            if (existing != null) {
+                return existing;
+            }
+            throw e;
+        }
     }
 }

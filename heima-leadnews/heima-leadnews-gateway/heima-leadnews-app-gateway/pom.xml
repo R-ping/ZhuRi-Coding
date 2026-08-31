@@ -19,9 +19,17 @@
         <jacoco.line.min>0.70</jacoco.line.min>
     </properties>
     <dependencies>
+        <!-- 网关为 WebFlux 应用：链路上下文由 Spring 6.1 内置 micrometer context-propagation 自动装配，
+             父 POM 的 micrometer-tracing-bridge-brave 已覆盖 Trace 生成与 b3 头传播 -->
         <dependency>
             <groupId>cn.hutool</groupId>
             <artifactId>hutool-all</artifactId>
+        </dependency>
+
+        <!-- 网关入口限流：Reactive Redis 客户端，用于 IP 维度的分布式限流（固定窗口 Lua） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
         </dependency>
 
         <!-- Test dependencies -->

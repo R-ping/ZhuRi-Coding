@@ -1,5 +1,6 @@
 package com.heima.content.behavior.service.impl;
 
+import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.heima.content.mapper.user.UserBehaviorRecordMapper;
 import com.heima.model.behavior.BehaviorContext;
@@ -39,6 +40,8 @@ class LikeBehaviorHandlerTest {
     private ApBehaviorLikesMapper apBehaviorLikesMapper;
     @Mock
     private UserBehaviorRecordMapper behaviorRecordMapper;
+    @Mock
+    private ApArticleMapper apArticleMapper;
 
     @InjectMocks
     private LikeBehaviorHandler handler;
@@ -175,6 +178,9 @@ class LikeBehaviorHandlerTest {
         ArgumentCaptor<UserBehaviorRecord> recCaptor = ArgumentCaptor.forClass(UserBehaviorRecord.class);
         verify(behaviorRecordMapper).updateById(recCaptor.capture());
         assertEquals(0, recCaptor.getValue().getStatus());
+
+        // 文章热度分同步更新（likes -1）
+        verify(apArticleMapper).updateInteractionAndScore(2002L, "likes", -1);
     }
 
     @Test

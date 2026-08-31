@@ -23,4 +23,12 @@ public interface UserAssetsMapper extends BaseMapper<UserAssets> {
      */
     @Update("UPDATE user_assets SET ore_balance = ore_balance - #{amount}, updated_at = NOW() WHERE user_id = #{userId} AND ore_balance >= #{amount}")
     int deductOreBalance(@Param("userId") Long userId, @Param("amount") int amount);
+
+    /**
+     * 原子更新幸运值（条件更新，避免"读-改-写"在并发下丢失更新）
+     * @param userId 用户ID
+     * @param luckyValue 新的幸运值
+     */
+    @Update("UPDATE user_assets SET lucky_value = #{luckyValue}, updated_at = NOW() WHERE user_id = #{userId}")
+    int updateLuckyValue(@Param("userId") Long userId, @Param("luckyValue") int luckyValue);
 }

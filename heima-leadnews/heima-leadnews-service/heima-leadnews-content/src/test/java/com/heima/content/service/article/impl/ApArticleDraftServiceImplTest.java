@@ -10,6 +10,7 @@ import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleDraftMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ArticleAutoScanService;
+import com.heima.content.service.level.LevelPermissionService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleConfig;
@@ -40,6 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -63,6 +66,8 @@ class ApArticleDraftServiceImplTest {
     @Mock private ApArticleConfigMapper apArticleConfigMapper;
     @Mock private ApArticleContentMapper apArticleContentMapper;
     @Mock private ArticleAutoScanService articleAutoScanService;
+    // 发布权限校验：生产 publishFromDraft 在发布前会校验用户是否拥有发布文章权限
+    @Mock private LevelPermissionService levelPermissionService;
 
     @InjectMocks
     private ApArticleDraftServiceImpl draftService;
@@ -165,6 +170,7 @@ class ApArticleDraftServiceImplTest {
     @DisplayName("publishFromDraft - id 为空返回 PARAM_INVALID")
     void testPublishNoId() {
         AppThreadLocalUtil.setUser(user(1));
+        when(levelPermissionService.hasPermission(anyLong(), anyString())).thenReturn(true);
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), draftService.publishFromDraft(null).getCode());
     }
 
@@ -172,6 +178,7 @@ class ApArticleDraftServiceImplTest {
     @DisplayName("publishFromDraft - 草稿不存在返回 DATA_NOT_EXIST")
     void testPublishMissing() {
         AppThreadLocalUtil.setUser(user(1));
+        when(levelPermissionService.hasPermission(anyLong(), anyString())).thenReturn(true);
         when(apArticleDraftMapper.selectById(1L)).thenReturn(null);
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), draftService.publishFromDraft(1L).getCode());
     }
@@ -180,6 +187,7 @@ class ApArticleDraftServiceImplTest {
     @DisplayName("publishFromDraft - 成功创建文章/config/content并删草稿")
     void testPublishOk() {
         AppThreadLocalUtil.setUser(user(5));
+        when(levelPermissionService.hasPermission(anyLong(), anyString())).thenReturn(true);
         ApArticleDraft d = draft(1L, "草稿标题");
         when(apArticleDraftMapper.selectById(1L)).thenReturn(d);
         org.mockito.Mockito.doAnswer(inv -> {
@@ -215,6 +223,7 @@ class ApArticleDraftServiceImplTest {
     @DisplayName("publishFromDraft - 删除草稿失败抛异常")
     void testPublishDeleteFails() {
         AppThreadLocalUtil.setUser(user(5));
+        when(levelPermissionService.hasPermission(anyLong(), anyString())).thenReturn(true);
         ApArticleDraft d = draft(1L, "标题");
         when(apArticleDraftMapper.selectById(1L)).thenReturn(d);
         org.mockito.Mockito.doAnswer(inv -> { ((ApArticle) inv.getArgument(0)).setId(1L); return 1; })

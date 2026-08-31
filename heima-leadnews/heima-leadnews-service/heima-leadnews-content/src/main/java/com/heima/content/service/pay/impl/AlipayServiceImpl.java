@@ -63,6 +63,11 @@ public class AlipayServiceImpl implements AlipayService {
                 && privateKey != null && !privateKey.isEmpty();
     }
 
+    @Override
+    public String getAppId() {
+        return appId;
+    }
+
     /**
      * 生成支付宝「电脑网站支付」签名表单（HTML，含自动提交脚本）。
      * 页面加载后表单自动 POST 到支付宝网关，用户即可在支付宝收银台完成支付。

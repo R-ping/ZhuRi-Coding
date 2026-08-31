@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 用户等级查询服务 — 负责等级信息查询、等级配置查询、等级计算
@@ -23,6 +24,21 @@ import java.util.Map;
 @Slf4j
 @Service
 public class LevelQueryService {
+
+    /** 等级配置本地缓存 TTL：配置变更低频，5 分钟刷新一次 */
+    private static final long CONFIG_CACHE_TTL_MS = 5 * 60 * 1000L;
+
+    /** 等级配置本地缓存：key=levelType */
+    private final Map<Integer, LevelConfigCacheEntry> configCache = new ConcurrentHashMap<>();
+
+    private static class LevelConfigCacheEntry {
+        final List<ApLevelConfig> configs;
+        final long expireAt;
+        LevelConfigCacheEntry(List<ApLevelConfig> configs) {
+            this.configs = configs;
+            this.expireAt = System.currentTimeMillis() + CONFIG_CACHE_TTL_MS;
+        }
+    }
 
     @Autowired
     private ApUserLevelMapper userLevelMapper;
@@ -35,6 +51,25 @@ public class LevelQueryService {
 
     @Autowired
     private IRewardClient rewardClient;
+
+    /**
+     * 获取指定类型的等级配置（带本地缓存，避免高频计算等级时反复查库）
+     */
+    private List<ApLevelConfig> getCachedConfigs(Integer levelType) {
+        LevelConfigCacheEntry entry = configCache.get(levelType);
+        if (entry == null || entry.expireAt < System.currentTimeMillis()) {
+            entry = new LevelConfigCacheEntry(loadConfigs(levelType));
+            configCache.put(levelType, entry);
+        }
+        return entry.configs;
+    }
+
+    private List<ApLevelConfig> loadConfigs(Integer levelType) {
+        LambdaQueryWrapper<ApLevelConfig> query = new LambdaQueryWrapper<>();
+        query.eq(ApLevelConfig::getLevelType, levelType);
+        query.orderByAsc(ApLevelConfig::getLevelValue);
+        return levelConfigMapper.selectList(query);
+    }
 
     /**
      * 获取用户等级信息，不存在则创建默认记录
@@ -154,26 +189,27 @@ public class LevelQueryService {
     }
 
     /**
-     * 根据积分计算等级
+     * 根据积分计算等级（内存计算，配置走本地缓存）
      */
     public int calculateLevel(int levelType, BigDecimal score) {
-        LambdaQueryWrapper<ApLevelConfig> query = new LambdaQueryWrapper<>();
-        query.eq(ApLevelConfig::getLevelType, levelType);
-        query.le(ApLevelConfig::getMinScore, score);
-        query.orderByDesc(ApLevelConfig::getMinScore);
-        query.last("LIMIT 1");
-        ApLevelConfig config = levelConfigMapper.selectOne(query);
-
-        if (config != null) {
-            return config.getLevelValue();
+        List<ApLevelConfig> configs = getCachedConfigs(levelType);
+        if (configs.isEmpty()) {
+            return 1;
         }
-
+        // 命中 min_score <= score 的最高档
+        ApLevelConfig hit = null;
+        for (ApLevelConfig config : configs) {
+            if (config.getMinScore() != null
+                    && BigDecimal.valueOf(config.getMinScore()).compareTo(score) <= 0) {
+                if (hit == null || config.getMinScore() > hit.getMinScore()) {
+                    hit = config;
+                }
+            }
+        }
+        if (hit != null) {
+            return hit.getLevelValue();
+        }
         // 无匹配范围时返回最高等级
-        query.clear();
-        query.eq(ApLevelConfig::getLevelType, levelType);
-        query.orderByDesc(ApLevelConfig::getLevelValue);
-        query.last("LIMIT 1");
-        ApLevelConfig highest = levelConfigMapper.selectOne(query);
-        return highest != null ? highest.getLevelValue() : 1;
+        return configs.get(configs.size() - 1).getLevelValue();
     }
 }

@@ -39,7 +39,7 @@ public class ApAssociateWordsServiceImpl implements ApAssociateWordsService {
         if(StringUtils.isBlank(dto.getSearchWords())){
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
-
+        log.info("开始搜索：{}",dto.getSearchWords());
         //2.执行查询，模糊查询
         Query query = Query.query(Criteria.where("associateWords").regex(".*?" + Pattern.quote(dto.getSearchWords()) + ".*"));
         query.with(Sort.by(Sort.Order.desc("searchCount"), Sort.Order.desc("createdTime")));

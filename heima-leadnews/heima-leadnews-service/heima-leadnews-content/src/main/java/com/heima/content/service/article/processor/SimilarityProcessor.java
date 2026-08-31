@@ -32,35 +32,32 @@ public class SimilarityProcessor implements ArticleAuditProcessor {
 
         // RAG相似度检验
         boolean isHighSimilarity = false;
+        Map<String, Object> similarityResult;
         try {
-            Map<String, Object> similarityResult = articleSimilarityService.checkSimilarity(article, content);
-            if (similarityResult != null && Boolean.TRUE.equals(similarityResult.get("isSimilar"))) {
-                isHighSimilarity = true;
-                log.info("检测到高相似度文章, articleId={}, similarity={}",
-                    article.getId(), similarityResult.get("maxSimilarity"));
-            }
+            similarityResult = articleSimilarityService.checkSimilarity(article, content);
         } catch (Exception e) {
+            // 供审核责任链按阶段重试：重复高相似文章会漏审并错误放行，故视为需重试的异常而非静默忽略
             log.error("RAG相似度检验异常, articleId={}", article.getId(), e);
+            throw new AuditRetryableException("RAG相似度检验失败, articleId=" + article.getId(), e);
+        }
+        if (similarityResult != null && Boolean.TRUE.equals(similarityResult.get("isSimilar"))) {
+            isHighSimilarity = true;
+            log.info("检测到高相似度文章, articleId={}, similarity={}",
+                article.getId(), similarityResult.get("maxSimilarity"));
         }
 
         context.setHighSimilarity(isHighSimilarity);
 
         // 更新文章推荐状态（高相似度标记为不推荐）
+        // 使用幂等 upsert：依赖 uk_article_id 唯一索引兜底并发首次插入，避免重复行
         try {
-            ApArticleConfig config = apArticleConfigMapper.selectOne(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ApArticleConfig>()
-                    .eq("article_id", article.getId()));
-            if (config == null) {
-                config = new ApArticleConfig(article.getId());
-                config.setIsRecommend(!isHighSimilarity);
-                apArticleConfigMapper.insert(config);
-            } else {
-                config.setIsRecommend(!isHighSimilarity);
-                apArticleConfigMapper.updateById(config);
-            }
+            ApArticleConfig config = new ApArticleConfig(article.getId());
+            config.setIsRecommend(!isHighSimilarity);
+            apArticleConfigMapper.insertOrUpdateRecommend(config);
             log.info("更新文章推荐状态, articleId={}, isRecommend={}", article.getId(), !isHighSimilarity);
         } catch (Exception e) {
             log.error("更新文章配置失败, articleId={}", article.getId(), e);
+            throw new AuditRetryableException("文章推荐状态更新失败, articleId=" + article.getId(), e);
         }
 
         return true;

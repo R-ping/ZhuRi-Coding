@@ -5,7 +5,7 @@ spring:
     name: leadnews-content
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
   # 设置Mapper接口所对应的XML文件位置，如果你在Mapper接口中有自定义方法，需要进行该配置
@@ -90,6 +90,30 @@ recommend:
   max-per-tag: 2              # 每 10 篇同一标签最多 N 篇
   max-per-author: 3           # 每 10 篇同一作者最多 M 篇（0=不限制）
   untagged-bucket: __untagged__ # 无标签文章去向
+  seed-jitter: 0.15           # 排序随机抖动幅度（±分数），与 seed 绑定：刷新出新内容、同 seed 分页连续
+  interest-boost-max: 0.30    # 用户兴趣标签命中时的最大加成幅度
+  interest-browse-sample: 100 # 构建兴趣画像时最多采样的最近浏览条数
+  interest-cache-ttl: 1800    # 兴趣画像 Redis 缓存 TTL（秒），默认 30 分钟，长 TTL 容忍用户行为滞后
+  # 基础评分权重（可配置，便于 A/B 调优）
+  weight:
+    score: 0.25               # 编辑/系统热度分权重
+    recency: 0.20             # 时效性权重
+    views: 0.15               # 阅读量权重
+    likes: 0.15               # 点赞量权重
+    comments: 0.10            # 评论量权重
+    collects: 0.10            # 收藏量权重
+  score-normalize-max: 10000  # 热度分归一化除数（越高，编辑热度影响越小）
+  recency-window-days: 7      # 时效线性衰减窗口（天）
+  # 服务端已读去重
+  exclude-read-count: 500     # 参与已读去重的最近浏览条数上限（控制 NOT IN 规模）
+  exclude-read-window-days: 7 # 已读去重只考虑该天数内的浏览记录
+  # 数据回流闭环（近期互动热度）
+  interaction-boost-max: 0.20 # 近期阅读热度权重（真实行为反哺排序）
+  interaction-window-seconds: 86400 # 统计近期互动的秒数窗口（默认 24 小时）
+  interaction-cache-ttl: 300  # 近期互动热度缓存 TTL（秒）
+  # 曝光/行为闭环（负反馈：曝光而未消费 → 降权）
+  exposure-window-days: 3     # 只看该天数内对该用户的曝光记录
+  exposure-penalty-max: 0.10  # 曝光而未消费的最大降权幅度（分数段内）
 
 # 支付宝沙箱配置（通过环境变量注入）
 alipay:
@@ -100,4 +124,17 @@ alipay:
   base-url: ${ALIPAY_BASE_URL:https://58c840b3.r40.cpolar.top}
   # 课程支付成功后的回跳地址前缀（课程页是前端 Vue SPA，指向前端对外地址，本地默认 9901）
   web-base-url: ${ALIPAY_WEB_BASE_URL:https://5bdb24b5.r40.cpolar.top}
+
+# 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: 1.0        # 本地全量采样；生产建议 0.1~0.5
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
 

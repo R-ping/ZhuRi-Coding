@@ -1,6 +1,8 @@
 package com.heima.content.service.tip.impl;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.heima.apis.user.IUserClient;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.tip.ApArticleTipOrderMapper;
@@ -12,6 +14,7 @@ import com.heima.model.article.pojos.ApArticleTipOrder;
 import com.heima.model.article.pojos.ApArticleTipRecord;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -68,6 +71,11 @@ class TipServiceImplTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         ReflectionTestUtils.setField(tipService, "payBaseUrl", "http://gw");
+        // 预热 MybatisPlus 实体表元数据，使 lambda 包装器（如通知幂等 CAS 条件更新、文章汇总增量）自足，不依赖 Spring 上下文
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApArticleTipOrder.class);
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApArticle.class);
     }
 
     private ApArticle article(Long authorId, boolean deleted) {
@@ -215,6 +223,7 @@ class TipServiceImplTest {
     @DisplayName("handleNotify 合法回调完成入账与流水与汇总")
     void handleNotifyOk() {
         when(tipOrderMapper.selectOne(any())).thenReturn(order(ApArticleTipOrder.Status.PENDING.getCode()));
+        when(tipOrderMapper.update(any(), any())).thenReturn(1); // CAS 抢占 PENDING→PAID
         when(userClient.getBasicInfo(anyLong())).thenReturn(
                 ResponseResult.okResult(Map.of("nickname", "赏主", "avatar", "a.png")));
         when(tipRecordMapper.insert(any(ApArticleTipRecord.class))).thenReturn(1);
@@ -222,7 +231,7 @@ class TipServiceImplTest {
 
         boolean ok = tipService.handleNotify("TN", "T123", "5", "TRADE_SUCCESS");
         assertTrue(ok);
-        verify(tipOrderMapper).updateById(any(ApArticleTipOrder.class));
+        verify(tipOrderMapper).update(any(), any()); // 条件更新抢占
         verify(tipRecordMapper).insert(any(ApArticleTipRecord.class));
         verify(articleMapper).update(any(), any());
         verify(paymentRewardService).onArticleRewardSuccess(anyLong(), any(), any(), eq("T123"));
@@ -232,6 +241,7 @@ class TipServiceImplTest {
     @DisplayName("handleNotify 用户信息获取异常时降级为空昵称头像")
     void handleNotifyUserClientException() {
         when(tipOrderMapper.selectOne(any())).thenReturn(order(ApArticleTipOrder.Status.PENDING.getCode()));
+        when(tipOrderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
         when(userClient.getBasicInfo(anyLong())).thenThrow(new RuntimeException("down"));
         when(tipRecordMapper.insert(any(ApArticleTipRecord.class))).thenReturn(1);
         when(articleMapper.update(any(), any())).thenReturn(1);

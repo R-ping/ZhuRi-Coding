@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -39,7 +40,8 @@ import static org.mockito.Mockito.when;
  * 核心诉求：
  * 1. 兑换商品的库存/余额/下架/限时多道防线，防止资损或超卖；
  * 2. Redis 预扣负库存与数据库乐观锁失败时的回滚(increment)；
- * 3. 虚拟商品即时发货、实物需收货地址的差异校验。
+ * 3. 原子扣矿失败(并发被先扣光)时抛异常并回滚 Redis 预扣，保证三资源一致；
+ * 4. 虚拟商品即时发货、实物需收货地址的差异校验。
  */
 class WelfareServiceImplTest {
 
@@ -190,6 +192,29 @@ class WelfareServiceImplTest {
         verify(exchangeOrderMapper, never()).insert(any(WelfareExchangeOrder.class));
     }
 
+    // ==================== exchange - 原子扣矿 & Redis 回滚 ====================
+
+    @Test
+    @DisplayName("exchange - 原子扣矿失败(并发下被先扣光)抛异常并回滚Redis预扣")
+    void testExchangeAtomicOreDeductFailRollsBackRedis() {
+        // 预检查余额充足（1000>=100），仅原子扣减阶段失败，模拟并发下被其它请求先扣光
+        when(goodsMapper.selectById("g1")).thenReturn(virtualGoods());
+        when(userAssetsMapper.selectById(userId)).thenReturn(assets());
+        when(valueOperations.decrement(anyString())).thenReturn(50L);   // Redis 预扣成功
+        when(goodsMapper.updateStock(anyString())).thenReturn(1);       // DB 库存扣减成功
+        when(userAssetsMapper.deductOreBalance(userId, 100)).thenReturn(0); // 原子扣矿失败
+
+        // 原子扣矿返回0 -> 抛 IllegalStateException 触发事务回滚
+        assertThrows(IllegalStateException.class,
+                () -> welfareService.exchange(userId, body("g1")));
+
+        // catch 中必须回滚 Redis 预扣，保证 DB/Redis 库存与矿石余额三者回滚一致
+        verify(valueOperations).increment(anyString());
+        // 扣矿失败时不允许产生订单明细与库存流水
+        verify(exchangeOrderMapper, never()).insert(any(WelfareExchangeOrder.class));
+        verify(stockLogMapper, never()).insert(any(WelfareStockLog.class));
+    }
+
     // ==================== exchange - 虚拟成功 ====================
 
     @Test
@@ -199,6 +224,7 @@ class WelfareServiceImplTest {
         when(userAssetsMapper.selectById(userId)).thenReturn(assets());
         when(valueOperations.decrement(anyString())).thenReturn(50L);
         when(goodsMapper.updateStock(anyString())).thenReturn(1);
+        when(userAssetsMapper.deductOreBalance(userId, 100)).thenReturn(1);
 
         ResponseResult result = welfareService.exchange(userId, body("g1"));
 
@@ -209,7 +235,10 @@ class WelfareServiceImplTest {
         assertEquals(900, data.get("remainingOre"));
         verify(exchangeOrderMapper).insert(any(WelfareExchangeOrder.class));
         verify(stockLogMapper).insert(any(WelfareStockLog.class));
-        verify(goodsMapper).updateById(any(WelfareGoods.class));
+        // exchanged_count 已在 updateStock 的 SQL 中原子累加，goods 不应再被额外的 updateById 回写
+        verify(goodsMapper, never()).updateById(any(WelfareGoods.class));
+        // 原子扣矿只调用一次，且金额为商品矿石价
+        verify(userAssetsMapper).deductOreBalance(userId, 100);
     }
 
     // ==================== getMyExchanges ====================

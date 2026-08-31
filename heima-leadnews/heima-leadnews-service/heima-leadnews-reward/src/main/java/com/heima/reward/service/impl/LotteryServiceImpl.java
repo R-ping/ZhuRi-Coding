@@ -8,6 +8,7 @@ import com.heima.model.common.dtos.ResponseResult;
 import com.heima.reward.entity.*;
 import com.heima.reward.mapper.*;
 import com.heima.reward.service.LotteryService;
+import com.heima.reward.service.VirtualAssetService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,8 @@ public class LotteryServiceImpl implements LotteryService {
     private LotteryBroadcastMessageMapper broadcastMapper;
     @Autowired
     private UserAssetsMapper userAssetsMapper;
+    @Autowired
+    private VirtualAssetService virtualAssetService;
 
     @Override
     public ResponseResult getDashboard(Long userId) {
@@ -73,6 +76,8 @@ public class LotteryServiceImpl implements LotteryService {
                 item.put("lockHint", "再抽" + (p.getUnlockRequiredDraws() - todayDrawCount) + "次解锁");
             }
             item.put("unlockRequired", p.getUnlockRequiredDraws() != null ? p.getUnlockRequiredDraws() : 0);
+            // 实物奖品剩余库存（-1=不限量），供前端展示"限量X件"
+            item.put("stock", p.getTotalStock() != null ? p.getTotalStock() : -1);
             prizeList.add(item);
         }
 
@@ -161,6 +166,8 @@ public class LotteryServiceImpl implements LotteryService {
         List<Map<String, Object>> results = new ArrayList<>();
         int totalCost = 0;
         int currentLucky = (assets != null && assets.getLuckyValue() != null) ? assets.getLuckyValue() : 0;
+        // 本轮抽中矿石奖励的合计（仅用于返回等值展示；实际累加通过原子 SQL 落库，防并发丢失）
+        int totalOreWon = 0;
 
         for (int i = 0; i < drawCount; i++) {
             int luckyBefore = currentLucky;
@@ -198,6 +205,11 @@ public class LotteryServiceImpl implements LotteryService {
                 }
             }
 
+            // ★ 实物奖品库存占用：发放前原子占用，售罄/并发抢空则降级为矿石兜底，防实物超发
+            if (selectedPrize.getType() != null && selectedPrize.getType() == 3) {
+                selectedPrize = occupyOrDowngrade(selectedPrize);
+            }
+
             // 构建结果
             Map<String, Object> result = new HashMap<>();
             result.put("prizeId", selectedPrize.getId());
@@ -209,7 +221,7 @@ public class LotteryServiceImpl implements LotteryService {
                 // 矿石奖励：随机范围
                 int oreAmount = selectedPrize.getMinOre() + new Random().nextInt(selectedPrize.getMaxOre() - selectedPrize.getMinOre() + 1);
                 result.put("oreAmount", oreAmount);
-                // 直接增加矿石
+                // 直接增加矿石（原子累加，避免读改写覆盖丢失）
                 if (assets == null) {
                     assets = new UserAssets();
                     assets.setUserId(userId);
@@ -220,7 +232,8 @@ public class LotteryServiceImpl implements LotteryService {
                     assets.setUpdatedAt(new Date());
                     userAssetsMapper.insert(assets);
                 }
-                oreBalance += oreAmount;
+                userAssetsMapper.addOreBalance(userId, oreAmount);
+                totalOreWon += oreAmount;
             } else if (selectedPrize.getType() == 3) {
                 // 实物：创建订单
                 LotteryPhysicalOrder order = new LotteryPhysicalOrder();
@@ -251,6 +264,12 @@ public class LotteryServiceImpl implements LotteryService {
             result.put("isSpecialUnlock", isGuaranteed);
             results.add(result);
 
+            // 虚拟道具入账：type==2 时累加持有数量，供"我的道具"展示 + 课程下单核销
+            if (selectedPrize.getType() == 2 && selectedPrize.getVirtualItemCode() != null) {
+                virtualAssetService.credit(userId, selectedPrize.getVirtualItemCode(),
+                        selectedPrize.getName(), 1);
+            }
+
             // 记录抽奖记录
             LotteryDrawRecord record = new LotteryDrawRecord();
             record.setDrawBatchId(batchId);
@@ -270,9 +289,13 @@ public class LotteryServiceImpl implements LotteryService {
             drawRecordMapper.insert(record);
         }
 
-        // 6. 扣矿石
+        // 6. 扣矿石成本（原子扣减，防止并发下被同时抽成负余额/覆盖丢失）
         if (!useFreeDraw) {
-            oreBalance -= costOre;
+            if (userAssetsMapper.deductOreBalance(userId, costOre) != 1) {
+                // 进入时余额足够，但并发下被先抽走：回滚本轮已占用的库存/订单/记录
+                log.warn("抽奖扣矿石失败(余额不足或并发抢先)，userId={}, cost={}", userId, costOre);
+                throw new IllegalStateException("矿石不足，无法支付本次抽奖");
+            }
         }
         if (assets == null) {
             assets = new UserAssets();
@@ -284,11 +307,8 @@ public class LotteryServiceImpl implements LotteryService {
             assets.setUpdatedAt(new Date());
             userAssetsMapper.insert(assets);
         }
-        // 更新资产的矿石和幸运值
-        assets.setOreBalance(oreBalance);
-        assets.setLuckyValue(currentLucky);
-        assets.setUpdatedAt(new Date());
-        userAssetsMapper.updateById(assets);
+        // 更新资产：幸运值走条件更新（原子 SQL 直写），避免整行 updateById 读改写在并发下覆盖丢失
+        userAssetsMapper.updateLuckyValue(userId, currentLucky);
 
         // 7. 更新每日抽奖状态
         if (daily.getId() == null) {
@@ -308,7 +328,7 @@ public class LotteryServiceImpl implements LotteryService {
         data.put("drawId", batchId);
         data.put("results", results);
         data.put("totalOreCost", useFreeDraw ? 0 : costOre);
-        data.put("remainingOre", oreBalance);
+        data.put("remainingOre", oreBalance - (useFreeDraw ? 0 : costOre) + totalOreWon);
         data.put("newLuckyValue", currentLucky);
         data.put("todayDrawCountUpdated", todayDrawCount + drawCount);
 
@@ -337,20 +357,66 @@ public class LotteryServiceImpl implements LotteryService {
         return effective.stream().filter(p -> p.getType() == 1).findFirst().orElse(effective.get(0));
     }
 
+    /**
+     * 实物奖品发放前原子占用库存。
+     * <ul>
+     *   <li>不限量（total_stock 为 null 或 &lt;0）：直接返回原奖品，不扣减；</li>
+     *   <li>限量（&gt;0）：原子扣减一件，成功返回原奖品；失败（已售罄/并发抢空）降级为矿石兜底。</li>
+     * </ul>
+     * 返回值保证为可正常发放的奖品类型（实物或矿石），杜绝"中奖实物却发不出"导致的超发/资损。
+     *
+     * @param physicalPrize 已抽中的实物奖品
+     * @return 实际发放的奖品（占用成功则原实物，否则降级为矿石奖品）
+     */
+    private LotteryPrizePool occupyOrDowngrade(LotteryPrizePool physicalPrize) {
+        Integer stock = physicalPrize.getTotalStock();
+        // 不限量或未配置（兼容历史数据）：直接发放，不占用库存
+        boolean unlimited = stock == null || stock < 0;
+        if (!unlimited && prizePoolMapper.deductStock(physicalPrize.getId()) != 1) {
+            // 库存 0 或并发下被抢先抽完：降级为矿石兜底
+            LotteryPrizePool ore = new LotteryPrizePool();
+            ore.setType(1);
+            ore.setId(physicalPrize.getId());
+            ore.setName("矿石");
+            ore.setMinOre(1);
+            int max = physicalPrize.getMaxOre() != null && physicalPrize.getMaxOre() > 0
+                    ? physicalPrize.getMaxOre() : 50;
+            ore.setMaxOre(max);
+            log.info("实物奖品库存被抽完，降级为矿石兜底: prizeId={}, name={}",
+                    physicalPrize.getId(), physicalPrize.getName());
+            return ore;
+        }
+        return physicalPrize;
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult claimPhysical(Long userId, Map<String, Object> body) {
-        String orderIdStr = (String) body.get("orderId");
-        if (orderIdStr == null) {
+        Object orderIdRaw = body.get("orderId");
+        if (orderIdRaw == null) {
             return ResponseResult.errorResult(400, "缺少订单ID");
         }
-        Long orderId = Long.parseLong(orderIdStr);
+        // 兼容前端传数字或字符串两种形式
+        Long orderId = Long.parseLong(String.valueOf(orderIdRaw));
         String receiverName = (String) body.get("receiverName");
         String phone = (String) body.get("phone");
         String address = (String) body.get("address");
 
-        if (receiverName == null || phone == null || address == null) {
+        if (receiverName == null || address == null || phone == null) {
             return ResponseResult.errorResult(400, "收货信息不完整");
+        }
+        // 收货信息长度/格式校验，避免脏数据与异常信息入库
+        String name = receiverName.trim();
+        String addr = address.trim();
+        String ph = phone.trim();
+        if (name.isEmpty() || name.length() > 20) {
+            return ResponseResult.errorResult(400, "收货人姓名长度不合法（1-20位）");
+        }
+        if (!ph.matches("1[3-9]\\d{9}")) {
+            return ResponseResult.errorResult(400, "手机号格式不正确");
+        }
+        if (addr.isEmpty() || addr.length() > 120) {
+            return ResponseResult.errorResult(400, "收货地址长度不合法（1-120位）");
         }
 
         LotteryPhysicalOrder order = physicalOrderMapper.selectById(orderId);
@@ -391,13 +457,23 @@ public class LotteryServiceImpl implements LotteryService {
         Page<LotteryDrawRecord> p = new Page<>(page, size);
         List<LotteryDrawRecord> records = drawRecordMapper.selectPage(p, wrapper).getRecords();
 
+        // 奖品池索引，用于补充奖品图标等展示信息
+        Map<String, LotteryPrizePool> prizeIndex = prizePoolMapper.selectList(null).stream()
+                .collect(Collectors.toMap(LotteryPrizePool::getId, x -> x, (a, b) -> a));
+
         List<Map<String, Object>> list = records.stream().map(r -> {
             Map<String, Object> m = new HashMap<>();
             m.put("drawId", r.getId());
+            m.put("prizeId", r.getPrizeId());
             m.put("prizeName", r.getPrizeName());
             m.put("prizeType", r.getPrizeType());
             m.put("oreAmount", r.getOreAmount());
+            m.put("virtualItemCode", r.getVirtualItemCode());
             m.put("createdAt", DateUtil.formatDateTime(r.getCreatedAt()));
+
+            // 补充奖品图标
+            LotteryPrizePool prize = r.getPrizeId() != null ? prizeIndex.get(r.getPrizeId()) : null;
+            m.put("iconUrl", prize != null && prize.getIconUrl() != null ? prize.getIconUrl() : "");
 
             if (r.getPhysicalOrderId() != null) {
                 LotteryPhysicalOrder po = physicalOrderMapper.selectById(r.getPhysicalOrderId());
@@ -405,13 +481,14 @@ public class LotteryServiceImpl implements LotteryService {
                     String statusText;
                     switch (po.getStatus()) {
                         case 1: statusText = "待填地址"; break;
-                        case 2: statusText = "待发货"; break;
-                        case 3: statusText = "已发货"; break;
-                        case 4: statusText = "已签收"; break;
+                        case 2: statusText = "备货中"; break;
+                        case 3: statusText = "运送中"; break;
+                        case 4: statusText = "已收货"; break;
                         case 5: statusText = "已过期"; break;
                         default: statusText = "未知";
                     }
                     m.put("orderStatus", statusText);
+                    m.put("orderStatusNum", po.getStatus());
                     m.put("orderId", po.getId());
                 }
             }
@@ -423,6 +500,46 @@ public class LotteryServiceImpl implements LotteryService {
         data.put("total", p.getTotal());
         data.put("page", page);
         data.put("size", size);
+
+        return ResponseResult.okResult(data);
+    }
+
+    @Override
+    public ResponseResult getPhysicalOrderDetail(Long userId, Long orderId) {
+        LotteryPhysicalOrder order = physicalOrderMapper.selectById(orderId);
+        if (order == null) {
+            return ResponseResult.errorResult(400, "订单不存在");
+        }
+        if (!order.getUserId().equals(userId)) {
+            return ResponseResult.errorResult(400, "无权操作该订单");
+        }
+
+        // 状态文案，与「我的收获」列表保持一致
+        String statusText;
+        switch (order.getStatus()) {
+            case 1: statusText = "待填地址"; break;
+            case 2: statusText = "备货中"; break;
+            case 3: statusText = "运送中"; break;
+            case 4: statusText = "已收货"; break;
+            case 5: statusText = "已过期"; break;
+            default: statusText = "未知";
+        }
+
+        // 补充奖品图标
+        LotteryPrizePool prize = prizePoolMapper.selectById(order.getPrizeId());
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("orderId", order.getId());
+        data.put("prizeId", order.getPrizeId());
+        data.put("prizeName", order.getPrizeName());
+        data.put("iconUrl", prize != null && prize.getIconUrl() != null ? prize.getIconUrl() : "");
+        data.put("status", order.getStatus());
+        data.put("statusText", statusText);
+        data.put("receiverName", order.getReceiverName() != null ? order.getReceiverName() : "");
+        data.put("phone", order.getPhone() != null ? order.getPhone() : "");
+        data.put("address", order.getAddress() != null ? order.getAddress() : "");
+        data.put("expressNo", order.getExpressNo() != null ? order.getExpressNo() : "");
+        data.put("createdAt", order.getCreatedAt() != null ? DateUtil.formatDateTime(order.getCreatedAt()) : "");
 
         return ResponseResult.okResult(data);
     }

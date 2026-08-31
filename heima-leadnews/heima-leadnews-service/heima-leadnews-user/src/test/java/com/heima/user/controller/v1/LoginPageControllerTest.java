@@ -54,16 +54,18 @@ class LoginPageControllerTest {
     @DisplayName("微博/GitHub 均配置 → 拼接授权URL并回填Model")
     void testLoginPageFull() {
         props.getWeibo().setClientId("w-client");
-        props.getWeibo().setRedirectUri("https://cb/weibo");
+        props.getWeibo().setRedirectHttp("https://cb/weibo");
+        props.getWeibo().setRedirectUri("/oauth/callback");
         props.getGithub().setClientId("g-client");
-        props.getGithub().setRedirectUri("https://cb/github");
+        props.getGithub().setRedirectHttp("https://cb/github");
+        props.getGithub().setRedirectUri("/oauth/callback");
         props.getWechat().setQrcodeUrl("img/wechat.png");
 
         Map<String, Object> attrs = modelAttrs();
 
-        assertEquals("https://api.weibo.com/oauth2/authorize?client_id=w-client&response_type=code&redirect_uri=https://cb/weibo",
+        assertEquals("https://api.weibo.com/oauth2/authorize?client_id=w-client&response_type=code&redirect_uri=https://cb/weibo/oauth/callback",
                 attrs.get("weiboAuthUrl"));
-        assertEquals("https://github.com/login/oauth/authorize?client_id=g-client&redirect_uri=https://cb/github",
+        assertEquals("https://github.com/login/oauth/authorize?client_id=g-client&redirect_uri=https://cb/github/oauth/callback",
                 attrs.get("githubAuthUrl"));
         assertEquals("/img/wechat.png", attrs.get("wechatQrcodeUrl"));
     }
@@ -72,7 +74,7 @@ class LoginPageControllerTest {
     @DisplayName("微博参数缺失 → 微博URL回退为 #，但GitHub正常")
     void testWeiboMissing() {
         props.getGithub().setClientId("g-client");
-        props.getGithub().setRedirectUri("https://cb/github");
+        props.getGithub().setRedirectHttp("https://cb/github");
 
         Map<String, Object> attrs = modelAttrs();
 
@@ -84,7 +86,7 @@ class LoginPageControllerTest {
     @DisplayName("GitHub参数缺失 → GitHubURL回退为 #")
     void testGithubMissing() {
         props.getWeibo().setClientId("w-client");
-        props.getWeibo().setRedirectUri("https://cb/weibo");
+        props.getWeibo().setRedirectHttp("https://cb/weibo");
 
         Map<String, Object> attrs = modelAttrs();
 

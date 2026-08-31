@@ -38,22 +38,20 @@ public class AIViolationProcessor implements ArticleAuditProcessor {
                 log.warn("AI综合审核服务不可用，fail-closed 拒绝通过, articleId={}", article.getId());
                 return false;
             }
-            if (auditResult != null) {
-                // 违规检测不通过则终止审核流程
-                if (Boolean.TRUE.equals(auditResult.get("is_violation"))) {
-                    String violationType = (String) auditResult.getOrDefault("violation_type", "违规内容");
-                    String violationReason = (String) auditResult.getOrDefault("violation_reason", "文章内容违反社区规范");
-                    context.putExtra("failReason", violationType + ": " + violationReason);
-                    context.putExtra("violationType", violationType);
-                    context.putExtra("violationReason", violationReason);
-                    log.info("AI综合审核未通过(违规), articleId={}, type={}, reason={}", article.getId(), violationType, violationReason);
-                    return false; // 终止审核流程
-                }
-                // 审核通过，保存分析结果到上下文供后续处理器使用
-                context.setAiAnalysisResult(auditResult);
-                log.info("AI综合审核通过, articleId={}, qualityScore={}, isTech={}",
-                        article.getId(), auditResult.get("qualityScore"), auditResult.get("isTechContent"));
+            // 违规检测不通过则终止审核流程
+            if (Boolean.TRUE.equals(auditResult.get("is_violation"))) {
+                String violationType = (String) auditResult.getOrDefault("violation_type", "违规内容");
+                String violationReason = (String) auditResult.getOrDefault("violation_reason", "文章内容违反社区规范");
+                context.putExtra("failReason", violationType + ": " + violationReason);
+                context.putExtra("violationType", violationType);
+                context.putExtra("violationReason", violationReason);
+                log.info("AI综合审核未通过(违规), articleId={}, type={}, reason={}", article.getId(), violationType, violationReason);
+                return false; // 终止审核流程
             }
+            // 审核通过，保存分析结果到上下文供后续处理器使用
+            context.setAiAnalysisResult(auditResult);
+            log.info("AI综合审核通过, articleId={}, qualityScore={}, isTech={}",
+                    article.getId(), auditResult.get("qualityScore"), auditResult.get("isTechContent"));
         } catch (Exception e) {
             context.putExtra("failReason", "内容审核服务暂不可用，请稍后重试");
             log.error("AI综合审核异常，fail-closed 拒绝通过, articleId={}", article.getId(), e);

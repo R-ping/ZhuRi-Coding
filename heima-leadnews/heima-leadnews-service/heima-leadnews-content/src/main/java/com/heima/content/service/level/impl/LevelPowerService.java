@@ -47,7 +47,7 @@ public class LevelPowerService {
         Integer powerChange) {
         Map<String, Object> result = new HashMap<>();
 
-        int actualPower = calculateActualPower(userId, changeType, powerChange);
+        int actualPower = calculateActualPower(userId, articleId, changeType, powerChange);
         ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
         if (actualPower <= 0) {
             result.put("success", false);
@@ -104,11 +104,24 @@ public class LevelPowerService {
         calculatePowerWithLimit(userId, articleId, changeType, powerChange);
     }
 
-    private int calculateActualPower(Long userId, String changeType, Integer powerChange) {
+    private int calculateActualPower(Long userId, Long articleId, String changeType, Integer powerChange) {
         String today = new java.sql.Date(System.currentTimeMillis()).toString();
 
         Integer dailyLimit = POWER_ACTION_LIMIT.get(changeType);
         if (dailyLimit != null) {
+            // 幂等防护：同一来源(sourceId)当日已发放过则该来源不再重复发放。
+            // 用于兜底审核责任链阶段重试时，避免同一篇文章重复叠加逐力值。
+            LambdaQueryWrapper<ApUserDailyLog> duplicateQuery = new LambdaQueryWrapper<>();
+            duplicateQuery.eq(ApUserDailyLog::getUserId, userId);
+            duplicateQuery.eq(ApUserDailyLog::getChangeType, changeType);
+            duplicateQuery.eq(ApUserDailyLog::getSourceId, articleId);
+            duplicateQuery.apply("DATE(calculated_at) = {0}", today);
+            if (dailyLogMapper.selectCount(duplicateQuery) > 0) {
+                log.info("同一来源当日已发放逐力值，跳过重复发放 userId={}, changeType={}, articleId={}",
+                    userId, changeType, articleId);
+                return 0;
+            }
+
             LambdaQueryWrapper<ApUserDailyLog> limitQuery = new LambdaQueryWrapper<>();
             limitQuery.eq(ApUserDailyLog::getUserId, userId);
             limitQuery.eq(ApUserDailyLog::getChangeType, changeType);

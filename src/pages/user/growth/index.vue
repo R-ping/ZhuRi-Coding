@@ -571,15 +571,12 @@ export default {
             return heights[index] || 14
         },
         handleSidebarMenuClick(key) {
-            if (key === 'harvest') {
-                toast('我的收获功能开发中', 2)
-                return
-            }
             const routeMap = {
                 checkin: '/user/center/checkin',
                 growth: '/user/center/growth',
                 lottery: '/user/center/lottery',
-                welfare: '/user/center/welfare'
+                welfare: '/user/center/welfare',
+                harvest: '/user/center/harvest'
             }
             const path = routeMap[key]
             if (path && this.$route.path !== path) {

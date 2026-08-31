@@ -1,6 +1,5 @@
 package com.heima.content.service.article.processor;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.heima.common.constants.ArticleConstants;
 import com.heima.content.mapper.article.ApArticleConfigMapper;
 import com.heima.content.service.level.LevelService;
@@ -53,6 +52,7 @@ public class PowerBonusProcessor implements ArticleAuditProcessor {
         }
 
         try {
+            // 计算逐力值加成（内部已做同来源当日幂等防护，可安全重试）
             Map<String, Object> powerResult = levelService.calculatePowerWithLimit(
                 article.getAuthorId(), article.getId(), "publish_article", powerBonus);
 
@@ -74,29 +74,26 @@ public class PowerBonusProcessor implements ArticleAuditProcessor {
                         article.getId(), article.getAuthorId(), newLevel);
                 }
             }
+        } catch (AuditRetryableException e) {
+            // 已标记为可重试，直接上抛，交由责任链按阶段重试
+            throw e;
         } catch (Exception e) {
+            // 逐力值阶段瞬时/业务异常：交给责任链按阶段重试，避免静默丢失成长值
             log.error("逐力值计算异常, articleId={}", article.getId(), e);
+            throw new AuditRetryableException("逐力值加成失败, articleId=" + article.getId(), e);
         }
 
         return true;
     }
 
     /**
-     * 更新文章推荐状态
+     * 更新文章推荐状态（幂等 upsert，依赖 uk_article_id 唯一索引兜底并发首次插入）
      */
     private void updateArticleRecommend(Long articleId, boolean isRecommend) {
         try {
-            QueryWrapper<ApArticleConfig> queryWrapper = new QueryWrapper<>();
-            queryWrapper.eq("article_id", articleId);
-            ApArticleConfig config = apArticleConfigMapper.selectOne(queryWrapper);
-            if (config == null) {
-                config = new ApArticleConfig(articleId);
-                config.setIsRecommend(isRecommend);
-                apArticleConfigMapper.insert(config);
-            } else {
-                config.setIsRecommend(isRecommend);
-                apArticleConfigMapper.updateById(config);
-            }
+            ApArticleConfig config = new ApArticleConfig(articleId);
+            config.setIsRecommend(isRecommend);
+            apArticleConfigMapper.insertOrUpdateRecommend(config);
             log.info("更新文章推荐状态, articleId={}, isRecommend={}", articleId, isRecommend);
         } catch (Exception e) {
             log.error("更新文章配置失败, articleId={}", articleId, e);

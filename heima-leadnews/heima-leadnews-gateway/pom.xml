@@ -41,6 +41,12 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-loadbalancer</artifactId>
         </dependency>
+        <!-- 可观测性：Actuator 提供 WebFlux HTTP Server 观测过滤器（ServerHttpObservationFilter），
+             使网关请求进入 Micrometer Observation 链路，向下游传播 b3 头并上报 Zipkin -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
 <!--        <dependency>-->
 <!--            <groupId>io.jsonwebtoken</groupId>-->
 <!--            <artifactId>jjwt</artifactId>-->

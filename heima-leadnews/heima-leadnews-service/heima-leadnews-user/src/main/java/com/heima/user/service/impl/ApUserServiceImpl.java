@@ -1,7 +1,10 @@
 package com.heima.user.service.impl;
 
 import cn.hutool.core.util.RandomUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.heima.common.constants.ArticleConstants;
 import com.heima.common.redis.CacheService;
@@ -13,8 +16,11 @@ import com.heima.model.user.pojos.ApUser;
 import com.heima.user.mapper.ApUserMapper;
 import com.heima.user.service.ApUserService;
 import com.heima.user.service.TokenService;
-import jakarta.annotation.Resource;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -35,7 +41,7 @@ public class ApUserServiceImpl extends ServiceImpl<ApUserMapper, ApUser> impleme
     private CacheService cacheService;
 
     /**
-     * app端登录功能（使用BCrypt + 双Token）
+     * 登录功能（使用BCrypt + 双Token）
      */
 
     private ResponseResult phoneOrEmailPassLogin(LoginDto dto, String tag) {
@@ -62,13 +68,44 @@ public class ApUserServiceImpl extends ServiceImpl<ApUserMapper, ApUser> impleme
     }
 
     @Override
-    public ResponseResult allLoginAuth(LoginDto dto, String tag) {
+    public ResponseResult   allLoginAuth(LoginDto dto, String tag) {
         // 手机号/邮箱 + 密码
         if ("phonePass".equals(tag) || "emailPass".equals(tag)) {
             return phoneOrEmailPassLogin(dto, tag);
         }
         // 手机号验证码登录/注册
         return phoneCodeLogin(dto);
+    }
+
+    @Override
+    public ResponseResult searchUser(String keyword, Integer page, Integer size) {
+        int safePage = (page == null || page < 1) ? 1 : page;
+        int safeSize = (size == null || size < 1) ? 10 : Math.min(size, 50);
+
+        IPage<ApUser> iPage = new Page<>(safePage, safeSize);
+        LambdaQueryWrapper<ApUser> wrapper = new LambdaQueryWrapper<>();
+        // 仅查询状态正常(1)的用户，锁定/禁用账号不展示
+        wrapper.eq(ApUser::getStatus, true);
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            wrapper.like(ApUser::getNickname, keyword.trim());
+        }
+        wrapper.orderByDesc(ApUser::getCreatedTime);
+
+        IPage<ApUser> resultPage = page(iPage, wrapper);
+
+        // 组装用户搜索字段（绝不返回 password/phone/email 等敏感字段），title=昵称对齐前端展示
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (ApUser user : resultPage.getRecords()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", user.getId());
+            item.put("title", user.getNickname());
+            item.put("name", user.getNickname());
+            item.put("authorId", user.getId());
+            item.put("authorName", user.getNickname());
+            item.put("authorAvatar", user.getImage());
+            list.add(item);
+        }
+        return ResponseResult.okResult(list);
     }
 
     private ResponseResult phoneCodeLogin(LoginDto dto) {

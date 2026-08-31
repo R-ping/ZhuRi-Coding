@@ -11,7 +11,9 @@ import java.util.List;
 import lombok.Data;
 
 @Data
-@TableName("ap_article_draft")
+// autoResultMap = true：启用 @TableField(typeHandler=JacksonTypeHandler.class) 的结果映射，
+// 否则 JSON 类字段（tags、cont_pics）写入正常，但查询(selectById/selectList)时无法反序列化回对象，返回 null
+@TableName(value = "ap_article_draft", autoResultMap = true)
 public class ApArticleDraft implements Serializable {
 
     @TableId(value = "id", type = IdType.ASSIGN_ID)
@@ -38,6 +40,11 @@ public class ApArticleDraft implements Serializable {
     @TableField("column_id")
     private Long columnId;
 
+    /**
+     * 文章标签列表（数据库 ap_article_draft.tags 为 JSON 数组字符串，如 ["Java"]）
+     * 前端提交标签时同时下发 labels(逗号分隔字符串) 与 tags(数组)，此处以 tags 为准落库；
+     * 依赖 @TableName(autoResultMap=true) 保证查询时可反序列化回 List。
+     */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> tags;
 

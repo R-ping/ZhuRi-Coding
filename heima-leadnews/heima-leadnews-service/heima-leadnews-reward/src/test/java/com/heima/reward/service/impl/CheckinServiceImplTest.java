@@ -25,10 +25,15 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import org.mockito.stubbing.Answer;
 
 /**
  * CheckinServiceImpl 单元测试
@@ -133,6 +138,11 @@ class CheckinServiceImplTest {
         UserAssets assets = new UserAssets();
         assets.setOreBalance(2000);
         when(userAssetsMapper.selectById(userId)).thenReturn(assets);
+        // 已存在资产时走原子累加；模拟真实 addOreBalance 在内存对象上的累加效果
+        doAnswer((Answer<Void>) inv -> {
+            assets.setOreBalance(assets.getOreBalance() + (Integer) inv.getArgument(1));
+            return null;
+        }).when(userAssetsMapper).addOreBalance(anyLong(), anyInt());
 
         ResponseResult result = checkinService.doCheckin(userId);
 
@@ -143,7 +153,8 @@ class CheckinServiceImplTest {
         assertEquals(6, data.get("totalSignDays"));
         assertEquals(2100, data.get("totalOre"));
         verify(userCheckinStateMapper).updateById(state);
-        verify(userAssetsMapper).updateById(assets);
+        // 已存在资产时走原子累加（不再读改写 updateById），并累加到内存对象使返回余矿正确
+        verify(userAssetsMapper).addOreBalance(userId, 100);
         verify(userCheckinStateMapper, never()).insert(any(UserCheckinState.class));
     }
 

@@ -7,9 +7,9 @@ import com.heima.notification.websocket.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
-import java.security.Principal;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -71,8 +71,14 @@ class WebSocketMessageControllerTest {
         return ResponseResult.okResult(data);
     }
 
-    private Principal principal() {
-        return () -> "100";
+    /**
+     * 模拟经握手鉴权后写入的会话身份：userId=100。
+     * 发送者/已读人一律取自此认证身份，而非客户端 payload。
+     */
+    private SimpMessageHeaderAccessor accessor() {
+        SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+        when(accessor.getSessionAttributes()).thenReturn(Map.of("userId", 100L));
+        return accessor;
     }
 
     private void sendTo(String user) {
@@ -89,7 +95,7 @@ class WebSocketMessageControllerTest {
         when(imService.sendMessage(any(Long.class), any())).thenReturn(successResult());
         when(sessionManager.isOnline(200L)).thenReturn(true);
 
-        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hello"), principal());
+        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hello"), accessor());
 
         sendTo("100");
         sendTo("200");
@@ -101,7 +107,7 @@ class WebSocketMessageControllerTest {
         when(imService.sendMessage(any(Long.class), any())).thenReturn(successResult());
         when(sessionManager.isOnline(200L)).thenReturn(false);
 
-        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hello"), principal());
+        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hello"), accessor());
 
         sendTo("100");
         neverSendTo("200");
@@ -113,7 +119,7 @@ class WebSocketMessageControllerTest {
         when(imService.sendMessage(any(Long.class), any()))
                 .thenReturn(ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR));
 
-        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hi"), principal());
+        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hi"), accessor());
 
         sendTo("100");
         neverSendTo("200");
@@ -125,7 +131,7 @@ class WebSocketMessageControllerTest {
         when(imService.sendMessage(any(Long.class), any())).thenReturn(ResponseResult.okResult());
         when(sessionManager.isOnline(200L)).thenReturn(true);
 
-        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hi"), principal());
+        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hi"), accessor());
 
         sendTo("100");
         neverSendTo("200");
@@ -137,7 +143,7 @@ class WebSocketMessageControllerTest {
         when(imService.sendMessage(any(Long.class), any())).thenReturn(successResult());
         when(sessionManager.isOnline(200L)).thenReturn(false);
 
-        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hi"), principal());
+        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hi"), accessor());
 
         verify(imService).sendMessage(eq(100L), argThat(dto -> dto.getMsgType() != null && dto.getMsgType() == 1));
     }
@@ -148,7 +154,7 @@ class WebSocketMessageControllerTest {
         when(imService.sendMessage(any(Long.class), any())).thenReturn(successResult());
         when(sessionManager.isOnline(200L)).thenReturn(false);
 
-        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hi", "msg_type", 3), principal());
+        controller.handleMessage(payload("sender_id", 100, "receiver_id", 200, "content", "hi", "msg_type", 3), accessor());
 
         verify(imService).sendMessage(eq(100L), argThat(dto -> dto.getMsgType() == 3));
     }
@@ -156,11 +162,12 @@ class WebSocketMessageControllerTest {
     @Test
     @DisplayName("已读回执 → 发送者在线时推送回执")
     void testHandleReadReceiptOnline() {
+        when(imService.getPeerUserId(9L, 100L)).thenReturn(150L);
         when(sessionManager.isOnline(150L)).thenReturn(true);
 
         controller.handleReadReceipt(
                 payload("reader_id", 100, "session_id", 9, "last_read_id", 50, "sender_id", 150),
-                principal());
+                accessor());
 
         verify(messagingTemplate).convertAndSendToUser(eq("150"), eq("/queue/messages"), any(Object.class));
     }
@@ -168,11 +175,12 @@ class WebSocketMessageControllerTest {
     @Test
     @DisplayName("已读回执 → 发送者离线时不推送")
     void testHandleReadReceiptOffline() {
+        when(imService.getPeerUserId(9L, 100L)).thenReturn(150L);
         when(sessionManager.isOnline(150L)).thenReturn(false);
 
         controller.handleReadReceipt(
                 payload("reader_id", 100, "session_id", 9, "last_read_id", 50, "sender_id", 150),
-                principal());
+                accessor());
 
         neverSendTo("150");
     }

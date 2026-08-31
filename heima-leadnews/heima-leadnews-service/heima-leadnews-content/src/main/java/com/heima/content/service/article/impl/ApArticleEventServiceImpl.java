@@ -65,11 +65,11 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
             if (event.getEsStatus() != null && event.getEsStatus() == 1 && isBackward) {
                 try {
                     if (searchArticleVo != null) {
-                        searchClient.syncArticle(searchArticleVo);
                         event.setEsStatus((byte) 2);
                         event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
                         event.setUpdateTime(new Date());
                         apArticleEventMapper.updateArticleEvent(event);
+                        searchClient.syncArticle(searchArticleVo);
                         log.info("ES同步重试成功, articleId={}", event.getArticleId());
                     }
                 } catch (Exception e) {

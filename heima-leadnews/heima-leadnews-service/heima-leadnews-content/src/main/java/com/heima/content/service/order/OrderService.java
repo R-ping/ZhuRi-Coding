@@ -5,8 +5,16 @@ import com.heima.model.common.dtos.ResponseResult;
 
 public interface OrderService {
 
-    /** 创建订单 */
-    ResponseResult createOrder(Long courseId, String discountCode, Long userId, String payType);
+    /**
+     * 创建订单。
+     *
+     * @param courseId        课程ID
+     * @param discountCode    课程专属折扣码（可空）
+     * @param couponItemCode  抽奖获得的通用5折券道具代码（如 course50，可空；与折扣码二选一）
+     * @param userId          用户ID
+     * @param payType         支付方式
+     */
+    ResponseResult createOrder(Long courseId, String discountCode, String couponItemCode, Long userId, String payType);
 
     /**
      * 查询订单状态。
@@ -22,6 +30,15 @@ public interface OrderService {
 
     /** 支付成功回调处理 */
     void handlePaySuccess(String orderNo, String tradeNo);
+
+    /**
+     * 超时关单：将待支付订单置为已取消。
+     * <p>使用条件更新（WHERE status=PENDING）保证幂等——已支付/已取消的订单不受影响，
+     * 由延迟队列消费者在订单创建后到达超时时间时触发。
+     *
+     * @param orderNo 订单号
+     */
+    void closeExpiredOrder(String orderNo);
 
     /** 根据订单号查询 */
     ApCourseOrder getByOrderNo(String orderNo);

@@ -137,45 +137,53 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public ResponseResult unreadCount(Long userId) {
-        Map<String, Object> result = new HashMap<>();
-        int total = 0;
-        Map<String, Integer> typeCounts = new HashMap<>();
-        
-        // 优先从Redis缓存读取
+        String key = REDIS_UNREAD_KEY + userId;
+        // 1) 优先读取整包缓存（total + 各类型），一次性命中直接返回
         if (stringRedisTemplate != null) {
-            String cached = stringRedisTemplate.opsForValue().get(REDIS_UNREAD_KEY + userId);
-            if (cached != null) {
-                total = Integer.parseInt(cached);
+            String cached = stringRedisTemplate.opsForValue().get(key);
+            if (cached != null && !cached.isEmpty()) {
+                try {
+                    Map<String, Object> cachedResult = objectMapper.readValue(
+                            cached, new TypeReference<Map<String, Object>>() {});
+                    return ResponseResult.okResult(cachedResult);
+                } catch (Exception e) {
+                    log.warn("未读计数缓存解析失败，回退 DB 查询, userId={}", userId, e);
+                }
             }
         }
-        
-        // 从数据库按类型分组查询
+        // 2) DB 作为唯一事实源，保证 total 恒等于各类型之和
+        Map<String, Object> result = loadUnreadFromDb(userId);
+        // 3) 写整包缓存
+        if (stringRedisTemplate != null) {
+            try {
+                stringRedisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(result), 5, TimeUnit.MINUTES);
+            } catch (Exception e) {
+                log.warn("未读计数缓存写入失败, userId={}", userId, e);
+            }
+        }
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 以数据库为准统计未读数，保证 total 与各类型之和一致。
+     */
+    private Map<String, Object> loadUnreadFromDb(Long userId) {
+        Map<String, Integer> typeCounts = new HashMap<>();
+        int total = 0;
         List<Map<String, Object>> groupResults = notificationMapper.countUnreadGroupByType(userId);
         for (Map<String, Object> row : groupResults) {
             Integer type = ((Number) row.get("type")).intValue();
             Integer count = ((Number) row.get("count")).intValue();
-            total += count; // 累加（如果Redis没有的话，这里就是总数）
             typeCounts.put(getTypeName(type), count);
+            total += count;
         }
-        
-        // 如果 Redis 有总数，优先用 Redis 的（因为 Redis 是实时的）
-        if (stringRedisTemplate != null) {
-            String cached = stringRedisTemplate.opsForValue().get(REDIS_UNREAD_KEY + userId);
-            if (cached != null) {
-                total = Integer.parseInt(cached);
-            } else {
-                // 如果 Redis 没有缓存，则写回
-                stringRedisTemplate.opsForValue().set(REDIS_UNREAD_KEY + userId, String.valueOf(total), 5, TimeUnit.MINUTES);
-            }
-        }
-
+        Map<String, Object> result = new HashMap<>();
         result.put("total", total);
         result.put("comment", typeCounts.getOrDefault("comment", 0));
         result.put("digg", typeCounts.getOrDefault("digg", 0));
         result.put("follow", typeCounts.getOrDefault("follow", 0));
         result.put("system", typeCounts.getOrDefault("system", 0));
-        
-        return ResponseResult.okResult(result);
+        return result;
     }
 
     @Override
@@ -197,18 +205,12 @@ public class NotificationServiceImpl implements NotificationService {
         if (typeCode == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "不支持的通知类型");
         }
-        // 统计该类型未读数量（标记前），用于从 Redis 总未读计数中扣除
+        // 标记该类型为已读
         int count = notificationMapper.countUnreadByType(userId, typeCode);
         if (count > 0) {
             notificationMapper.markTypeRead(userId, typeCode);
-            // Redis 仅维护单一总未读计数，扣除该类型未读数，保持与其他类型计数的正确性
-            if (stringRedisTemplate != null) {
-                String key = REDIS_UNREAD_KEY + userId;
-                // 仅当 key 存在时扣减，避免对不存在的 key 产生负数缓存
-                if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
-                    stringRedisTemplate.opsForValue().increment(key, -count);
-                }
-            }
+            // 缓存整体失效，下次按 DB 重建，避免局部扣减导致 total 与各类型之和不一致
+            evictUnreadCache(userId);
         }
         return ResponseResult.okResult(count);
     }
@@ -268,10 +270,16 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void incrUnreadCache(Long userId) {
+        // 未读计数以 DB 为唯一事实源，这里仅使缓存失效，下次读取按 DB 重建整包缓存
+        evictUnreadCache(userId);
+    }
+
+    /**
+     * 失效指定用户的未读计数缓存，使其下次按 DB 重新计算。
+     */
+    private void evictUnreadCache(Long userId) {
         if (stringRedisTemplate != null && userId != null) {
-            String key = REDIS_UNREAD_KEY + userId;
-            stringRedisTemplate.opsForValue().increment(key);
-            stringRedisTemplate.expire(key, 5, TimeUnit.MINUTES);
+            stringRedisTemplate.delete(REDIS_UNREAD_KEY + userId);
         }
     }
 

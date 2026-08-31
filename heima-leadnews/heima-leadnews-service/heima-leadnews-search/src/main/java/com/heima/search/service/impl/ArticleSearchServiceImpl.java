@@ -7,9 +7,12 @@ import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.search.dtos.UserSearchDto;
 import com.heima.model.search.vos.SearchArticleVo;
+import com.heima.model.user.pojos.ApUser;
 import com.heima.search.entity.SearchArticle;
 import com.heima.search.service.ApAssociateWordsService;
+import com.heima.search.service.ApUserSearchService;
 import com.heima.search.service.ArticleSearchService;
+import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +44,8 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
 
     @Autowired
     private ApAssociateWordsService apAssociateWordsService;
+    @Autowired
+    private ApUserSearchService apUserSearchService;
     @Autowired
     private IArticleClient articleClient;
 
@@ -98,7 +103,10 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
         // 4. 执行搜索
         SearchHits<SearchArticle> searchHits = elasticsearchOperations.search(nativeQuery, SearchArticle.class);
 
-        // 5. 结果封装
+        // 5. 记录搜索历史（仅登录用户；搜索接口匿名可访问，未登录不记录）
+        recordSearchHistory(dto.getSearchWords());
+
+        // 6. 结果封装
         List<Map<String, Object>> list = searchHits.getSearchHits().stream().map(hit -> {
             SearchArticle article = hit.getContent();
             Map<String, Object> map = new HashMap<>();
@@ -122,6 +130,21 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
         }).collect(Collectors.toList());
 
         return ResponseResult.okResult(list);
+    }
+
+    /**
+     * 记录用户搜索历史（异步，失败不影响搜索主流程）
+     * @param keyword 搜索关键词
+     */
+    private void recordSearchHistory(String keyword) {
+        try {
+            ApUser user = AppThreadLocalUtil.getUser();
+            if (user != null && user.getId() != null) {
+                apUserSearchService.insert(keyword, user.getId());
+            }
+        } catch (Exception e) {
+            log.warn("记录搜索历史失败, keyword={}", keyword, e);
+        }
     }
 
     @Override

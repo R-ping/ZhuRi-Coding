@@ -37,4 +37,19 @@ public interface IRewardClient {
      */
     @GetMapping("/api/v1/reward/user/{userId}/checkin/continuous")
     ResponseResult getContinuousCheckinDays(@PathVariable("userId") Long userId);
+
+    /**
+     * 校验用户是否持有指定虚拟道具（5折券等），并返回折扣比例（课程下单前调用）
+     */
+    @GetMapping("/api/v1/reward/user/{userId}/virtual-asset/hold")
+    ResponseResult getVirtualAssetHold(@PathVariable("userId") Long userId,
+                                       @RequestParam("itemCode") String itemCode);
+
+    /**
+     * 核销用户虚拟道具（课程支付成功后调用，原子扣减，防止超核）
+     */
+    @PostMapping("/api/v1/reward/user/{userId}/virtual-asset/consume")
+    ResponseResult consumeVirtualAsset(@PathVariable("userId") Long userId,
+                                       @RequestParam("itemCode") String itemCode,
+                                       @RequestParam(value = "count", defaultValue = "1") int count);
 }

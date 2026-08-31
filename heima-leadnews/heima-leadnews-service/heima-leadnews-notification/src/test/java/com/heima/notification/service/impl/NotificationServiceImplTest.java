@@ -195,7 +195,7 @@ class NotificationServiceImplTest {
     @DisplayName("unreadCount 未读计数")
     class UnreadCount {
         @Test
-        @DisplayName("Redis 无缓存 → 用 DB 分组总数并写回")
+        @DisplayName("Redis 无缓存 → 用 DB 分组总数并写回整包缓存")
         void testFromDb() {
             when(valueOps.get("notif:unread:100")).thenReturn(null);
             Map<String, Object> row = new HashMap<>();
@@ -206,17 +206,24 @@ class NotificationServiceImplTest {
             Map<String, Object> data = (Map<String, Object>) notificationService.unreadCount(userId).getData();
             assertEquals(3, data.get("total"));
             assertEquals(3, data.get("comment"));
-            verify(valueOps).set(eq("notif:unread:100"), eq("3"), eq(5L), eq(TimeUnit.MINUTES));
+            assertEquals(0, data.get("digg"));
+            // 写回的是整包 JSON，而非单个总数
+            verify(valueOps).set(eq("notif:unread:100"),
+                    argThat(json -> json.contains("\"total\":3") && json.contains("\"comment\":3")),
+                    eq(5L), eq(TimeUnit.MINUTES));
         }
 
         @Test
-        @DisplayName("Redis 有缓存 → 优先使用 Redis 总数")
+        @DisplayName("Redis 有整包缓存 → 直接返回，不触达 DB")
         void testFromRedis() {
-            when(valueOps.get("notif:unread:100")).thenReturn("10");
-            when(notificationMapper.countUnreadGroupByType(userId)).thenReturn(List.of());
+            when(valueOps.get("notif:unread:100"))
+                    .thenReturn("{\"total\":10,\"comment\":0,\"digg\":0,\"follow\":0,\"system\":0}");
 
             Map<String, Object> data = (Map<String, Object>) notificationService.unreadCount(userId).getData();
             assertEquals(10, data.get("total"));
+            assertEquals(0, data.get("comment"));
+            // 命中缓存，不再查询 DB（防止 UnnecessaryStubbing 不再打桩 countUnreadGroupByType）
+            verify(notificationMapper, never()).countUnreadGroupByType(anyLong());
         }
     }
 
@@ -230,15 +237,15 @@ class NotificationServiceImplTest {
         }
 
         @Test
-        @DisplayName("markTypeRead：有未读 → 标记并扣减 Redis")
+        @DisplayName("markTypeRead：有未读 → 标记并失效缓存")
         void testOk() {
             when(notificationMapper.countUnreadByType(userId, 1)).thenReturn(2);
-            when(stringRedisTemplate.hasKey("notif:unread:100")).thenReturn(true);
 
             ResponseResult r = notificationService.markTypeRead(userId, "comment");
             assertEquals(200, r.getCode());
             verify(notificationMapper).markTypeRead(userId, 1);
-            verify(valueOps).increment("notif:unread:100", -2);
+            // 缓存整体失效，由下一次读取按 DB 重建
+            verify(stringRedisTemplate).delete("notif:unread:100");
         }
 
         @Test
@@ -271,13 +278,14 @@ class NotificationServiceImplTest {
         }
 
         @Test
-        @DisplayName("createNotification：成功插入并递增未读")
+        @DisplayName("createNotification：成功插入并使未读缓存失效")
         void testOk() {
             when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
 
             assertEquals(200, notificationService.createNotification(userId, 3, "src", "content").getCode());
             verify(notificationMapper).insert(ArgumentMatchers.<Notification>argThat(n -> n.getType() == 3 && n.getIsRead() == 0));
-            verify(valueOps).increment("notif:unread:100");
+            // 未读计数以 DB 为唯一源，插入后仅失效整包缓存
+            verify(stringRedisTemplate).delete("notif:unread:100");
         }
 
         @Test
@@ -287,14 +295,14 @@ class NotificationServiceImplTest {
         }
 
         @Test
-        @DisplayName("sendActivityNotification：成功写入 JSON 内容")
+        @DisplayName("sendActivityNotification：成功写入 JSON 内容并使未读缓存失效")
         void testActivityOk() {
             when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
 
             ResponseResult r = notificationService.sendActivityNotification(userId, "促销", "看看", "/link");
             assertEquals(200, r.getCode());
             verify(notificationMapper).insert(ArgumentMatchers.<Notification>argThat(n -> n.getType() == 4));
-            verify(valueOps).increment("notif:unread:100");
+            verify(stringRedisTemplate).delete("notif:unread:100");
         }
     }
 }

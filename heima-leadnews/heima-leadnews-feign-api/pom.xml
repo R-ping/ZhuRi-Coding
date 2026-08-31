@@ -31,6 +31,16 @@
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
 
+        <!-- 可观测性：feign-micrometer 提供 MicrometerObservationCapability，
+             将 Feign 调用接入 Micrometer Observation 链路（CLIENT span + traceId 传播）。
+             Spring Cloud OpenFeign 4.1+ 已移除内置 FeignObservationAutoConfiguration，
+             需通过 FeignObservationConfig 手动注册该 Capability -->
+        <dependency>
+            <groupId>io.github.openfeign</groupId>
+            <artifactId>feign-micrometer</artifactId>
+            <version>13.3</version>
+        </dependency>
+
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

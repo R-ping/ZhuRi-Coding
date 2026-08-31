@@ -692,7 +692,8 @@
             title: result.data.title || '',
             channel_id: result.data.channelId || result.data.channel_id || null,
             column_id: result.data.columnId || null,
-            labels: result.data.labels || '',
+            // 草稿详情接口返回 tags(数组)，同时兼容 labels(逗号分隔字符串)；标签缺失会回退为空串，避免误清空已有标签
+            labels: result.data.labels || (Array.isArray(result.data.tags) ? result.data.tags.join(',') : ''),
             topic: result.data.topic || "",
             type: "0",
             publish_time: result.data.publishTime || result.data.publish_time || '',
@@ -701,7 +702,8 @@
             cover_image: result.data.coverImage || result.data.cover_image || ""
           }
           this.coverPreview = result.data.coverImage || result.data.cover_image || null
-          this.selectedTags = ((result.data.labels || result.data.labels) || "").split(",").map(item => item.trim()).filter(item => item.length > 0);
+          const draftLabelStr = result.data.labels || (Array.isArray(result.data.tags) ? result.data.tags.join(',') : '')
+          this.selectedTags = draftLabelStr.split(",").map(item => item.trim()).filter(item => item.length > 0);
           this.host = result.host || ''
           this.transImages("0", result.data.images || result.data.image);
           this.updateCounts(result.data.content || "");

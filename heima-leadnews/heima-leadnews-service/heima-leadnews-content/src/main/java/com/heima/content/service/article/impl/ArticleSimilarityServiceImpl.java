@@ -40,7 +40,7 @@ public class ArticleSimilarityServiceImpl implements ArticleSimilarityService {
             if (similarArticles != null && !similarArticles.isEmpty()) {
                 // 排除自身
                 Object[] mostSimilar = similarArticles.stream()
-                        .filter(arr -> !((Long) arr[0]).equals(article.getId()))
+                        .filter(arr -> !arr[0].equals(article.getId()))
                         .findFirst()
                         .orElse(null);
 

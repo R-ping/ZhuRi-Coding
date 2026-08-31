@@ -50,4 +50,36 @@ export function sanitizeHighlight(html) {
   })
 }
 
-export default { sanitizeHtml, sanitizeHighlight }
+/**
+ * 对纯文本进行 HTML 转义，防止 v-html 注入
+ * @param {string} s - 原始文本
+ * @returns {string} - 转义后的安全文本
+ */
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
+ * 安全关键词高亮：先转义文本，再将命中关键词包裹为 <em>（配合 v-html 渲染）
+ * 数据来源于用户输入的标题/昵称等纯文本，非 HTML，故必须先转义再替换。
+ * @param {string} text - 原始纯文本
+ * @param {string} keyword - 高亮关键词（可为空）
+ * @returns {string} - 富含 <em> 的安全 HTML 字符串
+ */
+export function highlight(text, keyword) {
+  if (!text) return ''
+  const esc = escapeHtml(text)
+  if (!keyword) return esc
+  const kw = escapeHtml(keyword)
+  if (!kw) return esc
+  // 转义正则元字符，避免关键词含特殊符号导致正则异常
+  const safe = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return esc.replace(new RegExp('(' + safe + ')', 'gi'), '<em>$1</em>')
+}
+
+export default { sanitizeHtml, sanitizeHighlight, highlight }

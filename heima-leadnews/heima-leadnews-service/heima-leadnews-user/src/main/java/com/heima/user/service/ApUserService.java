@@ -13,4 +13,13 @@ public interface ApUserService extends IService<ApUser> {
      * @return 登录结果
      */
     ResponseResult allLoginAuth(LoginDto dto, String tag);
+
+    /**
+     * 用户搜索：按昵称 LIKE 分页查询正常(1)状态的用户
+     * @param keyword 昵称关键词，null/空 表示不过滤
+     * @param page 页码（从 1 开始）
+     * @param size 每页条数
+     * @return okResult(list)，list 项含 id/title(=nickname)/name/authorName/authorAvatar 等字段（不含敏感字段）
+     */
+    ResponseResult searchUser(String keyword, Integer page, Integer size);
 }

@@ -42,7 +42,12 @@ public class AuthHandshakeInterceptor implements HandshakeInterceptor {
                 response.setStatusCode(HttpStatus.UNAUTHORIZED);
                 return false;
             }
-            Object userIdObj = claims.get("id");
+            // 签发端（AppJwtUtil.getToken）写入的 claim key 是 "userId"，
+            // 兼容历史 "id" key 兜底，避免标准 token 因取不到用户而被拒握手
+            Object userIdObj = claims.get("userId");
+            if (userIdObj == null) {
+                userIdObj = claims.get("id");
+            }
             if (userIdObj == null) {
                 log.warn("WebSocket handshake rejected: no userId in token");
                 response.setStatusCode(HttpStatus.UNAUTHORIZED);

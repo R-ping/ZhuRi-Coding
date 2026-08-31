@@ -173,7 +173,11 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             // 个人主页公开只读接口（未登录也可浏览他人主页基本信息/统计/等级及分栏内容）
             || path.startsWith("/content/api/v1/user/home/")
             // 个人主页动态时间线（未登录也可浏览他人动态；未带 userId 时取登录用户）
-            || path.startsWith("/content/api/v1/user/dynamic");
+            || path.startsWith("/content/api/v1/user/dynamic")
+            // 统一搜索公开只读接口（未登录也可搜索文章/课程/标签/用户，按 id_type 分发，利于 SEO 与浏览）。
+            // 搜索为纯只读查询，无写接口，故公开放行。
+            // 课程/标签/用户搜索已收敛进该统一入口，不再单独放行 content/user 的搜索路径。
+            || path.startsWith("/search/api/v1/search");
     }
 
     /**

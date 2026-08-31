@@ -4,6 +4,7 @@ import com.heima.content.behavior.service.BehaviorEventBus;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.behavior.BehaviorType;
+import com.heima.model.common.dtos.ResponseResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -31,11 +32,19 @@ public class BehaviorEventProcessor implements ArticleAuditProcessor {
                 BehaviorType.PUBLISH_ARTICLE, article.getAuthorId().intValue());
             behaviorContext.withTarget(1, article.getId())
                 .withUserInfo(article.getAuthorName(), article.getAuthorImage());
-            behaviorEventBus.execute(behaviorContext);
+            ResponseResult result = behaviorEventBus.execute(behaviorContext);
+            if (result == null || result.getCode() != 200) {
+                log.warn("发布行为事件执行失败, articleId={}, result={}", article.getId(), result);
+                throw new AuditRetryableException("发布行为事件执行失败, articleId=" + article.getId());
+            }
             log.info("文章发布行为已通过事件总线处理, articleId={}, authorId={}",
                 article.getId(), article.getAuthorId());
+        } catch (AuditRetryableException e) {
+            // 已标记为可重试，直接上抛，交由责任链按阶段重试
+            throw e;
         } catch (Exception e) {
-            log.error("文章发布行为事件处理异常, articleId={}, 不影响审核流程", article.getId(), e);
+            log.error("文章发布行为事件处理异常, articleId={}", article.getId(), e);
+            throw new AuditRetryableException("发布行为事件处理异常, articleId=" + article.getId(), e);
         }
 
         return true;

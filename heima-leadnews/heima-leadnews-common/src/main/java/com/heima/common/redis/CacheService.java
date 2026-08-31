@@ -1,6 +1,7 @@
 package com.heima.common.redis;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -22,6 +23,7 @@ import org.springframework.data.redis.core.RedisConnectionUtils;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
@@ -226,6 +228,20 @@ public class CacheService extends CachingConfigurerSupport {
      */
     public String get(String key) {
         return stringCacheService.get(key);
+    }
+
+    /**
+     * 原子获取并删除 key（GET + DEL）。
+     * 用于一次性凭证（如 refresh_token）的并发安全消费：多个并发请求同时到达时，
+     * 只有一个能取到值，其余拿到 null，杜绝"读-删-建"竞态导致的凭证被并发消费多次。
+     * @param key
+     * @return key 的原值；key 不存在返回 null
+     */
+    public String getAndDelete(String key) {
+        DefaultRedisScript<String> script = new DefaultRedisScript<>(
+                "local v = redis.call('GET', KEYS[1]); if v then redis.call('DEL', KEYS[1]) end; return v",
+                String.class);
+        return stringRedisTemplate.execute(script, Collections.singletonList(key));
     }
 
     /**

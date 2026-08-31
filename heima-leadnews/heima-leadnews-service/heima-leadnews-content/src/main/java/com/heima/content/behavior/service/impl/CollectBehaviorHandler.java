@@ -2,6 +2,7 @@ package com.heima.content.behavior.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.content.behavior.service.BehaviorHandler;
+import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
 import com.heima.content.mapper.user.UserBehaviorRecordMapper;
 import com.heima.model.behavior.BehaviorContext;
@@ -29,6 +30,9 @@ public class CollectBehaviorHandler implements BehaviorHandler {
 
     @Autowired
     private UserBehaviorRecordMapper behaviorRecordMapper;
+
+    @Autowired
+    private ApArticleMapper apArticleMapper;
 
     @Override
     public BehaviorType getType() {
@@ -126,6 +130,15 @@ public class CollectBehaviorHandler implements BehaviorHandler {
             record.setStatus(0);
             record.setUpdatedTime(new Date());
             behaviorRecordMapper.updateById(record);
+        }
+
+        // 取消收藏：文章收藏计数减 1 并重算热度分（rollback 不触发后置处理器链，故在此原子执行）
+        if (context.getTargetType() != null && context.getTargetType() == 1) {
+            try {
+                apArticleMapper.updateInteractionAndScore(targetId, "collection", -1);
+            } catch (Exception e) {
+                log.error("取消收藏更新文章热度分失败: articleId={}", targetId, e);
+            }
         }
 
         log.info("用户{}取消收藏{} {}", userId,

@@ -4,12 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.heima.common.com.ImageHandle;
 import com.heima.content.mapper.article.ApArticleConfigMapper;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleDraftMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ApArticleDraftService;
 import com.heima.content.service.article.ArticleAutoScanService;
+import com.heima.content.service.level.LevelPermissionService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleConfig;
@@ -43,6 +45,12 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
 
     @Autowired
     private ArticleAutoScanService articleAutoScanService;
+
+    @Autowired
+    private LevelPermissionService levelPermissionService;
+
+    /** 发布文章所需的权限码 */
+    private static final String PERMISSION_PUBLISH_ARTICLE = "can_publish_article";
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -79,6 +87,14 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult publishFromDraft(Long draftId) {
         ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null || user.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        // 权限硬校验：后端强制检查发布权限（新用户已由 assignBasicPermissions 下发基础权限，正常流程不受影响）
+        if (!levelPermissionService.hasPermission(user.getId().longValue(), PERMISSION_PUBLISH_ARTICLE)) {
+            log.warn("用户无发布文章权限: userId={}", user.getId());
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "暂无发布文章权限");
+        }
         if (draftId == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "草稿ID不能为空");
         }
@@ -132,7 +148,7 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
         article.setAuthorId(draft.getAuthorId() != null ? draft.getAuthorId() : user.getId().longValue());
         article.setChannelId(draft.getChannelId());
         article.setLayout(draft.getLayout() != null ? draft.getLayout().byteValue() : (byte) 0);
-        article.setCoverImage(draft.getCoverImage());
+        article.setCoverImage(ImageHandle.handleUrlSuffix(draft.getCoverImage()));
         article.setTags(draft.getTags());
         article.setCreatedTime(new Date());
         // 获取发布时间，如果为null（不延迟时）则与创建时间相等

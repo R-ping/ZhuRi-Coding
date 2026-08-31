@@ -1,5 +1,6 @@
 package com.heima.reward.controller.v1;
 
+import com.heima.common.annotation.RateLimit;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.utils.thread.AppThreadLocalUtil;
@@ -33,7 +34,9 @@ public class LotteryController {
         return requireUserId(lotteryService::getDashboard);
     }
 
-    /** 执行抽奖 */
+    /** 执行抽奖（IP 30次/分钟 + 用户 20次/分钟 双维度限流，防脚本刷奖） */
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 30, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     @PostMapping("/draw")
     public ResponseResult draw(@RequestBody Map<String, Object> body) {
         String type = (String) body.get("type");
@@ -59,5 +62,11 @@ public class LotteryController {
     @GetMapping("/broadcast/recent")
     public ResponseResult broadcast() {
         return lotteryService.getBroadcast();
+    }
+
+    /** 获取实物订单详情（用于抽奖兑换详情页） */
+    @GetMapping("/physical-order/{orderId}")
+    public ResponseResult physicalOrderDetail(@PathVariable Long orderId) {
+        return requireUserId(userId -> lotteryService.getPhysicalOrderDetail(userId, orderId));
     }
 }

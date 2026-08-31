@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.heima.content.mapper.course.ApCourseMapper;
 import com.heima.content.mapper.course.ApCourseOrderMapper;
 import com.heima.content.mapper.course.ApUserCourseMapper;
+import com.heima.apis.reward.IRewardClient;
 import com.heima.content.service.order.DiscountService;
 import com.heima.content.service.payment.PaymentRewardService;
 import com.heima.model.common.dtos.ResponseResult;
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,6 +61,8 @@ class OrderServiceImplTest {
     private DiscountService discountService;
     @Mock
     private PaymentRewardService paymentRewardService;
+    @Mock
+    private IRewardClient rewardClient;
 
     @InjectMocks
     private OrderServiceImpl orderService;
@@ -109,9 +113,9 @@ class OrderServiceImplTest {
     @DisplayName("createOrder 必填参数缺失")
     void createOrderMissingParam() {
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
-                orderService.createOrder(null, null, userId, "OTHER").getCode());
+                orderService.createOrder(null, null, null, userId, "OTHER").getCode());
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
-                orderService.createOrder(courseId, null, null, "OTHER").getCode());
+                orderService.createOrder(courseId, null, null, null, "OTHER").getCode());
     }
 
     @Test
@@ -119,7 +123,7 @@ class OrderServiceImplTest {
     void createOrderCourseNotExist() {
         when(courseMapper.selectById(courseId)).thenReturn(null);
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(),
-                orderService.createOrder(courseId, null, userId, "OTHER").getCode());
+                orderService.createOrder(courseId, null, null, userId, "OTHER").getCode());
     }
 
     @Test
@@ -128,7 +132,7 @@ class OrderServiceImplTest {
         when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
         when(discountService.validateDiscount("BAD", courseId)).thenReturn(null);
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
-                orderService.createOrder(courseId, "BAD", userId, "OTHER").getCode());
+                orderService.createOrder(courseId, "BAD", null, userId, "OTHER").getCode());
     }
 
     @Test
@@ -140,7 +144,7 @@ class OrderServiceImplTest {
         d.setDiscountValue(new BigDecimal("30"));
         when(discountService.validateDiscount("FIX", courseId)).thenReturn(d);
 
-        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, "FIX", userId, "ZHIFUBAO").getData();
+        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, "FIX", null, userId, "ZHIFUBAO").getData();
         assertEquals(new BigDecimal("30"), o.getDiscountAmount());
         assertEquals(new BigDecimal("70"), o.getPaidAmount());
         assertEquals(PayType.ZHIFUBAO, o.getPayMethod());
@@ -157,7 +161,7 @@ class OrderServiceImplTest {
         d.setDiscountValue(new BigDecimal("80")); // 优惠 80%，实付 20%
         when(discountService.validateDiscount("P80", courseId)).thenReturn(d);
 
-        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, "P80", userId, null).getData();
+        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, "P80", null, userId, null).getData();
         // 折扣计算产生 80.0/20.0（scale=1），用 compareTo 做纯数值比较即可刻度无关
         assertEquals(0, o.getDiscountAmount().compareTo(new BigDecimal("80"))); // 优惠 80 元
         assertEquals(0, o.getPaidAmount().compareTo(new BigDecimal("20")));
@@ -173,7 +177,7 @@ class OrderServiceImplTest {
         d.setDiscountValue(new BigDecimal("50")); // 优惠大于原价
         when(discountService.validateDiscount("BIG", courseId)).thenReturn(d);
 
-        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, "BIG", userId, "OTHER").getData();
+        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, "BIG", null, userId, "OTHER").getData();
         assertEquals(BigDecimal.ZERO, o.getPaidAmount());
     }
 
@@ -181,10 +185,43 @@ class OrderServiceImplTest {
     @DisplayName("createOrder 无折扣码常规下单")
     void createOrderNoDiscount() {
         when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
-        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, null, userId, "OTHER").getData();
+        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, null, null, userId, "OTHER").getData();
         assertEquals(BigDecimal.ZERO, o.getDiscountAmount());
         assertEquals(new BigDecimal("100"), o.getPaidAmount());
         assertEquals("", o.getDiscountCode());
+    }
+
+    @Test
+    @DisplayName("createOrder 使用5折券抵扣")
+    void createOrderWithCoupon() {
+        when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
+        Map<String, Object> hold = new java.util.HashMap<>();
+        hold.put("quantity", 1);
+        hold.put("discountRate", 0.5d);
+        hold.put("itemCode", "course50");
+        when(rewardClient.getVirtualAssetHold(userId, "course50"))
+                .thenReturn(ResponseResult.okResult(hold));
+
+        ApCourseOrder o = (ApCourseOrder) orderService.createOrder(courseId, null, "course50", userId, "OTHER").getData();
+        // 5折券 rate=0.5 → 折扣=原价*(1-0.5)=50，实付=50
+        assertEquals(0, o.getDiscountAmount().compareTo(new BigDecimal("50")));
+        assertEquals(0, o.getPaidAmount().compareTo(new BigDecimal("50")));
+        assertEquals("course50", o.getCouponItemCode());
+        assertEquals("", o.getDiscountCode());
+    }
+
+    @Test
+    @DisplayName("createOrder 5折券数量不足时拒绝下单")
+    void createOrderCouponInsufficient() {
+        when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
+        Map<String, Object> hold = new java.util.HashMap<>();
+        hold.put("quantity", 0);
+        hold.put("discountRate", 0.5d);
+        when(rewardClient.getVirtualAssetHold(userId, "course50"))
+                .thenReturn(ResponseResult.okResult(hold));
+
+        assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
+                orderService.createOrder(courseId, null, "course50", userId, "OTHER").getCode());
     }
 
     // ---------- getOrderStatus ----------
@@ -233,28 +270,32 @@ class OrderServiceImplTest {
     void handlePaySuccessNoOrder() {
         when(orderMapper.selectOne(any())).thenReturn(null);
         orderService.handlePaySuccess(orderNo, "TN1");
-        verify(orderMapper, never()).updateById(any(ApCourseOrder.class));
+        verify(orderMapper, never()).update(any(), any());
     }
 
     @Test
     @DisplayName("handlePaySuccess 状态非待支付时丢弃")
     void handlePaySuccessWrongStatus() {
         when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PAID.getCode(), ""));
+        when(orderMapper.update(any(), any())).thenReturn(0); // CAS WHERE status=PENDING 命中0行，丢弃回调
         orderService.handlePaySuccess(orderNo, "TN1");
-        verify(orderMapper, never()).updateById(any(ApCourseOrder.class));
+        // CAS 更新已尝试但受影响0行 → 不进入放权/加销量/开课等后续
+        verify(orderMapper).update(any(), any());
+        verify(userCourseMapper, never()).insert(any(ApUserCourse.class));
     }
 
     @Test
     @DisplayName("handlePaySuccess 完整成功链路：折扣原子消费+课程计数+新购权限+联动")
     void handlePaySuccessFullFlow() {
         when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), "CODE"));
+        when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占 PENDING→PAID 成功
         when(discountService.consumeDiscountCode("CODE")).thenReturn(true);
         when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
         when(userCourseMapper.selectOne(any())).thenReturn(null);
 
         orderService.handlePaySuccess(orderNo, "TN1");
 
-        verify(orderMapper).updateById(any(ApCourseOrder.class));
+        verify(orderMapper).update(any(), any()); // 条件更新抢占
         verify(discountService).consumeDiscountCode("CODE");
         verify(courseMapper).updateById(any(ApCourse.class));
         verify(userCourseMapper).insert(any(ApUserCourse.class));
@@ -265,6 +306,7 @@ class OrderServiceImplTest {
     @DisplayName("handlePaySuccess 折扣为空则跳过消费、续购更新、null 营收初始化")
     void handlePaySuccessExistingUserAndNoDiscount() {
         when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
+        when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
         ApCourse c = course(new BigDecimal("100"), 0);
         c.setTotalRevenue(null);
         when(courseMapper.selectById(courseId)).thenReturn(c);
@@ -283,6 +325,7 @@ class OrderServiceImplTest {
     @DisplayName("handlePaySuccess 联动异常隔离不影响支付主流程")
     void handlePaySuccessRewardDown() {
         when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
+        when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
         when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
         when(userCourseMapper.selectOne(any())).thenReturn(null);
         org.mockito.Mockito.doThrow(new RuntimeException("reward down"))
@@ -290,7 +333,37 @@ class OrderServiceImplTest {
 
         orderService.handlePaySuccess(orderNo, "TN1");
 
-        verify(orderMapper).updateById(any(ApCourseOrder.class)); // 主流程仍完成
+        verify(orderMapper).update(any(), any()); // 主流程仍完成
+    }
+
+    @Test
+    @DisplayName("handlePaySuccess 使用5折券的订单支付成功后被核销")
+    void handlePaySuccessConsumeCoupon() {
+        ApCourseOrder o = order(ApCourseOrder.Status.PENDING.getCode(), "");
+        o.setCouponItemCode("course50");
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
+        when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
+        when(userCourseMapper.selectOne(any())).thenReturn(null);
+        when(rewardClient.consumeVirtualAsset(userId, "course50", 1))
+                .thenReturn(ResponseResult.okResult(new java.util.HashMap<>()));
+
+        orderService.handlePaySuccess(orderNo, "TN1");
+
+        verify(rewardClient).consumeVirtualAsset(userId, "course50", 1);
+    }
+
+    @Test
+    @DisplayName("handlePaySuccess 无5折券则不调用核销")
+    void handlePaySuccessNoCouponSkipConsume() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
+        when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
+        when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
+        when(userCourseMapper.selectOne(any())).thenReturn(null);
+
+        orderService.handlePaySuccess(orderNo, "TN1");
+
+        verify(rewardClient, never()).consumeVirtualAsset(any(), any(), anyInt());
     }
 
     // ---------- getByOrderNo ----------

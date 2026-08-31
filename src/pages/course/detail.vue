@@ -189,13 +189,31 @@
                 size="small"
                 class="discount-input"
                 clearable
+                :disabled="!!selectedCouponCode"
               />
+            </div>
+            <div class="coupon-row" v-if="couponPools.length > 0">
+              <div class="coupon-label">我的折扣券</div>
+              <div class="coupon-tags">
+                <span
+                  v-for="c in couponPools"
+                  :key="c.itemCode"
+                  class="coupon-tag"
+                  :class="{ active: selectedCouponCode === c.itemCode }"
+                  @click="toggleCoupon(c)"
+                >
+                  {{ c.itemName }}<em v-if="c.quantity > 1">×{{ c.quantity }}</em>
+                </span>
+              </div>
             </div>
             <div class="order-total">
               <span class="total-label">应付金额</span>
               <span class="total-value">¥{{ finalPrice.toFixed(2) }}</span>
             </div>
-            <div class="discount-info" v-if="discountInfo">
+            <div class="discount-info" v-if="selectedCoupon">
+              <span class="discount-text">折扣券 {{ selectedCoupon.itemName }}：{{ selectedCoupon.discountRate * 10 }} 折</span>
+            </div>
+            <div class="discount-info" v-else-if="discountInfo">
               <span class="discount-text">
                 折扣码 {{ discountInfo.code }}：
                 <template v-if="discountInfo.discountType === 1">-¥{{ discountInfo.discountValue }}</template>
@@ -217,6 +235,7 @@
 import { toast } from "@/utils/toast"
 import Utils from '@/utils/env'
 import courseApi from '@/apis/course'
+import { getMyVirtualAssets } from '@/apis/lottery'
 
 export default {
   name: 'CourseDetailPage',
@@ -231,6 +250,9 @@ export default {
       discountValidating: false,
       loading: true,
       paying: false,
+      // 抽奖获得的课程折扣券道具（5折券等）
+      userProps: [],
+      selectedCouponCode: '',
       // 简介/目录分栏 + 推荐小册
       activeTab: 'intro',
       recommendList: [],
@@ -248,9 +270,23 @@ export default {
     hasDiscount() {
       return !this.isFree && Number(this.course.originalPrice) > Number(this.course.price)
     },
+    // 可使用的课程折扣券道具（discountRate < 1 且有持有数量）
+    couponPools() {
+      return this.userProps.filter(p =>
+        Number(p.discountRate) > 0 && Number(p.discountRate) < 1 && Number(p.quantity) > 0)
+    },
+    // 当前选中的折扣券
+    selectedCoupon() {
+      return this.couponPools.find(p => p.itemCode === this.selectedCouponCode) || null
+    },
     finalPrice() {
-      if (!this.discountInfo) return this.course.price || 0
       const price = parseFloat(this.course.price) || 0
+      // 折扣券优先：实付 = 原价 * 折扣率（如5折券 rate=0.5 → 半价）
+      if (this.selectedCoupon) {
+        const rate = Math.min(1, Math.max(0, Number(this.selectedCoupon.discountRate) || 1))
+        return Math.max(0, price * rate)
+      }
+      if (!this.discountInfo) return price
       if (this.discountInfo.discountType === 1) {
         // 固定金额
         return Math.max(0, price - parseFloat(this.discountInfo.discountValue))
@@ -347,12 +383,37 @@ export default {
         this.$store.dispatch('showLogin')
         return
       }
+      this.loadUserProps()
       this.showPurchaseModal = true
+    },
+    // 加载抽奖获得的课程折扣券道具
+    async loadUserProps() {
+      try {
+        const res = await getMyVirtualAssets()
+        if (res && res.code === 200 && res.data) {
+          this.userProps = res.data.list || []
+        } else {
+          this.userProps = []
+        }
+      } catch (e) {
+        this.userProps = []
+      }
+    },
+    // 切换折扣券：选中/取消；折扣券与折扣码二选一
+    toggleCoupon(c) {
+      if (this.selectedCouponCode === c.itemCode) {
+        this.selectedCouponCode = ''
+      } else {
+        this.selectedCouponCode = c.itemCode
+        this.discountCode = ''
+        this.discountInfo = null
+      }
     },
     closePurchaseModal() {
       this.showPurchaseModal = false
       this.discountCode = ''
       this.discountInfo = null
+      this.selectedCouponCode = ''
     },
     // 付费课程免费试读：跳转目录中第一个可免费试读的章节（isFree === 1）
     handleFreeTrial() {
@@ -388,7 +449,8 @@ export default {
       try {
         const res = await courseApi.createOrder({
           courseId: this.$route.params.id,
-          discountCode: this.discountCode || undefined
+          discountCode: this.selectedCouponCode ? undefined : (this.discountCode || undefined),
+          couponItemCode: this.selectedCouponCode || undefined
         })
         if (res && res.code === 200 && res.data) {
           this.showPurchaseModal = false
@@ -964,6 +1026,37 @@ export default {
 .order-value.price { color: #F53F3F; font-weight: 600; }
 .discount-row { padding: 8px 0; }
 .discount-input { width: 100%; }
+
+.coupon-row {
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.coupon-label { font-size: 13px; color: #8a919f; flex-shrink: 0; }
+.coupon-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.coupon-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #722ed1;
+  background: #f9f0ff;
+  border: 1px solid #d3adf7;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+.coupon-tag em { font-style: normal; color: #9254de; }
+.coupon-tag.active {
+  color: #fff;
+  background: #722ed1;
+  border-color: #722ed1;
+}
+.coupon-tag.active em { color: #fff; }
 
 .order-total {
   display: flex;

@@ -59,3 +59,16 @@ jacoco-0.8.15/
 
 # 环境变量配置（含敏感密钥，禁止提交）
 .env
+
+# 本地监控组件（Prometheus/Loki/Grafana/Promtail 及其运行数据、安装包，均不入库）
+monitoring/
+
+# 时序数据库运行数据（Loki TSDB chunks/wal/compactor/shipper 等）
+data/
+
+# Promtail 日志位置记录
+positions.yaml
+
+# 个人/临时文件
+*.pdf
+.vite_test_dist/

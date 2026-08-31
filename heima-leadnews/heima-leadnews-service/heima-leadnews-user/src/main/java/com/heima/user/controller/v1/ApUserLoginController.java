@@ -2,12 +2,14 @@ package com.heima.user.controller.v1;
 
 import cn.hutool.core.util.StrUtil;
 import com.heima.common.annotation.RateLimit;
+import com.heima.common.redis.CacheService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dtos.LoginDto;
 import com.heima.model.user.dtos.SocialBindDto;
 import com.heima.user.service.ApUserService;
 import com.heima.user.service.SocialLoginService;
+import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +28,11 @@ public class ApUserLoginController {
     private ApUserService apUserService;
     @Autowired
     private SocialLoginService socialLoginService;
+    @Autowired
+    private CacheService cacheService;
+
+    /** 同一手机号验证码发送最小间隔（秒），防短信轰炸 */
+    private static final long SMS_INTERVAL_SECONDS = 60;
 
     /**
      * 1、手机号验证码 登录/注册
@@ -85,6 +92,13 @@ public class ApUserLoginController {
     public ResponseResult getCode(String phone, String platform, String tag) {
         if (StrUtil.isBlank(phone) || StrUtil.isBlank(platform)) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+        // 同一手机号 60 秒内仅允许发送一次，防针对单号的短信轰炸
+        String intervalKey = "sms:interval:" + phone;
+        Boolean firstTime = cacheService.getstringRedisTemplate()
+                .opsForValue().setIfAbsent(intervalKey, "1", Duration.ofSeconds(SMS_INTERVAL_SECONDS));
+        if (!Boolean.TRUE.equals(firstTime)) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "发送过于频繁，请60秒后再试");
         }
         log.info("收到获取验证码请求: phone={}", phone);
         String resultCode = socialLoginService.checkSocialBind(phone, platform, tag);

@@ -15,6 +15,7 @@ const UserCheckin = () => import('@/pages/user/checkin/index')
 const UserLottery = () => import('@/pages/user/lottery/index')
 const UserWelfare = () => import('@/pages/user/welfare/index')
 const UserWelfareRedeem = () => import('@/pages/user/welfare/redeem')
+const UserHarvest = () => import('@/pages/user/harvest/index')
 const UserCourses = () => import('@/pages/user/courses/index')
 const UserHistory = () => import('@/pages/user/history/index')
 const Notification = () => import('@/pages/notification/index')
@@ -85,6 +86,17 @@ let routes = [
                 path:'/user/center/welfare/redeem/:id',
                 name:'user-center-welfare-redeem',
                 component:UserWelfareRedeem
+            },
+            {
+                path:'/user/center/harvest',
+                name:'user-center-harvest',
+                component:UserHarvest
+            },
+            {
+                path:'/user/center/harvest/redeem/:id',
+                name:'user-center-harvest-redeem',
+                component:UserWelfareRedeem,
+                props: route => ({ source: 'lottery', orderId: route.params.id })
             },
             {
                 path:'/user/courses',

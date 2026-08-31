@@ -40,4 +40,23 @@ public class IRewardClientFallback implements IRewardClient {
         result.put("continuousDays", 0);
         return ResponseResult.okResult(result);
     }
+
+    @Override
+    public ResponseResult getVirtualAssetHold(Long userId, String itemCode) {
+        log.error("奖励服务不可用，校验虚拟道具失败，userId={}, itemCode={}", userId, itemCode);
+        // 降级：视为无持有，并给一个不打折的比例（1.0）以保接口不中断
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("quantity", 0);
+        result.put("discountRate", 1.0d);
+        result.put("itemCode", itemCode);
+        return ResponseResult.okResult(result);
+    }
+
+    @Override
+    public ResponseResult consumeVirtualAsset(Long userId, String itemCode, int count) {
+        log.error("奖励服务不可用，核销虚拟道具失败，userId={}, itemCode={}, count={}", userId, itemCode, count);
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("quantity", 0);
+        return ResponseResult.errorResult(500, "奖励服务不可用，虚拟道具核销失败");
+    }
 }

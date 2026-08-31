@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class WelfareServiceImpl implements WelfareService {
 
+    /** 兑换码随机数：使用加密安全随机源，防止兑换码被预测 */
+    private static final java.security.SecureRandom SECURE_RANDOM = new java.security.SecureRandom();
+
     @Autowired
     private WelfareGoodsMapper goodsMapper;
     @Autowired
@@ -173,11 +176,19 @@ public class WelfareServiceImpl implements WelfareService {
                 return ResponseResult.errorResult(400, "库存不足，已抢光");
             }
 
-            // 8. 扣矿石
-            oreBalance -= goods.getOrePrice();
-            assets.setOreBalance(oreBalance);
-            assets.setUpdatedAt(new Date());
-            userAssetsMapper.updateById(assets);
+            // ★ 8. 原子扣矿石（条件扣减，余额不足返回0，杜绝并发超扣/负余额）
+            int oreUpdated = userAssetsMapper.deductOreBalance(userId, goods.getOrePrice());
+            if (oreUpdated != 1) {
+                // 并发下余额被先扣光：抛异常触发事务回滚（DB updateStock 回滚），catch 中再回滚 Redis 预扣，
+                // 保证 库存(DB/Redis) 与 矿石余额 三者回滚一致。
+                throw new IllegalStateException("矿石余额不足，无法兑换，当前余额：" + oreBalance);
+            }
+            // 扣减后的剩余余额（供返回给前端展示）
+            oreBalance = oreBalance - goods.getOrePrice();
+            // 内存中 assets 对象仅用于返回展示，不再回写（避免与原子扣减产生竞态）
+            if (assets != null) {
+                assets.setOreBalance(oreBalance);
+            }
 
             // 9. 生成订单
             WelfareExchangeOrder order = new WelfareExchangeOrder();
@@ -198,7 +209,8 @@ public class WelfareServiceImpl implements WelfareService {
             if (isVirtual && goods.getVirtualCodeTemplate() != null) {
                 String code = goods.getVirtualCodeTemplate()
                         .replace("{timestamp}", String.valueOf(System.currentTimeMillis()))
-                        .replace("{rand}", String.valueOf(new Random().nextInt(999999)));
+                        // SecureRandom：兑换码可预测会带来薅羊毛风险，不能用普通 Random
+                        .replace("{rand}", String.valueOf(SECURE_RANDOM.nextInt(999999)));
                 order.setVirtualCode(code);
                 // 设置过期时间为30天后
                 Calendar cal = Calendar.getInstance();
@@ -222,9 +234,8 @@ public class WelfareServiceImpl implements WelfareService {
             stockLog.setCreatedAt(new Date());
             stockLogMapper.insert(stockLog);
 
-            // 11. 更新商品已兑换数量
-            goods.setExchangedCount(goods.getExchangedCount() != null ? goods.getExchangedCount() + 1 : 1);
-            goodsMapper.updateById(goods);
+            // ★ 注：exchanged_count 已在 updateStock 的 SQL（stock=stock-1, exchanged_count=exchanged_count+1）中原子完成，
+            // 此处不再 setExchangedCount(+1) 后 updateById，避免"非原子丢失更新 + 与 updateStock 重复累加"问题。
 
             // 12. 构建返回
             Map<String, Object> data = new HashMap<>();

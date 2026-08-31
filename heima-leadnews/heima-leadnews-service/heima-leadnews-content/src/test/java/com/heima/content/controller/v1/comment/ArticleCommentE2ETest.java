@@ -22,6 +22,7 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Answers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -60,6 +61,22 @@ class ArticleCommentE2ETest {
     /** 隔离异步审核及行为/通知副作用 */
     @MockBean
     private CommentAuditService commentAuditService;
+
+    /**
+     * 用 Mock 替换真实 RedissonClient，避免 CI/无 Redis 环境启动完整 Spring 上下文时
+     * 因 Redisson 无法连接而失败。评论主链路不依赖 Redis 延迟队列/分布式锁。
+     * RETURNS_DEEP_STUBS 让嵌套调用（getScript().scriptLoad()、getBlockingQueue() 等）返回可用的桩对象，
+     * 避免 bean 初始化阶段（如 RateLimitAspect、延迟队列消费者）因 mock 默认返回 null 而 NPE。
+     */
+    @MockBean(answer = Answers.RETURNS_DEEP_STUBS)
+    private org.redisson.api.RedissonClient redissonClient;
+
+    /** 替换延迟/关单消费组件，避免其 @PostConstruct 启动真实消费者线程（测试环境无 Redis，也无需这些任务消费者） */
+    @MockBean
+    private com.heima.content.schedule.listener.RedissonDelayQueue redissonDelayQueue;
+
+    @MockBean
+    private com.heima.content.service.order.impl.OrderTimeoutTask orderTimeoutTask;
 
     /** 独立测试文章ID（虚拟值，不与真实数据冲突） */
     private static final Long TEST_ARTICLE_ID = 9000000000000000001L;

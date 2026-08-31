@@ -46,16 +46,17 @@ public class TaskServiceImpl implements TaskService {
             sendTaskDelayMsg(task);
         }
     }
-
+    // 延迟时间在1小时以内的任务，避免长时间任务占用内存
     private void sendTaskDelayMsg(Task task) {
         long objExecInterval = task.getObjExecInterval();
         long delay = 0;
+        String taskJson = JSON.toJSONString(task);
         if (objExecInterval <= 0) {
+            redissonDelayQueue.addTask("TASK_FIRST_EXECUTE_DELAY_QUEUE", taskJson, delay);
         } else if (objExecInterval <= 60 * 60 * 1000) {
             delay = task.getFirstExecInterval();
+            redissonDelayQueue.addTask("TASK_FIRST_EXECUTE_DELAY_QUEUE", taskJson, delay);
         }
-        String taskJson = JSON.toJSONString(task);
-        redissonDelayQueue.addTask("TASK_FIRST_EXECUTE_DELAY_QUEUE", taskJson, delay);
         log.info("Redisson延迟消息已发送，taskId={}, delay={}ms", task.getTaskId(), delay);
     }
     // 每过30分钟执行一次
@@ -87,7 +88,7 @@ public class TaskServiceImpl implements TaskService {
             if (task.getObjExecInterval() <= ArticleConstants.DELAY_1_HOUR_MS) {
                 taskinfoLogs.setInOneHour(true);
             }
-            taskinfoLogs.setStatus(ScheduleConstants.EXECUTED);
+            taskinfoLogs.setStatus(ScheduleConstants.PROGRESSING);
             ApArticle apArticle = apArticleMapper.selectById(article.getId());
             if (apArticle == null) {
                 log.error(
@@ -127,7 +128,7 @@ public class TaskServiceImpl implements TaskService {
      */
     public void consumerTask(Long taskId) {
         try {
-            updateDb(taskId, ScheduleConstants.EXECUTED);
+            updateDb(taskId, ScheduleConstants.COMPLETED);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -136,7 +137,7 @@ public class TaskServiceImpl implements TaskService {
     @Override
     public void failTask(Long taskId) {
         try {
-            updateDb(taskId, ScheduleConstants.FAIL);
+            updateDb(taskId, ScheduleConstants.FAILED);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

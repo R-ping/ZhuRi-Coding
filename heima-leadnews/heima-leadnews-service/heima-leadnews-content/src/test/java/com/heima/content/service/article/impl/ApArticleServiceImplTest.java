@@ -14,7 +14,6 @@ import com.heima.model.article.dtos.ArticleHomeDto;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ArticleEvent;
 import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.mess.ArticleVisitStreamMess;
 import com.heima.model.search.vos.SearchArticleVo;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
@@ -88,15 +87,6 @@ class ApArticleServiceImplTest {
         return a;
     }
 
-    private ArticleVisitStreamMess mess(Long id, int collect, int comment, int like, int view) {
-        ArticleVisitStreamMess m = new ArticleVisitStreamMess();
-        m.setArticleId(id);
-        m.setCollect(collect);
-        m.setComment(comment);
-        m.setLike(like);
-        m.setView(view);
-        return m;
-    }
 
     // ==================== load ====================
 
@@ -152,44 +142,20 @@ class ApArticleServiceImplTest {
         assertFalse(articleService.generateArticleEvent(article(1L), 1L, 60_000));
     }
 
-    // ==================== updateScore ====================
-
-    @Test
-    @DisplayName("updateScore - 文章不存在直接返回")
-    void testUpdateScoreMissing() {
-        when(apArticleMapper.selectById(1L)).thenReturn(null);
-        articleService.updateScore(mess(1L, 1, 1, 1, 1));
-        verify(apArticleMapper, never()).updateById(any(ApArticle.class));
-    }
-
-    @Test
-    @DisplayName("updateScore - 正常累加阅读/点赞/评论/收藏并更新热度分")
-    void testUpdateScoreOk() {
-        ApArticle a = article(1L);
-        when(apArticleMapper.selectById(1L)).thenReturn(a);
-        articleService.updateScore(mess(1L, 3, 2, 1, 5));
-        // 数值累加验证
-        assertEquals(4, a.getCollection());
-        // updateScore 内会调 2 次 updateById：updateArticle 一次 + 分数持久化一次
-        verify(apArticleMapper, org.mockito.Mockito.times(2)).updateById((ApArticle) any(ApArticle.class));
-    }
-
     // ==================== updateScoreByBehavior ====================
 
     @Test
-    @DisplayName("updateScoreByBehavior - 文章不存在直接返回")
+    @DisplayName("updateScoreByBehavior - articleId 为空直接返回")
     void testUpdateByBehaviorMissing() {
-        when(apArticleMapper.selectById(1L)).thenReturn(null);
-        articleService.updateScoreByBehavior(1L, null, 1);
-        verify(apArticleMapper, never()).updateById(any(ApArticle.class));
+        articleService.updateScoreByBehavior(null, null, 1);
+        verify(apArticleMapper, never()).recalculateScore(any());
     }
 
     @Test
-    @DisplayName("updateScoreByBehavior - 正常更新热度分")
+    @DisplayName("updateScoreByBehavior - 统一走原子 SQL 重算热度分")
     void testUpdateByBehaviorOk() {
-        when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
         articleService.updateScoreByBehavior(1L, null, 1);
-        verify(apArticleMapper).updateById((ApArticle) any(ApArticle.class));
+        verify(apArticleMapper).recalculateScore(1L);
     }
 
     // ==================== listByAuthorId ====================
