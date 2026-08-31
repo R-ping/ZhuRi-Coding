@@ -153,7 +153,9 @@ class LotteryServiceImplTest {
         assertEquals(0, data.get("totalOreCost"));
         assertEquals(1, data.get("todayDrawCountUpdated"));
         verify(userAssetsMapper).insert(any(UserAssets.class));
-        verify(userAssetsMapper).updateById(any(UserAssets.class));
+        // 矿石奖励用原子累加、幸运值用原子更新，均已废弃读改写 updateById
+        verify(userAssetsMapper).addOreBalance(userId, 500);
+        verify(userAssetsMapper).updateLuckyValue(userId, 10);
         verify(dailyStateMapper).insert(any(LotteryDailyState.class));
         verify(drawRecordMapper).insert(any(LotteryDrawRecord.class));
     }

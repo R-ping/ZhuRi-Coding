@@ -162,6 +162,9 @@ class ArticleAutoScanServiceImplTest {
         when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
         when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
         when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
         doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
 
         CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
@@ -211,6 +214,9 @@ class ArticleAutoScanServiceImplTest {
         when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
         when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
         when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
         doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
 
         CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
@@ -239,6 +245,9 @@ class ArticleAutoScanServiceImplTest {
         when(apArticleContentMapper.selectOne(any())).thenReturn(emptyContent);
         when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
         when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
         doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
 
         CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
@@ -258,6 +267,9 @@ class ArticleAutoScanServiceImplTest {
         when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
         when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
         when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
         doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
 
         CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);

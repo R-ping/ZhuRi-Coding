@@ -191,21 +191,22 @@ class LevelQueryServiceTest {
     @Test
     @DisplayName("calculateLevel 命中配置返回该等级")
     void calculateLevelHit() {
-        when(levelConfigMapper.selectOne(any())).thenReturn(config(3, 200, "L3", null));
+        // 生产实现改为按 levelType 一次拉全量配置后内存计算（走 getCachedConfigs→selectList）
+        when(levelConfigMapper.selectList(any())).thenReturn(List.of(config(3, 200, "L3", null)));
         assertEquals(3, levelQueryService.calculateLevel(1, new BigDecimal("230")));
     }
 
     @Test
     @DisplayName("calculateLevel 无匹配回落最高级")
     void calculateLevelFallbackHighest() {
-        when(levelConfigMapper.selectOne(any())).thenReturn(null, config(6, 1000, "顶端", null));
+        when(levelConfigMapper.selectList(any())).thenReturn(List.of(config(1, 0, "L1", null), config(6, 1000, "顶端", null)));
         assertEquals(6, levelQueryService.calculateLevel(1, new BigDecimal("500000")));
     }
 
     @Test
     @DisplayName("calculateLevel 无任何配置返回 1")
     void calculateLevelNoConfig() {
-        when(levelConfigMapper.selectOne(any())).thenReturn(null, null);
+        when(levelConfigMapper.selectList(any())).thenReturn(List.of());
         assertEquals(1, levelQueryService.calculateLevel(1, new BigDecimal("10")));
     }
 }

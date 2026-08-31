@@ -11,6 +11,7 @@ import org.redisson.api.RBlockingQueue;
 import org.redisson.api.RDelayedQueue;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -32,6 +33,7 @@ public class OrderTimeoutTask {
     private RedissonClient redissonClient;
 
     @Autowired
+    @Lazy
     private OrderService orderService;
 
     /** 订单超时时间（毫秒），默认 30 分钟，可通过 app.order.timeout-ms 配置 */
@@ -49,10 +51,18 @@ public class OrderTimeoutTask {
 
     @PostConstruct
     public void init() {
-        blockingQueue = redissonClient.getBlockingQueue(ORDER_TIMEOUT_DELAY_QUEUE);
-        delayedQueue = redissonClient.getDelayedQueue(blockingQueue);
-        executor.submit(this::consume);
-        log.info("订单超时关单消费者已启动, timeoutMs={}", orderTimeoutMs);
+        try {
+            blockingQueue = redissonClient.getBlockingQueue(ORDER_TIMEOUT_DELAY_QUEUE);
+            delayedQueue = redissonClient.getDelayedQueue(blockingQueue);
+            if (blockingQueue == null || delayedQueue == null) {
+                throw new IllegalStateException("Redisson 延迟队列初始化返回空对象");
+            }
+            executor.submit(this::consume);
+            log.info("订单超时关单消费者已启动, timeoutMs={}", orderTimeoutMs);
+        } catch (Exception e) {
+            // Redis 不可用时降级：不再启动消费者，关单可交由兜底定时扫描补偿，避免拖垮应用上下文
+            log.error("订单超时关单消费者启动失败，Redis 可能不可用，降级跳过", e);
+        }
     }
 
     /** 阻塞消费：取出订单号并执行幂等关单 */

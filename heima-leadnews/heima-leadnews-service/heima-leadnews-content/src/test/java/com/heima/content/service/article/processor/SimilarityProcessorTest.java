@@ -15,8 +15,10 @@ import org.mockito.quality.Strictness;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -91,8 +93,8 @@ class SimilarityProcessorTest {
     }
 
     @Test
-    @DisplayName("process - 相似度服务异常不影响主流程且不落配置")
-    void processSimilarityExceptionStillReturnsVoidConfig() {
+    @DisplayName("process - 相似度服务异常抛出AuditRetryableException供责任链重试,不落配置")
+    void processSimilarityExceptionThrowsRetryable() {
         SimilarityProcessor processor = new SimilarityProcessor(articleSimilarityService, apArticleConfigMapper);
 
         ApArticle article = new ApArticle();
@@ -100,9 +102,11 @@ class SimilarityProcessorTest {
         when(articleSimilarityService.checkSimilarity(any(), any()))
                 .thenThrow(new RuntimeException("es down"));
 
-        processor.process(article, "content", new AuditProcessorContext());
+        // 相似度服务异常不再静默忽略，需抛可重试异常交由审核责任链按阶段重试
+        assertThrows(AuditRetryableException.class,
+                () -> processor.process(article, "content", new AuditProcessorContext()));
 
-        verify(apArticleConfigMapper).insertOrUpdateRecommend(org.mockito.ArgumentMatchers.argThat(
-                cfg -> cfg.getArticleId().equals(5L) && cfg.getIsRecommend()));
+        // 异常时不写入推荐配置
+        verify(apArticleConfigMapper, never()).insertOrUpdateRecommend(any());
     }
 }
