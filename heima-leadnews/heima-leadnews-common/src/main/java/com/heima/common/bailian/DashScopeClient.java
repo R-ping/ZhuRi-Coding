@@ -68,11 +68,23 @@ public class DashScopeClient {
         if (bailianConfig.getApiKey() != null && !bailianConfig.getApiKey().isEmpty()) {
             Constants.apiKey = bailianConfig.getApiKey();
             Constants.baseHttpApiUrl = bailianConfig.getApiHost();
-            log.info("DashScope API Key configured successfully, baseHttpApiUrl={}", bailianConfig.getApiHost());
-            log.info("DashScope API Key configured successfully, apiKey={}", bailianConfig.getApiKey());
+            // 安全红线：绝不在日志中打印 apiKey 明文，仅输出掩码（保留末4位便于排查环境问题）
+            log.info("DashScope API Key configured successfully, baseHttpApiUrl={}, apiKeyMasked={}",
+                    bailianConfig.getApiHost(), maskKey(bailianConfig.getApiKey()));
         } else {
             log.warn("DASH_SCOPE_API_KEY environment variable is not set. AI analysis will be disabled.");
         }
+    }
+
+    /** 对密钥做脱敏处理，仅保留末 4 位，避免明文泄露 */
+    private String maskKey(String apiKey) {
+        if (apiKey == null || apiKey.isEmpty()) {
+            return "";
+        }
+        if (apiKey.length() <= 4) {
+            return "****";
+        }
+        return "****" + apiKey.substring(apiKey.length() - 4);
     }
 
     /**

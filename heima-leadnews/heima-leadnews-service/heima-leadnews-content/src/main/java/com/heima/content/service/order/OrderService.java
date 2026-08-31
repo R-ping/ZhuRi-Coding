@@ -31,6 +31,15 @@ public interface OrderService {
     /** 支付成功回调处理 */
     void handlePaySuccess(String orderNo, String tradeNo);
 
+    /**
+     * 超时关单：将待支付订单置为已取消。
+     * <p>使用条件更新（WHERE status=PENDING）保证幂等——已支付/已取消的订单不受影响，
+     * 由延迟队列消费者在订单创建后到达超时时间时触发。
+     *
+     * @param orderNo 订单号
+     */
+    void closeExpiredOrder(String orderNo);
+
     /** 根据订单号查询 */
     ApCourseOrder getByOrderNo(String orderNo);
 }

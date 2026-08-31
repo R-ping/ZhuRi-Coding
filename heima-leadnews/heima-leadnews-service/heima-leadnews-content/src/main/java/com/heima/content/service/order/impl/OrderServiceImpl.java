@@ -52,6 +52,9 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private IRewardClient rewardClient;
 
+    @Autowired
+    private OrderTimeoutTask orderTimeoutTask;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult createOrder(Long courseId, String discountCode, String couponItemCode, Long userId, String payType) {
@@ -131,7 +134,31 @@ public class OrderServiceImpl implements OrderService {
 
         orderMapper.insert(order);
 
+        // 排程超时关单：订单进入延迟队列，超时未支付则由消费者条件更新置为 CANCELLED（幂等，不影响已支付订单）
+        try {
+            orderTimeoutTask.scheduleClose(order.getOrderNo());
+        } catch (Exception e) {
+            log.error("订单超时关单排程失败, orderNo={}", order.getOrderNo(), e);
+        }
+
         return ResponseResult.okResult(order);
+    }
+
+    @Override
+    public void closeExpiredOrder(String orderNo) {
+        if (orderNo == null || orderNo.isEmpty()) {
+            return;
+        }
+        // 条件更新抢占：仅 PENDING 状态可被关闭；若期间已支付（PAID）则不受影响，保证幂等
+        Date now = new Date();
+        int updated = orderMapper.update(null, new LambdaUpdateWrapper<ApCourseOrder>()
+                .eq(ApCourseOrder::getOrderNo, orderNo)
+                .eq(ApCourseOrder::getStatus, ApCourseOrder.Status.PENDING.getCode())
+                .set(ApCourseOrder::getStatus, ApCourseOrder.Status.CANCELLED.getCode())
+                .set(ApCourseOrder::getUpdatedTime, now));
+        if (updated == 1) {
+            log.info("订单超时已关闭: orderNo={}", orderNo);
+        }
     }
 
     @Override

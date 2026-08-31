@@ -25,7 +25,7 @@ import lombok.experimental.SuperBuilder;
  */
 
 @Data
-@TableName("ap_article")
+@TableName(value = "ap_article", autoResultMap = true)
 @SuperBuilder
 @NoArgsConstructor       // 新增 — 保证 new ArticleDto() 能用
 @AllArgsConstructor      // 新增
@@ -91,9 +91,9 @@ public class ApArticle implements Serializable {
     private Long columnId;
 
     /**
-     * 标签
-     * 前端给 labels:["标签1","标签2"]
-     * 数据库存 labels:"标签1,标签2"
+     * 文章标签列表（数据库 ap_article.tags 为 JSON 数组字符串，如 ["Java"]）。
+     * 发布时来源自草稿 ApArticleDraft.tags；前端展示时以逗号分隔字符串 labels 下发，两者一一对应。
+     * 依赖 @TableName(autoResultMap=true) 保证查询时可反序列化回 List。
      */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> tags;
@@ -112,7 +112,10 @@ public class ApArticle implements Serializable {
      * 评论数量
      */
     private Integer comment;
-
+    /**
+     * 阅读数量
+     */
+    private Integer views;
     /**
      * 是否开放评论 1开放 0关闭（创作者中心评论管理）
      */
@@ -131,10 +134,7 @@ public class ApArticle implements Serializable {
     @TableField("tip_amount")
     private BigDecimal tipAmount = BigDecimal.ZERO;
 
-    /**
-     * 阅读数量
-     */
-    private Integer views;
+
     private Integer score;
     /**
      * 省市

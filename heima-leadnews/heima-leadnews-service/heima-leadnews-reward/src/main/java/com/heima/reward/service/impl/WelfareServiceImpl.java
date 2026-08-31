@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class WelfareServiceImpl implements WelfareService {
 
+    /** 兑换码随机数：使用加密安全随机源，防止兑换码被预测 */
+    private static final java.security.SecureRandom SECURE_RANDOM = new java.security.SecureRandom();
+
     @Autowired
     private WelfareGoodsMapper goodsMapper;
     @Autowired
@@ -206,7 +209,8 @@ public class WelfareServiceImpl implements WelfareService {
             if (isVirtual && goods.getVirtualCodeTemplate() != null) {
                 String code = goods.getVirtualCodeTemplate()
                         .replace("{timestamp}", String.valueOf(System.currentTimeMillis()))
-                        .replace("{rand}", String.valueOf(new Random().nextInt(999999)));
+                        // SecureRandom：兑换码可预测会带来薅羊毛风险，不能用普通 Random
+                        .replace("{rand}", String.valueOf(SECURE_RANDOM.nextInt(999999)));
                 order.setVirtualCode(code);
                 // 设置过期时间为30天后
                 Calendar cal = Calendar.getInstance();

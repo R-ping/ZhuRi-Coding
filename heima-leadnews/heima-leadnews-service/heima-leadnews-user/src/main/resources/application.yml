@@ -42,11 +42,13 @@ logging:
 oauth:
   weibo:
     client-id: ${OAUTH_WEIBO_CLIENT_ID}
-    redirect-uri: ${OAUTH_REDIRECT_URI:https://195b7e5b.r40.cpolar.top/oauth/callback}
+    redirect-http: ${CPOlAR_BASE_URL:}
+    redirect-uri: ${CPOlAR_BASE_URI:/oauth/callback}
     authorize-url: https://api.weibo.com/oauth2/authorize
   github:
     client-id: ${OAUTH_GITHUB_CLIENT_ID}
-    redirect-uri: ${OAUTH_REDIRECT_URI:https://195b7e5b.r40.cpolar.top/oauth/callback}
+    redirect-http: ${CPOlAR_BASE_URL:https://8d58228.r40.cpolar.top}
+    redirect-uri: ${CPOlAR_BASE_URI:/oauth/callback}
     authorize-url: https://github.com/login/oauth/authorize
   wechat:
     # 公众号二维码图片URL（通过环境变量配置）
@@ -61,3 +63,16 @@ aliyun:
     bucket: zhuri-leadnews
     dir: material/
     expireTime: 300
+
+# 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: 1.0        # 本地全量采样；生产建议 0.1~0.5
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans

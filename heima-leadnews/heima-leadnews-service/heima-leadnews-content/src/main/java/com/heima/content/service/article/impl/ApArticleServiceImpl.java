@@ -17,7 +17,6 @@ import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticle.Status;
 import com.heima.model.article.pojos.ArticleEvent;
 import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.mess.ArticleVisitStreamMess;
 import com.heima.model.mess.UpdateArticleMess;
 import com.heima.model.search.vos.SearchArticleVo;
 import java.util.Date;
@@ -129,42 +128,15 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     }
 
     @Override
-    public void updateScore(ArticleVisitStreamMess message) {
-        ApArticle apArticle1 = new ApArticle();
-        apArticle1.setCollection(message.getCollect());
-        apArticle1.setComment(message.getComment());
-        apArticle1.setLikes(message.getLike());
-        apArticle1.setViews(message.getView());
-        int newScore = computeScore(apArticle1) * ArticleConstants.HOT_ARTICLE_SCORE_MULTIPLIER;
-        ApArticle apArticle2 = getById(message.getArticleId());
-        if (apArticle2 == null) {
-            log.warn("updateScore: article not found, id={}", message.getArticleId());
-            return;
-        }
-        //1.更新文章的阅读、点赞、收藏、评论的数量
-        int oldScore = computeScore(apArticle2);
-        updateArticle(message);
-        //2.计算文章的分值并持久化
-        int resultScore = newScore + oldScore;
-        ApArticle updateScore = new ApArticle();
-        updateScore.setId(message.getArticleId());
-        updateScore.setScore(resultScore);
-        updateById(updateScore);
-    }
-
-    @Override
     public void updateScoreByBehavior(Long articleId, UpdateArticleMess.UpdateArticleType type, Integer add) {
-        ApArticle apArticle = getById(articleId);
-        if (apArticle == null) {
-            log.warn("updateScoreByBehavior: article not found, id={}", articleId);
+        if (articleId == null) {
             return;
         }
-        int score = computeScore(apArticle);
-        ApArticle updateScore = new ApArticle();
-        updateScore.setId(articleId);
-        updateScore.setScore(score);
-        updateById(updateScore);
-        log.info("文章:{} 热度分数更新为:{}", articleId, score);
+        // 统一走原子 SQL 重算热度分：公式与事件总线的 updateInteractionAndScore 完全一致
+        // （likes×3 + views + comment×3 + collection×6），消除 Java"读-改-写"整行覆盖的
+        // 时序竞态，保证 ap_article.score 全局只有一套计算口径。
+        apArticleMapper.recalculateScore(articleId);
+        log.info("文章:{} 热度分数已按最新计数重算", articleId);
     }
 
     @Override
@@ -194,16 +166,6 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     /**
      * 更新文章行为数量
      */
-    private void updateArticle(ArticleVisitStreamMess mess) {
-        ApArticle apArticle = getById(mess.getArticleId());
-        apArticle.setCollection(apArticle.getCollection() == null ? 0 : apArticle.getCollection() + mess.getCollect());
-        apArticle.setComment(apArticle.getComment() == null ? 0 : apArticle.getComment() + mess.getComment());
-        apArticle.setLikes(apArticle.getLikes() == null ? 0 : apArticle.getLikes() + mess.getLike());
-        apArticle.setViews(apArticle.getViews() == null ? 0 : apArticle.getViews() + mess.getView());
-        updateById(apArticle);
-
-    }
-
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateArticleStatus(Long articleId) {
@@ -261,26 +223,5 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
         } catch (Exception e) {
             log.error("更新本地消息表pub_status失败, articleId={}", articleId, e);
         }
-    }
-
-    /**
-     * 计算文章的具体分值
-     */
-    private Integer computeScore(ApArticle apArticle) {
-        int score = 0;
-        if (apArticle.getLikes() != null) {
-            score += apArticle.getLikes() * ArticleConstants.HOT_ARTICLE_LIKE_WEIGHT;
-        }
-        if (apArticle.getViews() != null) {
-            score += apArticle.getViews();
-        }
-        if (apArticle.getComment() != null) {
-            score += apArticle.getComment() * ArticleConstants.HOT_ARTICLE_COMMENT_WEIGHT;
-        }
-        if (apArticle.getCollection() != null) {
-            score += apArticle.getCollection() * ArticleConstants.HOT_ARTICLE_COLLECTION_WEIGHT;
-        }
-
-        return score;
     }
 }

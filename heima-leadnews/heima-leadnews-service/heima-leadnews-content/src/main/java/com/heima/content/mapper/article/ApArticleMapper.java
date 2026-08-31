@@ -19,15 +19,16 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
      */
     public List<ApArticle> loadArticleList(ArticleHomeDto dto,Short type);
 
-    List<ApArticle> selectRecommendCandidates(@Param("channelId") Integer channelId, @Param("maxCandidates") int maxCandidates, @Param("tagName") String tagName, @Param("windowDays") int windowDays);
+    List<ApArticle> selectRecommendCandidates(@Param("channelId") Integer channelId, @Param("maxCandidates") int maxCandidates, @Param("tagName") String tagName, @Param("windowDays") int windowDays, @Param("excludeIds") List<Long> excludeIds);
 
     /**
      * 按作者集合查询推荐候选（关注分栏）
      * @param authorIds 关注作者ID集合
      * @param maxCandidates 候选池上限
      * @param windowDays 候选时间窗口（天）
+     * @param excludeIds 已读/已展示文章ID集合，null/空 表示不过滤，用于刷新时排除已看内容
      */
-    List<ApArticle> selectRecommendCandidatesByAuthors(@Param("authorIds") List<Integer> authorIds, @Param("maxCandidates") int maxCandidates, @Param("windowDays") int windowDays);
+    List<ApArticle> selectRecommendCandidatesByAuthors(@Param("authorIds") List<Integer> authorIds, @Param("maxCandidates") int maxCandidates, @Param("windowDays") int windowDays, @Param("excludeIds") List<Long> excludeIds);
 
     /**
      * 分页查询最新文章（按发布时间倒序，latest 分栏）
@@ -66,6 +67,17 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
      * @param increment  增量（+1 或 -1）
      */
     void updateInteractionAndScore(@Param("articleId") Long articleId, @Param("field") String field, @Param("increment") int increment);
+
+    /**
+     * 仅按最新互动计数重算热度分（不递增任何计数）。
+     * <p>
+     * 公式与 {@link #updateInteractionAndScore} 完全一致（likes×3 + views + comment×3 + collection×6），
+     * 供"计数已由调用方原子更新、只需重算 score"的场景使用（如行为服务点赞/浏览后），
+     * 保证热度分全局只有一套口径，且原子执行无"读-改-写"竞态。
+     * </p>
+     * @param articleId 文章ID
+     */
+    void recalculateScore(@Param("articleId") Long articleId);
 
     /**
      * 查询推荐文章列表（is_recommend=1），需关联 ap_article_config 表

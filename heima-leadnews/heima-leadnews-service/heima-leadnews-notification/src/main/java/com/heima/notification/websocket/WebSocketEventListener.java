@@ -36,17 +36,20 @@ public class WebSocketEventListener {
         }
     }
 
-    /** STOMP 连接断开：移除在线。 */
+    /** STOMP 连接断开：按 sessionId 精确移除对应在线会话（多端在线时仅掉线一端） */
     @EventListener
     public void onDisconnect(SessionDisconnectEvent event) {
+        Long userId = null;
+        // 优先取断开事件的 sessionId 精确移除
+        String sessionId = event.getSessionId();
         // 断开事件不再携带 sessionAttributes，取握手时 UserInterceptor 设置并随会话保存的 Principal
-        if (event.getUser() == null) {
+        if (event.getUser() != null) {
+            userId = parseUserId(event.getUser().getName());
+        }
+        if (userId == null) {
             return;
         }
-        Long userId = parseUserId(event.getUser().getName());
-        if (userId != null) {
-            sessionManager.userOffline(userId);
-        }
+        sessionManager.userOffline(userId, sessionId);
     }
 
     private Long parseUserId(String raw) {

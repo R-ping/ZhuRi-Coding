@@ -25,10 +25,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class GreenImageScanPlusForOss {
 
-    private static String url;
     @Autowired
     private OssConfigForImageScan ossConfig;
-
 
     /**
      * 创建请求客户端
@@ -53,7 +51,18 @@ public class GreenImageScanPlusForOss {
         return new Client(config);
     }
 
-    public static ImageModerationResponse invokeFunction(String accessKeyId, String accessKeySecret, String endpoint) throws Exception {
+    /**
+     * 发起单张图片检测（OBS 版）。
+     * <p>objectName 通过方法参数传递，不再使用静态字段，避免多线程并发审核时互相覆盖。
+     *
+     * @param accessKeyId    阿里云 AccessKey ID
+     * @param accessKeySecret 阿里云 AccessKey Secret
+     * @param endpoint       内容安全接入端点
+     * @param objectName     待检测文件在 OSS 中的 objectName
+     * @return 检测响应；异常时返回 null（由调用方决定降级策略）
+     */
+    private ImageModerationResponse invokeFunction(String accessKeyId, String accessKeySecret, String endpoint,
+                                                   String objectName) throws Exception {
         //注意，此处实例化的client请尽可能重复使用，避免重复建立连接，提升检测性能。
         Client client = createClient(accessKeyId, accessKeySecret, endpoint);
 
@@ -62,17 +71,14 @@ public class GreenImageScanPlusForOss {
 
         // 检测参数构造。
         Map<String, String> serviceParameters = new HashMap<>();
-        //公网可访问的URL。
-//        serviceParameters.put("imageUrl", url);
-//        serviceParameters.put("imageUrl", "http://47.104.68.187:9000/leadnews/Snipaste_2025-06-10_09-50-26.jpg");
         //待检测数据唯一标识
         serviceParameters.put("dataId", UUID.randomUUID().toString());
-        // 待检测文件所在bucket的区域。 示例：cn-shanghai
-        serviceParameters.put("ossRegionId", "cn-beijing");
-        // 待检测文件所在bucket名称。示例：bucket001
-        serviceParameters.put("ossBucketName", "zhuri-leadnews");
-        // 待检测文件。 示例：image/001.jpg
-        serviceParameters.put("ossObjectName", url);
+        // 待检测文件所在bucket的区域
+        serviceParameters.put("ossRegionId", resolveRegion());
+        // 待检测文件所在bucket名称
+        serviceParameters.put("ossBucketName", resolveBucket());
+        // 待检测文件
+        serviceParameters.put("ossObjectName", objectName);
         ImageModerationRequest request = new ImageModerationRequest();
         // 图片检测service：内容安全控制台图片增强版规则配置的serviceCode，示例：baselineCheck
         // 支持service请参考：https://help.aliyun.com/document_detail/467826.html?0#p-23b-o19-gff
@@ -89,13 +95,10 @@ public class GreenImageScanPlusForOss {
     }
 
     public Map imageScan(String url) throws Exception {
-
         // 时间
         long start = System.currentTimeMillis();
         // 处理url，http(s)://bucketName.endpoint/objectName?Expires=1786286784&OSSAccessKeyId=xxx--->objectName
-        url = handleImageUrl2ObjName(url);
-
-        GreenImageScanPlusForOss.url = url;
+        String objectName = handleImageUrl2ObjName(url);
         /**
          * 阿里云账号AccessKey拥有所有API的访问权限，建议您使用RAM用户进行API访问或日常运维。
          * 常见获取环境变量方式：
@@ -109,14 +112,14 @@ public class GreenImageScanPlusForOss {
         String accessKeyId = System.getenv("ALIBABA_RAM_ACCESS_KEY");
         String accessKeySecret = System.getenv("ALIBABA_RAM_ACCESS_SECRET");
         // 接入区域和地址请根据实际情况修改。
-        ImageModerationResponse response =  invokeFunction(accessKeyId, accessKeySecret, "green-cip.cn-beijing.aliyuncs.com");
+        ImageModerationResponse response = invokeFunction(accessKeyId, accessKeySecret, resolveEndpoint(), objectName);
         try {
             // 自动路由。
             if (response != null) {
                 //区域切换到cn-beijing。
                 if (500 == response.getStatusCode() || (response.getBody() != null && 500 == (response.getBody().getCode()))) {
                     // 接入区域和地址请根据实际情况修改。
-                    response = invokeFunction(accessKeyId, accessKeySecret, "green-cip.cn-beijing.aliyuncs.com");
+                    response = invokeFunction(accessKeyId, accessKeySecret, resolveEndpoint(), objectName);
                 }
             }
             HashMap<String, String> resultMap = new HashMap<>();
@@ -146,10 +149,34 @@ public class GreenImageScanPlusForOss {
         return null;
     }
 
+    /** 内容安全接入端点：优先取配置，缺省 green-cip.cn-beijing.aliyuncs.com */
+    private String resolveEndpoint() {
+        return ossConfig != null && ossConfig.getEndpoint() != null && !ossConfig.getEndpoint().isEmpty()
+                ? ossConfig.getEndpoint() : "green-cip.cn-beijing.aliyuncs.com";
+    }
+
+    /** 待审核图片所在地域：优先取配置，缺省 cn-beijing */
+    private String resolveRegion() {
+        return ossConfig != null && ossConfig.getRegion() != null && !ossConfig.getRegion().isEmpty()
+                ? ossConfig.getRegion() : "cn-beijing";
+    }
+
+    /** 待审核图片所在 Bucket：优先取配置，缺省 zhuri-leadnews */
+    private String resolveBucket() {
+        return ossConfig != null && ossConfig.getBucket() != null && !ossConfig.getBucket().isEmpty()
+                ? ossConfig.getBucket() : "zhuri-leadnews";
+    }
+
+    /** OSS 访问域名（不含 bucket 前缀）：优先取配置，缺省 oss-cn-beijing.aliyuncs.com */
+    private String resolveOssDomain() {
+        return ossConfig != null && ossConfig.getOssDomain() != null && !ossConfig.getOssDomain().isEmpty()
+                ? ossConfig.getOssDomain() : "oss-cn-beijing.aliyuncs.com";
+    }
+
     @NotNull
     private String handleImageUrl2ObjName(String url) {
         url = url.replace("http://", "").replace("https://", "")
-            .replace("zhuri-leadnews","" ).replace("oss-cn-beijing.aliyuncs.com", "")
+            .replace(resolveBucket(), "").replace(resolveOssDomain(), "")
             .split("\\?")[0].substring(2);
         log.info("url:{}", url);
         return url;

@@ -69,10 +69,11 @@ public class TokenServiceImpl implements TokenService {
         }
 
         String redisKey = REFRESH_TOKEN_PREFIX + refreshToken;
-        String userInfoJson = cacheService.get(redisKey);
+        // 原子 GET+DEL：一次性消费，并发刷新时只有一个请求能取到值，防止同一 refresh_token 被轮换出多个新 token
+        String userInfoJson = cacheService.getAndDelete(redisKey);
 
         if (userInfoJson == null) {
-            log.warn("refresh_token无效或已过期: {}", refreshToken);
+            log.warn("refresh_token无效、已过期或已被消费: {}", refreshToken);
             return null;
         }
 
@@ -84,10 +85,7 @@ public class TokenServiceImpl implements TokenService {
         String phone = userInfo.get("phone");
         String image = userInfo.get("image");
 
-        // 删除旧的 refresh_token（一次性使用，防止重放攻击）
-        cacheService.delete(redisKey);
-
-        // 生成新的双token
+        // 生成新的双token（新的 refresh_token 重新写入 Redis 并重置 7 天 TTL，实现滑动续期）
         LoginResultVo result = generateDualToken(userId, nickName, phone, image);
         log.info("刷新token成功: userId={}", userId);
         return result;

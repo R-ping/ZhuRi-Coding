@@ -307,10 +307,8 @@ public class LotteryServiceImpl implements LotteryService {
             assets.setUpdatedAt(new Date());
             userAssetsMapper.insert(assets);
         }
-        // 更新资产：仅回写幸运值（矿石已走原子加减，不再通过读改写覆盖，防止丢失）
-        assets.setLuckyValue(currentLucky);
-        assets.setUpdatedAt(new Date());
-        userAssetsMapper.updateById(assets);
+        // 更新资产：幸运值走条件更新（原子 SQL 直写），避免整行 updateById 读改写在并发下覆盖丢失
+        userAssetsMapper.updateLuckyValue(userId, currentLucky);
 
         // 7. 更新每日抽奖状态
         if (daily.getId() == null) {

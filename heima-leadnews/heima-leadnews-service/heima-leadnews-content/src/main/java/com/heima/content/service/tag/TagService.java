@@ -40,4 +40,13 @@ public interface TagService {
      * @return {total, page, size, list}，list 项复用文章列表 null-safe 结构
      */
     ResponseResult getArticles(String tagName, Integer page, Integer size, String sort);
+
+    /**
+     * 标签搜索：按标签名 LIKE 分页查询启用(1)中的标签
+     * @param keyword 标签名关键词，null/空 表示不过滤
+     * @param page 页码（从 1 开始）
+     * @param size 每页条数
+     * @return okResult(list)，list 项含 id/title(=name)/name/category 等字段
+     */
+    ResponseResult search(String keyword, Integer page, Integer size);
 }

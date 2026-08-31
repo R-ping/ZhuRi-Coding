@@ -55,15 +55,17 @@ class LoginPageControllerTest {
     void testLoginPageFull() {
         props.getWeibo().setClientId("w-client");
         props.getWeibo().setRedirectHttp("https://cb/weibo");
+        props.getWeibo().setRedirectUri("/oauth/callback");
         props.getGithub().setClientId("g-client");
         props.getGithub().setRedirectHttp("https://cb/github");
+        props.getGithub().setRedirectUri("/oauth/callback");
         props.getWechat().setQrcodeUrl("img/wechat.png");
 
         Map<String, Object> attrs = modelAttrs();
 
-        assertEquals("https://api.weibo.com/oauth2/authorize?client_id=w-client&response_type=code&redirect_uri=https://cb/weibo",
+        assertEquals("https://api.weibo.com/oauth2/authorize?client_id=w-client&response_type=code&redirect_uri=https://cb/weibo/oauth/callback",
                 attrs.get("weiboAuthUrl"));
-        assertEquals("https://github.com/login/oauth/authorize?client_id=g-client&redirect_uri=https://cb/github",
+        assertEquals("https://github.com/login/oauth/authorize?client_id=g-client&redirect_uri=https://cb/github/oauth/callback",
                 attrs.get("githubAuthUrl"));
         assertEquals("/img/wechat.png", attrs.get("wechatQrcodeUrl"));
     }

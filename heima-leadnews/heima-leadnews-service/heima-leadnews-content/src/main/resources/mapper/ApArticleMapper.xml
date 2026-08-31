@@ -74,6 +74,12 @@
             <if test="tagName != null and tagName != ''">
                 and JSON_CONTAINS(aa.tags, JSON_QUOTE(#{tagName}))
             </if>
+            <if test="excludeIds != null and excludeIds.size() > 0">
+                and aa.id NOT IN
+                <foreach collection="excludeIds" item="eid" open="(" separator="," close=")">
+                    #{eid}
+                </foreach>
+            </if>
         </where>
         <!-- 评分优先，其次发布时间，保证优质内容进入候选前部 -->
         ORDER BY COALESCE(aa.score, 0) DESC, aa.publish_time DESC, aa.id DESC
@@ -99,6 +105,12 @@
                 and aa.author_id IN
                 <foreach collection="authorIds" item="aid" open="(" separator="," close=")">
                     #{aid}
+                </foreach>
+            </if>
+            <if test="excludeIds != null and excludeIds.size() > 0">
+                and aa.id NOT IN
+                <foreach collection="excludeIds" item="eid" open="(" separator="," close=")">
+                    #{eid}
                 </foreach>
             </if>
         </where>
@@ -170,6 +182,13 @@
         UPDATE ap_article
         SET ${field} = COALESCE(${field}, 0) + #{increment},
             score = COALESCE(likes,0) * 3 + COALESCE(views,0) + COALESCE(comment,0) * 3 + COALESCE(collection,0) * 6
+        WHERE id = #{articleId}
+    </update>
+
+    <!-- 仅按最新计数重算热度分（不递增计数），公式与 updateInteractionAndScore 保持一致 -->
+    <update id="recalculateScore">
+        UPDATE ap_article
+        SET score = COALESCE(likes,0) * 3 + COALESCE(views,0) + COALESCE(comment,0) * 3 + COALESCE(collection,0) * 6
         WHERE id = #{articleId}
     </update>
 

@@ -1383,18 +1383,19 @@
 
         .action-sidebar {
             position: fixed;
-            left: 0;
+            left: 24px;                     /* 距左屏留白，避免紧贴屏幕边缘 */
             top: 50%;
             transform: translateY(-50%);
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 16px;
-            padding: 12px;
-            background: rgba(255,255,255,0.95);
-            border-radius: 0 8px 8px 0;
-            box-shadow: 2px 0 8px rgba(0,0,0,0.08);
+            padding: 12px 10px;
+            background: rgba(255,255,255,0.96);
+            border-radius: 12px;            /* 离开屏幕边缘后四周统一圆角 */
+            box-shadow: 0 6px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06);
             z-index: 999;
+            color: #6e7681;                 /* 行为图标默认中性灰，取代纯黑提升层次 */
         }
         .action-sidebar .action-item {
             display: flex;
@@ -1410,9 +1411,11 @@
             transition: all 0.2s;
         }
         .action-sidebar .action-item:hover {
-            background: #f7f8fa;
+            background: #eaf2ff;
+            color: #1e80ff;
         }
         .action-sidebar .action-item.active {
+            background: #eaf2ff;
             color: #1e80ff;
         }
         .action-sidebar .action-icon {
@@ -1425,8 +1428,17 @@
         }
         .action-sidebar .action-count {
             font-size: 12px;
-            color: #8a919f;
+            color: #98a0ab;
         }
+        /* 行为元素语义化配色：弱化“全黑”一致感，让彼此有区分度 */
+        .action-sidebar #sideLikeBtn .action-icon { color: #f55d5d; }    /* 点赞=红 */
+        .action-sidebar #sideShareBtn .action-icon { color: #00a870; }    /* 分享=绿 */
+        .action-sidebar #sideReportBtn .action-icon { color: #f53f3f; }   /* 举报=红(警示) */
+        .action-sidebar #sideImmersiveBtn .action-icon,
+        .action-sidebar #sideSettingsBtn .action-icon,
+        .action-sidebar #sideBackTopBtn .action-icon { color: #6e7681; }  /* 工具类=中性灰 */
+        .action-sidebar #sideCommentBtn .action-icon { color: #4e7ff2; }  /* 评论=蓝 */
+        .action-sidebar #sideCollectBtn .action-icon { color: #ffae33; }  /* 收藏=金 */
         .action-sidebar .author-mini-avatar {
             width: 36px;
             height: 36px;
@@ -2485,8 +2497,19 @@
         body.dark .article-body code,
         body.dark .article-body pre { background: #161b22; color: #c9d1d9; border-color: #2d333b; }
         body.dark .article-body blockquote { color: #8b949e; border-color: #2d333b; }
-        body.dark .action-sidebar { background: #1e1e1e; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+        body.dark .action-sidebar { background: #1e1e1e; box-shadow: 0 1px 4px rgba(0,0,0,0.5); color: #9aa4b2; }
+        body.dark .action-sidebar .action-item:hover,
+        body.dark .action-sidebar .action-item.active { background: #1c2a44; color: #4d9fff; }
         body.dark .action-item .action-count { color: #8a919f; }
+        /* 暗色下行为图标提亮，保持语义区分度 */
+        body.dark .action-sidebar #sideLikeBtn .action-icon { color: #ff7b7b; }
+        body.dark .action-sidebar #sideCommentBtn .action-icon { color: #7aa2ff; }
+        body.dark .action-sidebar #sideCollectBtn .action-icon { color: #ffc04d; }
+        body.dark .action-sidebar #sideShareBtn .action-icon { color: #11c97a; }
+        body.dark .action-sidebar #sideReportBtn .action-icon { color: #ff6b6b; }
+        body.dark .action-sidebar #sideImmersiveBtn .action-icon,
+        body.dark .action-sidebar #sideSettingsBtn .action-icon,
+        body.dark .action-sidebar #sideBackTopBtn .action-icon { color: #9aa4b2; }
         body.dark .modal-container { background: #1e1e1e; }
         body.dark .modal-title,
         body.dark .modal-subtitle { color: #e4e6eb; }

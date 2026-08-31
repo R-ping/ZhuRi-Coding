@@ -43,6 +43,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- 可观测性：Actuator 提供 HTTP Server 观测过滤器（ServerHttpObservationFilter），
+             使 Servlet 请求进入 Micrometer Observation 链路，自动生成 span 并注入 MDC traceId/spanId -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

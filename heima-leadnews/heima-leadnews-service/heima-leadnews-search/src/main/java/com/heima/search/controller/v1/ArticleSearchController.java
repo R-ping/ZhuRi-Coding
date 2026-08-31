@@ -20,7 +20,8 @@ public class ArticleSearchController {
     @Autowired
     private ArticleSearchService articleSearchService;
 
-    @PostMapping("/search")
+    // 路径为 /api/v1/article/search，与联想词 /api/v1/associate/search 保持同级语义，避免 history/search 重复混淆
+    @PostMapping("")
     @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 300, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public ResponseResult search(@RequestBody UserSearchDto dto) throws IOException {

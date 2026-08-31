@@ -19,8 +19,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,19 +60,24 @@ public class CheckinServiceImpl implements CheckinService {
 
     /**
      * 从 targetDate 开始向前回溯，计算真实的连续签到天数
-     * 从 targetDate 的前一天开始逐日向前查询，直到断签为止
+     * 一次查询最近60天窗口内全部签到记录，内存计算连续段，避免逐日查库（最多 60 次 select → 1 次）
      */
     private int calculateContinuousDays(Long userId, LocalDate targetDate) {
+        LocalDate windowStart = targetDate.minusDays(60);
+        LocalDate windowEnd = targetDate.minusDays(1);
+        List<SignRecord> records = signRecordMapper.selectList(
+                new LambdaQueryWrapper<SignRecord>()
+                        .eq(SignRecord::getUserId, userId)
+                        .ge(SignRecord::getSignDate, windowStart)
+                        .le(SignRecord::getSignDate, windowEnd)
+        );
+        Set<LocalDate> signedDates = records.stream()
+                .map(r -> new java.sql.Date(r.getSignDate().getTime()).toLocalDate())
+                .collect(Collectors.toSet());
+
         int count = 0;
         LocalDate cursor = targetDate.minusDays(1);
-        int maxScan = 60; // 最多扫描60天，防止无限循环
-        while (maxScan-- > 0) {
-            SignRecord record = signRecordMapper.selectOne(
-                    new LambdaQueryWrapper<SignRecord>()
-                            .eq(SignRecord::getUserId, userId)
-                            .eq(SignRecord::getSignDate, cursor)
-            );
-            if (record == null) break;
+        while (signedDates.contains(cursor)) {
             count++;
             cursor = cursor.minusDays(1);
         }
@@ -253,20 +260,23 @@ public class CheckinServiceImpl implements CheckinService {
 
     /**
      * 查找某签到日期在连续段中的位置（用于判断是否特殊奖励日）
+     * 一次查询窗口内记录，内存回溯连续段起点，避免逐日查库
      */
     private int findPositionInSegment(Long userId, LocalDate date, LocalDate today) {
-        // 向前找连续段起点
+        LocalDate windowStart = date.minusDays(60);
+        List<SignRecord> records = signRecordMapper.selectList(
+                new LambdaQueryWrapper<SignRecord>()
+                        .eq(SignRecord::getUserId, userId)
+                        .ge(SignRecord::getSignDate, windowStart)
+                        .le(SignRecord::getSignDate, date)
+        );
+        Set<LocalDate> signedDates = records.stream()
+                .map(r -> new java.sql.Date(r.getSignDate().getTime()).toLocalDate())
+                .collect(Collectors.toSet());
+
         LocalDate segStart = date;
-        int maxScan = 60;
-        while (maxScan-- > 0) {
-            LocalDate prev = segStart.minusDays(1);
-            SignRecord r = signRecordMapper.selectOne(
-                    new LambdaQueryWrapper<SignRecord>()
-                            .eq(SignRecord::getUserId, userId)
-                            .eq(SignRecord::getSignDate, prev)
-            );
-            if (r == null) break;
-            segStart = prev;
+        while (signedDates.contains(segStart.minusDays(1))) {
+            segStart = segStart.minusDays(1);
         }
         return (int) ChronoUnit.DAYS.between(segStart, date) + 1;
     }
@@ -333,7 +343,7 @@ public class CheckinServiceImpl implements CheckinService {
                 userCheckinStateMapper.updateById(state);
             }
 
-            // 更新矿石余额
+            // 更新矿石余额（已存在记录时原子累加，避免并发读改写覆盖丢失）
             UserAssets assets = userAssetsMapper.selectById(userId);
             if (assets == null) {
                 assets = new UserAssets();
@@ -343,8 +353,7 @@ public class CheckinServiceImpl implements CheckinService {
                 assets.setLuckyValue(0);
                 userAssetsMapper.insert(assets);
             } else {
-                assets.setOreBalance(assets.getOreBalance() + award);
-                userAssetsMapper.updateById(assets);
+                userAssetsMapper.addOreBalance(userId, award);
             }
 
             // 赠送免费抽奖次数（暂为日志）
@@ -514,12 +523,11 @@ public class CheckinServiceImpl implements CheckinService {
             state.setTotalCheckinDays(state.getTotalCheckinDays() != null ? state.getTotalCheckinDays() + 1 : 1);
             userCheckinStateMapper.updateById(state);
 
-            // 6. 更新矿石余额
+            // 6. 更新矿石余额（原子累加；extraOreSum 可为负，实现"多退少补"）
             if (extraOreSum != 0) {
                 UserAssets assets = userAssetsMapper.selectById(userId);
                 if (assets != null) {
-                    assets.setOreBalance(assets.getOreBalance() + extraOreSum);
-                    userAssetsMapper.updateById(assets);
+                    userAssetsMapper.addOreBalance(userId, extraOreSum);
                 }
             }
 

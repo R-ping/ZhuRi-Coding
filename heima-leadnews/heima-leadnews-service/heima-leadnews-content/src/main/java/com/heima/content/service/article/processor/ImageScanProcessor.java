@@ -47,29 +47,33 @@ public class ImageScanProcessor implements ArticleAuditProcessor {
 
         log.info("开始图片审核, articleId={}, imageCount={}", article.getId(), contPics.size());
         try {
+            // 遍历全部图片，全部通过才放行；任一张命中 high/medium 即终止审核
             for (ContPic contPic : contPics) {
                 Map map = greenImageScanPlusForOss.imageScan(contPic.getPicUrl());
-                if (map != null) {
-                    String level = (String) map.get("level");
-                    if ("high".equals(level)) {
-                        log.info("图片审核high级别, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
-                        context.putExtra("failReason", "当前文章中的图片存在违规内容");
-                        return false;
-                    } else if ("medium".equals(level)) {
-                        log.info("图片审核medium级别, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
-                        context.putExtra("failReason", "当前文章中的图片存在不确定内容");
-                        return false;
-                    }
-                    log.info("图片审核通过, articleId={}", article.getId());
-                    return true;
+                if (map == null) {
+                    // fail-closed：图片审核服务异常/空结果时按不通过处理，
+                    // 与文本审核（AIViolationProcessor）策略保持一致，避免系统故障时违规图片漏审上架
+                    log.warn("图片审核服务返回空结果, 按不通过处理, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
+                    context.putExtra("failReason", "图片审核服务暂不可用，请稍后重试");
+                    return false;
                 }
-                log.info("图片审核发生异常时，降级为通过, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
+                String level = (String) map.get("level");
+                if ("high".equals(level)) {
+                    log.info("图片审核high级别, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
+                    context.putExtra("failReason", "当前文章中的图片存在违规内容");
+                    return false;
+                } else if ("medium".equals(level)) {
+                    log.info("图片审核medium级别, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
+                    context.putExtra("failReason", "当前文章中的图片存在不确定内容");
+                    return false;
+                }
+                log.info("图片审核通过, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
             }
+            return true;
         } catch (Exception e) {
             log.error("图片审核异常, articleId={}", article.getId(), e);
             context.putExtra("failReason", "图片审核异常");
             return false;
         }
-        return true;
     }
 }

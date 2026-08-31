@@ -32,15 +32,18 @@ public class SimilarityProcessor implements ArticleAuditProcessor {
 
         // RAG相似度检验
         boolean isHighSimilarity = false;
+        Map<String, Object> similarityResult;
         try {
-            Map<String, Object> similarityResult = articleSimilarityService.checkSimilarity(article, content);
-            if (similarityResult != null && Boolean.TRUE.equals(similarityResult.get("isSimilar"))) {
-                isHighSimilarity = true;
-                log.info("检测到高相似度文章, articleId={}, similarity={}",
-                    article.getId(), similarityResult.get("maxSimilarity"));
-            }
+            similarityResult = articleSimilarityService.checkSimilarity(article, content);
         } catch (Exception e) {
+            // 供审核责任链按阶段重试：重复高相似文章会漏审并错误放行，故视为需重试的异常而非静默忽略
             log.error("RAG相似度检验异常, articleId={}", article.getId(), e);
+            throw new AuditRetryableException("RAG相似度检验失败, articleId=" + article.getId(), e);
+        }
+        if (similarityResult != null && Boolean.TRUE.equals(similarityResult.get("isSimilar"))) {
+            isHighSimilarity = true;
+            log.info("检测到高相似度文章, articleId={}, similarity={}",
+                article.getId(), similarityResult.get("maxSimilarity"));
         }
 
         context.setHighSimilarity(isHighSimilarity);
@@ -54,6 +57,7 @@ public class SimilarityProcessor implements ArticleAuditProcessor {
             log.info("更新文章推荐状态, articleId={}, isRecommend={}", article.getId(), !isHighSimilarity);
         } catch (Exception e) {
             log.error("更新文章配置失败, articleId={}", article.getId(), e);
+            throw new AuditRetryableException("文章推荐状态更新失败, articleId=" + article.getId(), e);
         }
 
         return true;

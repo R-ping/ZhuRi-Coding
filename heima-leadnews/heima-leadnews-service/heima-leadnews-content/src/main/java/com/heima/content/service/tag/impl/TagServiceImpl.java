@@ -1,6 +1,8 @@
 package com.heima.content.service.tag.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.tag.TagMapper;
@@ -109,6 +111,44 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, ApTag> implements Tag
         result.put("size", safeSize);
         result.put("list", list);
         return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 标签搜索：按标签名 LIKE 分页查询启用(1)中的标签
+     * @param keyword 标签名关键词
+     * @param page 页码（从 1 开始）
+     * @param size 每页条数
+     * @return okResult(list)，list 项含 id/title(=name)/name/category 等字段
+     */
+    @Override
+    public ResponseResult search(String keyword, Integer page, Integer size) {
+        int safePage = (page == null || page < 1) ? 1 : page;
+        int safeSize = (size == null || size < 1) ? 10 : Math.min(size, 50);
+
+        IPage<ApTag> iPage = new Page<>(safePage, safeSize);
+        LambdaQueryWrapper<ApTag> wrapper = new LambdaQueryWrapper<>();
+        // 仅查询启用(1)状态的标签
+        wrapper.eq(ApTag::getStatus, 1);
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            wrapper.like(ApTag::getName, keyword.trim());
+        }
+        wrapper.orderByAsc(ApTag::getSort);
+
+        IPage<ApTag> resultPage = page(iPage, wrapper);
+
+        // 组装标签字段（title=name 以对齐前端搜索展示的标题字段）
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (ApTag tag : resultPage.getRecords()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", tag.getId());
+            item.put("title", tag.getName());
+            item.put("name", tag.getName());
+            item.put("category", tag.getCategory());
+            item.put("postArticleCount", tag.getPostArticleCount());
+            item.put("concernUserCount", tag.getConcernUserCount());
+            list.add(item);
+        }
+        return ResponseResult.okResult(list);
     }
 
     /**

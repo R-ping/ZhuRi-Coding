@@ -8,6 +8,16 @@ spring:
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+# 网关入口级限流（IP 维度，固定窗口 1 分钟）
+gateway:
+  rate-limit:
+    ip-per-minute: ${GATEWAY_RL_IP_PER_MINUTE:600}          # 普通接口：每 IP 每分钟
+    sensitive-per-minute: ${GATEWAY_RL_SENSITIVE_PER_MINUTE:60}  # 登录/刷新等敏感接口：每 IP 每分钟
 
 jwt:
   secret: ${JWT_SECRET}

@@ -1,15 +1,16 @@
 package com.heima.content.service.article.impl;
 
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.heima.content.mapper.article.ApArticleAiAnalysisMapper;
+import com.heima.content.model.ai.ArticleAuditResult;
+import com.heima.content.model.ai.ViolationCheckResult;
 import com.heima.content.service.article.BailianAiService;
-import com.heima.common.bailian.DashScopeClient;
 import com.heima.common.bailian.PromptSanitizer;
-import com.heima.common.bailian.PromptSecurityConstants;
+import com.heima.common.bailian.StructuredOutputInvoker;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticleAiAnalysis;
+import com.heima.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -18,15 +19,13 @@ import java.math.BigDecimal;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Service
 public class BailianAiServiceImpl implements BailianAiService {
 
     @Autowired
-    private DashScopeClient dashScopeClient;
+    private StructuredOutputInvoker structuredOutputInvoker;
 
     @Autowired
     private ApArticleAiAnalysisMapper aiAnalysisMapper;
@@ -38,18 +37,24 @@ public class BailianAiServiceImpl implements BailianAiService {
 
     // Layer 2: 提示词加固 —— 在 system prompt 末尾追加防注入指令
     private static final String SYSTEM_PROMPT =
-        "你是一个专业的技术文章审核专家，负责对技术社区的文章进行多维度质量评估。请严格按照要求的JSON格式输出分析结果，不要输出任何额外的解释或markdown格式。"
-        + PromptSecurityConstants.ANTI_INJECTION_INSTRUCTION;
-
-    // 综合AI审核提示词（一次调用完成违规检测、标题相关性、内容质量、技术相关性四项审核）
-    private static final String COMPREHENSIVE_AUDIT_PROMPT =
-            "你是一位技术社区文章审核专家。请基于标题和内容，一次性完成以下4项审核，严格按JSON格式输出，不要输出任何额外内容。\n\n" +
+        "你是一个专业的技术文章审核专家，负责对技术社区的文章进行多维度质量评估。请基于标题和内容，一次性完成以下4项审核，严格按JSON格式输出，不要输出任何额外内容。\n\n" +
             "1. 违规检测：判断是否包含色情低俗、暴力恐怖、政治敏感、违法信息（赌博/毒品/诈骗/传销）、人身攻击/侮辱谩骂/谣言等违规内容。注意：技术文章中讨论安全漏洞、渗透测试、技术政策与行业动态的客观分析属正常内容，不算违规；只有明显违规才标记。\n" +
             "2. 标题相关性：判断标题与内容是否相符、是否标题党。分数0-100，越高越相符（90+精准概括，60以下明显夸大或偏离）。\n" +
             "3. 内容质量：从原创性、逻辑性、表达清晰度三方面评分（各0-100）。综合评分 = 原创性*0.4 + 逻辑性*0.3 + 表达清晰度*0.3。\n" +
             "4. 技术相关性：判断是否属于技术内容（技术硬核/实践/趋势/时政/程序员职业/技术叙事等）。纯游戏攻略、音乐推荐、娱乐八卦、生活分享等不算。\n\n" +
-            "输出JSON：\n" +
-            "{\"is_violation\": true/false, \"violation_type\": \"\", \"violation_reason\": \"\", \"title_relevance_score\": 0, \"title_relevance_reason\": \"\", \"quality_score\": 0, \"originality_score\": 0, \"logic_score\": 0, \"clarity_score\": 0, \"comment\": \"\", \"is_tech\": true/false, \"confidence\": 0.0, \"tech_reason\": \"\"}\n\n" +
+            "请严格按照要求的JSON格式输出分析结果，不要输出任何额外的解释或markdown格式。"+
+            "{\"is_violation\": true/false, \"violation_type\": \"\", \"violation_reason\": \"\", \"title_relevance_score\": 0, \"title_relevance_reason\": \"\", \"quality_score\": 0, \"originality_score\": 0, \"logic_score\": 0, \"clarity_score\": 0, \"comment\": \"\", \"is_tech\": true/false, \"confidence\": 0.0, \"tech_reason\": \"\"}";
+        // 防注入指令由 StructuredOutputInvoker 在调用时统一追加
+
+    // 综合AI审核提示词（一次调用完成违规检测、标题相关性、内容质量、技术相关性四项审核）
+    private static final String COMPREHENSIVE_AUDIT_PROMPT =
+//            "你是一位技术社区文章审核专家。请基于标题和内容，一次性完成以下4项审核，严格按JSON格式输出，不要输出任何额外内容。\n\n" +
+//            "1. 违规检测：判断是否包含色情低俗、暴力恐怖、政治敏感、违法信息（赌博/毒品/诈骗/传销）、人身攻击/侮辱谩骂/谣言等违规内容。注意：技术文章中讨论安全漏洞、渗透测试、技术政策与行业动态的客观分析属正常内容，不算违规；只有明显违规才标记。\n" +
+//            "2. 标题相关性：判断标题与内容是否相符、是否标题党。分数0-100，越高越相符（90+精准概括，60以下明显夸大或偏离）。\n" +
+//            "3. 内容质量：从原创性、逻辑性、表达清晰度三方面评分（各0-100）。综合评分 = 原创性*0.4 + 逻辑性*0.3 + 表达清晰度*0.3。\n" +
+//            "4. 技术相关性：判断是否属于技术内容（技术硬核/实践/趋势/时政/程序员职业/技术叙事等）。纯游戏攻略、音乐推荐、娱乐八卦、生活分享等不算。\n\n" +
+//            "输出JSON：\n" +
+//            "{\"is_violation\": true/false, \"violation_type\": \"\", \"violation_reason\": \"\", \"title_relevance_score\": 0, \"title_relevance_reason\": \"\", \"quality_score\": 0, \"originality_score\": 0, \"logic_score\": 0, \"clarity_score\": 0, \"comment\": \"\", \"is_tech\": true/false, \"confidence\": 0.0, \"tech_reason\": \"\"}\n\n" +
             "标题：%s\n\n内容：%s";
 
     // 违规内容检测提示词
@@ -103,40 +108,28 @@ public class BailianAiServiceImpl implements BailianAiService {
             // 一次调用完成违规检测、标题相关性、内容质量、技术相关性四项审核
             log.info("Starting comprehensive AI audit for articleId={}", article.getId());
             String auditPrompt = String.format(COMPREHENSIVE_AUDIT_PROMPT, wrappedTitle, wrappedContent);
-            String auditResponse = dashScopeClient.callGeneration(SYSTEM_PROMPT, auditPrompt);
+            ArticleAuditResult auditResult = structuredOutputInvoker.invoke(
+                SYSTEM_PROMPT, auditPrompt, ArticleAuditResult.class,
+                AppHttpCodeEnum.SERVER_ERROR, "AI综合审核失败：", "综合审核", log);
 
-            if (auditResponse != null) {
-                JSONObject auditJson = parseJsonResponse(auditResponse);
-                if (auditJson != null) {
-                    // 违规检测
-                    Boolean isViolation = auditJson.getBoolean("is_violation");
-                    result.put("is_violation", isViolation != null && isViolation);
-                    result.put("violation_type", auditJson.getString("violation_type") != null ? auditJson.getString("violation_type") : "");
-                    result.put("violation_reason", auditJson.getString("violation_reason") != null ? auditJson.getString("violation_reason") : "");
+            // 违规检测
+            result.put("is_violation", Boolean.TRUE.equals(auditResult.getIsViolation()));
+            result.put("violation_type", auditResult.getViolationType() != null ? auditResult.getViolationType() : "");
+            result.put("violation_reason", auditResult.getViolationReason() != null ? auditResult.getViolationReason() : "");
+            // 标题相关性
+            result.put("titleRelevanceScore", auditResult.getTitleRelevanceScore() != null ? auditResult.getTitleRelevanceScore() : 0);
+            // 内容质量
+            result.put("qualityScore", auditResult.getQualityScore() != null ? auditResult.getQualityScore() : 0);
+            // 技术相关性
+            result.put("isTechContent", Boolean.TRUE.equals(auditResult.getIsTech()));
 
-                    // 标题相关性
-                    result.put("titleRelevanceScore", auditJson.getInteger("title_relevance_score") != null ? auditJson.getInteger("title_relevance_score") : 0);
+            // 持久化综合审核结果
+            saveComprehensiveAudit(article.getId(), auditResult);
 
-                    // 内容质量
-                    result.put("qualityScore", auditJson.getInteger("quality_score") != null ? auditJson.getInteger("quality_score") : 0);
-
-                    // 技术相关性
-                    Boolean isTech = auditJson.getBoolean("is_tech");
-                    result.put("isTechContent", isTech != null && isTech);
-
-                    // 持久化综合审核结果
-                    saveComprehensiveAudit(article.getId(), auditJson, auditResponse);
-
-                    log.info("Comprehensive AI audit completed for articleId={}, is_violation={}, qualityScore={}, isTech={}",
-                            article.getId(), result.get("is_violation"), result.get("qualityScore"), result.get("isTechContent"));
-                    // 仅在获取到有效审核结果时标记成功；否则保持 success=false 走 fail-closed，防止故障时违规内容放行
-                    result.put("success", true);
-                } else {
-                    log.warn("AI综合审核响应解析失败, articleId={}", article.getId());
-                }
-            } else {
-                log.warn("AI综合审核无响应, articleId={}", article.getId());
-            }
+            log.info("Comprehensive AI audit completed for articleId={}, is_violation={}, qualityScore={}, isTech={}",
+                    article.getId(), result.get("is_violation"), result.get("qualityScore"), result.get("isTechContent"));
+            // 仅在获取到有效审核结果时标记成功；否则保持 success=false 走 fail-closed，防止故障时违规内容放行
+            result.put("success", true);
         } catch (Exception e) {
             // fail-closed：AI 审核服务不可用时保持 success=false，绝不降级为"通过"
             log.error("Comprehensive AI audit failed, fail-closed, articleId={}: {}", article.getId(), e.getMessage(), e);
@@ -170,29 +163,18 @@ public class BailianAiServiceImpl implements BailianAiService {
         try {
             log.info("Starting AI violation check for entityId={}", entityId);
             String violationPrompt = String.format(VIOLATION_CHECK_PROMPT, safeTitle, wrappedContent);
-            String violationResponse = dashScopeClient.callGeneration(SYSTEM_PROMPT, violationPrompt);
+            ViolationCheckResult violationResult = structuredOutputInvoker.invoke(
+                SYSTEM_PROMPT, violationPrompt, ViolationCheckResult.class,
+                AppHttpCodeEnum.SERVER_ERROR, "AI违规检测失败：", "违规检测", log);
 
-            if (violationResponse != null) {
-                JSONObject violationJson = parseJsonResponse(violationResponse);
-                if (violationJson != null) {
-                    Boolean isViolation = violationJson.getBoolean("is_violation");
-                    String violationType = violationJson.getString("violation_type");
-                    String violationReason = violationJson.getString("violation_reason");
+            result.put("is_violation", Boolean.TRUE.equals(violationResult.getIsViolation()));
+            result.put("violation_type", violationResult.getViolationType() != null ? violationResult.getViolationType() : "");
+            result.put("violation_reason", violationResult.getViolationReason() != null ? violationResult.getViolationReason() : "");
 
-                    result.put("is_violation", isViolation != null && isViolation);
-                    result.put("violation_type", violationType != null ? violationType : "");
-                    result.put("violation_reason", violationReason != null ? violationReason : "");
-
-                    log.info("AI violation check completed for entityId={}, is_violation={}, type={}",
-                            entityId, result.get("is_violation"), result.get("violation_type"));
-                    // 仅在获取到有效审核结果时标记成功；否则保持 success=false 走 fail-closed
-                    result.put("success", true);
-                } else {
-                    log.warn("AI违规检测响应解析失败, entityId={}", entityId);
-                }
-            } else {
-                log.warn("AI违规检测无响应, entityId={}", entityId);
-            }
+            log.info("AI violation check completed for entityId={}, is_violation={}, type={}",
+                    entityId, result.get("is_violation"), result.get("violation_type"));
+            // 仅在获取到有效审核结果时标记成功；否则保持 success=false 走 fail-closed
+            result.put("success", true);
         } catch (Exception e) {
             // fail-closed：AI 审核服务不可用时保持 success=false，绝不降级为"通过"
             log.error("AI violation check failed, fail-closed, entityId={}: {}", entityId, e.getMessage(), e);
@@ -202,44 +184,9 @@ public class BailianAiServiceImpl implements BailianAiService {
     }
 
     /**
-     * 从AI响应中提取JSON
-     */
-    private JSONObject parseJsonResponse(String response) {
-        if (response == null || response.isEmpty()) {
-            return null;
-        }
-        try {
-            // 尝试直接解析
-            String cleaned = response.trim();
-            // 移除可能的markdown代码块标记
-            if (cleaned.startsWith("```json")) {
-                cleaned = cleaned.substring(7);
-            }
-            if (cleaned.startsWith("```")) {
-                cleaned = cleaned.substring(3);
-            }
-            if (cleaned.endsWith("```")) {
-                cleaned = cleaned.substring(0, cleaned.length() - 3);
-            }
-            cleaned = cleaned.trim();
-
-            // 尝试提取JSON对象
-            Pattern pattern = Pattern.compile("\\{[^{}]*\\}");
-            Matcher matcher = pattern.matcher(cleaned);
-            if (matcher.find()) {
-                return JSON.parseObject(matcher.group());
-            }
-            return JSON.parseObject(cleaned);
-        } catch (Exception e) {
-            log.warn("Failed to parse AI response as JSON: {}", response.substring(0, Math.min(200, response.length())));
-            return null;
-        }
-    }
-
-    /**
      * 保存综合审核结果到AI分析表（先删旧记录再插入，覆盖当次完整审核数据）
      */
-    private void saveComprehensiveAudit(Long articleId, JSONObject json, String rawResponse) {
+    private void saveComprehensiveAudit(Long articleId, ArticleAuditResult result) {
         try {
             // 先删除旧记录
             QueryWrapper<ApArticleAiAnalysis> deleteWrapper = new QueryWrapper<>();
@@ -251,25 +198,25 @@ public class BailianAiServiceImpl implements BailianAiService {
             analysis.setCreatedTime(new Date());
 
             // 违规检测
-            analysis.setIsViolation(json.getBoolean("is_violation"));
-            analysis.setViolationType(json.getString("violation_type"));
-            analysis.setViolationReason(json.getString("violation_reason"));
+            analysis.setIsViolation(result.getIsViolation());
+            analysis.setViolationType(result.getViolationType());
+            analysis.setViolationReason(result.getViolationReason());
             // 标题相关性
-            analysis.setTitleRelevanceScore(json.getInteger("title_relevance_score"));
-            analysis.setTitleRelevanceReason(json.getString("title_relevance_reason"));
+            analysis.setTitleRelevanceScore(result.getTitleRelevanceScore());
+            analysis.setTitleRelevanceReason(result.getTitleRelevanceReason());
             // 内容质量
-            analysis.setQualityScore(json.getInteger("quality_score"));
-            analysis.setOriginalityScore(json.getInteger("originality_score"));
-            analysis.setLogicScore(json.getInteger("logic_score"));
-            analysis.setClarityScore(json.getInteger("clarity_score"));
-            analysis.setQualityComment(json.getString("comment"));
+            analysis.setQualityScore(result.getQualityScore());
+            analysis.setOriginalityScore(result.getOriginalityScore());
+            analysis.setLogicScore(result.getLogicScore());
+            analysis.setClarityScore(result.getClarityScore());
+            analysis.setQualityComment(result.getComment());
             // 技术相关性
-            analysis.setIsTechContent(json.getBoolean("is_tech"));
-            if (json.get("confidence") != null) {
-                analysis.setTechConfidence(BigDecimal.valueOf(json.getDouble("confidence")));
+            analysis.setIsTechContent(result.getIsTech());
+            if (result.getConfidence() != null) {
+                analysis.setTechConfidence(BigDecimal.valueOf(result.getConfidence()));
             }
-            // 原始响应
-            analysis.setRawResponse(rawResponse);
+            // 原始响应：以结构化 DTO 序列化结果落库，保留当次审核结论
+            analysis.setRawResponse(JSON.toJSONString(result));
 
             aiAnalysisMapper.insert(analysis);
         } catch (Exception e) {

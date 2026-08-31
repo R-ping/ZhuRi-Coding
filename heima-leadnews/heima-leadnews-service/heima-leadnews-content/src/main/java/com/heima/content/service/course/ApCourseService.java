@@ -11,6 +11,15 @@ public interface ApCourseService extends IService<ApCourse> {
     /** 公开课程列表：仅返回已上架(9)且未删除的课程，防止泄露草稿/审核中内容 */
     ResponseResult findList(Integer page, Integer size);
 
+    /**
+     * 课程搜索：按课程标题 LIKE 分页查询已上架(9)且未删除的课程
+     * @param keyword 标题关键词，null/空 表示不过滤
+     * @param page 页码（从 1 开始）
+     * @param size 每页条数
+     * @return okResult(list)，list 项对齐前端搜索展示的 id/title/summary/coverImage/authorName 等字段
+     */
+    ResponseResult searchCourse(String keyword, Integer page, Integer size);
+
     ResponseResult getMyCourses(Long userId, String filter);
 
     ResponseResult updateProgress(Long userId, Long courseId, Long chapterId, Boolean isCompleted);

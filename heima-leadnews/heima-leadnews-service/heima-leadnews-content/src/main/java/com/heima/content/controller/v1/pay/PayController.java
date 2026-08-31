@@ -6,11 +6,13 @@ import com.heima.model.course.pojos.ApCourseOrder;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/course/pay")
 public class PayController {
@@ -60,6 +62,13 @@ public class PayController {
 
         // 1. 先验签：验签失败直接拒绝，不进入业务处理，防止伪造回调
         if (!alipayService.verifySign(params)) {
+            return "fail";
+        }
+
+        // 2. 校验 app_id / seller_id 与本应用配置一致，防止跨应用回调混淆
+        String notifyAppId = request.getParameter("app_id");
+        if (notifyAppId == null || !notifyAppId.equals(alipayService.getAppId())) {
+            log.warn("支付宝回调 app_id 不匹配, notifyAppId={}, expect={}", notifyAppId, alipayService.getAppId());
             return "fail";
         }
 

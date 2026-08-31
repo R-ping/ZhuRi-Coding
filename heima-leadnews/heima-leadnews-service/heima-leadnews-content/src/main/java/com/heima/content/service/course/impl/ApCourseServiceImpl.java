@@ -85,6 +85,45 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
     }
 
     @Override
+    public ResponseResult searchCourse(String keyword, Integer page, Integer size) {
+        // 分页参数兜底
+        int safePage = (page == null || page < 1) ? 1 : page;
+        int safeSize = (size == null || size < 1) ? 10 : Math.min(size, 50);
+
+        IPage<ApCourse> iPage = new Page<>(safePage, safeSize);
+        LambdaQueryWrapper<ApCourse> queryWrapper = new LambdaQueryWrapper<>();
+        // 课程搜索仅返回已上架(9)且未删除的课程，防止泄露草稿/审核中内容
+        queryWrapper.eq(ApCourse::getIsDeleted, 0);
+        queryWrapper.eq(ApCourse::getStatus, ApCourse.Status.PUBLISHED.getCode());
+        if (StringUtils.isNotBlank(keyword)) {
+            queryWrapper.like(ApCourse::getTitle, keyword.trim());
+        }
+        queryWrapper.orderByDesc(ApCourse::getCreatedTime);
+
+        IPage<ApCourse> resultPage = page(iPage, queryWrapper);
+
+        // 组装与课程列表一致的返回字段（雪花ID超 JS 安全整数，转为字符串避免前端精度丢失）
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (ApCourse course : resultPage.getRecords()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", String.valueOf(course.getId()));
+            item.put("title", course.getTitle());
+            item.put("subtitle", course.getSubtitle());
+            item.put("summary", course.getDescription());
+            item.put("coverImage", course.getCoverImage());
+            item.put("authorId", course.getAuthorId());
+            item.put("authorName", course.getAuthorName());
+            item.put("authorAvatar", course.getAuthorAvatar());
+            item.put("price", course.getPrice());
+            item.put("originalPrice", course.getOriginalPrice());
+            item.put("chapterCount", course.getChapterCount());
+            item.put("studyCount", course.getStudyCount());
+            list.add(item);
+        }
+        return ResponseResult.okResult(list);
+    }
+
+    @Override
     public ResponseResult getMyCourses(Long userId, String filter) {
         if (userId == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);

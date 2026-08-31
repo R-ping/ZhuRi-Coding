@@ -12,4 +12,7 @@ public interface AlipayService {
 
     /** 验证签名 */
     boolean verifySign(Map<String, String> params);
+
+    /** 获取支付宝应用 ID（用于异步回调中校验 app_id 一致性，防止跨应用回调混淆） */
+    String getAppId();
 }
