@@ -114,46 +114,94 @@
             </template>
 
             <template v-else>
+              <!-- 掘金风格文章信息卡片（文章榜 / 收藏榜共用） -->
               <div class="article-info">
+                <!-- 左侧主内容：标题 + 作者meta行 + 分类标签 -->
                 <div class="article-main">
+                  <!-- 标题：加粗、最多两行省略、悬停品牌色 -->
                   <div class="article-title" @click="goToArticle(item.id)">
                     {{ item.title }}
                   </div>
-                  <div class="article-meta">
-                    <span class="meta-author" @click="goToUserProfile(item.userId)">
-                      {{ item.nickName }}
+
+                  <!-- 作者信息行：小圆头像 + 作者名 + 点赞/收藏/评论 + 发表时间（轻量 meta，字段缺失时自动隐藏） -->
+                  <div class="article-author-row">
+                    <div class="author-avatar-sm" @click="goToUserProfile(item.userId)">
+                      <img
+                        v-if="item.avatar || item.authorImage"
+                        :src="item.avatar || item.authorImage"
+                        :alt="item.nickName || item.authorName || '作者'"
+                      />
+                      <!-- 头像取不到时用首字占位 -->
+                      <span v-else class="avatar-placeholder">
+                        {{ ((item.nickName || item.authorName) || 'U').charAt(0) }}
+                      </span>
+                    </div>
+                    <span class="article-author-name" @click="goToUserProfile(item.userId)">
+                      {{ item.nickName || item.authorName }}
                     </span>
                     <span class="meta-dot">·</span>
-                    <span class="meta-item">{{ item.categoryName || getCategoryLabel(item.category) }}</span>
-                    <span class="meta-dot">·</span>
-                    <span class="meta-item">{{ formatCount(item.viewCount) }} 阅读</span>
-                    <span class="meta-dot" v-if="item.commentCount !== undefined">·</span>
-                    <span class="meta-item" v-if="item.commentCount !== undefined">{{ formatCount(item.commentCount) }} 评论</span>
+                    <span
+                      class="meta-item"
+                      v-if="item.likes !== undefined || item.likeCount !== undefined"
+                    >
+                      <span class="meta-icon">&#xf087;</span>
+                      {{ formatCount(item.likes !== undefined ? item.likes : item.likeCount) }} 点赞
+                    </span>
+                    <span class="meta-item" v-if="item.collectCount !== undefined">
+                      <span class="meta-icon">&#xf005;</span>
+                      {{ formatCount(item.collectCount) }} 收藏
+                    </span>
+                    <span class="meta-item" v-if="item.commentCount !== undefined">
+                      <span class="meta-icon">&#xf0e6;</span>
+                      {{ formatCount(item.commentCount) }} 评论
+                    </span>
+                    <span class="meta-dot" v-if="item.publishTime || item.createdTime">·</span>
+                    <span class="meta-publish" v-if="item.publishTime || item.createdTime">
+                      {{ item.publishTime || item.createdTime }}
+                    </span>
                   </div>
-                </div>
-                <div class="article-actions">
-                  <span class="hot-score">
-                    <span class="score-value">{{ formatCount(item.hotValue || item.score) }}</span>
-                    <span class="score-label">热度</span>
+
+                  <!-- 分类圆角小标签 -->
+                  <span class="cat-tag" v-if="item.categoryName || item.category">
+                    {{ item.categoryName || getCategoryLabel(item.category) }}
                   </span>
-                  <button
-                    v-if="activeSecondaryTab === 'collect'"
-                    class="btn-collect"
-                    :class="{ collected: item.collected }"
-                    @click.stop="toggleCollect(item)"
-                  >
-                    <span class="collect-icon">&#xf005;</span>
-                    {{ item.collected ? '已收藏' : '收藏' }}
-                  </button>
-                  <button
-                    v-if="activeSecondaryTab === 'article'"
-                    class="btn-collect"
-                    :class="{ collected: item.collected }"
-                    @click.stop="toggleCollect(item)"
-                  >
-                    <span class="collect-icon">{{ item.collected ? '&#xf005;' : '&#xf006;' }}</span>
-                    {{ item.collected ? '已收藏' : '收藏' }}
-                  </button>
+                </div>
+
+                <!-- 右侧：可选封面 + 热度 + 收藏操作 -->
+                <div class="article-side">
+                  <!-- 封面缩略图：取不到图片字段则不展示，不生成占位图 -->
+                  <div class="article-thumb" v-if="item.cover || item.image || (item.images && item.images.length)">
+                    <img
+                      :src="item.cover || item.image || item.images[0]"
+                      alt="文章封面"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div class="article-actions">
+                    <!-- 热度值醒目红色 -->
+                    <span class="hot-score">
+                      <span class="score-value">{{ formatCount(item.hotValue || item.score) }}</span>
+                      <span class="score-label">热度</span>
+                    </span>
+                    <button
+                      v-if="activeSecondaryTab === 'collect'"
+                      class="btn-collect"
+                      :class="{ collected: item.collected }"
+                      @click.stop="toggleCollect(item)"
+                    >
+                      <span class="collect-icon">&#xf005;</span>
+                      {{ item.collected ? '已收藏' : '收藏' }}
+                    </button>
+                    <button
+                      v-if="activeSecondaryTab === 'article'"
+                      class="btn-collect"
+                      :class="{ collected: item.collected }"
+                      @click.stop="toggleCollect(item)"
+                    >
+                      <span class="collect-icon">{{ item.collected ? '&#xf005;' : '&#xf006;' }}</span>
+                      {{ item.collected ? '已收藏' : '收藏' }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </template>
@@ -603,7 +651,7 @@ export default {
   font-weight: 600;
   color: #252933;
   line-height: 1.5;
-  margin-bottom: 8PX;
+  margin-bottom: 10PX;
   cursor: pointer;
   transition: color 0.2s;
   display: -webkit-box;
@@ -616,22 +664,76 @@ export default {
   color: #1E80FF;
 }
 
-.article-meta {
+/* 作者信息 meta 行 */
+.article-author-row {
   display: flex;
   align-items: center;
-  gap: 8PX;
+  flex-wrap: wrap;
+  gap: 6PX;
   font-size: 12PX;
   color: #8A93A6;
+  margin-bottom: 10PX;
 }
 
-.meta-author {
+/* 作者小圆头像 */
+.author-avatar-sm {
+  flex-shrink: 0;
+  width: 20PX;
+  height: 20PX;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  background-color: #f4f5f7;
+}
+
+.author-avatar-sm img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.author-avatar-sm .avatar-placeholder {
+  font-size: 11PX;
+}
+
+/* 作者名（作者栏内小号样式） */
+.article-author-name {
   color: #515767;
   cursor: pointer;
   transition: color 0.2s;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
-.meta-author:hover {
+.article-author-name:hover {
   color: #1E80FF;
+}
+
+/* 点赞/收藏/评论 轻量小图标 */
+.meta-icon {
+  font-family: fontawesome;
+  font-size: 12PX;
+  color: #c0c4cc;
+  margin-right: 2PX;
+}
+
+/* 发表时间 */
+.meta-publish {
+  color: #c0c4cc;
+  white-space: nowrap;
+}
+
+/**
+ * 分类圆角小标签
+ */
+.cat-tag {
+  display: inline-block;
+  padding: 2PX 10PX;
+  font-size: 12PX;
+  line-height: 18PX;
+  color: #1E80FF;
+  background-color: #E8F3FF;
+  border-radius: 10PX;
 }
 
 .meta-dot {
@@ -639,7 +741,37 @@ export default {
 }
 
 .meta-item {
+  display: inline-flex;
+  align-items: center;
   color: #8A93A6;
+  white-space: nowrap;
+}
+
+/**
+ * 右侧区：封面缩略图 + 热度 + 收藏
+ */
+.article-side {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14PX;
+}
+
+/* 封面缩略图 */
+.article-thumb {
+  flex-shrink: 0;
+  width: 96PX;
+  height: 68PX;
+  border-radius: 6PX;
+  overflow: hidden;
+  cursor: pointer;
+  background-color: #f4f5f7;
+}
+
+.article-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .article-actions {
@@ -823,14 +955,30 @@ export default {
     gap: 12PX;
   }
 
+  /* 右侧区在移动端换行，封面与操作横向排列 */
+  .article-side {
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .article-thumb {
+    width: 80PX;
+    height: 60PX;
+  }
+
   .article-actions {
     flex-direction: row;
     align-items: center;
-    width: 100%;
+    width: auto;
   }
 
   .hot-item {
     padding: 14PX 16PX;
+  }
+
+  .rank-number {
+    margin-right: 12PX;
   }
 }
 </style>

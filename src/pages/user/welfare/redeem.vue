@@ -35,7 +35,7 @@
             <div class="main-area">
                 <!-- Breadcrumb -->
                 <div class="breadcrumb">
-                    <span class="breadcrumb-link" @click="goBack">福利兑换</span>
+                    <span class="breadcrumb-link" @click="goBack">{{ source === 'lottery' ? '我的收获' : '福利兑换' }}</span>
                     <span class="breadcrumb-separator">/</span>
                     <span class="breadcrumb-current">兑换详情</span>
                 </div>
@@ -72,9 +72,9 @@
                             <div class="table-header">
                                 <div class="col col-goods">兑换物品</div>
                                 <div class="col col-qty">数量</div>
-                                <div class="col col-price">单价</div>
-                                <div class="col col-discount">优惠方式</div>
-                                <div class="col col-total">总计</div>
+                                <div class="col col-price" v-if="source !== 'lottery'">单价</div>
+                                <div class="col col-discount" v-if="source !== 'lottery'">优惠方式</div>
+                                <div class="col col-total" v-if="source !== 'lottery'">总计</div>
                             </div>
                             <div class="table-row">
                                 <div class="col col-goods">
@@ -90,14 +90,14 @@
                                     </div>
                                 </div>
                                 <div class="col col-qty">1</div>
-                                <div class="col col-price">
+                                <div class="col col-price" v-if="source !== 'lottery'">
                                     <span class="price-text">&#xf06d; {{ formatPrice(goods.price) }}</span>
                                 </div>
-                                <div class="col col-discount">
+                                <div class="col col-discount" v-if="source !== 'lottery'">
                                     <span v-if="goods.originalPrice" class="discount-text">限时折扣</span>
                                     <span v-else class="discount-none">无优惠</span>
                                 </div>
-                                <div class="col col-total">
+                                <div class="col col-total" v-if="source !== 'lottery'">
                                     <span class="total-price">&#xf06d; {{ formatPrice(goods.price) }}</span>
                                 </div>
                             </div>
@@ -117,8 +117,8 @@
                         </div>
                     </div>
 
-                    <!-- Remark -->
-                    <div class="remark-section">
+                    <!-- Remark (矿石兑换专用) -->
+                    <div class="remark-section" v-if="source !== 'lottery'">
                         <label class="remark-label">备注</label>
                         <textarea v-model="form.remark" class="remark-input" placeholder="请输入备注，例如兑换产品的期望尺码" rows="2"></textarea>
                     </div>
@@ -130,7 +130,7 @@
                             :disabled="!canSubmit || submitting"
                             @click="handleConfirm"
                         >
-                            {{ submitting ? '提交中...' : '确认兑换' }}
+                            {{ submitting ? '提交中...' : (source === 'lottery' ? '确认领取' : '确认兑换') }}
                         </button>
                     </div>
                 </div>
@@ -141,12 +141,17 @@
         <div class="dialog-overlay" v-if="showSuccess" @click.self="showSuccess = false">
             <div class="success-dialog">
                 <div class="success-icon">&#xf058;</div>
-                <div class="success-title">兑换成功！</div>
-                <div class="success-desc" v-if="goods.isPhysical">
-                    实物奖品将在15个工作日内寄出，请耐心等待
-                </div>
-                <div class="success-desc" v-else>
-                    虚拟商品将在15个工作日内发送兑换码，请注意查收
+                <div class="success-title">{{ source === 'lottery' ? '领取成功！' : '兑换成功！' }}</div>
+                <div class="success-desc">
+                    <template v-if="source === 'lottery'">
+                        已收到收货地址，奖品进入备货状态，请耐心等待
+                    </template>
+                    <template v-else-if="goods.isPhysical">
+                        实物奖品将在15个工作日内寄出，请耐心等待
+                    </template>
+                    <template v-else>
+                        虚拟商品将在15个工作日内发送兑换码，请注意查收
+                    </template>
                 </div>
                 <div class="success-actions">
                     <button class="btn btn-primary" @click="goBack">返回</button>
@@ -159,10 +164,16 @@
 <script>
 import store from '@/stores/store'
 import { getGoodsDetail, doExchange } from '@/apis/welfare'
+import { getPhysicalOrderDetail, claimPhysical } from '@/apis/lottery'
 import { toast } from '@/utils/toast'
 
 export default {
     name: 'WelfareRedeem',
+    props: {
+        // welfare=矿石兑换（默认）；lottery=抽奖奖品领取（不消耗矿石）
+        source: { type: String, default: 'welfare' },
+        orderId: { type: [String, Number], default: null }
+    },
     data() {
         return {
             currentYear: new Date().getFullYear(),
@@ -190,6 +201,10 @@ export default {
     },
     computed: {
         canSubmit() {
+            // 抽奖奖品：无需矿石，只校验收货信息
+            if (this.source === 'lottery') {
+                return this.form.name && this.form.phone && this.form.address
+            }
             if (!this.goods.isPhysical) {
                 return this.oreBalance >= this.goods.price
             }
@@ -202,8 +217,12 @@ export default {
         }
     },
     mounted() {
-        this.goodsId = this.$route.params.id
-        this.loadGoodsDetail()
+        if (this.source === 'lottery') {
+            this.loadLotteryOrder()
+        } else {
+            this.goodsId = this.$route.params.id
+            this.loadGoodsDetail()
+        }
         this.loadUserInfo()
     },
     methods: {
@@ -213,6 +232,33 @@ export default {
                 nickName: info.nickName || '用户',
                 level: info.level || 'JY.1',
                 avatar: info.avatar || ''
+            }
+        },
+        // 抽奖奖品领取：加载实体订单详情（展示奖品、不显示矿石价）
+        async loadLotteryOrder() {
+            const oid = this.orderId || this.$route.params.id
+            try {
+                const res = await getPhysicalOrderDetail(oid)
+                if (res && res.code === 200 && res.data) {
+                    const d = res.data
+                    this.goodsId = d.orderId
+                    this.goods = {
+                        id: d.orderId,
+                        name: d.prizeName,
+                        image: d.iconUrl,
+                        tags: [],
+                        price: 0,
+                        originalPrice: 0,
+                        isPhysical: true,
+                        description: ''
+                    }
+                } else {
+                    toast(res && res.message ? res.message : '奖品不存在', 2)
+                    this.$router.replace('/user/center/harvest')
+                }
+            } catch (e) {
+                toast('加载奖品失败', 2)
+                this.$router.replace('/user/center/harvest')
             }
         },
         async loadGoodsDetail() {
@@ -259,6 +305,12 @@ export default {
         },
         async handleConfirm() {
             if (!this.canSubmit) {
+                if (this.source === 'lottery') {
+                    if (!this.form.name) toast('请填写收货人姓名', 2)
+                    else if (!this.form.phone) toast('请填写手机号', 2)
+                    else if (!this.form.address) toast('请填写收货地址', 2)
+                    return
+                }
                 if (!this.goods.isPhysical) {
                     toast('矿石不足，无法兑换', 2)
                 } else {
@@ -271,6 +323,22 @@ export default {
             }
             this.submitting = true
             try {
+                // 抽奖奖品：提交收货地址，不扣矿石，进入备货状态
+                if (this.source === 'lottery') {
+                    const res = await claimPhysical({
+                        orderId: this.goodsId,
+                        receiverName: this.form.name,
+                        phone: this.form.phone,
+                        address: this.form.address
+                    })
+                    if (res && res.code === 200) {
+                        this.showSuccess = true
+                    } else {
+                        toast(res && res.message ? res.message : '领取失败', 2)
+                    }
+                    return
+                }
+
                 const payload = {
                     goodsId: this.goodsId,
                     remark: this.form.remark
@@ -287,13 +355,17 @@ export default {
                     toast(res && res.message ? res.message : '兑换失败', 2)
                 }
             } catch (e) {
-                toast('兑换失败，请稍后重试', 2)
+                toast(this.source === 'lottery' ? '领取失败，请稍后重试' : '兑换失败，请稍后重试', 2)
             } finally {
                 this.submitting = false
             }
         },
         goBack() {
-            this.$router.push('/user/center/welfare')
+            if (this.source === 'lottery') {
+                this.$router.push('/user/center/harvest')
+            } else {
+                this.$router.push('/user/center/welfare')
+            }
         },
         goCheckin() {
             this.$router.push('/user/center/checkin')
@@ -305,7 +377,7 @@ export default {
             this.$router.push('/user/center/lottery')
         },
         goHarvest() {
-            toast('我的收获功能开发中', 2)
+            this.$router.push('/user/center/harvest')
         }
     }
 }

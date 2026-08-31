@@ -149,6 +149,7 @@
             :drawCost="200"
             @close="showResultModal = false"
             @draw-again="handleDraw('single')"
+            @go-harvest="handleGoHarvest"
         />
 
         <!-- Rules Modal -->
@@ -289,20 +290,21 @@ export default {
     },
     methods: {
         handleSidebarMenuClick(key) {
-            if (key === 'harvest') {
-                toast('我的收获功能开发中', 2)
-                return
-            }
             const routeMap = {
                 checkin: '/user/center/checkin',
                 growth: '/user/center/growth',
                 lottery: '/user/center/lottery',
-                welfare: '/user/center/welfare'
+                welfare: '/user/center/welfare',
+                harvest: '/user/center/harvest'
             }
             const path = routeMap[key]
             if (path && this.$route.path !== path) {
                 this.$router.push(path)
             }
+        },
+        handleGoHarvest() {
+            this.showResultModal = false
+            this.$router.push('/user/center/harvest')
         },
         prevPage() {
             if (this.currentPage > 1) { this.currentPage-- }

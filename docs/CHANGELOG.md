@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## 2026-08-29 — 文章推荐系统优化（个性化·可配置·已读去重·数据回流闭环）
+
+### 背景
+推荐分栏此前逻辑：候选评分（硬编码权重）+ 简单去抖。存在三处明显问题：①权重写死在代码里，无法 A/B 调优；②只靠前端上报 `excludeIds` 去重，不同分页/刷新极易重复推送已读内容；③缺少行为回流，新内容无法因真实反馈上浮，也未惩罚"曝光却不感兴趣"的内容。
+
+### 1. 兴趣画像 Redis 缓存
+- 从用户行为（浏览/点赞/收藏，权重 1/3/4）提炼标签→兴趣权重，对命中文章加成（`interest-boost-max`）实现个性化。
+- 画像缓存于 Redis `recommend:interest:{userId}`，TTL 默认 30 分钟（`recommend.interest-cache-ttl`）；Redisson 缺失/异常时优雅降级为直接计算，不影响主链路。
+- 新增 `getInterestWeights`（读缓存→回源→写缓存）与 `buildInterestWeights`（行为聚合）。
+
+### 2. 评分权重可配置化
+- `computeBaseScore` 的硬编码权重抽取为配置（`recommend.weight.*`），支持编辑热度/时效/阅读/点赞/评论/收藏六维配置化调优；互动指标改对数归一化 `log(1+x)/log(1+max)`，弱化爆款压制。
+
+### 3. 服务端已读去重
+- 推荐下发前，将前端 `excludeIds` 与**服务端近 N 天浏览历史文章ID**合并后传入候选 SQL（`resolveServerReadIds`），从源头杜绝重复推荐；条数/窗口可配置（`exclude-read-count` / `exclude-read-window-days`）。
+
+### 4. 数据回流闭环（近期热度 → 曝光负反馈）
+- **正反馈**：聚合候选文章在近 24h 内跨用户真实阅读次数（`ap_browse_history`），作为「近期热度」加到评分（`interaction-boost-max`），让新内容因真实反馈上浮。
+- **负反馈（新增）**：新增曝光表 `ap_article_exposure` + 实体 [ApArticleExposure.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-model/src/main/java/com/heima/model/behavior/pojos/ApArticleExposure.java) + Mapper [ApArticleExposureMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/interaction/ApArticleExposureMapper.java)。推荐下发时记录本页曝光（最佳努力，失败不影响主流程）；评分时对该用户「近期曝光而未消费」的文章降权（`exposure-penalty-max`）。
+- 建表脚本：[init_article_recommend_exposure.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/db/migrations/init_article_recommend_exposure.sql)。
+
+### 测试
+[ApArticleRecommendServiceImplTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java) 覆盖兴趣缓存命中/回源、权重注入、服务端已读合并、近期热度反哺、曝光降权。23 个用例全部通过。
+
+## 2026-08-28 — LLM 结构化输出保障（解析兜底·带原因重试·统一入口）
+
+### 背景
+参考《structured-output-guide》将"结构化输出"能力迁移到本项目。由于本项目未引入 Spring AI（ChatClient/BeanOutputConverter 不存在），改为**适配现有 DashScope SDK**：统一调用 `DashScopeClient` + 新增强类型 DTO，并在这一个组件里收敛「调用 → 清洗 → 触发式修复 → 解析 → 带失败原因重试」，让模型输出可被 Java 类型直接反序列化。
+
+### 1. 统一调用器 `StructuredOutputInvoker`（核心）
+- 新增 [StructuredOutputInvoker.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/main/java/com/heima/common/bailian/StructuredOutputInvoker.java)：对外只暴露一个泛型 `invoke(systemPrompt, userPrompt, dtoClass, errorCode, errorPrefix, logContext, log)`。
+  - **解析兜底**：清洗 Markdown 代码块 ` ```json `；首次解析失败后用**单遍字符扫描**触发式修复字符串内未转义引号再解析一次，修复失败 `addSuppressed` 保留原始异常不吞错。
+  - **重试增强**：按 `maxAttempts`（默认 2）重试；重试时向 system prompt 追加 `STRICT_JSON_INSTRUCTION` + "上次失败原因"（单行化+截断，默认 200 字符），而非盲目重试。
+  - **防注入**：所有调用在末尾统一追加 `PromptSecurityConstants.ANTI_INJECTION_INSTRUCTION`。
+  - **指标**：`MeterRegistry`（`@Autowired(required=false)`）上报 `ai.structured.invocation` 计数与延迟 timer。
+  - **最终失败**：统一抛 `StructuredOutputException`（携带 `AppHttpCodeEnum`）。
+- 新增 [StructuredOutputProperties.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/main/java/com/heima/common/bailian/StructuredOutputProperties.java)：读取 `app.ai.structured-*` 配置（次数/开关/截断长度/指标）。
+- 新增 [StructuredOutputException.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/main/java/com/heima/common/bailian/StructuredOutputException.java)。
+
+### 2. 强类型 DTO + 业务改造
+- 新增 [ArticleAuditResult.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/model/ai/ArticleAuditResult.java) / [ViolationCheckResult.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/model/ai/ViolationCheckResult.java)：用 `@JSONField` 映射模型输出的 snake_case 字段，字段命名稳定，可被直接反序列化。
+- 改造 [BailianAiServiceImpl.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/BailianAiServiceImpl.java)：`comprehensiveAudit`/`checkViolation` 移除手动 `parseJsonResponse`（整体删除），两处均改走 `structuredOutputInvoker.invoke(...)` 接收强类型 DTO；`SYSTEM_PROMPT` 去掉手动拼接防注入指令（改为 invoker 统一追加）；`saveComprehensiveAudit` 改为接收 DTO 落库。fail-closed 兜底不变（解析失败仍 `success=false`，绝不降级放行）。
+
+### 3. 测试
+- 新增 [StructuredOutputInvokerTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/test/java/com/heima/common/bailian/StructuredOutputInvokerTest.java)：覆盖首次成功、Markdown 清洗、未转义引号修复、修复失败重试、最终失败抛业务异常、重试 prompt 追加增强信息。
+- 新增 [BailianAiServiceImplTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/BailianAiServiceImplTest.java)：验证 DTO→resultMap 映射、落库、fail-closed 不降级。
+
+### 配置
+`app.ai.structured-max-attempts`（默认 2）、`structured-include-last-error`、`structured-retry-use-repair-prompt`、`structured-retry-append-strict-json-instruction`、`structured-error-message-max-length`、`structured-metrics-enabled`、`structured-schema-validation-enabled`（默认 false，暂走本地修复路径）。
+
 ## 2026-08-28 — 双等级体系/事件总线并发安全加固（防刷分·防重复签到·防丢计数）
 
 ### 1. 双等级体系 TOCTOU 越上限刷分 / 重复签到（S5 高）

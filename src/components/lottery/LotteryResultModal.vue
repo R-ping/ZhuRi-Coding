@@ -58,6 +58,9 @@
                 <button class="btn btn-secondary" @click="handleDrawAgain" v-if="!isFree && canDraw">
                     再抽一次 ({{ drawCost }} 矿石)
                 </button>
+                <button class="btn btn-harvest" @click="handleGoHarvest" v-if="hasPhysical">
+                    去查看我的收获
+                </button>
             </div>
         </div>
     </div>
@@ -73,12 +76,20 @@ export default {
         canDraw: { type: Boolean, default: true },
         drawCost: { type: Number, default: 200 }
     },
+    computed: {
+        hasPhysical() {
+            return this.results.some(r => r.type === 'physical')
+        }
+    },
     methods: {
         handleClose() {
             this.$emit('close')
         },
         handleDrawAgain() {
             this.$emit('draw-again')
+        },
+        handleGoHarvest() {
+            this.$emit('go-harvest')
         }
     }
 }
@@ -302,6 +313,16 @@ export default {
 
     &:hover {
         background: #e8e8e8;
+    }
+}
+
+.btn-harvest {
+    background: linear-gradient(135deg, #2f54eb, #597ef7);
+    color: #fff;
+
+    &:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
     }
 }
 </style>

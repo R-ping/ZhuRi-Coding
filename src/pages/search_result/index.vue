@@ -45,21 +45,59 @@
                 </div>
             </div>
 
-            <!-- 列表项 -->
+            <!-- 列表项：按分栏渲染对应组件（0/1 文章、2 课程、3 标签、4 用户） -->
             <template v-else-if="currentData.length > 0">
-                <SearchResultArticle
-                    v-for="item in currentData"
-                    :key="item.id"
-                    :data="item"
-                    :keyword="params.keyword"
-                    @like="onLike"
-                    @comment="onComment"
-                    @tag-click="onTagClick"
-                    @author-hover="onAuthorHover"
-                    @author-leave="onAuthorLeave"
-                    @author-click="onAuthorClick"
-                    @title-click="onTitleClick"
-                />
+                <!-- 文章/综合 -->
+                <template v-if="isArticleTab">
+                    <SearchResultArticle
+                        v-for="item in currentData"
+                        :key="item.id"
+                        :data="item"
+                        :keyword="params.keyword"
+                        @like="onLike"
+                        @comment="onComment"
+                        @tag-click="onTagClick"
+                        @author-hover="onAuthorHover"
+                        @author-leave="onAuthorLeave"
+                        @author-click="onAuthorClick"
+                        @title-click="onTitleClick"
+                    />
+                </template>
+
+                <!-- 课程（掘金小册风格） -->
+                <template v-else-if="currentTab === 2">
+                    <SearchResultCourse
+                        v-for="item in currentData"
+                        :key="item.id"
+                        :data="item"
+                        :keyword="params.keyword"
+                        @open="onOpenCourse"
+                    />
+                </template>
+
+                <!-- 标签（掘金标签风格） -->
+                <template v-else-if="currentTab === 3">
+                    <SearchResultTag
+                        v-for="item in currentData"
+                        :key="item.id"
+                        :data="item"
+                        :keyword="params.keyword"
+                        @open="onOpenTag"
+                        @subscribe="onSubscribeTag"
+                    />
+                </template>
+
+                <!-- 用户（掘金用户风格） -->
+                <template v-else-if="currentTab === 4">
+                    <SearchResultUser
+                        v-for="item in currentData"
+                        :key="item.id"
+                        :data="item"
+                        :keyword="params.keyword"
+                        @open="onOpenUser"
+                        @follow="onFollowUser"
+                    />
+                </template>
 
                 <!-- 加载更多 -->
                 <div class="loading-more" v-if="currentState && currentState.loadingMore">
@@ -105,13 +143,17 @@
 <script>
     import { toast } from "@/utils/toast"
     import SearchResultArticle from '@/components/search/SearchResultArticle.vue'
+    import SearchResultCourse from '@/components/search/SearchResultCourse.vue'
+    import SearchResultTag from '@/components/search/SearchResultTag.vue'
+    import SearchResultUser from '@/components/search/SearchResultUser.vue'
     import AuthorHoverCard from '@/components/search/AuthorHoverCard.vue'
     import authorHoverCardMixin from '@/mixins/authorHoverCardMixin'
     import Api from '@/apis/search_result/api'
+    import { followUser } from '@/apis/follow'
 
     export default {
         name: 'SearchResult',
-        components: { SearchResultArticle, AuthorHoverCard },
+        components: { SearchResultArticle, SearchResultCourse, SearchResultTag, SearchResultUser, AuthorHoverCard },
         mixins: [authorHoverCardMixin],
         props: {
             keyword: {
@@ -159,6 +201,33 @@
                     error: false,
                     errorMsg: ''
                 },
+                // 课程 tab 加载状态
+                courseState: {
+                    loaded: false,
+                    loading: false,
+                    loadingMore: false,
+                    noMore: false,
+                    error: false,
+                    errorMsg: ''
+                },
+                // 标签 tab 加载状态
+                tagState: {
+                    loaded: false,
+                    loading: false,
+                    loadingMore: false,
+                    noMore: false,
+                    error: false,
+                    errorMsg: ''
+                },
+                // 用户 tab 加载状态
+                userState: {
+                    loaded: false,
+                    loading: false,
+                    loadingMore: false,
+                    noMore: false,
+                    error: false,
+                    errorMsg: ''
+                },
                 params: {
                     keyword: '',
                     pageNum: 1,
@@ -173,13 +242,25 @@
             }
         },
         computed: {
+            // 是否为文章类分栏（0 综合 / 1 文章），两者均用文章卡片渲染
+            isArticleTab() {
+                return this.currentTab === 0 || this.currentTab === 1
+            },
             currentData() {
-                var dataMap = [this.articleData, this.courseData, this.tagData, this.userData]
+                // tab 0(综合)与 1(文章) 均取文章数据；2 课程、3 标签、4 用户
+                var dataMap = [this.articleData, this.articleData, this.courseData, this.tagData, this.userData]
                 return dataMap[this.currentTab] || []
             },
             currentState() {
-                var stateMap = [this.articleState, {loaded: true, loading: false}, {loaded: true, loading: false}, {loaded: true, loading: false}]
-                return stateMap[this.currentTab] || {loaded: false, loading: false}
+                // tab 0 与 1 共用文章加载状态；2 课程、3 标签、4 用户分别对应各自状态
+                var stateMap = [
+                    this.articleState,
+                    this.articleState,
+                    this.courseState,
+                    this.tagState,
+                    this.userState
+                ]
+                return stateMap[this.currentTab] || {loaded: false, loading: false, loadingMore: false, noMore: false, error: false, errorMsg: ''}
             }
         },
         created() {
@@ -188,22 +269,71 @@
                 this.load()
             }
         },
+        watch: {
+            // 同一 Layout 下 /search_result 组件实例会被复用，仅 query.keyword 变化时
+            // created() 不会重新执行，必须在此感知关键词变化并重新发起搜索。
+            '$route.query.keyword'(newVal) {
+                var kw = newVal || this.keyword || ''
+                if (kw === this.params.keyword) return
+                this.params.keyword = kw
+                this.params.pageNum = 1
+                // 关键词变化时清空四个分栏的数据与状态
+                var self = this
+                ;['article', 'course', 'tag', 'user'].forEach(function(t) {
+                    var dataKey = t + 'Data'
+                    var stateKey = t + 'State'
+                    self[dataKey] = []
+                    self.$set(self[stateKey], 'loaded', false)
+                    self.$set(self[stateKey], 'loading', false)
+                    self.$set(self[stateKey], 'loadingMore', false)
+                    self.$set(self[stateKey], 'noMore', false)
+                })
+                if (kw) {
+                    this.load()
+                }
+            }
+        },
         methods: {
             onTabClick(index) {
                 if (this.currentTab === index) return
                 this.currentTab = index
+                // tab0/1 文章、2 课程、3 标签、4 用户
                 var tabIds = ['article', 'article', 'course', 'tag', 'user']
                 this.params.tag = tabIds[index]
                 this.params.pageNum = 1
-                
-                // 如果是文章tab且已加载，不重新加载
-                if (index === 0 && this.articleState.loaded) {
-                    return
+                // 取消“已加载即不再请求”的守卫，切回综合(0)也会重新请求
+                this.load()
+            },
+            // 当前 tab 对应的加载状态（基于 params.tag 分发，保证与 currentData 展示一致）
+            getState() {
+                var map = {
+                    'article': this.articleState,
+                    'course': this.courseState,
+                    'tag': this.tagState,
+                    'user': this.userState
                 }
-                
-                if (index <= 1) {
-                    this.load()
+                return map[this.params.tag] || this.articleState
+            },
+            // 当前 tab 对应的数据数组
+            getData() {
+                var map = {
+                    'article': this.articleData,
+                    'course': this.courseData,
+                    'tag': this.tagData,
+                    'user': this.userData
                 }
+                return map[this.params.tag] || this.articleData
+            },
+            // 写入当前 tab 对应的数据数组
+            setData(arr) {
+                var map = {
+                    'article': 'articleData',
+                    'course': 'courseData',
+                    'tag': 'tagData',
+                    'user': 'userData'
+                }
+                var key = map[this.params.tag] || 'articleData'
+                this[key] = arr
             },
             onSortChange(sort) {
                 this.currentSort = sort
@@ -221,39 +351,104 @@
             },
             load() {
                 if (!this.params.keyword) return
-                this.$set(this.articleState, 'loading', true)
-                this.$set(this.articleState, 'error', false)
-                
-                Api.article_search(this.params).then((d) => {
-                    this.$set(this.articleState, 'loading', false)
-                    this.$set(this.articleState, 'loadingMore', false)
-                    this.$set(this.articleState, 'loaded', true)
-                    
+                var state = this.getState()
+                this.$set(state, 'loading', true)
+                this.$set(state, 'error', false)
+
+                // 统一收敛：全部走单一搜索接口 Api.search，分栏由 params.tag 映射的 idType 控制
+                Api.search(this.params).then((d) => {
+                    this.$set(state, 'loading', false)
+                    this.$set(state, 'loadingMore', false)
+                    this.$set(state, 'loaded', true)
+
                     if (d && d.code === 200) {
                         if (d.data && d.data.length > 0) {
-                            this.transformData(d.data)
+                            // 课程/标签/用户分栏数据字段各自独立，原样写入对应数组（组件内自适配）；文章/综合走统一字段转换
+                            if (this.params.tag === 'course' || this.params.tag === 'tag' || this.params.tag === 'user') {
+                                if (this.params.pageNum !== 1) {
+                                    this.setData(this.getData().concat(d.data))
+                                } else {
+                                    this.setData(d.data)
+                                }
+                                this.totalCount = this.getData().length
+                            } else {
+                                this.transformData(d.data)
+                            }
                         } else {
-                            this.$set(this.articleState, 'noMore', true)
+                            this.$set(state, 'noMore', true)
                             if (this.params.pageNum === 1) {
-                                this.articleData = []
+                                this.setData([])
                                 this.totalCount = 0
                             }
                         }
                     } else {
-                        this.$set(this.articleState, 'error', true)
-                        this.$set(this.articleState, 'errorMsg', (d && d.errorMessage) || '搜索失败')
+                        this.$set(state, 'error', true)
+                        this.$set(state, 'errorMsg', (d && d.errorMessage) || '搜索失败')
                     }
                 }).catch(() => {
-                    this.$set(this.articleState, 'loading', false)
-                    this.$set(this.articleState, 'loadingMore', false)
-                    this.$set(this.articleState, 'loaded', true)
-                    this.$set(this.articleState, 'error', true)
-                    this.$set(this.articleState, 'errorMsg', '网络请求失败，请检查网络连接')
+                    this.$set(state, 'loading', false)
+                    this.$set(state, 'loadingMore', false)
+                    this.$set(state, 'loaded', true)
+                    this.$set(state, 'error', true)
+                    this.$set(state, 'errorMsg', '网络请求失败，请检查网络连接')
+                })
+            },
+            // 课程卡片点击 -> 打开小册详情
+            onOpenCourse(courseId) {
+                if (!courseId) return
+                window.open('/course/' + courseId, '_blank')
+            },
+            // 标签卡片点击 -> 打开标签页
+            onOpenTag(tagName) {
+                if (!tagName) return
+                window.open('/tag/' + encodeURIComponent(tagName), '_blank')
+            },
+            // 标签订阅（后端暂未提供订阅接口，先占位提示）
+            onSubscribeTag() {
+                toast('订阅功能开发中')
+            },
+            // 用户卡片点击 -> 跳转个人主页
+            onOpenUser(userId) {
+                this.goToUserHome(userId)
+            },
+            // 用户关注/取关
+            onFollowUser(targetId) {
+                if (!targetId) return
+                if (!this.$store.getters.isLoggedIn || !this.$store.getters.userInfo) {
+                    toast('请先登录后再关注')
+                    this.$store.dispatch('showLogin')
+                    return
+                }
+                // 乐观更新对应卡片关注状态
+                var self = this
+                var target = null
+                for (var i = 0; i < this.userData.length; i++) {
+                    var it = this.userData[i]
+                    var uid = it.authorId != null ? it.authorId : it.id
+                    if (String(uid) === String(targetId)) {
+                        target = it
+                        break
+                    }
+                }
+                if (!target) return
+                var current = !!target.isFollowed
+                this.$set(target, 'isFollowed', !current)
+
+                var myId = this.$store.getters.userInfo.id
+                followUser(myId, targetId).then((res) => {
+                    // 以服务端返回为准，失败则回滚
+                    if (!res || res.code !== 200) {
+                        self.$set(target, 'isFollowed', current)
+                        toast((res && res.errorMessage) || '关注失败')
+                    }
+                }).catch(() => {
+                    self.$set(target, 'isFollowed', current)
+                    toast('网络异常，关注失败')
                 })
             },
             transformData(data) {
                 if (!data || data.length === 0) {
-                    this.$set(this.articleState, 'noMore', true)
+                    this.$set(this.getState(), 'noMore', true)
                     return
                 }
                 
@@ -313,11 +508,11 @@
                 }
                 
                 if (this.params.pageNum !== 1) {
-                    this.articleData = this.articleData.concat(arr)
+                    this.setData(this.getData().concat(arr))
                 } else {
-                    this.articleData = arr
+                    this.setData(arr)
                 }
-                this.totalCount = this.articleData.length
+                this.totalCount = this.getData().length
             },
             // 点赞处理
             onLike(articleId, liked) {

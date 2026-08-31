@@ -1,6 +1,7 @@
 import request from '@/common/article_request'
 
 // 推荐话题（换一换）
+// 路径 command 为 recommend-topics，与文章列表的 /topics/recommend 区分，避免混淆
 export const getRecommendTopics = (page = 0, size = 5) => {
   return request.get('/api/v1/topics/recommend-topics', { params: { page, size } })
 }
