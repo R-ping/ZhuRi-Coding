@@ -42,14 +42,17 @@ const  config = {
         del_search:{url:'api/v1/history/del',sv:'search'},
         clear_search:{url:'api/v1/history/clear',sv:'search'},
         associate_search:{url:'api/v1/associate/search',sv:'search'},
-        article_search:{url:'api/v1/article/search/search',sv:'search'},
+        // 统一搜索：单端点 /api/v1/search（sv=search），分栏由 id_type 控制；文章走本服务 ES，课程/标签/用户经 Feign 聚合
+        unified_search:{url:'api/v1/search',sv:'search'},
         // 后端未提供 load_hot_keywords 接口，已在前端注释对应调用
-        // ==========  behavior (已合并入 content 服务)
-        read_behavior:{url:'api/v1/read_behavior',sv:'content'},
-        like_behavior:{url:'api/v1/likes_behavior/',sv:'content'},
-        unlike_behavior:{url:'api/v1/un_likes_behavior/',sv:'content'},
-        collection_behavior:{url:'api/v1/collection_behavior/',sv:'content'},
-        follow_behavior:{url:'api/v1/follow_behavior/',sv:'content'},
+        // ==========  behavior (已合并入 content 服务，统一走事件总线入口 /api/v1/behavior/*)
+        read_behavior:{url:'api/v1/behavior/browse',sv:'content'},
+        like_behavior:{url:'api/v1/behavior/like',sv:'content'},
+        unlike_behavior:{url:'api/v1/behavior/unlike',sv:'content'},
+        collection_behavior:{url:'api/v1/behavior/collect',sv:'content'},
+        uncollect_behavior:{url:'api/v1/behavior/uncollect',sv:'content'},
+        follow_behavior:{url:'api/v1/behavior/follow',sv:'content'},
+        unfollow_behavior:{url:'api/v1/behavior/unfollow',sv:'content'},
         // ==========  user (后端已实现)
         // 后端未提供 user_follow 接口，已在前端注释对应调用
         // ==========  login (login 属于 user 微服务)

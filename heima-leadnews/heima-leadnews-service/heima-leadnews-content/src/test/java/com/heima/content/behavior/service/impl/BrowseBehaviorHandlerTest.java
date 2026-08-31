@@ -1,10 +1,12 @@
 package com.heima.content.behavior.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.heima.content.mapper.interaction.ApBrowseHistoryMapper;
 import com.heima.content.mapper.user.UserBehaviorRecordMapper;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.behavior.BehaviorResult;
 import com.heima.model.behavior.BehaviorType;
+import com.heima.model.behavior.pojos.ApBrowseHistory;
 import com.heima.model.behavior.pojos.UserBehaviorRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,8 @@ class BrowseBehaviorHandlerTest {
 
     @Mock
     private UserBehaviorRecordMapper behaviorRecordMapper;
+    @Mock
+    private ApBrowseHistoryMapper apBrowseHistoryMapper;
 
     @InjectMocks
     private BrowseBehaviorHandler handler;
@@ -111,6 +115,8 @@ class BrowseBehaviorHandlerTest {
     @DisplayName("execute - 首次浏览则新增记录并返回成功")
     void executeWhenNoExistingRecord() {
         when(behaviorRecordMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        // 文章浏览历史：无记录 → 新增（永久去重）
+        when(apBrowseHistoryMapper.selectOne(any(Wrapper.class))).thenReturn(null);
 
         BehaviorResult result = handler.execute(context(1, 1, 100L));
 
@@ -128,6 +134,13 @@ class BrowseBehaviorHandlerTest {
         assertEquals(Long.valueOf(100L), saved.getTargetId());
         assertEquals(Integer.valueOf(100), saved.getTargetUserId());
         assertEquals(Integer.valueOf(1), saved.getStatus());
+
+        // 浏览历史同步写入
+        ArgumentCaptor<ApBrowseHistory> historyCaptor = ArgumentCaptor.forClass(ApBrowseHistory.class);
+        verify(apBrowseHistoryMapper).insert(historyCaptor.capture());
+        assertEquals(Long.valueOf(1L), historyCaptor.getValue().getUserId());
+        assertEquals(Long.valueOf(100L), historyCaptor.getValue().getArticleId());
+        assertNotNull(historyCaptor.getValue().getBrowseTime());
     }
 
     @Test

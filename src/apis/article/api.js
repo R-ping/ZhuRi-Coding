@@ -3,14 +3,14 @@ import request from '@/common/request'
 
 function Api(){}
 Api.prototype = {
-    // 喜欢/点赞
+    // 喜欢/点赞（operation: 0=点赞 1=取消点赞，统一走事件总线 like/unlike）
     like : function(data){
-        let url = conf.urls.get('like_behavior')
+        let url = conf.urls.get(data.operation === 0 ? 'like_behavior' : 'unlike_behavior')
         return new Promise((resolve, reject) => {
             request.post(url, {
-                articleId: data.articleId,
-                type: 0,
-                operation: data.operation
+                targetType: 1,
+                targetId: data.articleId,
+                targetUserId: data.targetUserId || null
             }).then((d) => {
                 resolve(d)
             }).catch((e) => {
@@ -18,13 +18,13 @@ Api.prototype = {
             })
         })
     },
-    // 不喜欢
+    // 取消点赞/不喜欢文章（统一走事件总线 unlike）
     unlike : function(data){
         let url = conf.urls.get('unlike_behavior')
         return new Promise((resolve, reject) => {
             request.post(url, {
-                articleId: data.articleId,
-                type: data.type
+                targetType: 1,
+                targetId: data.articleId
             }).then((d) => {
                 resolve(d)
             }).catch((e) => {
@@ -32,16 +32,14 @@ Api.prototype = {
             })
         })
     },
-    // 阅读行为
+    // 阅读行为（统一走事件总线 browse）
     read : function(data){
         let url = conf.urls.get('read_behavior')
         return new Promise((resolve, reject) => {
             request.post(url, {
-                articleId: data.articleId,
-                count: 1,
-                readDuration: data.readDuration || 0,
-                percentage: data.percentage || 0,
-                loadDuration: data.loadDuration || 0
+                targetType: 1,
+                targetId: data.articleId,
+                targetUserId: data.targetUserId || null
             }).then((d) => {
                 resolve(d)
             }).catch((e) => {
@@ -114,13 +112,14 @@ Api.prototype = {
             })
         })
     },
-    // 收藏
+    // 收藏（operation: 0=收藏 1=取消收藏，统一走事件总线 collect/uncollect）
     collect: function (data) {
-        let url = conf.urls.get('collection_behavior')
+        let url = conf.urls.get(data.operation === 0 ? 'collection_behavior' : 'uncollect_behavior')
         return new Promise((resolve, reject) => {
             request.post(url, {
-                articleId: data.articleId,
-                operation: data.operation
+                targetType: 1,
+                targetId: data.articleId,
+                targetUserId: data.targetUserId || null
             }).then((d) => {
                 resolve(d)
             }).catch((e) => {
@@ -128,13 +127,12 @@ Api.prototype = {
             })
         })
     },
-    // 关注
+    // 关注（operation: 0=关注 1=取消关注，统一走事件总线 follow/unfollow）
     follow: function (data) {
-        let url = conf.urls.get('follow_behavior')
+        let url = conf.urls.get(data.operation === 0 ? 'follow_behavior' : 'unfollow_behavior')
         return new Promise((resolve, reject) => {
             request.post(url, {
-                articleId: data.articleId,
-                operation: data.operation
+                targetUserId: data.targetUserId || data.articleId
             }).then((d) => {
                 resolve(d)
             }).catch((e) => {
