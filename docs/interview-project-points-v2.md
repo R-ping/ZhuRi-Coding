@@ -428,3 +428,11 @@ A：fail-closed：文本审核返回 null/失败直接驳回文章（宁可错�
 - **失败计数**：ES/发布重试的 catch 分支补 `retryCount+1` 并持久化（原只在成功分支计数，失败永不累计 → 死信判断形同虚设、无限重试）；并调整为"先执行同步/发布、成功后才标记状态与计数"，消除 try/catch 双计。
 - **分布式锁**：`TaskServiceImpl.refreshTaskToRedis` 增加 Redis `setIfAbsent` 锁（TTL 25min < 周期 30min，实例崩溃自动过期），多实例部署时仅一个实例刷新，防止同一延迟任务重复投递。
 - 验证：新增 `ApArticleEventServiceImplTest`(4)、`TaskServiceImplTest`(2) 全绿；`mvn test-compile` 通过。
+
+### C8. 成就事件驱动改造（2026-09-01 追加）
+原 P3-10"成就查询时全量计算非事件驱动"已修复：
+- **新增解锁记录表**：`ap_user_achievement`（user_id + achievement_code 唯一索引，progress/threshold/unlocked/unlocked_at 快照，迁移 `create_ap_user_achievement_table.sql`）。
+- **事件驱动解锁**：新增 `AchievementProcessor`（BehaviorPostProcessor, order=5）挂到事件总线——发布文章/沸点 → 更新作者 publish_article/publish_content 进度；被关注 → 更新被关注者 followers 进度；被点赞 → 更新被赞作者 likes 进度。达标即落库解锁（幂等，UK 兜底并发）+ 通过 `INotificationClient.sendActivityNotification` 发解锁站内信（不重复通知）。
+- **查询只读表**：`AchievementServiceImpl.getUserAchievements` 改为读定义表 + 解锁记录表（O(定义数)），不再每次请求统计 5 个维度；`checkin_streak` 无事件源（签到在 reward 服务），仅在有该类型勋章时实时 Feign 兜底一次。
+- **效果**：查询不再实时全量统计（去掉文章/沸点/获赞/粉丝 4 维度 DB 查询 + 跨服务调用），解锁有落库与通知闭环。
+- 验证：新增 `AchievementProcessorTest`(6)、重写 `AchievementServiceImplTest`(3) 全绿；`mvn test-compile` 通过。
