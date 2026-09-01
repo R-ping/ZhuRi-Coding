@@ -40,7 +40,7 @@
 
 ## P3 —— 架构级改造（⬜ 建议后续迭代，本轮不落代码）
 
-> ✅ 注：原 **P3-6 热度分双路径口径不一致** 已于 2026-08-31 修复（删除 MQ 遗留 `updateScore`、行为路径统一走原子 SQL `recalculateScore`），故从下表移除。
+> ✅ 注：原 **P3-6 热度分双路径口径不一致** 已于 2026-08-31 修复（删除 MQ 遗留 `updateScore`、行为路径统一走原子 SQL `recalculateScore`）；原 **P3-7 本地消息表无有效重试/死信 + refreshTaskToRedis 无锁** 已于 2026-09-01 修复（失败累计重试次数、死信清理、Redis 分布式锁），均从下表移除。
 
 | # | 模块 | 缺陷/方向 | 建议方案 |
 |---|---|---|---|
@@ -49,7 +49,6 @@
 | P3-3 | 全局 | 无雪花 ID（自增主键，分库分表受限） | MyBatis-Plus ASSIGN_ID / 自定义雪花 |
 | P3-4 | basic | 文件存储无统一 SPI（OSS/MinIO 切换需改代码） | 定义 FileStorage 接口 + 多实现 |
 | P3-5 | content | 推荐无协同过滤/向量召回、冷启动弱、候选池性能风险 | pgvector 相似召回、CF、冷启模板 |
-| P3-7 | content | 本地消息表只写标记无重试消费器；`refreshTaskToRedis` 无分布式锁 | 补偿任务 + 分布式锁/幂等键 |
 | P3-8 | search | ES 检索 OR 语义 + 纯时间排序，热搜榜弱 | multi_match + function_score；Redis zset 热搜 |
 | P3-9 | notification | SimpleBroker 内存路由无法水平扩展 | Redis Pub/Sub / 外部 Broker / 离线收件箱补推 |
 | P3-10 | content | 成就查询时全量计算非事件驱动 | 解锁事件 + 落库 + 通知 |

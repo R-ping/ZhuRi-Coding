@@ -421,3 +421,10 @@ A：fail-closed：文本审核返回 null/失败直接驳回文章（宁可错�
 - **前端**：`src/common/conf.js` 5 个行为 url 全部切到统一入口 `/api/v1/behavior/*`（browse/like/unlike/collect/uncollect/follow/unfollow）；`src/apis/article/api.js` 参数对齐（`targetType/targetId/targetUserId`）。
 - **效果**：同一行为全局只有一条计数+热度分路径，点赞/收藏可正确回退计数，前端不再指向已删除的接口。
 - 验证：`BehaviorControllerTest`(20)/`BehaviorEventBusTest`(17)/`LikeBehaviorHandlerTest`(9)/`CollectBehaviorHandlerTest`(9)/`BrowseBehaviorHandlerTest`(8) 全绿；`mvn test-compile` 与 `vite build` 通过。
+
+### C7. 本地消息表重试与任务刷新锁修复（2026-09-01 追加）
+原 P3-7"本地消息表只写标记无重试消费器；refreshTaskToRedis 无分布式锁"已修复：
+- **死信清理**：`ApArticleEventServiceImpl.processEvent` 超过 `maxRetryCount` 的记录恢复加入清理列表（原 `success_list.add(...)` 被注释，死信永久滞留表内）。
+- **失败计数**：ES/发布重试的 catch 分支补 `retryCount+1` 并持久化（原只在成功分支计数，失败永不累计 → 死信判断形同虚设、无限重试）；并调整为"先执行同步/发布、成功后才标记状态与计数"，消除 try/catch 双计。
+- **分布式锁**：`TaskServiceImpl.refreshTaskToRedis` 增加 Redis `setIfAbsent` 锁（TTL 25min < 周期 30min，实例崩溃自动过期），多实例部署时仅一个实例刷新，防止同一延迟任务重复投递。
+- 验证：新增 `ApArticleEventServiceImplTest`(4)、`TaskServiceImplTest`(2) 全绿；`mvn test-compile` 通过。

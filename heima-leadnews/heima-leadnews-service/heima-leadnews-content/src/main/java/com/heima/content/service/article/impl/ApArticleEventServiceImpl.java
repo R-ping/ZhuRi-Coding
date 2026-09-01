@@ -43,9 +43,11 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
             // 检查是否超过最大重试次数
             if (event.getRetryCount() != null && event.getMaxRetryCount() != null
                 && event.getRetryCount() >= event.getMaxRetryCount()) {
-                log.error("文章事件超过最大重试次数，标记为死信, articleId={}, retryCount={}, maxRetryCount={}",
+                // 死信：删除记录并告警，避免永久滞留本地消息表（loadArticleEvent 虽已过滤，
+                // 但残留死信会占表；此处双保险清理）
+                log.error("文章事件超过最大重试次数，清理死信, articleId={}, retryCount={}, maxRetryCount={}",
                     event.getArticleId(), event.getRetryCount(), event.getMaxRetryCount());
-//                success_list.add(event.getArticleId());
+                success_list.add(event.getArticleId());
                 continue;
             }
 
@@ -65,14 +67,22 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
             if (event.getEsStatus() != null && event.getEsStatus() == 1 && isBackward) {
                 try {
                     if (searchArticleVo != null) {
+                        // 先执行同步，成功后才标记状态与计数，避免"先计数后执行、异常时 try/catch 双计"
+                        searchClient.syncArticle(searchArticleVo);
                         event.setEsStatus((byte) 2);
                         event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
+                        event.setRetryTime(new Date());
                         event.setUpdateTime(new Date());
                         apArticleEventMapper.updateArticleEvent(event);
-                        searchClient.syncArticle(searchArticleVo);
                         log.info("ES同步重试成功, articleId={}", event.getArticleId());
                     }
                 } catch (Exception e) {
+                    // 失败累计一次重试次数并刷新重试时间，达到 maxRetryCount 后进入死信清理，
+                    // 避免"失败不计数导致无限重试、本地消息表只增不减"
+                    event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
+                    event.setRetryTime(new Date());
+                    event.setUpdateTime(new Date());
+                    apArticleEventMapper.updateArticleEvent(event);
                     log.error("ES同步重试失败, articleId={}", event.getArticleId(), e);
                 }
             }
@@ -100,6 +110,7 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
             // 该方法会更新 DB 文章状态为 PUBLISHED，并 Feign 调用 ES 更新状态
             if (event.getPubStatus() != null && event.getPubStatus() == 1 && isBackward) {
                 try {
+                    // 先执行发布，成功后才标记状态与计数
                     apArticleService.updateArticleStatus(event.getArticleId());
                     event.setPubStatus((byte) 2);
                     event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
@@ -107,6 +118,11 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
                     apArticleEventMapper.updateArticleEvent(event);
                     log.info("发布状态重试成功, articleId={}", event.getArticleId());
                 } catch (Exception e) {
+                    // 失败累计一次重试次数，达到上限后进入死信清理
+                    event.setRetryCount((byte) (event.getRetryCount() != null ? event.getRetryCount() + 1 : 1));
+                    event.setRetryTime(new Date());
+                    event.setUpdateTime(new Date());
+                    apArticleEventMapper.updateArticleEvent(event);
                     log.error("发布状态重试失败, articleId={}", event.getArticleId(), e);
                 }
             }
