@@ -1,31 +1,51 @@
 package com.heima.search.interceptor;
 
+import com.heima.common.auth.InternalAuthSigner;
 import com.heima.model.user.pojos.ApUser;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.ModelAndView;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 
-
-
+@Slf4j
 public class AppTokenInterceptor implements HandlerInterceptor {
+
+    /** 网关与下游共享的内部身份签名密钥（未配置则跳过校验，兼容本地直连） */
+    private final String internalAuthSecret;
+
+    public AppTokenInterceptor(String internalAuthSecret) {
+        this.internalAuthSecret = internalAuthSecret;
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String userId = request.getHeader("userId");
         String nickName = request.getHeader("nickName");
-        if(userId != null){
-            //存入到当前线程中
+        String image = request.getHeader("image");
+        if (userId != null && isTrusted(request, userId, nickName, image)) {
             ApUser apUser = new ApUser();
             apUser.setId(Integer.valueOf(userId));
             apUser.setNickname(decodeNickName(nickName));
+            apUser.setImage(image);
             AppThreadLocalUtil.setUser(apUser);
-
+        } else if (userId != null) {
+            log.warn("内部身份签名校验失败，按匿名处理, uri={}", request.getRequestURI());
         }
         return true;
+    }
+
+    /** 密钥未配置时降级信任（本地直连）；配置后必须通过 HMAC 验签（与网关签名参数一致：userId/nickName/image） */
+    private boolean isTrusted(HttpServletRequest request, String userId, String nickName, String image) {
+        if (internalAuthSecret == null || internalAuthSecret.isEmpty()) {
+            return true;
+        }
+        String sign = request.getHeader(InternalAuthSigner.HEADER_SIGN);
+        return InternalAuthSigner.verify(internalAuthSecret, sign, userId, decodeNickName(nickName), image != null ? image : "");
     }
 
     /**
@@ -41,6 +61,10 @@ public class AppTokenInterceptor implements HandlerInterceptor {
         } catch (UnsupportedEncodingException e) {
             return nickName;
         }
+    }
+
+    @Override
+    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
     }
 
     @Override

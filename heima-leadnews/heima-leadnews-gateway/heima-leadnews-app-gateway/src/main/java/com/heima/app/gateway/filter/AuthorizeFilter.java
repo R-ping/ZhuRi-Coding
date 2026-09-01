@@ -6,7 +6,12 @@ import io.jsonwebtoken.Claims;
 import io.micrometer.common.util.StringUtils;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -20,6 +25,16 @@ import reactor.core.publisher.Mono;
 @Component
 @Slf4j
 public class AuthorizeFilter implements Ordered, GlobalFilter {
+
+    /** 与下游服务 shared 的内部身份签名请求头名称（见 common 模块 InternalAuthSigner） */
+    private static final String INTERNAL_SIGN_HEADER = "X-Internal-Sign";
+
+    /** 与下游服务一致的签名固定前缀 */
+    private static final String INTERNAL_SIGN_PREFIX = "heima-leadnews-internal-v1";
+
+    /** 网关与下游共享的内部身份签名密钥（未配置则不写签名，下游跳过校验） */
+    @Value("${app.internal-auth.secret:}")
+    private String internalAuthSecret;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -49,6 +64,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
                             httpHeaders.add("userId", userId.toString());
                             httpHeaders.add("nickName", encodeNickName(nickName));
                             httpHeaders.add("image", image != null ? image : "");
+                            addInternalSign(httpHeaders, userId.toString(), nickName, image);
                         }).build();
                         exchange = exchange.mutate().request(serverHttpRequest).build();
                     }
@@ -85,6 +101,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
                 httpHeaders.add("userId", userId.toString());
                 httpHeaders.add("nickName", encodeNickName(nickName));
                 httpHeaders.add("image", image != null ? image : "");
+                addInternalSign(httpHeaders, userId.toString(), nickName, image);
             }).build();
             //重置请求
             exchange = exchange.mutate().request(serverHttpRequest).build();
@@ -106,6 +123,29 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             return "";
         }
         return URLEncoder.encode(nickName, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 为下游信任的身份头写入 HMAC 签名（X-Internal-Sign）。
+     * 签名基于【原始值】userId/nickName/image；下游用解码后的昵称验签。
+     * 算法与 common 模块 InternalAuthSigner 保持一致（HMAC-SHA256，payload 固定前缀 + | 分隔原始值）。
+     * 未配置内部签名密钥时不写签名（下游同时跳过校验，兼容本地直连）。
+     */
+    private void addInternalSign(org.springframework.http.HttpHeaders httpHeaders,
+                                 String userId, String nickName, String image) {
+        if (StringUtils.isBlank(internalAuthSecret)) {
+            return;
+        }
+        String payload = INTERNAL_SIGN_PREFIX + "|" + userId + "|" + (nickName != null ? nickName : "")
+            + "|" + (image != null ? image : "");
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(internalAuthSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String sign = HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+            httpHeaders.add(INTERNAL_SIGN_HEADER, sign);
+        } catch (Exception e) {
+            log.error("内部身份签名计算失败, 跳过签名头", e);
+        }
     }
 
     /**

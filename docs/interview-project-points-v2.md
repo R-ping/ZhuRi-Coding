@@ -452,3 +452,12 @@ A：fail-closed：文本审核返回 null/失败直接驳回文章（宁可错�
 - **通过路径落库**：`ArticleAutoScanServiceImpl` 审核链全部通过后写入 `status=PASS` 的审计记录（reason="审核通过"）——与失败记录形成完整审核轨迹。
 - **迁移**：`alter_ap_article_audit_record_support_pass.sql`（更新 reason/status 注释，存量数据不受影响）；`schema.sql` 同步。
 - 验证：`ArticleAutoScanServiceImplTest` 7 用例全绿（新增"审核通过写 PASS 审计"断言）；`mvn test-compile` 通过；本地库已执行迁移。
+
+### C11. 网关-下游内部身份 HMAC 签名（2026-09-01 追加）
+原 P3-1"下游信任 header 明文身份"前半部分已修复（防绕过网关伪造 userId 头）：
+- **签名工具**：common 模块新增 `InternalAuthSigner`（HMAC-SHA256，payload 固定前缀 + userId/nickName/image 原始值 | 分隔，常量时间比较防时序攻击）。
+- **网关侧**：`AuthorizeFilter` 写入 userId/nickName/image 头时同步写入 `X-Internal-Sign`（基于原始昵称签名；网关为 WebFlux 不依赖 common，内联同算法实现）。
+- **下游侧**：content/user/notification/search 四个 TokenInterceptor 改为**验签后才信任**身份头——携带 userId 但签名缺失/无效 → 按匿名处理（不再冒充成功）；密钥未配置时降级信任（兼容本地直连）。
+- **配置**：网关 + 4 服务 `app.internal-auth.secret`（默认开发值，生产用 `INTERNAL_AUTH_SECRET` 覆盖；密钥未配置时网关不签名、下游不校验）。
+- 验证：`InternalAuthSignerTest`(5)、`AuthorizeFilterTest`(11)、四服务拦截器测试(17) 全绿；`mvn test-compile` 通过。
+- 剩余：P3-1 后半"access_token 无法即时失效"（Redis 黑名单/短 TTL）保留为后续方向。
