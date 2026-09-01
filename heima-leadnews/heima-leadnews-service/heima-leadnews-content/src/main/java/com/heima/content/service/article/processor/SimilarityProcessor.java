@@ -18,10 +18,17 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@org.springframework.core.annotation.Order(3)
 public class SimilarityProcessor implements ArticleAuditProcessor {
 
     private final ArticleSimilarityService articleSimilarityService;
     private final ApArticleConfigMapper apArticleConfigMapper;
+
+    /** 外部依赖（相似度服务）可能抖动，失败可重试 */
+    @Override
+    public boolean isRetryable() {
+        return true;
+    }
 
     @Override
     public boolean process(ApArticle article, String content, AuditProcessorContext context) {

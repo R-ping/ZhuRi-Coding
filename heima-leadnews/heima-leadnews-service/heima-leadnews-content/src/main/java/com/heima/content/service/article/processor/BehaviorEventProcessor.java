@@ -16,9 +16,16 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@org.springframework.core.annotation.Order(5)
 public class BehaviorEventProcessor implements ArticleAuditProcessor {
 
     private final BehaviorEventBus behaviorEventBus;
+
+    /** 行为事件投递涉及事件总线，失败可重试 */
+    @Override
+    public boolean isRetryable() {
+        return true;
+    }
 
     @Override
     public boolean process(ApArticle article, String content, AuditProcessorContext context) {

@@ -5,17 +5,14 @@ import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ArticleAutoScanService;
 import com.heima.content.service.article.ArticleTaskService;
-import com.heima.content.service.article.processor.AIViolationProcessor;
+import com.heima.content.service.article.processor.ArticleAuditProcessor;
 import com.heima.content.service.article.processor.AuditFailProcessor;
 import com.heima.content.service.article.processor.AuditProcessorContext;
 import com.heima.content.service.article.processor.AuditRetryableException;
-import com.heima.content.service.article.processor.BehaviorEventProcessor;
-import com.heima.content.service.article.processor.ImageScanProcessor;
-import com.heima.content.service.article.processor.PowerBonusProcessor;
-import com.heima.content.service.article.processor.SimilarityProcessor;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticle.Status;
 import com.heima.model.article.pojos.ApArticleContent;
+import java.util.List;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,12 +25,11 @@ import java.util.concurrent.CompletableFuture;
 /**
  * 文章自动审核服务实现
  *
- * 采用责任链模式编排审核流程，每个审核环节由独立的 Processor 处理：
- * 1. AIViolationProcessor - AI违规内容检测 + 内容质量分析
- * 2. ImageScanProcessor - 图片审核
- * 3. SimilarityProcessor - RAG相似度检验 + 推荐状态更新
- * 4. PowerBonusProcessor - 逐力值加成 + 自动推荐
- * 5. BehaviorEventProcessor - 发布行为事件
+ * 采用责任链模式编排审核流程，每个审核环节由独立的 {@link ArticleAuditProcessor} 处理。
+ * 处理器通过 Spring 注入为 List 并按 {@link ArticleAuditProcessor#getOrder()} 升序自动排序，
+ * 顺序由各处理器的 @Order 注解声明，新增环节无需改动本类。
+ * 业务判定类环节（isRetryable=false）返回 false 即正常驳回；
+ * 系统类环节（isRetryable=true）由 {@link #performWithRetry} 统一做有界指数退避重试，耗尽转终态失败。
  */
 @Service
 @Slf4j
@@ -42,11 +38,10 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
 
     private final ApArticleMapper apArticleMapper;
     private final ApArticleContentMapper apArticleContentMapper;
-    private final AIViolationProcessor aiViolationProcessor;
-    private final ImageScanProcessor imageScanProcessor;
-    private final SimilarityProcessor similarityProcessor;
-    private final PowerBonusProcessor powerBonusProcessor;
-    private final BehaviorEventProcessor behaviorEventProcessor;
+
+    /** 审核责任链：Spring 按 @Order 升序注入 */
+    private final List<ArticleAuditProcessor> auditProcessors;
+
     private final AuditFailProcessor auditFailProcessor;
     private final ArticleTaskService articleTaskService;
 
@@ -54,9 +49,12 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
     @Value("${app.audit.aux-retry-attempts:3}")
     private int auxRetryAttempts;
 
-    /** 辅助环节重试退避间隔（毫秒，默认1000） */
+    /** 辅助环节重试退避基准间隔（毫秒，默认1000） */
     @Value("${app.audit.aux-retry-backoff-ms:1000}")
     private long auxRetryBackoffMs;
+
+    /** 指数退避封顶（毫秒） */
+    private static final long MAX_BACKOFF_MS = 30_000L;
 
     @Override
     @Async
@@ -101,51 +99,43 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
         // 初始化审核上下文
         AuditProcessorContext context = new AuditProcessorContext();
 
-        // 1. AI违规内容检测 + 内容质量分析（正常驳回）
-        if (!aiViolationProcessor.process(article, content, context)) {
-            String failReason = context.getExtra("failReason");
-            auditFailProcessor.handleFail(article, failReason);
-            log.info("AI违规检测未通过, articleId={}, reason={}", articleId, failReason);
-            return CompletableFuture.completedFuture(false);
+        // 按 @Order 顺序执行审核责任链：
+        // 业务判定环节（isRetryable=false，如违规/图片审核）返回 false 即正常驳回；
+        // 系统环节（isRetryable=true，如相似度/逐力值/行为事件）由 performWithRetry 有界指数退避重试，
+        // 重试耗尽抛出 AuditRetryableException 交由 autoScanArticle 顶层兜底转终态失败。
+        for (ArticleAuditProcessor processor : auditProcessors) {
+            String stageName = processor.getClass().getSimpleName();
+            boolean pass = processor.isRetryable()
+                ? performWithRetry(stageName, () -> processor.process(article, content, context))
+                : processor.process(article, content, context);
+            if (!pass) {
+                String failReason = context.getExtra("failReason");
+                auditFailProcessor.handleFail(article, failReason);
+                log.info("审核环节未通过, articleId={}, stage={}, reason={}", articleId, stageName, failReason);
+                return CompletableFuture.completedFuture(false);
+            }
         }
-
-        // 2. 图片审核（正常驳回）
-        if (!imageScanProcessor.process(article, content, context)) {
-            String failReason = context.getExtra("failReason");
-            auditFailProcessor.handleFail(article, failReason);
-            log.info("图片审核未通过, articleId={}, reason={}", articleId, failReason);
-            return CompletableFuture.completedFuture(false);
-        }
-
-        // 3. RAG相似度检验 + 推荐状态更新（有界重试，耗尽则终态失败）
-        performWithRetry("RAG相似度检验", () -> similarityProcessor.process(article, content, context));
-
-        // 4. 逐力值加成 + 自动推荐通知（有界重试，耗尽则终态失败）
-        performWithRetry("逐力值加成", () -> powerBonusProcessor.process(article, content, context));
 
         log.info("文章审核完成, articleId={}, isHighSimilarity={}", articleId, context.isHighSimilarity());
 
-        // 5. 发布行为事件（有界重试，耗尽则终态失败）
-        performWithRetry("发布行为事件", () -> behaviorEventProcessor.process(article, content, context));
-
-        // 6. 添加到调度任务
+        // 审核通过后：添加到定时发布调度任务
         articleTaskService.addArticleToTask(article.getId(), article.getPublishTime());
         return CompletableFuture.completedFuture(true);
     }
 
     /**
-     * 对单个辅助环节执行有界重试。
-     * <p>依赖各处理器在失败时抛出 {@link AuditRetryableException}（而非静默吞掉），
-     * 重试策略：最多 {@link #auxRetryAttempts} 次、指数不足则按固定退避间隔。
+     * 对单个可重试审核环节执行有界重试。
+     * <p>依赖处理器在失败时抛出 {@link AuditRetryableException}（而非静默吞掉），
+     * 重试策略：最多 {@link #auxRetryAttempts} 次、指数退避（base × 2^(attempt-1)，封顶 30s）。
      * 重试耗尽后继续抛出，交由顶层处理为终态失败。</p>
      */
-    private void performWithRetry(String stageName, Supplier<Boolean> stage) {
+    private boolean performWithRetry(String stageName, Supplier<Boolean> stage) {
         int attempt = 0;
         while (true) {
             try {
                 Boolean result = stage.get();
                 if (Boolean.TRUE.equals(result)) {
-                    return; // 本阶段通过
+                    return true; // 本阶段通过
                 }
                 throw new AuditRetryableException(stageName + " 返回未通过");
             } catch (AuditRetryableException e) {
@@ -154,10 +144,17 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
                     // 重试耗尽，交给顶层兜底转终态失败，避免无限阻塞在"审核中"
                     throw e;
                 }
-                log.warn("{} 失败(第{}/{})，即将重试: {}", stageName, attempt, auxRetryAttempts, e.getMessage());
-                sleep(auxRetryBackoffMs);
+                long backoff = computeBackoff(attempt);
+                log.warn("{} 失败(第{}/{})，{}ms 后重试: {}", stageName, attempt, auxRetryAttempts, backoff, e.getMessage());
+                sleep(backoff);
             }
         }
+    }
+
+    /** 指数退避：base × 2^(attempt-1)，封顶 30s */
+    private long computeBackoff(int attempt) {
+        long multiplier = 1L << Math.min(attempt - 1, 5); // 最多 2^5 = 32 倍
+        return Math.min(auxRetryBackoffMs * multiplier, MAX_BACKOFF_MS);
     }
 
     private void sleep(long ms) {

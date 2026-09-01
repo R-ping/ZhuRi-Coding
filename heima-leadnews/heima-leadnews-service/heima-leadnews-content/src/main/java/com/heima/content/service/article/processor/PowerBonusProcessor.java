@@ -18,11 +18,18 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@org.springframework.core.annotation.Order(4)
 public class PowerBonusProcessor implements ArticleAuditProcessor {
 
     private final LevelService levelService;
     private final ApArticleConfigMapper apArticleConfigMapper;
     private final QualityNotificationProcessor qualityNotificationProcessor;
+
+    /** 涉及等级/通知等外部调用，失败可重试 */
+    @Override
+    public boolean isRetryable() {
+        return true;
+    }
 
     @Override
     public boolean process(ApArticle article, String content, AuditProcessorContext context) {

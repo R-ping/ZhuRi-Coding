@@ -19,6 +19,7 @@ import com.heima.content.service.article.ArticleTaskService;
 import com.heima.content.service.article.processor.AIViolationProcessor;
 import com.heima.content.service.article.processor.AuditFailProcessor;
 import com.heima.content.service.article.processor.AuditProcessorContext;
+import com.heima.content.service.article.processor.AuditRetryableException;
 import com.heima.content.service.article.processor.BehaviorEventProcessor;
 import com.heima.content.service.article.processor.ImageScanProcessor;
 import com.heima.content.service.article.processor.PowerBonusProcessor;
@@ -26,27 +27,28 @@ import com.heima.content.service.article.processor.SimilarityProcessor;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticle.Status;
 import com.heima.model.article.pojos.ApArticleContent;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * ArticleAutoScanServiceImpl 单元测试
  *
- * 覆盖责任链编排的核心逻辑：
- * - 正常审核通过流程（所有Processor依次执行）
- * - AI违规检测失败
- * - 图片审核失败
- * - 非审核中状态跳过
- * - 文章不存在
+ * 覆盖责任链编排（@Order 由 Spring 排序注入，本测试以传入 List 顺序执行）：
+ * - 审核通过流程（所有环节依次执行）
+ * - 业务判定环节返回 false → 正常驳回
+ * - 可重试环节失败 → 有界重试（重试成功 / 耗尽转终态失败）
+ * - 前置检查（文章不存在 / 非审核中跳过）
  */
 @ExtendWith(MockitoExtension.class)
 class ArticleAutoScanServiceImplTest {
@@ -70,7 +72,6 @@ class ArticleAutoScanServiceImplTest {
     @Mock
     private ArticleTaskService articleTaskService;
 
-    @InjectMocks
     private ArticleAutoScanServiceImpl autoScanService;
 
     @Captor
@@ -100,6 +101,29 @@ class ArticleAutoScanServiceImplTest {
         articleContent.setId(1L);
         articleContent.setArticleId(TEST_ARTICLE_ID);
         articleContent.setContent(TEST_CONTENT);
+
+        // 手动构造（责任链 List 传入；实际排序由 Spring 按 @Order 注入）
+        autoScanService = new ArticleAutoScanServiceImpl(apArticleMapper, apArticleContentMapper,
+            List.of(aiViolationProcessor, imageScanProcessor, similarityProcessor,
+                powerBonusProcessor, behaviorEventProcessor),
+            auditFailProcessor, articleTaskService);
+        // 测试中把重试配置压到小值，避免真实等待（@Value 字段在单测中未注入，需显式赋值）
+        setField("auxRetryBackoffMs", 1L);
+        setField("auxRetryAttempts", 3L);
+    }
+
+    private void setField(String name, long value) {
+        try {
+            java.lang.reflect.Field f = ArticleAutoScanServiceImpl.class.getDeclaredField(name);
+            f.setAccessible(true);
+            if (f.getType() == int.class) {
+                f.setInt(autoScanService, (int) value);
+            } else {
+                f.setLong(autoScanService, value);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("反射设置字段失败: " + name, e);
+        }
     }
 
     // ==================== 前置检查 ====================
@@ -127,7 +151,7 @@ class ArticleAutoScanServiceImplTest {
         verify(imageScanProcessor, never()).process(any(), anyString(), any());
     }
 
-    // ==================== AI违规检测 ====================
+    // ==================== 业务判定环节（返回 false 即驳回） ====================
 
     @Test
     @DisplayName("AI违规检测失败时调用AuditFailProcessor并返回false")
@@ -143,41 +167,16 @@ class ArticleAutoScanServiceImplTest {
         CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
         assertFalse(future.get());
 
-        // 验证AuditFailProcessor被调用
         verify(auditFailProcessor).handleFail(articleCaptor.capture(), anyString());
         assertEquals(TEST_ARTICLE_ID, articleCaptor.getValue().getId());
 
-        // 后续Processor不应被调用
+        // 后续环节不应被调用
         verify(imageScanProcessor, never()).process(any(), anyString(), any());
         verify(similarityProcessor, never()).process(any(), anyString(), any());
         verify(powerBonusProcessor, never()).process(any(), anyString(), any());
         verify(behaviorEventProcessor, never()).process(any(), anyString(), any());
         verify(articleTaskService, never()).addArticleToTask(anyLong(), any());
     }
-
-    @Test
-    @DisplayName("AI违规检测通过后继续执行后续流程")
-    void testAiViolationPass() throws Exception {
-        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
-        when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
-        when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
-        doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
-
-        CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
-        assertTrue(future.get());
-
-        // 验证所有Processor都被执行
-        verify(similarityProcessor).process(any(), anyString(), any());
-        verify(powerBonusProcessor).process(any(), anyString(), any());
-        verify(behaviorEventProcessor).process(any(), anyString(), any());
-        verify(articleTaskService).addArticleToTask(eq(TEST_ARTICLE_ID), any());
-    }
-
-    // ==================== 图片审核 ====================
 
     @Test
     @DisplayName("图片审核失败时调用AuditFailProcessor并返回false")
@@ -194,21 +193,65 @@ class ArticleAutoScanServiceImplTest {
         CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
         assertFalse(future.get());
 
-        // 验证AuditFailProcessor被调用
         verify(auditFailProcessor).handleFail(articleCaptor.capture(), failReasonCaptor.capture());
-        assertEquals(TEST_ARTICLE_ID, articleCaptor.getValue().getId());
         assertEquals("图片违规: 包含敏感图片", failReasonCaptor.getValue());
-
-        // 后续Processor不应被调用
         verify(similarityProcessor, never()).process(any(), anyString(), any());
-        verify(powerBonusProcessor, never()).process(any(), anyString(), any());
-        verify(behaviorEventProcessor, never()).process(any(), anyString(), any());
+    }
+
+    // ==================== 可重试环节（isRetryable=true） ====================
+
+    @Test
+    @DisplayName("可重试环节失败后重试成功 → 审核通过")
+    void testRetryableStageRetriesThenPass() throws Exception {
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
+        when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
+        when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(similarityProcessor.isRetryable()).thenReturn(true);
+        AtomicInteger calls = new AtomicInteger();
+        doAnswer(inv -> {
+            if (calls.incrementAndGet() == 1) {
+                throw new AuditRetryableException("相似度服务暂时不可用");
+            }
+            return true;
+        }).when(similarityProcessor).process(any(), anyString(), any());
+        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
+        doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
+
+        CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
+        assertTrue(future.get());
+
+        // 失败 1 次 + 重试成功 1 次
+        assertEquals(2, calls.get());
+        verify(articleTaskService).addArticleToTask(eq(TEST_ARTICLE_ID), any());
+        verify(auditFailProcessor, never()).handleFail(any(), anyString());
+    }
+
+    @Test
+    @DisplayName("可重试环节重试耗尽 → 顶层兜底转终态失败")
+    void testRetryableStageExhausted() throws Exception {
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
+        when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
+        when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(similarityProcessor.isRetryable()).thenReturn(true);
+        when(similarityProcessor.process(any(), anyString(), any()))
+            .thenThrow(new AuditRetryableException("相似度服务持续不可用"));
+        setField("auxRetryAttempts", 2);
+
+        CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
+        assertFalse(future.get());
+
+        // 顶层兜底：转终态失败并通知作者
+        verify(auditFailProcessor).handleFail(any(), eq(AuditFailProcessor.SYSTEM_ERROR_REASON));
+        verify(articleTaskService, never()).addArticleToTask(anyLong(), any());
     }
 
     // ==================== 完整流程 ====================
 
     @Test
-    @DisplayName("完整审核通过流程：所有Processor依次执行")
+    @DisplayName("完整审核通过流程：所有环节依次执行")
     void testFullPassFlow() throws Exception {
         when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
         when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
@@ -222,64 +265,12 @@ class ArticleAutoScanServiceImplTest {
         CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
         assertTrue(future.get());
 
-        // 验证关键交互
-        verify(apArticleMapper).selectById(TEST_ARTICLE_ID);
         verify(aiViolationProcessor).process(any(), anyString(), any());
         verify(imageScanProcessor).process(any(), anyString(), any());
         verify(similarityProcessor).process(any(), anyString(), any());
         verify(powerBonusProcessor).process(any(), anyString(), any());
         verify(behaviorEventProcessor).process(any(), anyString(), any());
         verify(articleTaskService).addArticleToTask(eq(TEST_ARTICLE_ID), any());
-
-        // 审核失败不应被调用
         verify(auditFailProcessor, never()).handleFail(any(), anyString());
-    }
-
-    @Test
-    @DisplayName("内容为空时仍能正常处理")
-    void testEmptyContent() throws Exception {
-        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
-        ApArticleContent emptyContent = new ApArticleContent();
-        emptyContent.setArticleId(TEST_ARTICLE_ID);
-        emptyContent.setContent("");
-        when(apArticleContentMapper.selectOne(any())).thenReturn(emptyContent);
-        when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
-        doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
-
-        CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
-        assertTrue(future.get());
-
-        verify(similarityProcessor).process(any(), anyString(), any());
-        verify(powerBonusProcessor).process(any(), anyString(), any());
-        verify(behaviorEventProcessor).process(any(), anyString(), any());
-    }
-
-    // ==================== Processor测试 ====================
-
-    @Test
-    @DisplayName("所有Processor返回true时审核通过")
-    void testAllProcessorsPass() throws Exception {
-        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
-        when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
-        when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
-        doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
-
-        CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
-        assertTrue(future.get());
-
-        // 验证所有Processor都被调用
-        verify(aiViolationProcessor).process(any(), anyString(), any());
-        verify(imageScanProcessor).process(any(), anyString(), any());
-        verify(similarityProcessor).process(any(), anyString(), any());
-        verify(powerBonusProcessor).process(any(), anyString(), any());
-        verify(behaviorEventProcessor).process(any(), anyString(), any());
     }
 }

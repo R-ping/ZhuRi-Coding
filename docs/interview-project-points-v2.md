@@ -436,3 +436,11 @@ A：fail-closed：文本审核返回 null/失败直接驳回文章（宁可错�
 - **查询只读表**：`AchievementServiceImpl.getUserAchievements` 改为读定义表 + 解锁记录表（O(定义数)），不再每次请求统计 5 个维度；`checkin_streak` 无事件源（签到在 reward 服务），仅在有该类型勋章时实时 Feign 兜底一次。
 - **效果**：查询不再实时全量统计（去掉文章/沸点/获赞/粉丝 4 维度 DB 查询 + 跨服务调用），解锁有落库与通知闭环。
 - 验证：新增 `AchievementProcessorTest`(6)、重写 `AchievementServiceImplTest`(3) 全绿；`mvn test-compile` 通过。
+
+### C9. 审核链 @Order 化 + 指数退避重试（2026-09-01 追加）
+原 P3-12"审核链顺序硬编码、重试用 Thread.sleep"已修复（方案 A）：
+- **链顺序 @Order 化**：`ArticleAuditProcessor` 接口新增 `getOrder()`（default 0）与 `isRetryable()`（default false）；5 个处理器标注 `@Order`（AI违规=1 / 图片=2 / 相似度=3 / 逐力值=4 / 行为事件=5）；`ArticleAutoScanServiceImpl` 改为注入 `List<ArticleAuditProcessor>`（Spring 按 @Order 排序）循环执行，新增环节无需改动主流程（与行为事件总线同款模式）。
+- **语义划分**：`isRetryable=false`（业务判定：违规/图片）返回 false 即正常驳回；`isRetryable=true`（系统环节：相似度/逐力值/行为事件）由框架统一 `performWithRetry` 有界重试。
+- **指数退避**：重试间隔 `base × 2^(attempt-1)`，封顶 30s（原固定间隔）；重试耗尽仍转终态失败，行为不变。
+- 验证：`ArticleAutoScanServiceImplTest` 重写为 7 用例（含"失败重试成功""重试耗尽转失败"）全绿；`mvn test-compile` 通过。
+- 说明：方案 B（延迟队列重试，彻底去掉 Thread.sleep 线程阻塞）留作后续增强。

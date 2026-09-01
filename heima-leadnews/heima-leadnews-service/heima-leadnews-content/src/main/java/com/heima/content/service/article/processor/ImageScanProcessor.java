@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@org.springframework.core.annotation.Order(2)
 public class ImageScanProcessor implements ArticleAuditProcessor {
 
 //    private final GreenImageScanPlus greenImageScan;

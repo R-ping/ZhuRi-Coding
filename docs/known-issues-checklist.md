@@ -40,7 +40,7 @@
 
 ## P3 —— 架构级改造（⬜ 建议后续迭代，本轮不落代码）
 
-> ✅ 注：原 **P3-6 热度分双路径口径不一致** 已于 2026-08-31 修复（删除 MQ 遗留 `updateScore`、行为路径统一走原子 SQL `recalculateScore`）；原 **P3-7 本地消息表无有效重试/死信 + refreshTaskToRedis 无锁** 已于 2026-09-01 修复（失败累计重试次数、死信清理、Redis 分布式锁）；原 **P3-10 成就查询全量计算非事件驱动** 已于 2026-09-01 修复（新增 `AchievementProcessor` 事件驱动解锁 + `ap_user_achievement` 解锁记录表，查询只读表），均从下表移除。
+> ✅ 注：原 **P3-6 热度分双路径口径不一致** 已于 2026-08-31 修复；原 **P3-7 本地消息表无有效重试/死信 + refreshTaskToRedis 无锁** 已于 2026-09-01 修复；原 **P3-10 成就查询全量计算非事件驱动** 已于 2026-09-01 修复（事件驱动解锁 + 解锁记录表）；原 **P3-12 审核链顺序硬编码、重试用 Thread.sleep** 已于 2026-09-01 修复（@Order 链 + isRetryable + 指数退避），均从下表移除。
 
 | # | 模块 | 缺陷/方向 | 建议方案 |
 |---|---|---|---|
@@ -52,7 +52,6 @@
 | P3-8 | search | ES 检索 OR 语义 + 纯时间排序，热搜榜弱 | multi_match + function_score；Redis zset 热搜 |
 | P3-9 | notification | SimpleBroker 内存路由无法水平扩展 | Redis Pub/Sub / 外部 Broker / 离线收件箱补推 |
 | P3-11 | user | 微信扫码登录闭环缺失（wechat:token 无消费接口） | 补 token 换双 token 接口 |
-| P3-12 | content | 审核链顺序硬编码、重试用 Thread.sleep | List<Processor> + @Order；延迟入队重试 |
 | P3-13 | content | 审计表只记失败不记通过 | 全量审核轨迹落库 |
 
 ---
