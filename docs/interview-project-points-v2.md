@@ -444,3 +444,11 @@ A：fail-closed：文本审核返回 null/失败直接驳回文章（宁可错�
 - **指数退避**：重试间隔 `base × 2^(attempt-1)`，封顶 30s（原固定间隔）；重试耗尽仍转终态失败，行为不变。
 - 验证：`ArticleAutoScanServiceImplTest` 重写为 7 用例（含"失败重试成功""重试耗尽转失败"）全绿；`mvn test-compile` 通过。
 - 说明：方案 B（延迟队列重试，彻底去掉 Thread.sleep 线程阻塞）留作后续增强。
+
+### C10. 审计表补全"通过"轨迹（2026-09-01 追加）
+原 P3-13"审计表只记失败不记通过"已修复：
+- **状态常量**：`ArticleConstants` 增加 `AUDIT_STATUS_PASS = 1`（原仅 FAIL=2）。
+- **公共记录服务**：新增 `AuditRecordService.record(article, content, status, reason)`（通过/失败共用，内容兜底查询，失败不影响主流程），`AuditFailProcessor` 改为复用它。
+- **通过路径落库**：`ArticleAutoScanServiceImpl` 审核链全部通过后写入 `status=PASS` 的审计记录（reason="审核通过"）——与失败记录形成完整审核轨迹。
+- **迁移**：`alter_ap_article_audit_record_support_pass.sql`（更新 reason/status 注释，存量数据不受影响）；`schema.sql` 同步。
+- 验证：`ArticleAutoScanServiceImplTest` 7 用例全绿（新增"审核通过写 PASS 审计"断言）；`mvn test-compile` 通过；本地库已执行迁移。

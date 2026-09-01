@@ -1,10 +1,12 @@
 package com.heima.content.service.article.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.heima.common.constants.ArticleConstants;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ArticleAutoScanService;
 import com.heima.content.service.article.ArticleTaskService;
+import com.heima.content.service.article.AuditRecordService;
 import com.heima.content.service.article.processor.ArticleAuditProcessor;
 import com.heima.content.service.article.processor.AuditFailProcessor;
 import com.heima.content.service.article.processor.AuditProcessorContext;
@@ -44,6 +46,7 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
 
     private final AuditFailProcessor auditFailProcessor;
     private final ArticleTaskService articleTaskService;
+    private final AuditRecordService auditRecordService;
 
     /** 辅助环节单阶段最大重试次数（默认3次） */
     @Value("${app.audit.aux-retry-attempts:3}")
@@ -117,6 +120,9 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
         }
 
         log.info("文章审核完成, articleId={}, isHighSimilarity={}", articleId, context.isHighSimilarity());
+
+        // 审核通过：写入审计轨迹（通过记录），保证审计完整（失败由 AuditFailProcessor 记录）
+        auditRecordService.record(article, content, ArticleConstants.AUDIT_STATUS_PASS, "审核通过");
 
         // 审核通过后：添加到定时发布调度任务
         articleTaskService.addArticleToTask(article.getId(), article.getPublishTime());

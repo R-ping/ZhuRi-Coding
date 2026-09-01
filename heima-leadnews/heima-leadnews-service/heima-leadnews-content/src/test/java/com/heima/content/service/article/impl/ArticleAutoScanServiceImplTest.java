@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ArticleTaskService;
+import com.heima.content.service.article.AuditRecordService;
 import com.heima.content.service.article.processor.AIViolationProcessor;
 import com.heima.content.service.article.processor.AuditFailProcessor;
 import com.heima.content.service.article.processor.AuditProcessorContext;
@@ -71,6 +72,8 @@ class ArticleAutoScanServiceImplTest {
     private AuditFailProcessor auditFailProcessor;
     @Mock
     private ArticleTaskService articleTaskService;
+    @Mock
+    private AuditRecordService auditRecordService;
 
     private ArticleAutoScanServiceImpl autoScanService;
 
@@ -106,7 +109,7 @@ class ArticleAutoScanServiceImplTest {
         autoScanService = new ArticleAutoScanServiceImpl(apArticleMapper, apArticleContentMapper,
             List.of(aiViolationProcessor, imageScanProcessor, similarityProcessor,
                 powerBonusProcessor, behaviorEventProcessor),
-            auditFailProcessor, articleTaskService);
+            auditFailProcessor, articleTaskService, auditRecordService);
         // 测试中把重试配置压到小值，避免真实等待（@Value 字段在单测中未注入，需显式赋值）
         setField("auxRetryBackoffMs", 1L);
         setField("auxRetryAttempts", 3L);
@@ -272,5 +275,7 @@ class ArticleAutoScanServiceImplTest {
         verify(behaviorEventProcessor).process(any(), anyString(), any());
         verify(articleTaskService).addArticleToTask(eq(TEST_ARTICLE_ID), any());
         verify(auditFailProcessor, never()).handleFail(any(), anyString());
+        // 审核通过：写入 PASS 审计轨迹
+        verify(auditRecordService).record(any(), anyString(), eq(com.heima.common.constants.ArticleConstants.AUDIT_STATUS_PASS), anyString());
     }
 }
