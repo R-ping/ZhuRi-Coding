@@ -52,10 +52,8 @@ public class NotificationProcessor implements BehaviorPostProcessor {
 
         try {
             switch (type) {
-                case COMMENT_ARTICLE:
-                case COMMENT_PIN:
-                    sendCommentNotification(context);
-                    break;
+                // 评论通知已统一由业务成功链路发送（文章→审核通过、沸点→评论创建成功），
+                // 行为事件总线不再负责评论通知（仅保留点赞/收藏/关注）
                 case LIKE_ARTICLE:
                 case LIKE_PIN:
                     sendLikeNotification(context);
@@ -79,42 +77,6 @@ public class NotificationProcessor implements BehaviorPostProcessor {
     @Override
     public int getOrder() {
         return 4; // 在等级和文章热度之后执行
-    }
-
-    /**
-     * 发送评论通知
-     * content JSON 字段与前端 notification/index.vue#mapNotificationItem 对齐：
-     * trigger_user{name,avatar} / action_type / message / target_title / target_type / target_id / comment_id / notification_type
-     */
-    private void sendCommentNotification(BehaviorContext context) {
-        try {
-            Map<String, Object> triggerUser = new HashMap<>();
-            triggerUser.put("name", context.getUserName() != null ? context.getUserName() : "用户");
-            triggerUser.put("avatar", context.getUserAvatar() != null ? context.getUserAvatar() : "");
-
-            Map<String, Object> contentMap = new HashMap<>();
-            contentMap.put("trigger_user", triggerUser);
-            contentMap.put("action_type", "评论了你的作品");
-            contentMap.put("message", context.getExtraString("commentContent") != null
-                ? truncate(context.getExtraString("commentContent"), 20) : "");
-            contentMap.put("target_title", resolveTargetTitle(context));
-            contentMap.put("target_type", context.getTargetType() == 1 ? "article" : "pin");
-            contentMap.put("target_id", context.getTargetId());
-            contentMap.put("comment_id", context.getExtraLong("commentId"));
-            contentMap.put("notification_type", "comment");
-
-            Map<String, Object> params = new HashMap<>();
-            params.put("userId", context.getTargetUserId().longValue());
-            params.put("type", 1); // 评论通知
-            params.put("sourceId", String.valueOf(context.getTargetId()));
-            params.put("content", objectMapper.writeValueAsString(contentMap));
-
-            notificationClient.createNotification(params);
-            log.info("评论通知已发送: to={}, from={}, targetId={}",
-                context.getTargetUserId(), context.getUserId(), context.getTargetId());
-        } catch (Exception e) {
-            log.error("发送评论通知失败: to={}, from={}", context.getTargetUserId(), context.getUserId(), e);
-        }
     }
 
     /**

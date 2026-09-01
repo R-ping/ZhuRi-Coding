@@ -169,6 +169,16 @@ public class CommentAuditService extends AbstractAuditService {
                 .set(ApCommentAuditTask::getAuditTime, new Date())
                 .set(ApCommentAuditTask::getUpdateTime, new Date()));
             log.warn("评论审核重试超限，降级通过, taskId={}, commentId={}", taskId, task.getCommentId());
+            // 降级通过即评论可见，向作者补发"仅过审"评论通知（与正常通过一致）
+            if (task.getTargetUserId() != null && task.getTargetId() != null) {
+                NotificationHelper.sendCommentNotification(
+                    notificationClient,
+                    task.getTargetUserId(),
+                    task.getCommenterId(),
+                    task.getContent(),
+                    task.getTargetType(),
+                    task.getTargetId());
+            }
             return;
         }
         // 指数退避：60s -> 120s -> 240s ...
@@ -205,15 +215,13 @@ public class CommentAuditService extends AbstractAuditService {
 
     @Override
     protected void handlePassed(AuditContext context) {
-        // 审核通过：给内容作者发送评论通知
+        // "仅过审通知"：文章评论审核通过后，才向内容作者发送评论通知
+        //（评论创建时不再经行为总线发送，避免未过审/违规评论也通知作者）。
         ApComment comment = apCommentMapper.selectById(context.getEntityId());
         if (comment == null) {
             log.warn("评论不存在, commentId={}", context.getEntityId());
             return;
         }
-
-        // 查找评论的目标内容作者（通过文章/沸点的作者）
-        // 评论的 targetUserId 在 context 中已设置
         if (context.getTargetUserId() != null) {
             NotificationHelper.sendCommentNotification(
                 notificationClient,
@@ -224,6 +232,7 @@ public class CommentAuditService extends AbstractAuditService {
                 context.getTargetId()
             );
         }
+        log.info("评论审核通过: commentId={}, targetType={}", context.getEntityId(), context.getTargetType());
     }
 
     @Override

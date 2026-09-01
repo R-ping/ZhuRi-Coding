@@ -1,6 +1,6 @@
 package com.heima.app.gateway.filter;
 
-import com.heima.app.gateway.util.AppJwtUtil;
+import com.heima.utils.common.AppJwtUtil;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -124,7 +124,7 @@ class AuthorizeFilterTest {
             when(claims.get("nickName")).thenReturn("张三");
             when(claims.get("image")).thenReturn("i.png");
             when(AppJwtUtil.getClaimsBody("tok")).thenReturn(claims);
-            when(AppJwtUtil.verifyToken(claims)).thenReturn(true);
+            when(AppJwtUtil.verifyToken(claims)).thenReturn(-1);
 
             filter.filter(exchange, chain).subscribe();
         }
@@ -182,7 +182,7 @@ class AuthorizeFilterTest {
         try (MockedStatic<AppJwtUtil> jwt = mockStatic(AppJwtUtil.class)) {
             Claims claims = mock(Claims.class);
             when(AppJwtUtil.getClaimsBody("tok")).thenReturn(claims);
-            when(AppJwtUtil.verifyToken(claims)).thenReturn(false);
+            when(AppJwtUtil.verifyToken(claims)).thenReturn(1);
 
             filter.filter(exchange, chain).subscribe();
         }
@@ -231,7 +231,7 @@ class AuthorizeFilterTest {
             when(claims.get("nickName")).thenReturn("小明");
             when(claims.get("image")).thenReturn(null);
             when(AppJwtUtil.getClaimsBody("tok")).thenReturn(claims);
-            when(AppJwtUtil.verifyToken(claims)).thenReturn(true);
+            when(AppJwtUtil.verifyToken(claims)).thenReturn(-1);
 
             filter.filter(exchange, chain).subscribe();
         }

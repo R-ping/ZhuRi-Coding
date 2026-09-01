@@ -1,7 +1,7 @@
 package com.heima.app.gateway.filter;
 
 
-import com.heima.app.gateway.util.AppJwtUtil;
+import com.heima.utils.common.AppJwtUtil;
 import io.jsonwebtoken.Claims;
 import io.micrometer.common.util.StringUtils;
 import java.net.URLEncoder;
@@ -56,7 +56,8 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             if (StringUtils.isNotBlank(accToken)) {
                 try {
                     Claims claimsBody = AppJwtUtil.getClaimsBody(accToken);
-                    if (AppJwtUtil.verifyToken(claimsBody)) {
+                    // utils 版 verifyToken 返回 int：<1 表示有效（-1 距过期>600s / 0 在刷新窗内），>=1 表示过期或异常
+                    if (AppJwtUtil.verifyToken(claimsBody) < 1) {
                         Object userId = claimsBody.get("userId");
                         String nickName = (String) claimsBody.get("nickName");
                         String image = (String) claimsBody.get("image");
@@ -86,9 +87,9 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
         //5.判断token是否有效
         try {
             Claims claimsBody = AppJwtUtil.getClaimsBody(accToken);
-            //是否是过期
-            boolean result = AppJwtUtil.verifyToken(claimsBody);
-            if (!result) {
+            //是否是过期（utils 版 verifyToken 返回 int，>=1 表示过期或异常）
+            int verify = AppJwtUtil.verifyToken(claimsBody);
+            if (verify >= 1) {
                 response.setStatusCode(HttpStatusCode.valueOf(444));
                 return response.setComplete();
             }

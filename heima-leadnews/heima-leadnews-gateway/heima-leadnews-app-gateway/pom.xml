@@ -19,6 +19,13 @@
         <jacoco.line.min>0.70</jacoco.line.min>
     </properties>
     <dependencies>
+        <!-- 统一 JWT 工具：复用 heima-leadnews-utils 的 AppJwtUtil（密钥从 JWT_SECRET 环境变量读取，
+             与网关 application.yml 的 jwt.secret=${JWT_SECRET} 来源一致），消除网关侧的重复实现。 -->
+        <dependency>
+            <groupId>com.heima</groupId>
+            <artifactId>heima-leadnews-utils</artifactId>
+        </dependency>
+
         <!-- 网关为 WebFlux 应用：链路上下文由 Spring 6.1 内置 micrometer context-propagation 自动装配，
              父 POM 的 micrometer-tracing-bridge-brave 已覆盖 Trace 生成与 b3 头传播 -->
         <dependency>

@@ -70,7 +70,7 @@ public class NotificationHelper {
     }
 
     /**
-     * 发送评论通知给内容作者
+     * 发送评论通知给内容作者（"仅过审通知"：审核通过后由审核服务调用）
      *
      * @param notificationClient 通知客户端
      * @param targetUserId       目标用户ID（内容作者）

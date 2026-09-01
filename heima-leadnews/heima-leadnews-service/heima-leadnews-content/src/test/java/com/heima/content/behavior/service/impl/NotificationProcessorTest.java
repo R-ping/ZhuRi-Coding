@@ -99,78 +99,9 @@ class NotificationProcessorTest {
 
     // ==================== 评论通知 ====================
 
-    @Test
-    @DisplayName("COMMENT_ARTICLE - 发送评论通知，参数与 content 正确")
-    void testCommentArticleNotification() throws Exception {
-        when(apArticleMapper.selectById(456L)).thenReturn(article("机器学习实战"));
-
-        processor.postProcess(commentArticleContext(),
-            BehaviorResult.success(BehaviorType.COMMENT_ARTICLE));
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationClient).createNotification(captor.capture());
-        Map<String, Object> params = captor.getValue();
-        // 顶层参数
-        assertEquals(789L, params.get("userId"));
-        assertEquals(1, params.get("type"));
-        assertEquals("456", params.get("sourceId"));
-        // content 内字段
-        Map<String, Object> content = objectMapper.readValue(params.get("content").toString(), Map.class);
-        assertEquals("comment", content.get("notification_type"));
-        assertEquals("评论了你的作品", content.get("action_type"));
-        assertEquals("article", content.get("target_type")); // targetType==1 -> article
-        assertEquals(456, content.get("target_id"));
-        assertEquals(99, content.get("comment_id"));
-        assertEquals("机器学习实战", content.get("target_title"));
-        // trigger_user
-        Map<String, Object> triggerUser = (Map<String, Object>) content.get("trigger_user");
-        assertEquals("张三", triggerUser.get("name"));
-        assertEquals("avatar.png", triggerUser.get("avatar"));
-    }
-
-    @Test
-    @DisplayName("COMMENT_ARTICLE - 长评论超出截断长度时带省略号")
-    void testCommentContentTruncated() throws Exception {
-        BehaviorContext context = new BehaviorContext(BehaviorType.COMMENT_ARTICLE, 100)
-            .withTarget(1, 456L)
-            .withTargetUser(789)
-            .withExtra("commentId", 99L)
-            // 25 个字符，超过 20 上限
-            .withExtra("commentContent", "abcdefghijklmnopqrstuvwxyz");
-
-        processor.postProcess(context, BehaviorResult.success(BehaviorType.COMMENT_ARTICLE));
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationClient).createNotification(captor.capture());
-        Map<String, Object> content = objectMapper
-            .readValue(captor.getValue().get("content").toString(), Map.class);
-        // 前 20 个字符 + "..."
-        assertTrue(content.get("message").toString().startsWith("abcdefghijklmnopqrst"));
-        assertTrue(content.get("message").toString().endsWith("..."));
-        assertEquals(23, content.get("message").toString().length());
-    }
-
-    @Test
-    @DisplayName("COMMENT_PIN - 沸点评论 target_type 为 pin")
-    void testCommentPinNotification() throws Exception {
-        when(apPinsMapper.selectById(456L)).thenReturn(pin("沸点内容样本"));
-
-        BehaviorContext context = new BehaviorContext(BehaviorType.COMMENT_PIN, 100)
-            .withTarget(2, 456L)
-            .withTargetUser(789)
-            .withExtra("commentId", 99L)
-            .withExtra("commentContent", "不错");
-
-        processor.postProcess(context, BehaviorResult.success(BehaviorType.COMMENT_PIN));
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationClient).createNotification(captor.capture());
-        Map<String, Object> content = objectMapper
-            .readValue(captor.getValue().get("content").toString(), Map.class);
-        assertEquals("pin", content.get("target_type"));
-        assertEquals("沸点内容样本", content.get("target_title"));
-        assertEquals(1, captor.getValue().get("type"));
-    }
+    // 注：评论通知已统一由业务成功链路发送（文章→审核通过、沸点→评论创建成功），
+    // NotificationProcessor 不再发送任何评论通知，故相关单测已移除；
+    // 行为事件总线仅保留点赞/收藏/关注的互动通知。
 
     // ==================== 点赞通知 ====================
 
@@ -299,50 +230,7 @@ class NotificationProcessorTest {
         verify(notificationClient, never()).createNotification(any());
     }
 
-    @Test
-    @DisplayName("点赞/评论通知并发起时校验不依赖 result 数据")
-    void testResultDataNotUsed() throws Exception {
-        when(apArticleMapper.selectById(456L)).thenReturn(article("结果无关标题"));
-        BehaviorContext context = commentArticleContext();
-        // result.getData() 为空也照常发送（通知不依赖 result 数据）
-        BehaviorResult result = BehaviorResult.success(BehaviorType.COMMENT_ARTICLE);
-        assertNotNull(result.getData());
-        processor.postProcess(context, result);
-        verify(notificationClient).createNotification(any());
-    }
-
     // ==================== 解析标题兜底 ====================
-
-    @Test
-    @DisplayName("article 查询返回 null 时标题兜底为空字符串")
-    void testArticleNullTitle() throws Exception {
-        when(apArticleMapper.selectById(456L)).thenReturn(null);
-
-        processor.postProcess(commentArticleContext(),
-            BehaviorResult.success(BehaviorType.COMMENT_ARTICLE));
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationClient).createNotification(captor.capture());
-        Map<String, Object> content = objectMapper
-            .readValue(captor.getValue().get("content").toString(), Map.class);
-        assertEquals("", content.get("target_title"));
-    }
-
-    @Test
-    @DisplayName("解析目标标题抛异常时兜底为空字符串")
-    void testResolveTitleException() throws Exception {
-        when(apArticleMapper.selectById(456L)).thenThrow(new RuntimeException("db down"));
-
-        processor.postProcess(commentArticleContext(),
-            BehaviorResult.success(BehaviorType.COMMENT_ARTICLE));
-
-        // 标题解析异常不影响通知本身发送
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationClient).createNotification(captor.capture());
-        Map<String, Object> content = objectMapper
-            .readValue(captor.getValue().get("content").toString(), Map.class);
-        assertEquals("", content.get("target_title"));
-    }
 
     @Test
     @DisplayName("沸点 content 为 null 时标题兜底为空字符串")

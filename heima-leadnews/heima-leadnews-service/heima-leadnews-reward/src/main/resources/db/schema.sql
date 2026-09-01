@@ -1,13 +1,3 @@
--- ============================================================
--- leadnews-reward 服务 数据库表结构汇总 (schema)
--- 数据库: leadnews_reward (打赏/奖励库)
--- 生成时间: 2026-08-13
--- 说明: 由 mysqldump --no-data 从本地库导出，仅含建表 DDL，无数据
--- 增量变更请放在本目录 migrations/ 下，勿直接改动本汇总文件
--- ============================================================
-
-CREATE DATABASE IF NOT EXISTS `leadnews_reward` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `leadnews_reward`;
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -21,31 +11,6 @@ USE `leadnews_reward`;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `checkin_records` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` bigint NOT NULL,
-  `checkin_date` date NOT NULL COMMENT '签到日期（yyyy-MM-dd）',
-  `earned_ore` int NOT NULL COMMENT '本次签到获得的矿石数',
-  `period_day` tinyint NOT NULL COMMENT '当前连续周期内的第几天（1~30）',
-  `is_patch` tinyint(1) DEFAULT '0' COMMENT '是否为补签（0-正常签到 1-补签）',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_user_date` (`user_id`,`checkin_date`),
-  KEY `idx_user_date_desc` (`user_id`,`checkin_date` DESC)
-) ENGINE=InnoDB AUTO_INCREMENT=113 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='签到记录表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `checkin_reward_config` (
-  `period_day` tinyint NOT NULL COMMENT '周期第几天（1~30）',
-  `base_ore` int NOT NULL COMMENT '基础矿石数',
-  `is_special` tinyint(1) DEFAULT '0' COMMENT '是否为特殊奖励日',
-  `special_ore` int DEFAULT '0' COMMENT '特殊奖励矿石数（覆盖 base_ore）',
-  PRIMARY KEY (`period_day`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='签到奖励配置表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `lottery_broadcast_messages` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` bigint NOT NULL,
@@ -55,7 +20,7 @@ CREATE TABLE `lottery_broadcast_messages` (
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_created` (`created_at` DESC)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='中奖播报消息表';
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='中奖播报消息表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -67,7 +32,7 @@ CREATE TABLE `lottery_daily_state` (
   `free_used` tinyint(1) DEFAULT '0' COMMENT '今日免费次数是否已用',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_user_date` (`user_id`,`stat_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户每日抽奖状态表';
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户每日抽奖状态表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -90,7 +55,7 @@ CREATE TABLE `lottery_draw_records` (
   PRIMARY KEY (`id`),
   KEY `idx_user_created` (`user_id`,`created_at` DESC),
   KEY `idx_batch` (`draw_batch_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户抽奖记录表';
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户抽奖记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -109,7 +74,7 @@ CREATE TABLE `lottery_physical_orders` (
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_user_status` (`user_id`,`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='实物奖品订单表';
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='实物奖品订单表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -122,24 +87,14 @@ CREATE TABLE `lottery_prize_pool` (
   `min_ore` int DEFAULT '0' COMMENT '矿石范围最小值（type=1时使用）',
   `max_ore` int DEFAULT '0' COMMENT '矿石范围最大值',
   `virtual_item_code` varchar(32) DEFAULT NULL COMMENT '虚拟道具代码（type=2时使用）',
+  `discount_rate` decimal(5,4) NOT NULL DEFAULT '1.0000' COMMENT '全课程通用折扣比例（type=2优惠券时使用，0.5=5折）',
+  `total_stock` int NOT NULL DEFAULT '-1' COMMENT '实物奖品总库存(-1=不限量,0=已售罄,>0=剩余件数)',
   `unlock_required_draws` tinyint DEFAULT '0' COMMENT '需当日抽几次才解锁（0=无需解锁）',
   `is_physical` tinyint(1) DEFAULT '0',
   `sort_order` int DEFAULT '0',
   `status` tinyint DEFAULT '1' COMMENT '1-启用 0-停用',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='奖品池配置表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `patch_card_logs` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` bigint NOT NULL,
-  `change_amount` int NOT NULL COMMENT '正数-获得，负数-消耗',
-  `source` varchar(32) NOT NULL COMMENT '来源：兑换、系统赠送、活动等',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_user_created` (`user_id`,`created_at` DESC)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='补签卡库存变更日志';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -153,7 +108,7 @@ CREATE TABLE `sign_records` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_user_date` (`user_id`,`sign_date`),
   KEY `idx_user_date_desc` (`user_id`,`sign_date` DESC)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='签到记录表（新）';
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='签到记录表（新）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -179,6 +134,22 @@ CREATE TABLE `user_checkin_state` (
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户签到状态表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `user_virtual_assets` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `item_code` varchar(32) NOT NULL COMMENT '虚拟道具代码（如 course50=课程5折券）',
+  `item_name` varchar(64) NOT NULL COMMENT '道具名称',
+  `quantity` int NOT NULL DEFAULT '0' COMMENT '持有数量',
+  `source` varchar(32) NOT NULL DEFAULT 'lottery' COMMENT '来源：lottery-抽奖',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_item` (`user_id`,`item_code`),
+  KEY `idx_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户虚拟道具持有表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
