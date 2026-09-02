@@ -1,5 +1,6 @@
 package com.heima.content.service.pins.impl;
 
+import com.heima.apis.notification.INotificationClient;
 import com.heima.content.behavior.service.BehaviorEventBus;
 import com.heima.content.mapper.pins.ApPinsCommentMapper;
 import com.heima.content.mapper.pins.ApPinsLikeMapper;
@@ -17,11 +18,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -52,6 +55,8 @@ class PinsInteractionServiceTest {
     private ApPinsCommentMapper apPinsCommentMapper;
     @Mock
     private BehaviorEventBus behaviorEventBus;
+    @Mock
+    private INotificationClient notificationClient;
 
     @InjectMocks
     private PinsInteractionService service;
@@ -266,6 +271,49 @@ class PinsInteractionServiceTest {
         doThrow(new RuntimeException("down")).when(behaviorEventBus).execute(any());
 
         assertEquals(200, service.createComment(comment(100L, "顶", null)).getCode());
+    }
+
+    @Test
+    @DisplayName("createComment 跨用户成功 → 向沸点作者发送评论通知（仅有人评论已可见即通知）")
+    void createCommentCrossUserSendsNotification() {
+        login(7);
+        when(apPinsCommentMapper.insert(any(ApPinsComment.class))).thenReturn(1);
+        when(apPinsMapper.selectById(100L)).thenReturn(pins(9L, 0, 0));
+
+        assertEquals(200, service.createComment(comment(100L, "写得不错", null)).getCode());
+
+        // 沸点作者(9)收到一条"评论通知"
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationClient).createNotification(captor.capture());
+        Map<String, Object> params = captor.getValue();
+        assertEquals(9L, params.get("userId"));      // 通知对象 = 沸点作者
+        assertEquals(1, params.get("type"));          // 1 = 评论通知
+        assertEquals("100", params.get("sourceId"));  // 目标沸点
+        // 等级分仍走行为事件总线，沸点评论通知与等级分互不影响
+        verify(behaviorEventBus).execute(any());
+    }
+
+    @Test
+    @DisplayName("createComment 评论自己的沸点 → 不发送评论通知、不触发行为事件")
+    void createCommentOwnPinsNoNotification() {
+        login(7);
+        when(apPinsCommentMapper.insert(any(ApPinsComment.class))).thenReturn(1);
+        when(apPinsMapper.selectById(100L)).thenReturn(pins(7L, 0, 0)); // 作者=本人
+
+        assertEquals(200, service.createComment(comment(100L, "顶", null)).getCode());
+        verify(notificationClient, never()).createNotification(any());
+        verify(behaviorEventBus, never()).execute(any());
+    }
+
+    @Test
+    @DisplayName("createComment 沸点缺失/无作者 → 不发送评论通知")
+    void createCommentNoAuthorNoNotification() {
+        login(7);
+        when(apPinsCommentMapper.insert(any(ApPinsComment.class))).thenReturn(1);
+        when(apPinsMapper.selectById(100L)).thenReturn(null); // 沸点缺失，无作者
+
+        assertEquals(200, service.createComment(comment(100L, "顶", null)).getCode());
+        verify(notificationClient, never()).createNotification(any());
     }
 
     // ---------- share ----------

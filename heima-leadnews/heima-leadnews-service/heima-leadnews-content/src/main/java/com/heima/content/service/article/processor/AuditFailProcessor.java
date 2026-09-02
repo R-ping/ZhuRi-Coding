@@ -1,16 +1,12 @@
 package com.heima.content.service.article.processor;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.apis.notification.INotificationClient;
 import com.heima.common.constants.ArticleConstants;
-import com.heima.content.mapper.article.ApArticleAuditRecordMapper;
-import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
+import com.heima.content.service.article.AuditRecordService;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ApArticleAuditRecord;
-import com.heima.model.article.pojos.ApArticleContent;
 import com.heima.model.common.dtos.ResponseResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,8 +25,7 @@ import java.util.Map;
 public class AuditFailProcessor {
 
     private final ApArticleMapper apArticleMapper;
-    private final ApArticleAuditRecordMapper apArticleAuditRecordMapper;
-    private final ApArticleContentMapper apArticleContentMapper;
+    private final AuditRecordService auditRecordService;
     private final INotificationClient notificationClient;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -54,38 +49,11 @@ public class AuditFailProcessor {
         // 更新文章状态
         apArticleMapper.updateById(article);
 
-        // 写入审计记录
-        saveAuditRecord(article, failReason);
+        // 写入审计记录（失败轨迹，内容由审计服务兜底查询）
+        auditRecordService.record(article, null, ArticleConstants.AUDIT_STATUS_FAIL, failReason);
 
         // 发送系统通知
         sendModerationFailNotification(article, failReason);
-    }
-
-    /**
-     * 保存审核失败记录到审计表
-     */
-    private void saveAuditRecord(ApArticle article, String reason) {
-        try {
-            ApArticleAuditRecord record = new ApArticleAuditRecord();
-            record.setArticleId(article.getId());
-            record.setAuthorId(article.getAuthorId());
-            record.setTitle(article.getTitle() != null ? article.getTitle() : "");
-            record.setReason(reason != null ? reason : "");
-            record.setAuditType("text");
-            record.setStatus(ArticleConstants.AUDIT_STATUS_FAIL);
-            record.setCreatedAt(java.time.LocalDateTime.now());
-
-            // 获取文章内容
-            QueryWrapper<ApArticleContent> contentQuery = new QueryWrapper<>();
-            contentQuery.eq("article_id", article.getId());
-            ApArticleContent articleContent = apArticleContentMapper.selectOne(contentQuery);
-            record.setContent(articleContent != null ? articleContent.getContent() : "");
-
-            apArticleAuditRecordMapper.insert(record);
-            log.info("审核失败记录已写入审计表, articleId={}, reason={}", article.getId(), reason);
-        } catch (Exception e) {
-            log.error("写入审计记录失败, articleId={}", article.getId(), e);
-        }
     }
 
     /**

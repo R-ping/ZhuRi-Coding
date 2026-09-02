@@ -48,6 +48,9 @@ public class ArticleConstants {
     public static final long RETRY_INTERVAL_MS = 5000;
 
     // ========== 审核记录 ==========
+    /** 审核通过状态码 */
+    public static final int AUDIT_STATUS_PASS = 1;
+
     /** 审核失败状态码 */
     public static final int AUDIT_STATUS_FAIL = 2;
 

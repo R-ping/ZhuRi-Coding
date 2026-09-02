@@ -3,21 +3,15 @@ package com.heima.content.service.achievement.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.apis.reward.IRewardClient;
 import com.heima.content.mapper.achievement.ApAchievementMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
-import com.heima.content.mapper.pins.ApPinsMapper;
+import com.heima.content.mapper.achievement.ApUserAchievementMapper;
 import com.heima.content.service.achievement.AchievementService;
 import com.heima.content.service.level.LevelService;
 import com.heima.model.achievement.pojos.ApAchievement;
+import com.heima.model.achievement.pojos.ApUserAchievement;
 import com.heima.model.achievement.vos.AchievementDataVO;
 import com.heima.model.achievement.vos.AchievementItemVO;
 import com.heima.model.achievement.vos.AchievementLevelVO;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.behavior.pojos.ApBehaviorLikes;
 import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.follow.pojos.ApFollow;
-import com.heima.model.pins.pojos.ApPins;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -25,30 +19,29 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
  * 成就勋章判定服务实现
- * 统计口径与个人主页一致：获赞用 ap_behavior_likes、粉丝用 ap_user_follow、签到用 reward 服务
+ * <p>
+ * 解锁状态改为事件驱动：行为发生时由 {@link AchievementProcessor} 检查并写入
+ * ap_user_achievement 解锁记录，本查询接口只读记录表 + 定义表（O(定义数)），
+ * 不再每次请求实时统计各维度。
+ * checkin_streak 勋章无事件源（签到在 reward 服务），查询时实时 Feign 兜底。
  */
 @Slf4j
 @Service
 public class AchievementServiceImpl implements AchievementService {
 
+    /** 无事件源的触发类型：连续签到（reward 服务），查询时实时兜底 */
+    private static final String TRIGGER_CHECKIN_STREAK = "checkin_streak";
+
     @Autowired
     private ApAchievementMapper achievementMapper;
 
     @Autowired
-    private ApArticleMapper apArticleMapper;
-
-    @Autowired
-    private ApPinsMapper apPinsMapper;
-
-    @Autowired
-    private ApBehaviorLikesMapper apBehaviorLikesMapper;
-
-    @Autowired
-    private ApFollowMapper apFollowMapper;
+    private ApUserAchievementMapper userAchievementMapper;
 
     @Autowired
     private LevelService levelService;
@@ -58,31 +51,34 @@ public class AchievementServiceImpl implements AchievementService {
 
     @Override
     public AchievementDataVO getUserAchievements(Long userId) {
-        // 1. 采集各维度统计值（批量聚合，避免 N+1）
-        long publishedArticles = apArticleMapper.selectCount(
-                new LambdaQueryWrapper<ApArticle>()
-                        .eq(ApArticle::getAuthorId, userId)
-                        .eq(ApArticle::getIsDeleted, false));
-        long publishedPins = apPinsMapper.selectCount(
-                new LambdaQueryWrapper<ApPins>()
-                        .eq(ApPins::getAuthorId, userId)
-                        .eq(ApPins::getIsDeleted, false));
-        long articleLikes = calcArticleLikes(userId);
-        long followers = apFollowMapper.selectCount(
-                new LambdaQueryWrapper<ApFollow>().eq(ApFollow::getFollowUserId, userId));
-        int checkinStreak = getCheckinStreak(userId);
-
-        // 2. 读取勋章定义并按序组装解锁状态
+        // 1. 勋章定义（静态配置，低频变化）
         List<ApAchievement> definitions = achievementMapper.selectList(
                 new LambdaQueryWrapper<ApAchievement>()
                         .eq(ApAchievement::getIsActive, true)
                         .orderByAsc(ApAchievement::getSortOrder));
+
+        // 2. 用户解锁记录（事件驱动已落库，一次查询全量）
+        List<ApUserAchievement> records = userAchievementMapper.selectList(
+                new LambdaQueryWrapper<ApUserAchievement>().eq(ApUserAchievement::getUserId, userId));
+        Map<String, ApUserAchievement> recordMap = records.stream()
+                .collect(Collectors.toMap(ApUserAchievement::getAchievementCode,
+                        Function.identity(), (a, b) -> a));
+
         List<AchievementItemVO> list = new ArrayList<>();
         long unlockedCount = 0;
         for (ApAchievement def : definitions) {
-            long progress = resolveProgress(def.getTriggerType(),
-                    publishedArticles, publishedPins, articleLikes, followers, checkinStreak);
-            boolean unlocked = progress >= def.getThreshold();
+            ApUserAchievement rec = recordMap.get(def.getCode());
+            boolean unlocked = rec != null && Boolean.TRUE.equals(rec.getUnlocked());
+            long progress = rec != null && rec.getProgress() != null ? rec.getProgress() : 0L;
+
+            // checkin_streak 无事件源：查询时实时兜底（仅一次 Feign，且只在存在该类型勋章时）
+            if (TRIGGER_CHECKIN_STREAK.equals(def.getTriggerType())) {
+                int streak = getCheckinStreak(userId);
+                int threshold = def.getThreshold() != null ? def.getThreshold() : 0;
+                progress = Math.max(progress, streak);
+                unlocked = unlocked || progress >= threshold;
+            }
+
             if (unlocked) {
                 unlockedCount++;
             }
@@ -102,28 +98,6 @@ public class AchievementServiceImpl implements AchievementService {
     }
 
     /**
-     * 计算用户所有文章（未删除）累计获赞数
-     * 一次性查出文章集合再按 entryId 批量统计，避免 N+1
-     */
-    private long calcArticleLikes(Long userId) {
-        List<ApArticle> articles = apArticleMapper.selectList(
-                new LambdaQueryWrapper<ApArticle>()
-                        .eq(ApArticle::getAuthorId, userId)
-                        .eq(ApArticle::getIsDeleted, false));
-        if (articles == null || articles.isEmpty()) {
-            return 0L;
-        }
-        List<Long> articleIds = articles.stream()
-                .map(ApArticle::getId)
-                .collect(Collectors.toList());
-        return apBehaviorLikesMapper.selectCount(
-                new LambdaQueryWrapper<ApBehaviorLikes>()
-                        .in(ApBehaviorLikes::getEntryId, articleIds)
-                        .eq(ApBehaviorLikes::getType, 0)
-                        .eq(ApBehaviorLikes::getOperation, 0));
-    }
-
-    /**
      * 获取连续签到天数（远程调用 reward 服务，失败时降级为 0）
      */
     private int getCheckinStreak(Long userId) {
@@ -139,29 +113,6 @@ public class AchievementServiceImpl implements AchievementService {
             log.warn("获取连续签到天数失败，userId={}, error={}", userId, e.getMessage());
         }
         return 0;
-    }
-
-    /**
-     * 按触发类型解析当前进度值
-     */
-    private long resolveProgress(String triggerType, long publishedArticles, long publishedPins,
-                                 long articleLikes, long followers, int checkinStreak) {
-        if ("publish_article".equals(triggerType)) {
-            return publishedArticles;
-        }
-        if ("publish_content".equals(triggerType)) {
-            return publishedArticles + publishedPins;
-        }
-        if ("checkin_streak".equals(triggerType)) {
-            return checkinStreak;
-        }
-        if ("likes".equals(triggerType)) {
-            return articleLikes;
-        }
-        if ("followers".equals(triggerType)) {
-            return followers;
-        }
-        return 0L;
     }
 
     /**

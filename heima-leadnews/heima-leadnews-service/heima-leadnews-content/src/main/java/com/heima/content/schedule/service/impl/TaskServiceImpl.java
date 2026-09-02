@@ -59,20 +59,33 @@ public class TaskServiceImpl implements TaskService {
         }
         log.info("Redisson延迟消息已发送，taskId={}, delay={}ms", task.getTaskId(), delay);
     }
-    // 每过30分钟执行一次
+    // 每过30分钟执行一次（带分布式锁：多实例部署时仅一个实例执行刷新，
+    // 防止同一延迟任务被重复投递到 Redis 队列导致重复消费）
     @Scheduled(cron = "0 0/30 * * * ?")
     public void refreshTaskToRedis() {
-        // 当前时间
-        long nowTime = System.currentTimeMillis();
-        Date nextHour = new Date(nowTime + 60 * 60 * 1000);
+        // 锁 TTL 25min < 周期 30min：实例崩溃后锁自动过期，不会产生死锁
+        String lockKey = "task:refresh:lock";
+        Boolean locked = cacheService.getstringRedisTemplate().opsForValue()
+                .setIfAbsent(lockKey, "1", java.time.Duration.ofMinutes(25));
+        if (!Boolean.TRUE.equals(locked)) {
+            log.info("refreshTaskToRedis 已被其他实例执行，跳过本次");
+            return;
+        }
+        try {
+            // 当前时间
+            long nowTime = System.currentTimeMillis();
+            Date nextHour = new Date(nowTime + 60 * 60 * 1000);
 
-        taskinfoLogsMapper.selectGoal(nextHour).forEach(taskinfoLogs -> {
-            Task task = new Task();
-            BeanUtils.copyProperties(taskinfoLogs, task);
-            task.setExecuteTime(taskinfoLogs.getExecuteTime());
-            task.setFirstExecInterval(taskinfoLogs.getFirstExecInterval());
-            sendTaskDelayMsg(task);
-        });
+            taskinfoLogsMapper.selectGoal(nextHour).forEach(taskinfoLogs -> {
+                Task task = new Task();
+                BeanUtils.copyProperties(taskinfoLogs, task);
+                task.setExecuteTime(taskinfoLogs.getExecuteTime());
+                task.setFirstExecInterval(taskinfoLogs.getFirstExecInterval());
+                sendTaskDelayMsg(task);
+            });
+        } finally {
+            cacheService.getstringRedisTemplate().delete(lockKey);
+        }
     }
 
     /**

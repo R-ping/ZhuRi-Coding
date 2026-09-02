@@ -7,11 +7,11 @@ import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dto.PasswordUpdateDTO;
 import com.heima.model.user.dto.PrivacyMessageDTO;
 import com.heima.model.user.pojos.ApUser;
-import com.heima.model.user.pojos.UserOauth;
+import com.heima.model.user.pojos.ApUserSocial;
 import com.heima.model.user.pojos.UserProfile;
 import com.heima.model.user.vo.BindingsVO;
 import com.heima.user.mapper.ApUserMapper;
-import com.heima.user.mapper.UserOauthMapper;
+import com.heima.user.mapper.ApUserSocialMapper;
 import com.heima.user.mapper.UserProfileMapper;
 import com.heima.user.service.AccountService;
 import com.heima.utils.thread.AppThreadLocalUtil;
@@ -32,7 +32,7 @@ public class AccountServiceImpl implements AccountService {
     private ApUserMapper apUserMapper;
 
     @Autowired
-    private UserOauthMapper userOauthMapper;
+    private ApUserSocialMapper apUserSocialMapper;
 
     @Autowired
     private UserProfileMapper userProfileMapper;
@@ -58,26 +58,27 @@ public class AccountServiceImpl implements AccountService {
             vo.setPhone(phone);
         }
 
-        // 查询 OAuth 绑定
-        LambdaQueryWrapper<UserOauth> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserOauth::getUserId, userId);
-        List<UserOauth> oauthList = userOauthMapper.selectList(wrapper);
+        // 查询 OAuth 绑定（统一读 ap_user_social_binding，废弃遗留表 user_oauth）
+        List<ApUserSocial> socialList = apUserSocialMapper.selectList(
+            new LambdaQueryWrapper<ApUserSocial>().eq(ApUserSocial::getUserId, userId.intValue()));
 
         BindingsVO.OAuthBinding wechat = new BindingsVO.OAuthBinding();
         BindingsVO.OAuthBinding weibo = new BindingsVO.OAuthBinding();
         BindingsVO.OAuthBinding github = new BindingsVO.OAuthBinding();
 
-        for (UserOauth oauth : oauthList) {
-            BindingsVO.OAuthBinding binding = new BindingsVO.OAuthBinding();
-            binding.setBound(true);
-            binding.setNickname(oauth.getNickname());
-            binding.setAvatar(oauth.getAvatar());
-            if (oauth.getProvider() == 1) {
-                wechat = binding;
-            } else if (oauth.getProvider() == 2) {
-                weibo = binding;
-            } else if (oauth.getProvider() == 3) {
-                github = binding;
+        // ap_user_social_binding.platform 可能以分号拼接多个平台（如 "wechat;weibo"）
+        for (ApUserSocial social : socialList) {
+            if (social.getPlatform() == null) {
+                continue;
+            }
+            for (String p : social.getPlatform().split(";")) {
+                if ("wechat".equalsIgnoreCase(p.trim())) {
+                    wechat.setBound(true);
+                } else if ("weibo".equalsIgnoreCase(p.trim())) {
+                    weibo.setBound(true);
+                } else if ("github".equalsIgnoreCase(p.trim())) {
+                    github.setBound(true);
+                }
             }
         }
 

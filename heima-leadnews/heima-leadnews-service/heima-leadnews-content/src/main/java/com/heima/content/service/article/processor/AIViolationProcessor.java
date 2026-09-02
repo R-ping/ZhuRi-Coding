@@ -15,6 +15,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@org.springframework.core.annotation.Order(1)
 public class AIViolationProcessor implements ArticleAuditProcessor {
 
     private final BailianAiService bailianAiService;

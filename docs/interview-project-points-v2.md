@@ -421,3 +421,43 @@ A：fail-closed：文本审核返回 null/失败直接驳回文章（宁可错�
 - **前端**：`src/common/conf.js` 5 个行为 url 全部切到统一入口 `/api/v1/behavior/*`（browse/like/unlike/collect/uncollect/follow/unfollow）；`src/apis/article/api.js` 参数对齐（`targetType/targetId/targetUserId`）。
 - **效果**：同一行为全局只有一条计数+热度分路径，点赞/收藏可正确回退计数，前端不再指向已删除的接口。
 - 验证：`BehaviorControllerTest`(20)/`BehaviorEventBusTest`(17)/`LikeBehaviorHandlerTest`(9)/`CollectBehaviorHandlerTest`(9)/`BrowseBehaviorHandlerTest`(8) 全绿；`mvn test-compile` 与 `vite build` 通过。
+
+### C7. 本地消息表重试与任务刷新锁修复（2026-09-01 追加）
+原 P3-7"本地消息表只写标记无重试消费器；refreshTaskToRedis 无分布式锁"已修复：
+- **死信清理**：`ApArticleEventServiceImpl.processEvent` 超过 `maxRetryCount` 的记录恢复加入清理列表（原 `success_list.add(...)` 被注释，死信永久滞留表内）。
+- **失败计数**：ES/发布重试的 catch 分支补 `retryCount+1` 并持久化（原只在成功分支计数，失败永不累计 → 死信判断形同虚设、无限重试）；并调整为"先执行同步/发布、成功后才标记状态与计数"，消除 try/catch 双计。
+- **分布式锁**：`TaskServiceImpl.refreshTaskToRedis` 增加 Redis `setIfAbsent` 锁（TTL 25min < 周期 30min，实例崩溃自动过期），多实例部署时仅一个实例刷新，防止同一延迟任务重复投递。
+- 验证：新增 `ApArticleEventServiceImplTest`(4)、`TaskServiceImplTest`(2) 全绿；`mvn test-compile` 通过。
+
+### C8. 成就事件驱动改造（2026-09-01 追加）
+原 P3-10"成就查询时全量计算非事件驱动"已修复：
+- **新增解锁记录表**：`ap_user_achievement`（user_id + achievement_code 唯一索引，progress/threshold/unlocked/unlocked_at 快照，迁移 `create_ap_user_achievement_table.sql`）。
+- **事件驱动解锁**：新增 `AchievementProcessor`（BehaviorPostProcessor, order=5）挂到事件总线——发布文章/沸点 → 更新作者 publish_article/publish_content 进度；被关注 → 更新被关注者 followers 进度；被点赞 → 更新被赞作者 likes 进度。达标即落库解锁（幂等，UK 兜底并发）+ 通过 `INotificationClient.sendActivityNotification` 发解锁站内信（不重复通知）。
+- **查询只读表**：`AchievementServiceImpl.getUserAchievements` 改为读定义表 + 解锁记录表（O(定义数)），不再每次请求统计 5 个维度；`checkin_streak` 无事件源（签到在 reward 服务），仅在有该类型勋章时实时 Feign 兜底一次。
+- **效果**：查询不再实时全量统计（去掉文章/沸点/获赞/粉丝 4 维度 DB 查询 + 跨服务调用），解锁有落库与通知闭环。
+- 验证：新增 `AchievementProcessorTest`(6)、重写 `AchievementServiceImplTest`(3) 全绿；`mvn test-compile` 通过。
+
+### C9. 审核链 @Order 化 + 指数退避重试（2026-09-01 追加）
+原 P3-12"审核链顺序硬编码、重试用 Thread.sleep"已修复（方案 A）：
+- **链顺序 @Order 化**：`ArticleAuditProcessor` 接口新增 `getOrder()`（default 0）与 `isRetryable()`（default false）；5 个处理器标注 `@Order`（AI违规=1 / 图片=2 / 相似度=3 / 逐力值=4 / 行为事件=5）；`ArticleAutoScanServiceImpl` 改为注入 `List<ArticleAuditProcessor>`（Spring 按 @Order 排序）循环执行，新增环节无需改动主流程（与行为事件总线同款模式）。
+- **语义划分**：`isRetryable=false`（业务判定：违规/图片）返回 false 即正常驳回；`isRetryable=true`（系统环节：相似度/逐力值/行为事件）由框架统一 `performWithRetry` 有界重试。
+- **指数退避**：重试间隔 `base × 2^(attempt-1)`，封顶 30s（原固定间隔）；重试耗尽仍转终态失败，行为不变。
+- 验证：`ArticleAutoScanServiceImplTest` 重写为 7 用例（含"失败重试成功""重试耗尽转失败"）全绿；`mvn test-compile` 通过。
+- 说明：方案 B（延迟队列重试，彻底去掉 Thread.sleep 线程阻塞）留作后续增强。
+
+### C10. 审计表补全"通过"轨迹（2026-09-01 追加）
+原 P3-13"审计表只记失败不记通过"已修复：
+- **状态常量**：`ArticleConstants` 增加 `AUDIT_STATUS_PASS = 1`（原仅 FAIL=2）。
+- **公共记录服务**：新增 `AuditRecordService.record(article, content, status, reason)`（通过/失败共用，内容兜底查询，失败不影响主流程），`AuditFailProcessor` 改为复用它。
+- **通过路径落库**：`ArticleAutoScanServiceImpl` 审核链全部通过后写入 `status=PASS` 的审计记录（reason="审核通过"）——与失败记录形成完整审核轨迹。
+- **迁移**：`alter_ap_article_audit_record_support_pass.sql`（更新 reason/status 注释，存量数据不受影响）；`schema.sql` 同步。
+- 验证：`ArticleAutoScanServiceImplTest` 7 用例全绿（新增"审核通过写 PASS 审计"断言）；`mvn test-compile` 通过；本地库已执行迁移。
+
+### C11. 网关-下游内部身份 HMAC 签名（2026-09-01 追加）
+原 P3-1"下游信任 header 明文身份"前半部分已修复（防绕过网关伪造 userId 头）：
+- **签名工具**：common 模块新增 `InternalAuthSigner`（HMAC-SHA256，payload 固定前缀 + userId/nickName/image 原始值 | 分隔，常量时间比较防时序攻击）。
+- **网关侧**：`AuthorizeFilter` 写入 userId/nickName/image 头时同步写入 `X-Internal-Sign`（基于原始昵称签名；网关为 WebFlux 不依赖 common，内联同算法实现）。
+- **下游侧**：content/user/notification/search 四个 TokenInterceptor 改为**验签后才信任**身份头——携带 userId 但签名缺失/无效 → 按匿名处理（不再冒充成功）；密钥未配置时降级信任（兼容本地直连）。
+- **配置**：网关 + 4 服务 `app.internal-auth.secret`（默认开发值，生产用 `INTERNAL_AUTH_SECRET` 覆盖；密钥未配置时网关不签名、下游不校验）。
+- 验证：`InternalAuthSignerTest`(5)、`AuthorizeFilterTest`(11)、四服务拦截器测试(17) 全绿；`mvn test-compile` 通过。
+- 剩余：P3-1 后半"access_token 无法即时失效"（Redis 黑名单/短 TTL）保留为后续方向。

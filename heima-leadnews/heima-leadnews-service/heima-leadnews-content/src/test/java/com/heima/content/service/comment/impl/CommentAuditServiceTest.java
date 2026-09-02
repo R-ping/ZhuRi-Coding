@@ -7,6 +7,9 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import com.heima.content.mapper.comment.ApCommentAuditTaskMapper;
 import com.heima.content.mapper.comment.ApCommentMapper;
 import com.heima.content.mapper.user.UserBehaviorRecordMapper;
+import com.heima.content.service.article.BailianAiService;
+import com.heima.content.service.article.impl.AbstractAuditService;
+import com.heima.model.audit.AuditServiceUnavailableException;
 import com.heima.model.audit.AuditContext;
 import com.heima.model.audit.AuditEntityType;
 import com.heima.model.audit.pojos.ApCommentAuditTask;
@@ -16,13 +19,16 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.dao.DuplicateKeyException;
 
+import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,6 +53,8 @@ class CommentAuditServiceTest {
     @Mock
     private ApCommentMapper apCommentMapper;
     @Mock
+    private BailianAiService bailianAiService;
+    @Mock
     private ApCommentAuditTaskMapper auditTaskMapper;
     @Mock
     private INotificationClient notificationClient;
@@ -61,6 +69,15 @@ class CommentAuditServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
+        // 将 BailianAiService mock 注入父类 AbstractAuditService 私有字段，
+        // 以便显式模拟"AI 审核服务不可用"触发 fail-closed 与降级通过
+        try {
+            Field f = AbstractAuditService.class.getDeclaredField("bailianAiService");
+            f.setAccessible(true);
+            f.set(commentAuditService, bailianAiService);
+        } catch (Exception e) {
+            throw new RuntimeException("注入 BailianAiService 失败", e);
+        }
         // 预热 MybatisPlus 实体表元数据与 lambda 列缓存，使单测不依赖 Spring 上下文或测试执行顺序
         // （集成测试若在共享 JVM 中先加载 Spring 会自动注册缓存；本单测须自足，CI 无库也能稳定运行）
         TableInfoHelper.initTableInfo(
@@ -159,6 +176,37 @@ class CommentAuditServiceTest {
         verify(auditTaskMapper, times(2)).update(any(), any());
     }
 
+    @Test
+    @DisplayName("processTaskIfPending - 重试超限降级通过时补发评论通知")
+    void testProcessTaskDegradeSendsNotification() {
+        when(auditTaskMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
+        ApCommentAuditTask task = new ApCommentAuditTask();
+        task.setId(5L);
+        task.setCommentId(commentId);
+        task.setContent("非空内容，触发AI审核");
+        task.setCommenterId(100);
+        task.setCommenterName("张三");
+        task.setTargetType(1);
+        task.setTargetId(99L);
+        task.setTargetUserId(200);
+        task.setRetryCount(ApCommentAuditTask.MAX_RETRY); // 已超重试上限，下次即降级通过
+        when(auditTaskMapper.selectById(5L)).thenReturn(task);
+        // AI 审核服务不可用（fail-closed 抛异常 → 重试超限 → 降级通过）
+        when(bailianAiService.checkViolation(any(), any(), any()))
+            .thenThrow(new AuditServiceUnavailableException("ai down"));
+
+        commentAuditService.processTaskIfPending(5L);
+
+        // CAS 抢占一次 + 降级通过(DEGRADED_PASSED)一次
+        verify(auditTaskMapper, times(2)).update(any(), any());
+        // 降级通过即评论可见 → 向作者补发一条"评论通知"(type=1)
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationClient, times(1)).createNotification(captor.capture());
+        Map<String, Object> params = captor.getValue();
+        assertEquals(200L, params.get("userId")); // 目标作者(targetUserId=200)
+        assertEquals(1, params.get("type"));      // 评论通知
+    }
+
     // ==================== handlePassed ====================
 
     @Test
@@ -170,7 +218,7 @@ class CommentAuditServiceTest {
     }
 
     @Test
-    @DisplayName("handlePassed - 评论存在且目标作者非空则发通知")
+    @DisplayName("handlePassed - 评论存在且目标作者非空：仅过审后发一条评论通知")
     void testHandlePassedSendsNotification() {
         ApComment comment = new ApComment();
         comment.setId(commentId);
@@ -180,7 +228,13 @@ class CommentAuditServiceTest {
 
         commentAuditService.handlePassed(context());
 
-        verify(notificationClient).createNotification(any());
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationClient, times(1)).createNotification(captor.capture());
+        Map<String, Object> params = captor.getValue();
+        // 断言语义：仅审核通过后，向目标作者恰好发送一条"评论通知"(type=1)
+        assertEquals(200L, params.get("userId"));   // 目标作者(targetUserId=200)
+        assertEquals(1, params.get("type"));        // 1 = 评论通知
+        assertEquals("99", params.get("sourceId")); // 被评论的目标内容
     }
 
     // ==================== handleFailed ====================
@@ -213,6 +267,25 @@ class CommentAuditServiceTest {
         assertEquals(0, record.getStatus());
         verify(behaviorRecordMapper).updateById(record);
         verify(notificationClient).createNotification(any());
+    }
+
+    @Test
+    @DisplayName("handleFailed - 审核违规不发“评论通知”，仅发违规系统通知(type=4)")
+    void testHandleFailedNoCommentNotification() {
+        ApComment comment = new ApComment();
+        comment.setId(commentId);
+        comment.setContent("违规内容");
+        comment.setUserId(100);
+        when(apCommentMapper.selectById(commentId)).thenReturn(comment);
+        when(behaviorRecordMapper.selectOne(any())).thenReturn(null); // 无行为记录
+
+        commentAuditService.handleFailed(context(), "违规");
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationClient, times(1)).createNotification(captor.capture());
+        Map<String, Object> params = captor.getValue();
+        // 断言语义：评论未过审绝不发"评论通知"(type=1)，只发违规系统通知(type=4)
+        assertEquals(4, params.get("type"));
     }
 
     // ==================== listPendingDue ====================

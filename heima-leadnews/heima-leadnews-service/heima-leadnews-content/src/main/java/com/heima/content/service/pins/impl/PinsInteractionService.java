@@ -1,10 +1,12 @@
 package com.heima.content.service.pins.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.heima.apis.notification.INotificationClient;
 import com.heima.content.behavior.service.BehaviorEventBus;
 import com.heima.content.mapper.pins.ApPinsCommentMapper;
 import com.heima.content.mapper.pins.ApPinsLikeMapper;
 import com.heima.content.mapper.pins.ApPinsMapper;
+import com.heima.content.utils.NotificationHelper;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.behavior.BehaviorType;
 import com.heima.model.pins.dtos.PinsCommentDTO;
@@ -39,6 +41,9 @@ public class PinsInteractionService {
 
     @Autowired(required = false)
     private BehaviorEventBus behaviorEventBus;
+
+    @Autowired(required = false)
+    private INotificationClient notificationClient;
 
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult like(Long pinsId) {
@@ -171,21 +176,33 @@ public class PinsInteractionService {
             }
         }
 
-        // 跨用户评论时，触发行为事件（等级分、通知）
-        if (behaviorEventBus != null && pins != null && pins.getAuthorId() != null
+        // 跨用户评论时：向沸点作者发送评论通知，并触发行为事件（等级分）
+        if (pins != null && pins.getAuthorId() != null
                 && !pins.getAuthorId().equals(user.getId().longValue())) {
-            try {
-                BehaviorContext behaviorContext = new BehaviorContext(BehaviorType.COMMENT_PIN, user.getId());
-                behaviorContext.withTarget(2, dto.getPinsId())
-                        .withTargetUser(pins.getAuthorId().intValue())
-                        .withUserInfo(user.getNickname(), user.getImage())
-                        .withExtra("commentId", comment.getId())
-                        .withExtra("commentContent", dto.getContent());
-                behaviorEventBus.execute(behaviorContext);
-                log.info("沸点评论行为事件已触发, pinsId={}, fromUser={}, toUser={}",
-                        dto.getPinsId(), user.getId(), pins.getAuthorId());
-            } catch (Exception e) {
-                log.error("沸点评论行为事件处理失败, pinsId={}", dto.getPinsId(), e);
+            // 沸点评论无独立审核，创建成功即可见即过审；与文章评论保持一致，
+            // 评论通知由业务链路在"可见"后显式发送（不依赖行为总线的通用通知处理器）。
+            NotificationHelper.sendCommentNotification(
+                    notificationClient,
+                    pins.getAuthorId().intValue(),
+                    user.getId(),
+                    comment.getContent(),
+                    2,
+                    dto.getPinsId());
+            // 等级分等仍走行为事件总线
+            if (behaviorEventBus != null) {
+                try {
+                    BehaviorContext behaviorContext = new BehaviorContext(BehaviorType.COMMENT_PIN, user.getId());
+                    behaviorContext.withTarget(2, dto.getPinsId())
+                            .withTargetUser(pins.getAuthorId().intValue())
+                            .withUserInfo(user.getNickname(), user.getImage())
+                            .withExtra("commentId", comment.getId())
+                            .withExtra("commentContent", dto.getContent());
+                    behaviorEventBus.execute(behaviorContext);
+                    log.info("沸点评论行为事件已触发, pinsId={}, fromUser={}, toUser={}",
+                            dto.getPinsId(), user.getId(), pins.getAuthorId());
+                } catch (Exception e) {
+                    log.error("沸点评论行为事件处理失败, pinsId={}", dto.getPinsId(), e);
+                }
             }
         }
 

@@ -1,10 +1,12 @@
 package com.heima.notification.interceptor;
 
+import com.heima.common.auth.InternalAuthSigner;
 import com.heima.model.user.pojos.ApUser;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -18,13 +20,21 @@ import static org.mockito.Mockito.when;
 /**
  * AppTokenInterceptor 单元测试
  *
- * 验证从请求头解析 userId/nickName 写入线程本地、未带 userId 时放行不设用户、
- * 以及 afterCompletion 清理线程本地等逻辑；同时覆盖 nickName 的 URL 解码。
+ * 验证从请求头解析 userId/nickName 写入线程本地（仅当通过内部 HMAC 签名校验）、
+ * 未带 userId 或签名无效时按匿名处理、以及 afterCompletion 清理线程本地等逻辑；
+ * 同时覆盖 nickName 的 URL 解码。
  */
 @DisplayName("AppTokenInterceptor 用户令牌拦截器")
 class AppTokenInterceptorTest {
 
-    private final AppTokenInterceptor interceptor = new AppTokenInterceptor();
+    private static final String SECRET = "test-internal-secret";
+
+    private AppTokenInterceptor interceptor;
+
+    @BeforeEach
+    void setUp() {
+        interceptor = new AppTokenInterceptor(SECRET);
+    }
 
     @AfterEach
     void tearDown() {
@@ -32,12 +42,15 @@ class AppTokenInterceptorTest {
     }
 
     @Test
-    @DisplayName("带 userId/nickName → 写入线程本地并放行")
+    @DisplayName("带有效签名的 userId/nickName → 写入线程本地并放行")
     void testPreHandleWithUser() throws Exception {
         HttpServletRequest request = mock(HttpServletRequest.class);
         String encoded = URLEncoder.encode("张三", StandardCharsets.UTF_8);
         when(request.getHeader("userId")).thenReturn("100");
         when(request.getHeader("nickName")).thenReturn(encoded);
+        when(request.getHeader("image")).thenReturn("");
+        when(request.getHeader(InternalAuthSigner.HEADER_SIGN))
+            .thenReturn(InternalAuthSigner.sign(SECRET, "100", "张三", ""));
 
         boolean ok = interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
 
@@ -49,50 +62,46 @@ class AppTokenInterceptorTest {
     }
 
     @Test
-    @DisplayName("nickName 缺失 → 昵称兜底为空串")
-    void testPreHandleNoNick() throws Exception {
+    @DisplayName("带 userId 但签名无效 → 按匿名处理（不信任伪造身份）")
+    void testPreHandleWithForgedUser() throws Exception {
         HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getHeader("userId")).thenReturn("7");
-        when(request.getHeader("nickName")).thenReturn(null);
+        when(request.getHeader("userId")).thenReturn("100");
+        when(request.getHeader("nickName")).thenReturn("张三");
+        when(request.getHeader("image")).thenReturn("");
+        when(request.getHeader(InternalAuthSigner.HEADER_SIGN)).thenReturn("forged");
 
-        interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
+        boolean ok = interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
 
-        ApUser user = AppThreadLocalUtil.getUser();
-        assertNotNull(user);
-        assertEquals("", user.getNickname());
-    }
-
-    @Test
-    @DisplayName("无 userId → 放行且不写入用户")
-    void testPreHandleNoUser() throws Exception {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getHeader("userId")).thenReturn(null);
-
-        assertTrue(interceptor.preHandle(request, mock(HttpServletResponse.class), new Object()));
+        assertTrue(ok);
         assertNull(AppThreadLocalUtil.getUser());
     }
 
     @Test
-    @DisplayName("nickName 无需解码的文本 → 原样传递")
-    void testDecodeFallback() throws Exception {
+    @DisplayName("无 userId → 放行且不写入登录态")
+    void testPreHandleWithoutUser() throws Exception {
         HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getHeader("userId")).thenReturn("1");
-        when(request.getHeader("nickName")).thenReturn("plain");
+        when(request.getHeader("userId")).thenReturn(null);
 
-        interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
-        assertEquals("plain", AppThreadLocalUtil.getUser().getNickname());
+        boolean ok = interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
+
+        assertTrue(ok);
+        assertNull(AppThreadLocalUtil.getUser());
     }
 
     @Test
-    @DisplayName("afterCompletion → 清理线程本地")
+    @DisplayName("afterCompletion → 清理线程本地登录态")
     void testAfterCompletion() throws Exception {
         HttpServletRequest request = mock(HttpServletRequest.class);
-        when(request.getHeader("userId")).thenReturn("5");
+        when(request.getHeader("userId")).thenReturn("2");
+        when(request.getHeader("nickName")).thenReturn("");
+        when(request.getHeader("image")).thenReturn("");
+        when(request.getHeader(InternalAuthSigner.HEADER_SIGN))
+            .thenReturn(InternalAuthSigner.sign(SECRET, "2", "", ""));
+
         interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
         assertNotNull(AppThreadLocalUtil.getUser());
 
         interceptor.afterCompletion(request, mock(HttpServletResponse.class), new Object(), null);
-
         assertNull(AppThreadLocalUtil.getUser());
     }
 }

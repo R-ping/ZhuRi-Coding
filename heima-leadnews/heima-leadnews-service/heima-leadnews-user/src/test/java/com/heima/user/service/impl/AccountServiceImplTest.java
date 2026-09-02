@@ -7,11 +7,11 @@ import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dto.PasswordUpdateDTO;
 import com.heima.model.user.dto.PrivacyMessageDTO;
 import com.heima.model.user.pojos.ApUser;
-import com.heima.model.user.pojos.UserOauth;
+import com.heima.model.user.pojos.ApUserSocial;
 import com.heima.model.user.pojos.UserProfile;
 import com.heima.model.user.vo.BindingsVO;
 import com.heima.user.mapper.ApUserMapper;
-import com.heima.user.mapper.UserOauthMapper;
+import com.heima.user.mapper.ApUserSocialMapper;
 import com.heima.user.mapper.UserProfileMapper;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import org.junit.jupiter.api.AfterEach;
@@ -40,7 +40,7 @@ class AccountServiceImplTest {
     @Mock
     private ApUserMapper apUserMapper;
     @Mock
-    private UserOauthMapper userOauthMapper;
+    private ApUserSocialMapper apUserSocialMapper;
     @Mock
     private UserProfileMapper userProfileMapper;
     @Mock
@@ -76,19 +76,15 @@ class AccountServiceImplTest {
         @DisplayName("获取成功：返回手机号脱敏和OAuth绑定状态")
         void testGetBindingsSuccess() {
             // Arrange
-            List<UserOauth> oauthList = new ArrayList<>();
-            UserOauth wechat = new UserOauth();
-            wechat.setProvider(1);
-            wechat.setNickname("微信用户");
-            wechat.setAvatar("wechat-avatar.jpg");
-            oauthList.add(wechat);
-            UserOauth github = new UserOauth();
-            github.setProvider(3);
-            github.setNickname("github-user");
-            github.setAvatar("github-avatar.jpg");
-            oauthList.add(github);
+            List<ApUserSocial> socialList = new ArrayList<>();
+            ApUserSocial wechat = new ApUserSocial();
+            wechat.setPlatform("wechat");
+            socialList.add(wechat);
+            ApUserSocial github = new ApUserSocial();
+            github.setPlatform("github");
+            socialList.add(github);
 
-            when(userOauthMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(oauthList);
+            when(apUserSocialMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(socialList);
 
             // Act
             ResponseResult result = accountService.getBindings();

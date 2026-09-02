@@ -1,13 +1,3 @@
--- ============================================================
--- leadnews-notification 服务 数据库表结构汇总 (schema)
--- 数据库: leadnews_notification (系统通知库)
--- 生成时间: 2026-08-13
--- 说明: 由 mysqldump --no-data 从本地库导出，仅含建表 DDL，无数据
--- 增量变更请放在本目录 migrations/ 下，勿直接改动本汇总文件
--- ============================================================
-
-CREATE DATABASE IF NOT EXISTS `leadnews_notification` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `leadnews_notification`;
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -35,7 +25,7 @@ CREATE TABLE `im_messages` (
   PRIMARY KEY (`id`),
   KEY `idx_session_created` (`session_id`,`created_at`),
   KEY `idx_sender_receiver` (`sender_id`,`receiver_id`,`created_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='私信消息表';
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='私信消息表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -52,9 +42,10 @@ CREATE TABLE `im_sessions` (
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_session` (`session_key`),
+  UNIQUE KEY `uk_session_key` (`session_key`),
   KEY `idx_user1_lastmsg` (`user1_id`,`last_message_at`),
   KEY `idx_user2_lastmsg` (`user2_id`,`last_message_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='私信会话表';
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='私信会话表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -68,19 +59,7 @@ CREATE TABLE `notifications` (
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_user_read_created` (`user_id`,`is_read`,`created_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='被动通知表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `system_notifications` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `notification_id` bigint NOT NULL COMMENT '关联notifications表ID',
-  `content` text COMMENT '系统通知内容',
-  `action_url` varchar(512) DEFAULT NULL COMMENT '跳转链接',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_notification_id` (`notification_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='系统通知详情表';
+) ENGINE=InnoDB AUTO_INCREMENT=112 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='被动通知表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

@@ -138,3 +138,6 @@ management:
     tracing:
       endpoint: http://localhost:9411/api/v2/spans
 
+
+# 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
+app:/n  internal-auth:/n    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}

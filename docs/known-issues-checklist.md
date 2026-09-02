@@ -40,22 +40,18 @@
 
 ## P3 —— 架构级改造（⬜ 建议后续迭代，本轮不落代码）
 
-> ✅ 注：原 **P3-6 热度分双路径口径不一致** 已于 2026-08-31 修复（删除 MQ 遗留 `updateScore`、行为路径统一走原子 SQL `recalculateScore`），故从下表移除。
+> ✅ 注：原 **P3-6 热度分双路径口径不一致** 已于 2026-08-31 修复；原 **P3-7 本地消息表无有效重试/死信 + refreshTaskToRedis 无锁**、**P3-10 成就查询全量计算非事件驱动**、**P3-12 审核链顺序硬编码、重试用 Thread.sleep**、**P3-13 审计表只记失败不记通过** 已于 2026-09-01 修复；原 **P3-1 下游信任 header 明文身份** 部分已于 2026-09-01 修复（网关-下游 HMAC 签名），均从下表移除（P3-1 剩余"access_token 无法即时失效"保留）。
 
 | # | 模块 | 缺陷/方向 | 建议方案 |
 |---|---|---|---|
-| P3-1 | gateway/user | 下游信任 header 明文身份；access_token 无法即时失效 | Feign 拦截器透传 + mTLS/签名；Redis 黑名单/短 TTL |
+| P3-1 | user | access_token 无状态无法即时失效（改密/封号/登出后 1h 内仍有效） | Redis 黑名单（jti）+ 网关校验；或缩短 TTL + refresh 兜底 |
 | P3-2 | content | 无退款、无主动查单对账（回调丢失则订单永久 PENDING） | 封装 `alipay.trade.query` 定时对账 + `alipay.trade.refund` |
 | P3-3 | 全局 | 无雪花 ID（自增主键，分库分表受限） | MyBatis-Plus ASSIGN_ID / 自定义雪花 |
 | P3-4 | basic | 文件存储无统一 SPI（OSS/MinIO 切换需改代码） | 定义 FileStorage 接口 + 多实现 |
 | P3-5 | content | 推荐无协同过滤/向量召回、冷启动弱、候选池性能风险 | pgvector 相似召回、CF、冷启模板 |
-| P3-7 | content | 本地消息表只写标记无重试消费器；`refreshTaskToRedis` 无分布式锁 | 补偿任务 + 分布式锁/幂等键 |
 | P3-8 | search | ES 检索 OR 语义 + 纯时间排序，热搜榜弱 | multi_match + function_score；Redis zset 热搜 |
 | P3-9 | notification | SimpleBroker 内存路由无法水平扩展 | Redis Pub/Sub / 外部 Broker / 离线收件箱补推 |
-| P3-10 | content | 成就查询时全量计算非事件驱动 | 解锁事件 + 落库 + 通知 |
 | P3-11 | user | 微信扫码登录闭环缺失（wechat:token 无消费接口） | 补 token 换双 token 接口 |
-| P3-12 | content | 审核链顺序硬编码、重试用 Thread.sleep | List<Processor> + @Order；延迟入队重试 |
-| P3-13 | content | 审计表只记失败不记通过 | 全量审核轨迹落库 |
 
 ---
 *生成日期：2026-08-31 ｜ 状态图例：⬜ 待修 ｜ 🟩 已修 ｜ ⬜️ P3 建议后续迭代*
