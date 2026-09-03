@@ -41,6 +41,22 @@ public class UserProfile implements Serializable {
     @TableField("bio")
     private String bio;
 
+    /** 地区，对齐掘金 city */
+    @TableField("region")
+    private String region;
+
+    /** 学历/学校，对齐掘金 education */
+    @TableField("education")
+    private String education;
+
+    /** 技术标签（JSON 数组字符串），对齐掘金 skills */
+    @TableField("skills")
+    private String skills;
+
+    /** 等级快照，对齐掘金 level（逐力值/逐友等级） */
+    @TableField("level")
+    private String level;
+
     @TableField("update_time")
     private Date updateTime;
 

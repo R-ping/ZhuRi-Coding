@@ -25,7 +25,7 @@ CREATE TABLE `ap_user` (
   `flag` tinyint unsigned DEFAULT NULL COMMENT '0 普通用户\r\n            1 自媒体人\r\n            2 大V',
   `created_time` datetime DEFAULT NULL COMMENT '注册时间',
   PRIMARY KEY (`id`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=1889521666 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='APP用户信息表';
+) ENGINE=InnoDB AUTO_INCREMENT=1889522386 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='APP用户信息表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -77,6 +77,10 @@ CREATE TABLE `user_profile` (
   `company` varchar(50) DEFAULT NULL COMMENT '公司',
   `website` varchar(100) DEFAULT NULL COMMENT '个人主页',
   `bio` varchar(100) DEFAULT NULL COMMENT '个人介绍',
+  `region` varchar(50) DEFAULT NULL COMMENT '地区，对齐掘金 city',
+  `education` varchar(100) DEFAULT NULL COMMENT '学历/学校，对齐掘金 education',
+  `skills` varchar(500) DEFAULT NULL COMMENT '技术标签（JSON 数组字符串），对齐掘金 skills',
+  `level` varchar(20) DEFAULT NULL COMMENT '等级快照，对齐掘金 level（逐力值/逐友）',
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
   `privacy_message` tinyint DEFAULT '0' COMMENT '私信设置: 0-所有人, 1-我关注的人, 2-互相关注的人, 3-关闭',
   PRIMARY KEY (`user_id`)
@@ -100,4 +104,3 @@ CREATE TABLE `user_tag_relation` (
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
-

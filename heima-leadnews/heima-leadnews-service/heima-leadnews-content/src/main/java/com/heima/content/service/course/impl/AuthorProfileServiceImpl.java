@@ -3,10 +3,12 @@ package com.heima.content.service.course.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.content.mapper.course.ApAuthorProfileMapper;
 import com.heima.content.service.course.AuthorProfileService;
+import com.heima.content.service.stats.UserContentStatsService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.course.dtos.AuthorProfileDto;
 import com.heima.model.course.pojos.ApAuthorProfile;
+import com.heima.model.user.vo.UserStatsVO;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -21,6 +23,9 @@ public class AuthorProfileServiceImpl implements AuthorProfileService {
 
     @Autowired
     private ApAuthorProfileMapper authorProfileMapper;
+
+    @Autowired
+    private UserContentStatsService userContentStatsService;
 
     @Override
     public ResponseResult getProfile(Integer userId) {
@@ -43,6 +48,9 @@ public class AuthorProfileServiceImpl implements AuthorProfileService {
         data.put("contactEmail", profile != null ? nvl(profile.getContactEmail()) : "");
         data.put("blogs", profile != null ? nvl(profile.getBlogs()) : "");
         data.put("personalIntro", profile != null ? nvl(profile.getPersonalIntro()) : "");
+        // 掘金式对象统计：文章数/沸点数/获赞/获阅读/粉丝/关注（查询聚合）
+        UserStatsVO stats = userContentStatsService.stats(userId.longValue());
+        data.put("stats", stats);
         return ResponseResult.okResult(data);
     }
 

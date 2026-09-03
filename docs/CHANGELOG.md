@@ -1,5 +1,109 @@
 # CHANGELOG
 
+## 2026-09-03 — 数据模型向稀土掘金对象属性对齐（概念修正：小册=课程、专栏免费、不加会员）
+
+### 背景
+明确业务口径：**小册即课程（`ap_course`）**、**专栏是免费文章合集（`ap_column` 不付费化）**、**不加会员系统**。
+据此把对齐重心从"商业化体系"调整为**现有核心实体的字段级（对象属性）对齐**，并向掘金的个人主页统计口径靠拢。
+
+### 1. 用户/作者对象补齐掘金式属性（内容统计查询聚合）
+- `user_profile` 新增 `region / education / skills(JSON数组字符串) / level` 四个字段（本次新增迁移脚本并已执行，schema.sql 已重新导出）。
+- 实体 `UserProfile`、VO `UserProfileVO`、DTO `ProfileUpdateDTO` 同步补字段；个人资料读取回填、更新保存。
+- **用户/作者内容统计**：
+  - 新增 `UserStatsVO`（文章数/沸点数/获赞/获阅读/粉丝/关注，缺省 0）。
+  - 新增内容服务聚合 `UserContentStatsService`（实时 COUNT/SUM，不做冗余快照）：文章按 `status=9` 计数，沸点按 `like_count/view_count`、文章按 `likes/views` 汇总，粉丝/关注按 `ap_user_follow` 双向计数。
+  - 新增 Feign `IUserStatsClient` + 降级 `IUserStatsClientFallback` + 内容侧实现 `UserStatsFeignClient`（`/api/v1/user-stats/{userId}`）。
+  - 接入作者卡片 `AuthorProfileServiceImpl.getProfile`（返回 `stats` 对象）与个人资料 `UserProfileServiceImpl.getProfile`（用户服务经 Feign 拉取，降级为空统计）。
+
+### 2. 文章对象热度对齐
+- `ApArticle` 新增非持久化字段 `hotIndex` + `computeHotIndex()`，按 `score`（编辑分）权重 + 浏览量/点赞/收藏/评论互动加权**查询时动态计算**，并在 `nullSafeToMap` 中输出（推荐流等已覆盖）。
+
+### 3. 明确不做
+- ❌ 专栏付费化（`ap_column` 保持免费文章合集）
+- ❌ 会员订阅体系（`member_plan`/`member_subscription` 不建）
+- ❌ 小册与课程重复建模（`ap_course` 即小册）
+
+### 自测
+- `UserProfileServiceImplTest` 17 用例全部通过（含新增字段回填/技能解析/统计聚合断言）。
+
+### 变更文件
+- 迁移：`heima-leadnews-user/src/main/resources/db/migrations/user_profile_add_rich_attrs.sql`（新增）
+- schema：`heima-leadnews-user/src/main/resources/db/schema.sql`（重新导出）
+- 模型：`UserProfile`、`UserProfileVO`、`ProfileUpdateDTO`、`UserStatsVO`（新增）、`ApArticle`（hotIndex）
+- Feign：`IUserStatsClient`（新增）、`IUserStatsClientFallback`（新增）、内容侧 `UserStatsFeignClient`（新增）
+- 服务：`UserContentStatsService(+Impl)`（新增）、`AuthorProfileServiceImpl`、`UserProfileServiceImpl`
+- 测试：`UserProfileServiceImplTest`
+
+## 2026-09-03 — 数据真实感补齐（社交互动 + 专栏/活动/IM/作者简历）及导入脚本 Bug 修复
+
+### 背景
+从稀土掘金导入的 149 篇文章虽已含正文与封面，但系统"社交味"不足：用户/互动数据几乎为空、专栏/活动/IM 私信等业务模块全空，且造数脚本存在多处数据一致性问题。本次一次性补齐并修复。
+
+### 1. 社交互动数据导入（seed-social.mjs）
+- 导入 240 个用户（ap_user）。
+- 导入文章评论 620、沸点评论 2594、沸点点赞 582、收藏 203、关注 1336、圈子成员 836、浏览历史 2974、行为点赞 307、作者档案 25——均按内容已有计数自洽生成。
+
+### 2. 修复 seed-social.mjs 两个 Bug
+- **关注 `ap_user_follow` 仅 8 条**：全局 `done` Set 导致首个用户耗尽计数后其余全跳过 → 改为"每用户独立 seen 集合"，修复后生成 1336 条。
+- **行为点赞 `ap_behavior_likes` 为 0**：随机 pick 用 `continue` 极易命中已用 key → 改为"每文章独立 seen + while 重试"，修复后生成 307 条。
+
+### 3. 用户 ID 对齐修复（fix_user_id.sql）
+- 根因：`seed_user` 未显式指定 id，ap_user 走自增落在大 ID 区间（1889522146+），而造数脚本假定 id=17+i，导致**互动表/作者档案指向不存在的用户（孤儿引用）**。
+- 修复：将 240 个造数用户重建到 id=17~257，删除大 ID 记录，作者档案 25 条、互动表引用全部对齐到真实 ap_user。所有互动表孤儿数由数千降为 0（仅余掘金原始作者虚拟 ID，属正常）。
+
+### 4. 文章互动计数注入（populate_article_counts.sql）
+- 掘金接口未回传 digg/collect/comment 计数，origin=9 文章 likes=0、views=0，导致造数无法自洽 → 幂等注入 views/likes/comment/collection（纯展示造数）。同时修了 BIGINT 乘法溢出导致的 `BIGINT UNSIGNED out of range`。
+
+### 5. 补充造数（seed-extra.mjs）
+- **专栏**：建 10 个专栏并挂载 59 篇文章（修复 BIGINT 精度丢失导致的「专栏挂载 id 末位被篡改、文章找不到」问题——article id 超过 Number 安全整数范围，改用字符串）。
+- **创作活动**：填入 10 个活动（含封面/主题/参与人数/阅读量）。
+- **IM 私信**：生成 30 个会话、218 条私信（修复会话与消息 `session_id` 不对齐导致的 211 条孤儿消息，让其共同显式使用 id=9000+）。
+- **作者简历**：为 25 位作者档案补齐 resume。
+
+### 变更文件
+- `juejin-import/seed-social.mjs`、`juejin-import/seed-extra.mjs`（新增）
+- `juejin-import/out/populate_article_counts.sql`、`fix_user_id.sql`（新增）
+- `juejin-import/out/seed_*_*.sql`（生成的 SQL 产物）
+
+## 2026-09-02 — 课程支付状态机加固（新增 PROCESSING + 支付通道超时）
+
+### 背景
+原状态机仅 `PENDING→PAID/CANCELLED`：用户点击「去支付」直接跳三方支付页，期间不改变订单状态、不重新核验优惠。订单超时关单（PENDING→CANCELLED）与「去支付」并发时，会出现「用户已付款但订单已被关闭」的资损风险；并且订单页停留越久越容易触发。
+
+### 1. 新增 PROCESSING 状态
+- `ApCourseOrder.Status` 新增 `PROCESSING(4)`，语义为「支付处理中」；`PENDING → [去支付原子抢占] → PROCESSING → [支付成功] → PAID`，`PENDING/PROCESSING → [超时] → CANCELLED`。
+
+### 2. 去支付前准备 `preparePay`
+- 新增 `OrderService.preparePay(orderNo, userId)` 与 `POST /api/v1/course/pay/prepare`：
+  - 仅 `PENDING` 可被**原子抢占**为 `PROCESSING`（条件更新 `WHERE status=PENDING`）；
+  - 并发下若关单先行（PENDING→CANCELLED），抢占命中 0 行 → 返回「订单已关闭，请重新下单」，不跳转支付页；
+  - **重新核验折扣码/5折券有效性**（reward 持有量 / 折扣码有效），失效则拒绝发起支付并提示；
+  - 抢占成功后排程「支付通道超时」关单，防止用户在支付页长期滞留后仍可支付。
+
+### 3. 支付通道超时关单 `closePayChannel`
+- `OrderTimeoutTask` 新增独立延迟队列 `ORDER_PAY_TIMEOUT_DELAY_QUEUE` 与消费者，条件更新 `PROCESSING→CANCELLED`（幂等），超时时间 `app.order.pay-timeout-ms`（默认 5 分钟）。
+- 订单页停留超时仍走原有 `closeExpiredOrder`（PENDING→CANCELLED），两条链路分离互不干扰。
+
+### 4. 防「关单后仍被支付」
+- 支付宝收银台 `bizContent` 增加 `timeout_express`（与支付通道超时一致），超时后支付宝拒绝收款，杜绝关单后仍入账的资损。
+
+### 5. 前端适配
+- `course.js` 新增 `preparePay`；`order.vue`：「立即支付」先调 `preparePay` 再 `window.open` 支付页，失败（订单关闭/券码失效）弹提示并刷新订单、不跳转；状态映射新增 `支付处理中(4)`，支持重新发起支付。
+
+### 6. 测试
+- `OrderServiceImplTest` 新增 `preparePay`/`closePayChannel` 覆盖：正常抢占、订单不存在、越权、非待支付、并发关单抢占失败、PROCESSING 幂等、5折券不足、折扣码失效、公开访问跳过核验、支付通道关单。
+
+### 7. 退款兜底（refund fallback）+ 失败重试闭环
+- 兜底场景：`TRADE_SUCCESS` 到账但订单已在关单/去支付并发窗口内被置为 `CANCELLED`（用户付款却拿不到课程）。
+- 接入点：`AlipayServiceImpl.handleNotify` 中 `handlePaySuccess` 返回 `false` 且订单为 `CANCELLED` 时，调用支付宝 `alipay.trade.refund`（`out_request_no=orderNo` 幂等）原路退款，成功后将订单 `CANCELLED→REFUNDED`。
+- `OrderService.handlePaySuccess` 返回类型由 `void` 改为 `boolean`（是否真正放权成功），供回调判定退款兜底。
+- `ApCourseOrder`/`ap_course_order` 新增 `refund_trade_no`、`refund_time`、`refund_pending`、`refund_retry_count` 记录退款审计与重试状态；`markRefunded` 用条件更新保证幂等。
+- **失败重试闭环 + 上限告警**：首次退款失败时 `markRefundPending` 把订单标记为待重试（`refund_pending=1`，计数=1），新增定时任务 `RefundRetryTask`（`@Scheduled`，默认每 5 分钟，`app.order.refund-retry-fixed-delay-ms` 可配）扫描重试；`refund_pending` 语义：`0` 无 / `1` 待重试 / `2` 已达 `app.order.refund-max-retries`（默认 3）上限。达上限时停止自动重试并输出 `[退款告警]` 高优 ERROR、标记 `refund_pending=2`（可通过 `listAlertedRefundOrders` 供运维/监控查询，需人工介入）；未达上限则保留标记下轮再试并打印告警级日志。
+- `AlipayService.refund` 返回退款流水号（真实/模拟），失败返回 null。
+- 新增 `AlipayServiceImplTest`、补充 `OrderServiceImplTest`（handlePaySuccess 返回值 / markRefunded / markRefundPending / listPendingRefundOrders）。
+
+---
+
 ## 2026-08-29 — 文章推荐系统优化（个性化·可配置·已读去重·数据回流闭环）
 
 ### 背景

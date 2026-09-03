@@ -1,6 +1,7 @@
 package com.heima.user.service.impl;
 
 import com.aliyun.oss.OSS;
+import com.heima.apis.article.IUserStatsClient;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dto.ProfileUpdateDTO;
@@ -10,6 +11,7 @@ import com.heima.model.user.pojos.UserProfile;
 import com.heima.model.user.pojos.UserTagRelation;
 import com.heima.model.user.vo.TagGroupVO;
 import com.heima.model.user.vo.UserProfileVO;
+import com.heima.model.user.vo.UserStatsVO;
 import com.heima.user.config.OssConfig;
 import com.heima.user.mapper.SysTagMapper;
 import com.heima.user.mapper.UserProfileMapper;
@@ -55,6 +57,9 @@ class UserProfileServiceImplTest {
     private UserTagRelationMapper userTagRelationMapper;
     @Mock
     private OSS ossClient;
+
+    @Mock
+    private IUserStatsClient userStatsClient;
 
     @InjectMocks
     private UserProfileServiceImpl userProfileService;
@@ -109,7 +114,7 @@ class UserProfileServiceImplTest {
         }
 
         @Test
-        @DisplayName("已有资料：回填 + 标签分组")
+        @DisplayName("已有资料：回填 + 标签分组 + 新增字段/统计")
         void testWithProfile() {
             UserProfile profile = new UserProfile();
             profile.setUserId(USER_ID);
@@ -120,7 +125,20 @@ class UserProfileServiceImplTest {
             profile.setCompany("x");
             profile.setWebsite("w");
             profile.setBio("b");
+            profile.setRegion("北京");
+            profile.setEducation("北京大学");
+            profile.setSkills("[\"Java\",\"Spring\"]");
+            profile.setLevel("Lv5");
             when(userProfileMapper.selectById(USER_ID)).thenReturn(profile);
+
+            UserStatsVO stats = new UserStatsVO();
+            stats.setArticleCount(12);
+            stats.setPinCount(3);
+            stats.setDiggCount(150);
+            stats.setViewCount(9000);
+            stats.setFollowerCount(88);
+            stats.setFollowCount(20);
+            when(userStatsClient.stats(USER_ID)).thenReturn(stats);
 
             UserTagRelation rel = new UserTagRelation();
             rel.setUserId(USER_ID);
@@ -138,6 +156,13 @@ class UserProfileServiceImplTest {
             assertEquals(USER_ID, vo.getUserId());
             assertEquals("zhangsan", vo.getUsername());
             assertEquals("工程师", vo.getPosition());
+            assertEquals("北京", vo.getRegion());
+            assertEquals("北京大学", vo.getEducation());
+            assertEquals("Lv5", vo.getLevel());
+            assertEquals(Arrays.asList("Java", "Spring"), vo.getSkills());
+            assertEquals(Integer.valueOf(12), vo.getArticleCount());
+            assertEquals(Integer.valueOf(150), vo.getDiggCount());
+            assertEquals(Integer.valueOf(88), vo.getFollowerCount());
             assertEquals(Collections.singletonList(1), vo.getSelectedTagIds());
             // 按 categoryCode 分组，共 2 组
             assertEquals(2, vo.getTagGroups().size());

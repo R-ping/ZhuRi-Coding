@@ -3,6 +3,9 @@ package com.heima.user.service.impl;
 import com.aliyun.oss.OSS;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.heima.apis.article.IUserStatsClient;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dto.ProfileUpdateDTO;
@@ -13,6 +16,7 @@ import com.heima.model.user.pojos.UserTagRelation;
 import com.heima.model.user.vo.TagGroupVO;
 import com.heima.model.user.vo.TagVO;
 import com.heima.model.user.vo.UserProfileVO;
+import com.heima.model.user.vo.UserStatsVO;
 import com.heima.user.config.OssConfig;
 import com.heima.user.mapper.SysTagMapper;
 import com.heima.user.mapper.UserProfileMapper;
@@ -33,6 +37,8 @@ import java.util.stream.Collectors;
 @Service
 public class UserProfileServiceImpl implements UserProfileService {
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     @Autowired
     private UserProfileMapper userProfileMapper;
 
@@ -47,6 +53,9 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     @Autowired
     private OSS ossClient;
+
+    @Autowired
+    private IUserStatsClient userStatsClient;
 
     @Override
     public ResponseResult getProfile() {
@@ -70,6 +79,10 @@ public class UserProfileServiceImpl implements UserProfileService {
             vo.setCompany(profile.getCompany());
             vo.setWebsite(profile.getWebsite());
             vo.setBio(profile.getBio());
+            vo.setRegion(profile.getRegion());
+            vo.setEducation(profile.getEducation());
+            vo.setSkills(parseSkills(profile.getSkills()));
+            vo.setLevel(profile.getLevel());
         } else {
             // 使用默认用户名
             vo.setUsername(currentUser.getNickname() != null ? currentUser.getNickname() : "");
@@ -113,6 +126,17 @@ public class UserProfileServiceImpl implements UserProfileService {
             tagGroups.add(group);
         }
         vo.setTagGroups(tagGroups);
+
+        // 掘金式对象统计（跨服务查询聚合，内容服务不可用时降级为空统计）
+        UserStatsVO stats = userStatsClient.stats(userId);
+        if (stats != null) {
+            vo.setArticleCount(stats.getArticleCount());
+            vo.setPinCount(stats.getPinCount());
+            vo.setDiggCount(stats.getDiggCount());
+            vo.setViewCount(stats.getViewCount());
+            vo.setFollowerCount(stats.getFollowerCount());
+            vo.setFollowCount(stats.getFollowCount());
+        }
 
         return ResponseResult.okResult(vo);
     }
@@ -159,6 +183,9 @@ public class UserProfileServiceImpl implements UserProfileService {
         profile.setCompany(dto.getCompany() != null ? dto.getCompany().trim() : null);
         profile.setWebsite(dto.getWebsite() != null ? dto.getWebsite().trim() : null);
         profile.setBio(dto.getBio() != null ? dto.getBio().trim() : null);
+        profile.setRegion(dto.getRegion() != null ? dto.getRegion().trim() : null);
+        profile.setEducation(dto.getEducation() != null ? dto.getEducation().trim() : null);
+        profile.setSkills(serializeSkills(dto.getSkills()));
         profile.setUpdateTime(new Date());
 
         if (userProfileMapper.selectById(userId) != null) {
@@ -249,5 +276,31 @@ public class UserProfileServiceImpl implements UserProfileService {
         vo.setId(tag.getId());
         vo.setTagName(tag.getTagName());
         return vo;
+    }
+
+    /** 技能标签存储为 JSON 数组字符串，读取时安全解析 */
+    private List<String> parseSkills(String skillsJson) {
+        if (skillsJson == null || skillsJson.isBlank()) {
+            return new ArrayList<>();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(skillsJson, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("解析 skills 失败，原样返回空列表: {}", skillsJson);
+            return new ArrayList<>();
+        }
+    }
+
+    /** 技能标签序列化为 JSON 数组字符串（null 存为 null） */
+    private String serializeSkills(List<String> skills) {
+        if (skills == null || skills.isEmpty()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(skills);
+        } catch (Exception e) {
+            log.warn("序列化 skills 失败: {}", e.getMessage());
+            return null;
+        }
     }
 }
