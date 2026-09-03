@@ -120,6 +120,11 @@ export default {
 
   // ========== 支付 (course微服务) ==========
 
+  /** 去支付前准备：后端核验折扣码/5折券并原子置为「支付处理中」，成功才可跳转支付页 */
+  preparePay(orderNo) {
+    return request.post(`${API_PREFIX}/pay/prepare`, { orderNo })
+  },
+
   /** 获取支付页面URL */
   getPayPageUrl(orderNo) {
     return `${API_PREFIX}/pay/page?orderNo=${orderNo}`

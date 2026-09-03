@@ -121,9 +121,9 @@ alipay:
   private-key: ${ALIPAY_PRIVATE_KEY:}
   alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
   gateway-url: https://openapi-sandbox.dl.alipaydev.com/gateway.do
-  base-url: ${ALIPAY_BASE_URL:https://58c840b3.r40.cpolar.top}
+  base-url: ${CPOlAR_BASE_URL:https://58c840b3.r40.cpolar.top}
   # 课程支付成功后的回跳地址前缀（课程页是前端 Vue SPA，指向前端对外地址，本地默认 9901）
-  web-base-url: ${ALIPAY_WEB_BASE_URL:https://5bdb24b5.r40.cpolar.top}
+  web-base-url: ${CPOlAR_BASE_URL_WEB:https://5bdb24b5.r40.cpolar.top}
 
 # 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
 management:

@@ -89,10 +89,10 @@
             <span class="pay-label">应付金额</span>
             <span class="pay-value">¥{{ formatAmount(order.paidAmount) }}</span>
           </div>
-          <div class="pay-tip" v-if="order.status === 0">
-            请使用支付宝扫码或账号完成支付，支付完成后将自动开通课程
+          <div class="pay-tip" v-if="order.status === 0 || order.status === 4">
+            {{ order.status === 4 ? '订单正在处理支付，请在新窗口完成支付宝支付；若已关闭可点击重新发起' : '请使用支付宝扫码或账号完成支付，支付完成后将自动开通课程' }}
           </div>
-          <button class="pay-btn" v-if="order.status === 0" :disabled="paying" @click="handlePay">
+          <button class="pay-btn" v-if="order.status === 0 || order.status === 4" :disabled="paying" @click="handlePay">
             {{ paying ? '支付中...' : '立即支付' }}
           </button>
           <button class="read-btn" v-else-if="order.status === 1" @click="goRead">
@@ -120,7 +120,8 @@ const STATUS_MAP = {
   0: { text: '待支付', cls: 'pending' },
   1: { text: '已支付', cls: 'paid' },
   2: { text: '已取消', cls: 'cancelled' },
-  3: { text: '已退款', cls: 'refunded' }
+  3: { text: '已退款', cls: 'refunded' },
+  4: { text: '支付处理中', cls: 'processing' }
 }
 
 export default {
@@ -163,8 +164,8 @@ export default {
         const res = await courseApi.getOrderStatus(orderNo)
         if (res && res.code === 200 && res.data) {
           this.order = res.data
-          // 待支付订单进入页面后自动开始轮询
-          if (this.order.status === 0) {
+          // 待支付/支付处理中的订单进入页面后自动开始轮询
+          if (this.order.status === 0 || this.order.status === 4) {
             this.startPolling()
           }
           this.loadCourse()
@@ -186,13 +187,30 @@ export default {
         // 课程信息加载失败不影响订单展示
       }
     },
-    handlePay() {
+    async handlePay() {
       if (this.paying) return
-      // 新开标签页跳转到支付页（支付宝收银台）
-      const payUrl = courseApi.getPayPageUrl(this.order.orderNo)
-      window.open(payUrl, '_blank')
-      // 打开支付页后开始轮询订单状态
-      this.startPolling()
+      this.paying = true
+      try {
+        // 先去支付准备：后端原子置为「支付处理中」并核验折扣码/5折券有效性
+        const prep = await courseApi.preparePay(this.order.orderNo)
+        if (prep && prep.code === 200 && prep.data) {
+          this.order = prep.data
+          // 新开标签页跳转到支付页（支付宝收银台）
+          const payUrl = courseApi.getPayPageUrl(this.order.orderNo)
+          window.open(payUrl, '_blank')
+          // 打开支付页后开始轮询订单状态
+          this.startPolling()
+        } else {
+          // 订单已关闭/券码失效：提示并刷新订单状态，不跳转支付页
+          const msg = (prep && prep.message) || '订单已处理，请重新下单'
+          toast(msg, 2)
+          this.loadOrder()
+        }
+      } catch (e) {
+        toast('发起支付失败，请重试', 2)
+      } finally {
+        this.paying = false
+      }
     },
     startPolling() {
       this.stopPolling()
@@ -434,6 +452,10 @@ export default {
 .row-value.status.cancelled,
 .row-value.status.refunded {
   color: #909399;
+}
+
+.row-value.status.processing {
+  color: #1e80ff;
 }
 
 .amount-row {

@@ -43,7 +43,7 @@ public class RateLimitAspect {
     /**
      * Lua 脚本缓存
      */
-    private static String LUA_SCRIPT;
+    private static final String LUA_SCRIPT;
     private String luaScriptSha;
 
     static {

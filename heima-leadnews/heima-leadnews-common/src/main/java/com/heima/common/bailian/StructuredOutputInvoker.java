@@ -117,7 +117,7 @@ public class StructuredOutputInvoker {
                 log.debug("[{}] 首次解析失败，尝试触发式修复未转义引号", logContext);
             }
             String repaired = repairUnescapedQuotesInJsonStrings(cleaned);
-            if (repaired != cleaned) {
+            if (!repaired.equals(cleaned)) {
                 try {
                     return JSON.parseObject(repaired, dtoClass);
                 } catch (RuntimeException repairError) {
