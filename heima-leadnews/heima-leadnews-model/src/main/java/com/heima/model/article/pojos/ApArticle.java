@@ -136,6 +136,14 @@ public class ApArticle implements Serializable {
 
 
     private Integer score;
+
+    /**
+     * 热度指数（非持久化，查询时动态计算）。
+     * <p>由编辑/系统热度分 score 与互动量（浏览/点赞/收藏/评论）综合加权得出，
+     * 用于榜单与作者中心的"热门"语义展示，对齐掘金 hot_index。</p>
+     */
+    @TableField(exist = false)
+    private Integer hotIndex;
     /**
      * 省市
      */
@@ -241,6 +249,18 @@ public class ApArticle implements Serializable {
     }
 
     /**
+     * 动态计算热度指数：编辑分权重 + 互动加权（浏览低权重，点赞/收藏/评论高权重）。
+     */
+    public int computeHotIndex() {
+        int base = this.score != null ? this.score : 0;
+        int v = this.views != null ? this.views : 0;
+        int l = this.likes != null ? this.likes : 0;
+        int c = this.collection != null ? this.collection : 0;
+        int cm = this.comment != null ? this.comment : 0;
+        return base * 10 + v + l * 20 + c * 30 + cm * 50;
+    }
+
+    /**
      * 是否为草稿状态
      */
     public boolean isDraft() {
@@ -284,6 +304,7 @@ public class ApArticle implements Serializable {
         map.put("commentOpen", this.commentOpen != null ? this.commentOpen : true);
         map.put("views", this.views != null ? this.views : "");
         map.put("score", this.score != null ? this.score : "");
+        map.put("hotIndex", this.hotIndex != null ? this.hotIndex : computeHotIndex());
         map.put("provinceId", this.provinceId != null ? this.provinceId : "");
         map.put("cityId", this.cityId != null ? this.cityId : "");
         map.put("countyId", this.countyId != null ? this.countyId : "");

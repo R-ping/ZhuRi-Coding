@@ -22,5 +22,14 @@ public class ProfileUpdateDTO {
 
     private String bio;
 
+    /** 地区 */
+    private String region;
+
+    /** 学历/学校 */
+    private String education;
+
+    /** 技术技能标签（对齐掘金 skills） */
+    private List<String> skills;
+
     private List<Integer> tagIds;
 }
