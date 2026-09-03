@@ -29,6 +29,9 @@ public class OrderTimeoutTask {
     /** 订单超时关单延迟队列名 */
     public static final String ORDER_TIMEOUT_DELAY_QUEUE = "ORDER_TIMEOUT_DELAY_QUEUE";
 
+    /** 支付通道超时关单延迟队列名 */
+    public static final String ORDER_PAY_TIMEOUT_DELAY_QUEUE = "ORDER_PAY_TIMEOUT_DELAY_QUEUE";
+
     @Autowired
     private RedissonClient redissonClient;
 
@@ -40,8 +43,14 @@ public class OrderTimeoutTask {
     @Value("${app.order.timeout-ms:1800000}")
     private long orderTimeoutMs;
 
+    /** 支付通道超时时间（毫秒，进入支付页后未支付即关单），默认 5 分钟，可通过 app.order.pay-timeout-ms 配置 */
+    @Value("${app.order.pay-timeout-ms:300000}")
+    private long payTimeoutMs;
+
     private RBlockingQueue<String> blockingQueue;
     private RDelayedQueue<String> delayedQueue;
+    private RBlockingQueue<String> payBlockingQueue;
+    private RDelayedQueue<String> payDelayedQueue;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "order-timeout-consumer");
@@ -54,18 +63,22 @@ public class OrderTimeoutTask {
         try {
             blockingQueue = redissonClient.getBlockingQueue(ORDER_TIMEOUT_DELAY_QUEUE);
             delayedQueue = redissonClient.getDelayedQueue(blockingQueue);
-            if (blockingQueue == null || delayedQueue == null) {
+            payBlockingQueue = redissonClient.getBlockingQueue(ORDER_PAY_TIMEOUT_DELAY_QUEUE);
+            payDelayedQueue = redissonClient.getDelayedQueue(payBlockingQueue);
+            if (blockingQueue == null || delayedQueue == null
+                    || payBlockingQueue == null || payDelayedQueue == null) {
                 throw new IllegalStateException("Redisson 延迟队列初始化返回空对象");
             }
             executor.submit(this::consume);
-            log.info("订单超时关单消费者已启动, timeoutMs={}", orderTimeoutMs);
+            executor.submit(this::consumePay);
+            log.info("订单超时关单消费者已启动, orderTimeoutMs={}, payTimeoutMs={}", orderTimeoutMs, payTimeoutMs);
         } catch (Exception e) {
             // Redis 不可用时降级：不再启动消费者，关单可交由兜底定时扫描补偿，避免拖垮应用上下文
             log.error("订单超时关单消费者启动失败，Redis 可能不可用，降级跳过", e);
         }
     }
 
-    /** 阻塞消费：取出订单号并执行幂等关单 */
+    /** 阻塞消费：取出订单号并执行幂等关单（待支付超时） */
     private void consume() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
@@ -82,6 +95,22 @@ public class OrderTimeoutTask {
         }
     }
 
+    /** 阻塞消费：取出订单号并关闭支付通道（支付页超时未支付） */
+    private void consumePay() {
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                String orderNo = payBlockingQueue.take();
+                log.info("消费支付通道超时关单任务, orderNo={}", orderNo);
+                orderService.closePayChannel(orderNo);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                log.error("支付通道超时关单处理异常", e);
+            }
+        }
+    }
+
     /** 下单后排程超时关单 */
     public void scheduleClose(String orderNo) {
         if (orderNo == null || orderNo.isEmpty()) {
@@ -89,6 +118,15 @@ public class OrderTimeoutTask {
         }
         delayedQueue.offer(orderNo, orderTimeoutMs, TimeUnit.MILLISECONDS);
         log.info("订单超时关单已排程: orderNo={}, timeoutMs={}", orderNo, orderTimeoutMs);
+    }
+
+    /** 去支付抢占成功后，排程支付通道超时关单 */
+    public void scheduleClosePayChannel(String orderNo) {
+        if (orderNo == null || orderNo.isEmpty()) {
+            return;
+        }
+        payDelayedQueue.offer(orderNo, payTimeoutMs, TimeUnit.MILLISECONDS);
+        log.info("支付通道超时关单已排程: orderNo={}, timeoutMs={}", orderNo, payTimeoutMs);
     }
 
     @PreDestroy
@@ -103,6 +141,9 @@ public class OrderTimeoutTask {
         }
         if (delayedQueue != null) {
             delayedQueue.destroy();
+        }
+        if (payDelayedQueue != null) {
+            payDelayedQueue.destroy();
         }
     }
 }

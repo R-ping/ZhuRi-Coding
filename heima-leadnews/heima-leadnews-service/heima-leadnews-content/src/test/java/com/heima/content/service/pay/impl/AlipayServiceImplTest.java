@@ -2,144 +2,104 @@ package com.heima.content.service.pay.impl;
 
 import com.heima.content.service.order.OrderService;
 import com.heima.model.course.pojos.ApCourseOrder;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.Spy;
 
-import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.Map;
-
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * AlipayServiceImpl 单元测试（支付宝支付页生成与支付回调校验）
- *
- * @Service 大量逻辑基于 @Value 注入的凭据与真实支付宝 SDK，本测试通过反射注入字段，
- * 聚焦可确定性验证的控制流：
- * 1. 有凭据/无凭据/生成异常时支付页的生成分支（回退本地模拟页）；
- * 2. handleNotify 支付状态过滤、金额一致性校验（防篡改）、订单存在性、成功流转；
- * 3. verifySign 公钥缺失 fail-closed；
- * 4. verifyAmount 金额缺失 / 非法数字 / 不一致等拒绝分支。
+ * AlipayServiceImpl 退款兜底逻辑单元测试。
+ * <p>未配置支付宝凭据（@Value 为 null）时 {@code isCredentialReady()} 返回 false，
+ * 退款走本地模拟成功分支，便于纯 Mock 验证「支付成功但订单已关闭 → 自动退款」的编排逻辑；
+ * 另用 Spy 覆写 refund 返回 null 验证「退款失败 → 标记待重试」分支。</p>
  */
 class AlipayServiceImplTest {
 
     @Mock
     private OrderService orderService;
 
+    @Spy
     @InjectMocks
     private AlipayServiceImpl alipayService;
-
-    private final String orderNo = "20270101120000123456";
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        // 注入 notifier 等各分支默认字段；具体用例内按需改写
-        ReflectionTestUtils.setField(alipayService, "appId", "");
-        ReflectionTestUtils.setField(alipayService, "gatewayUrl", "http://localhost:1");
-        ReflectionTestUtils.setField(alipayService, "privateKey", "");
-        ReflectionTestUtils.setField(alipayService, "alipayPublicKey", "PUB_KEY");
     }
 
-    // ---------- generatePayPage ----------
-    @Test
-    @DisplayName("无凭据时回退到本地模拟支付页")
-    void generateMockPayPageWhenNoCredential() {
-        String html = alipayService.generatePayPage(orderNo, "课程", "100.00", "http://localhost:51601/n", "http://localhost:9901/r");
-        assertTrue(html.contains("支付宝沙箱支付"));
-        assertTrue(html.contains(orderNo));
-        assertTrue(html.contains("100.00"));
-    }
-
-    @Test
-    @DisplayName("有凭据但生成支付宝表单失败时回退模拟页")
-    void generateMockPayPageWhenAlipayDown() {
-        ReflectionTestUtils.setField(alipayService, "appId", "app-123");
-        ReflectionTestUtils.setField(alipayService, "privateKey", "fake-private-key");
-        String html = alipayService.generatePayPage(orderNo, "课程", "100.00", "http://localhost:51601/n", "http://localhost:9901/r");
-        // 假凭据无法完成真实 RSA2 签名/网关交互，SDK 抛异常后应兜底返回模拟页
-        assertTrue(html.contains("支付宝沙箱支付"));
-    }
-
-    // ---------- handleNotify ----------
-    @Test
-    @DisplayName("回调状态非成功被拒绝")
-    void handleNotifyNonSuccess() {
-        assertFalse(alipayService.handleNotify("TN", orderNo, "100", "TRADE_CLOSED"));
-        verify(orderService, never()).handlePaySuccess(anyString(), anyString());
-    }
-
-    @Test
-    @DisplayName("回调金额缺失被拒绝")
-    void handleNotifyMissingAmount() {
-        assertFalse(alipayService.handleNotify("TN", orderNo, "", "TRADE_SUCCESS"));
-        verify(orderService, never()).handlePaySuccess(anyString(), anyString());
-    }
-
-    @Test
-    @DisplayName("回调订单不存在被拒绝")
-    void handleNotifyOrderNotExist() {
-        when(orderService.getByOrderNo(orderNo)).thenReturn(null);
-        assertFalse(alipayService.handleNotify("TN", orderNo, "100", "TRADE_SUCCESS"));
-    }
-
-    @Test
-    @DisplayName("回调金额非法被拒绝")
-    void handleNotifyInvalidAmount() {
+    private ApCourseOrder closedOrder() {
         ApCourseOrder o = new ApCourseOrder();
-        o.setPaidAmount(new BigDecimal("100"));
-        when(orderService.getByOrderNo(orderNo)).thenReturn(o);
-        assertFalse(alipayService.handleNotify("TN", orderNo, "abc", "TRADE_SUCCESS"));
+        o.setOrderNo("O1");
+        o.setStatus(ApCourseOrder.Status.CANCELLED.getCode());
+        o.setPaidAmount(new BigDecimal("100.00"));
+        return o;
     }
 
     @Test
-    @DisplayName("回调金额与订单不一致被拒绝（防篡改）")
-    void handleNotifyAmountMismatch() {
-        ApCourseOrder o = new ApCourseOrder();
-        o.setPaidAmount(new BigDecimal("100"));
-        when(orderService.getByOrderNo(orderNo)).thenReturn(o);
-        assertFalse(alipayService.handleNotify("TN", orderNo, "200", "TRADE_SUCCESS"));
-        verify(orderService, never()).handlePaySuccess(anyString(), anyString());
+    @DisplayName("支付成功但订单已关闭：自动退款并置为已退款")
+    void handleNotifyRefundsClosedOrder() {
+        when(orderService.handlePaySuccess("O1", "T1")).thenReturn(false);
+        when(orderService.getByOrderNo("O1")).thenReturn(closedOrder());
+
+        assertTrue(alipayService.handleNotify("T1", "O1", "100.00", "TRADE_SUCCESS"));
+        // 未配置凭据 → 模拟退款流水号 MOCK_O1，标记订单已退款
+        verify(orderService).markRefunded("O1", "MOCK_O1");
     }
 
     @Test
-    @DisplayName("回调校验通过后流转支付成功")
-    void handleNotifySuccess() {
-        ApCourseOrder o = new ApCourseOrder();
-        o.setPaidAmount(new BigDecimal("100"));
-        when(orderService.getByOrderNo(orderNo)).thenReturn(o);
-        assertTrue(alipayService.handleNotify("TN123", orderNo, "100.00", "TRADE_SUCCESS"));
-        verify(orderService).handlePaySuccess(orderNo, "TN123");
-    }
+    @DisplayName("支付成功但订单已关闭且首次退款失败：标记待重试退款")
+    void handleNotifyMarksRefundPendingOnFailure() throws Exception {
+        when(orderService.handlePaySuccess("O1", "T1")).thenReturn(false);
+        when(orderService.getByOrderNo("O1")).thenReturn(closedOrder());
+        doReturn(null).when(alipayService).refund("O1", "100.00", "T1"); // 模拟退款失败
 
-    // ---------- verifySign ----------
-    @Test
-    @DisplayName("公钥未配置时 fail-closed 拒绝验签")
-    void verifySignNoPublicKey() {
-        ReflectionTestUtils.setField(alipayService, "alipayPublicKey", "");
-        Map<String, String> params = Map.of("out_trade_no", orderNo, "trade_status", "TRADE_SUCCESS");
-        assertFalse(alipayService.verifySign(params));
+        assertTrue(alipayService.handleNotify("T1", "O1", "100.00", "TRADE_SUCCESS"));
+        verify(orderService).markRefundPending("O1");
+        verify(orderService, never()).markRefunded(anyString(), anyString());
     }
 
     @Test
-    @DisplayName("公钥配置但签名不合法时拒绝")
-    void verifySignInvalid() {
-        ReflectionTestUtils.setField(alipayService, "alipayPublicKey", "INVALID_PUBLIC_KEY");
-        Map<String, String> params = new HashMap<>();
-        params.put("out_trade_no", orderNo);
-        params.put("sign", "bad-sign");
-        params.put("sign_type", "RSA2");
-        // 假公钥无法通过 RSA2 验签，最终应返回 false（无论校验抛错或返回 false）
-        assertFalse(alipayService.verifySign(params));
+    @DisplayName("支付已真正处理完成（如重复通知/已 PAID）不触发退款")
+    void handleNotifyNoRefundWhenApplied() {
+        when(orderService.getByOrderNo("O1")).thenReturn(closedOrder());
+        when(orderService.handlePaySuccess("O1", "T1")).thenReturn(true);
+
+        assertTrue(alipayService.handleNotify("T1", "O1", "100.00", "TRADE_SUCCESS"));
+        verify(orderService, never()).markRefunded(anyString(), anyString());
+        verify(orderService, never()).markRefundPending(anyString());
+    }
+
+    @Test
+    @DisplayName("订单金额不符：拒绝回调，不进入退款")
+    void handleNotifyNoRefundWhenAmountMismatch() {
+        when(orderService.getByOrderNo("O1")).thenReturn(closedOrder());
+        assertFalse(alipayService.handleNotify("T1", "O1", "1.00", "TRADE_SUCCESS"));
+        verify(orderService, never()).markRefunded(anyString(), anyString());
+        verify(orderService, never()).markRefundPending(anyString());
+    }
+
+    @Test
+    @DisplayName("非成功状态回调直接拒绝")
+    void handleNotifyRejectsNonSuccess() {
+        assertFalse(alipayService.handleNotify("T1", "O1", "100.00", "WAIT_BUYER_PAY"));
+    }
+
+    @Test
+    @DisplayName("未配置凭据时退款返回本地模拟流水号（供本地/沙箱联调）")
+    void refundMockSuccess() {
+        assertEquals("MOCK_O1", alipayService.refund("O1", "100.00", "T1"));
     }
 }

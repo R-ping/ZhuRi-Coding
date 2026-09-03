@@ -37,6 +37,10 @@ public enum AppHttpCodeEnum {
     NO_OPERATOR_AUTH(3000,"无权限操作"),
     NEED_ADMIND(3001,"需要管理员权限"),
 
+    // 订单/支付错误 3200~3250
+    ORDER_CLOSED(3200,"订单已关闭，请重新下单"),
+    ORDER_STATUS_INVALID(3201,"订单状态异常"),
+
     // 自媒体文章错误 3501~3600
     MATERIASL_REFERENCE_FAIL(3501,"素材引用失效"),
 

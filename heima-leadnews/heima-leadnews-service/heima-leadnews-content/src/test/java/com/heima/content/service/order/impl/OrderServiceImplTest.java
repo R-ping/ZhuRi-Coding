@@ -30,8 +30,10 @@ import java.util.Date;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
@@ -63,6 +65,8 @@ class OrderServiceImplTest {
     private PaymentRewardService paymentRewardService;
     @Mock
     private IRewardClient rewardClient;
+    @Mock
+    private OrderTimeoutTask orderTimeoutTask;
 
     @InjectMocks
     private OrderServiceImpl orderService;
@@ -364,6 +368,216 @@ class OrderServiceImplTest {
         orderService.handlePaySuccess(orderNo, "TN1");
 
         verify(rewardClient, never()).consumeVirtualAsset(any(), any(), anyInt());
+    }
+
+    // ---------- preparePay / closePayChannel ----------
+    @Test
+    @DisplayName("preparePay 正常：PENDING→PROCESSING，返回订单并排程支付通道超时")
+    void preparePayOk() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
+        when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占 PENDING→PROCESSING 成功
+
+        ApCourseOrder result = (ApCourseOrder) orderService.preparePay(orderNo, userId).getData();
+        assertEquals(ApCourseOrder.Status.PROCESSING.getCode(), result.getStatus());
+        verify(orderMapper).update(any(), any());
+        verify(orderTimeoutTask).scheduleClosePayChannel(orderNo);
+    }
+
+    @Test
+    @DisplayName("preparePay 订单不存在")
+    void preparePayNotExist() {
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(),
+                orderService.preparePay(orderNo, userId).getCode());
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("preparePay 越权访问他人订单被拒绝")
+    void preparePayForbidden() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
+        assertEquals(AppHttpCodeEnum.NO_OPERATOR_AUTH.getCode(),
+                orderService.preparePay(orderNo, 999L).getCode());
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("preparePay 订单已关闭/非待支付拒绝发起支付")
+    void preparePayStateNotPending() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.CANCELLED.getCode(), ""));
+        assertEquals(AppHttpCodeEnum.ORDER_STATUS_INVALID.getCode(),
+                orderService.preparePay(orderNo, userId).getCode());
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("preparePay 并发下关单先行（抢占命中0行）→ 提示订单已关闭，不排程")
+    void preparePayClaimRaceClosed() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
+        when(orderMapper.update(any(), any())).thenReturn(0); // 关单已先行 PENDING→CANCELLED
+
+        assertEquals(AppHttpCodeEnum.ORDER_CLOSED.getCode(),
+                orderService.preparePay(orderNo, userId).getCode());
+        verify(orderTimeoutTask, never()).scheduleClosePayChannel(orderNo);
+    }
+
+    @Test
+    @DisplayName("preparePay 已处于 PROCESSING 幂等放行，不重复抢占")
+    void preparePayAlreadyProcessing() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PROCESSING.getCode(), ""));
+        assertEquals(200, orderService.preparePay(orderNo, userId).getCode());
+        verify(orderMapper, never()).update(any(), any());
+        verify(orderTimeoutTask, never()).scheduleClosePayChannel(orderNo);
+    }
+
+    @Test
+    @DisplayName("preparePay 5折券数量不足拒绝发起支付")
+    void preparePayCouponInsufficient() {
+        ApCourseOrder o = order(ApCourseOrder.Status.PENDING.getCode(), "");
+        o.setCouponItemCode("course50");
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        Map<String, Object> hold = new java.util.HashMap<>();
+        hold.put("quantity", 0);
+        when(rewardClient.getVirtualAssetHold(userId, "course50"))
+                .thenReturn(ResponseResult.okResult(hold));
+
+        assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
+                orderService.preparePay(orderNo, userId).getCode());
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("preparePay 折扣码已失效拒绝发起支付")
+    void preparePayDiscountInvalid() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), "BAD"));
+        when(discountService.validateDiscount("BAD", courseId)).thenReturn(null);
+
+        assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
+                orderService.preparePay(orderNo, userId).getCode());
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("preparePay 公开访问（userId=null）跳过券码核验并抢占")
+    void preparePayPublicNoUserId() {
+        ApCourseOrder o = order(ApCourseOrder.Status.PENDING.getCode(), "CODE");
+        o.setCouponItemCode("course50");
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        ApCourseOrder result = (ApCourseOrder) orderService.preparePay(orderNo, null).getData();
+        assertEquals(ApCourseOrder.Status.PROCESSING.getCode(), result.getStatus());
+        // 无非特权：不调用 reward 持有量校验，仅原子抢占
+        verify(rewardClient, never()).getVirtualAssetHold(any(), any());
+    }
+
+    @Test
+    @DisplayName("closePayChannel 将 PROCESSING 订单置为已取消")
+    void closePayChannel() {
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        orderService.closePayChannel(orderNo);
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("closePayChannel 已非 PROCESSING（如已支付）则不受影响不重复关单")
+    void closePayChannelNoEffect() {
+        when(orderMapper.update(any(), any())).thenReturn(0);
+        orderService.closePayChannel(orderNo);
+        verify(orderMapper).update(any(), any());
+    }
+
+    // ---------- handlePaySuccess 返回值 / markRefunded 退款兜底 ----------
+    @Test
+    @DisplayName("handlePaySuccess 真正放权成功返回 true")
+    void handlePaySuccessReturnsTrueWhenApplied() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
+        when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
+        when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
+        when(userCourseMapper.selectOne(any())).thenReturn(null);
+
+        assertTrue(orderService.handlePaySuccess(orderNo, "TN1"));
+    }
+
+    @Test
+    @DisplayName("handlePaySuccess 订单已关闭（抢占失败）返回 false 供退款兜底判断")
+    void handlePaySuccessReturnsFalseWhenNotApplied() {
+        when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.CANCELLED.getCode(), ""));
+        when(orderMapper.update(any(), any())).thenReturn(0); // CAS 命中0行
+
+        assertFalse(orderService.handlePaySuccess(orderNo, "TN1"));
+    }
+
+    @Test
+    @DisplayName("markRefunded 将 CANCELLED 订单置为已退款（写入退款信息）")
+    void markRefunded() {
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        orderService.markRefunded(orderNo, "R1");
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("markRefunded 非 CANCELLED（已退款/已支付）不受影响")
+    void markRefundedNoEffect() {
+        when(orderMapper.update(any(), any())).thenReturn(0);
+        orderService.markRefunded(orderNo, "R1");
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("markRefundPending 将 CANCELLED 订单置为待重试退款")
+    void markRefundPending() {
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        orderService.markRefundPending(orderNo);
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("listPendingRefundOrders 查询待重试退款订单")
+    void listPendingRefundOrders() {
+        when(orderMapper.selectList(any())).thenReturn(java.util.List.of(order(ApCourseOrder.Status.CANCELLED.getCode(), "")));
+        assertEquals(1, orderService.listPendingRefundOrders(10).size());
+    }
+
+    @Test
+    @DisplayName("markRefundRetryFailure 未达上限返回 false，下次继续记录")
+    void markRefundRetryFailureNotExhausted() {
+        ApCourseOrder o = order(ApCourseOrder.Status.CANCELLED.getCode(), "");
+        o.setRefundRetryCount(1);
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        assertFalse(orderService.markRefundRetryFailure(orderNo, 3)); // 1+1=2 < 3
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("markRefundRetryFailure 到达上限返回 true（触发告警停止重试）")
+    void markRefundRetryFailureExhausted() {
+        ApCourseOrder o = order(ApCourseOrder.Status.CANCELLED.getCode(), "");
+        o.setRefundRetryCount(2);
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        assertTrue(orderService.markRefundRetryFailure(orderNo, 3)); // 2+1=3 >= 3
+    }
+
+    @Test
+    @DisplayName("markRefundPending 忽略已处于待重试的订单（避免计数灌高）")
+    void markRefundPendingIdempotentWhenAlreadyPending() {
+        ApCourseOrder o = order(ApCourseOrder.Status.CANCELLED.getCode(), "");
+        o.setRefundPending(1);
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        when(orderMapper.update(any(), any())).thenReturn(0);
+        orderService.markRefundPending(orderNo);
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("listAlertedRefundOrders 查询达标告警订单")
+    void listAlertedRefundOrders() {
+        when(orderMapper.selectList(any())).thenReturn(java.util.List.of(order(ApCourseOrder.Status.CANCELLED.getCode(), "")));
+        assertEquals(1, orderService.listAlertedRefundOrders(10).size());
     }
 
     // ---------- getByOrderNo ----------

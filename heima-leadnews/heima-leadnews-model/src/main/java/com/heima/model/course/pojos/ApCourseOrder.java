@@ -53,15 +53,32 @@ public class ApCourseOrder implements Serializable {
     @TableField("trade_no")
     private String tradeNo;
 
+    @TableField("refund_trade_no")
+    private String refundTradeNo;
+
+    @TableField("refund_time")
+    private Date refundTime;
+
+    @TableField("refund_pending")
+    private Integer refundPending;
+
+    @TableField("refund_retry_count")
+    private Integer refundRetryCount;
+
     @TableField("created_time")
     private Date createdTime;
 
     @TableField("updated_time")
     private Date updatedTime;
 
+    /**
+     * 订单状态机：
+     * PENDING(待支付) → [去支付原子抢占] → PROCESSING(支付处理中) → [支付成功] → PAID
+     * PENDING / PROCESSING → [超时关单] → CANCELLED；PAID → [退款] → REFUNDED
+     */
     @Getter
     public enum Status {
-        PENDING(0), PAID(1), CANCELLED(2), REFUNDED(3);
+        PENDING(0), PAID(1), CANCELLED(2), REFUNDED(3), PROCESSING(4);
         final int code;
         Status(int code) { this.code = code; }
     }
