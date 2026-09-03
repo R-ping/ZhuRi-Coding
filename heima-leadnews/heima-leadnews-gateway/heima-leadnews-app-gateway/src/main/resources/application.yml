@@ -5,6 +5,10 @@ spring:
     include: gateway
   application:
     name: leadnews-app-gateway
+  # 网关为无状态 WebFlux 代理，不连接任何数据库；显式关闭 DataSource 自动装配，
+  # 避免 Actuator 健康检查（dbHealthContributor）尝试创建 HikariDataSource 导致启动失败。
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
@@ -43,4 +47,6 @@ management:
 #        server-addr: 192.168.200.130:8848
 #        file-extension: yml
 # 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
-app:/n  internal-auth:/n    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+app:
+  internal-auth:
+    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
