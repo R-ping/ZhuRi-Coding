@@ -1,44 +1,37 @@
 package com.heima.content.service.article.impl;
 
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.heima.apis.search.ISearchClient;
-import com.heima.common.constants.ArticleConstants;
 import com.heima.content.event.ArticleBuildCompleteEvent;
-import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleEventMapper;
 import com.heima.content.service.article.ArticleFreemarkerService;
-import com.heima.content.utils.MarkdownUtils;
-// MinIO 已移除，文章详情页改为 MVC 服务端渲染，不再依赖 MinIO 静态 HTML 文件
-// import com.heima.file.config.MinIOConfig;
-// import com.heima.file.utils.MinioUtil;
 import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleContent;
 import com.heima.model.article.pojos.ArticleEvent;
 import com.heima.model.search.vos.SearchArticleVo;
-import com.heima.model.search.vos.TocItem;
 import java.util.Date;
-import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.heima.common.constants.ArticleConstants;
 
+/**
+ * 文章 ES 同步服务（单延迟方案）
+ *
+ * <p>职责收敛：文章到点发布时，将文章基础字段同步到 ES（正文由 search 服务端反向拉取），
+ * 更新本地消息表 es_status，并发布构建完成事件驱动后续"置 DB/ES 发布态 + 消费任务"。
+ *
+ * <p>历史说明：类名保留 ArticleFreemarker 前缀系历史命名（原方案将文章静态化为 HTML 上传 MinIO），
+ * MinIO/FreeMarker 静态化已移除，本文仅承担 ES 同步职责；改名将联动调用方与测试，暂缓。
+ */
 @Service
 @Slf4j
 @Transactional(rollbackFor = Exception.class)
 public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
 
-    // MinIO 已移除，文章详情页改为 MVC 服务端渲染，不再依赖 MinIO 静态 HTML 文件
-    // @Autowired
-    // private MinioUtil minioUtil;
-    // @Autowired
-    // private MinIOConfig prop;
-    @Autowired
-    private ApArticleContentMapper apArticleContentMapper;
     @Autowired
     private ISearchClient searchClient;
     @Autowired
@@ -47,109 +40,50 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
     private ApplicationEventPublisher eventPublisher;
 
     /**
-     * 生成静态文件上传到minIO中
-     * 构建完成后发布 ArticleBuildCompleteEvent，由监听器处理后续的发布或延迟任务逻辑
+     * 同步文章到 ES：copyProperties 基础字段 → Feign 同步（search 服务自拉正文）→ 更新 es_status → 发布完成事件。
+     * 单延迟方案：本方法在延迟任务到点时被 @Async 触发，成功后由事件监听器置 DB/ES 发布态并消费任务。
      */
     @Async
     @Override
-    public void buildHTMLAndSend(ApArticle apArticle, String content, Long taskId, long lastExecuteInterval) {
-        //已知文章的id
+    public void buildHTMLAndSend(ApArticle apArticle, Long taskId) {
+        if (apArticle == null || apArticle.getId() == null) {
+            log.error("同步文章到ES失败，文章参数为空");
+            return;
+        }
         SearchArticleVo vo = new SearchArticleVo();
         BeanUtils.copyProperties(apArticle, vo);
-        String markdown = resolveContent(apArticle.getId(), content);
-        vo.setContent(markdown);
-        buildHtmlContent(vo, markdown);
-        // buildFileNameAndPath(apArticle, vo); // MinIO 已移除，文章详情页改为 MVC 服务端渲染
         try {
-            // 同步文章到ES
+            // 同步文章到ES（正文由 search 服务 syncArticle 内 Feign 反向拉取，无需在此读取/加工内容）
             searchClient.syncArticle(vo);
             log.info("文章同步到ES成功, articleId={}", apArticle.getId());
-            updateArticleEventStatus(apArticle.getId(), "es", (byte) 2);
+            updateArticleEventStatus(apArticle.getId(), (byte) 2);
         } catch (Exception e) {
             log.error("文章同步到ES失败, articleId={}", apArticle.getId(), e);
-            updateArticleEventStatus(apArticle.getId(), "es", (byte) 1);
+            updateArticleEventStatus(apArticle.getId(), (byte) 1);
         }
-        // 上传 HTML 到 MinIO（MinIO 已移除，文章详情页改为 MVC 服务端渲染）
-        // try {
-        //     String htmlContent = vo.getHtmlContent();
-        //     if (StringUtils.isNotBlank(htmlContent)) {
-        //         minioUtil.uploadString(htmlContent, vo.getFileName(), "text/html");
-        //         log.info("文章HTML上传MinIO成功, articleId={}", apArticle.getId());
-        //         updateArticleEventStatus(apArticle.getId(), "minio", (byte) 2);
-        //     }
-        // } catch (Exception e) {
-        //     log.error("文章HTML上传MinIO失败, articleId={}", apArticle.getId(), e);
-        //     updateArticleEventStatus(apArticle.getId(), "minio", (byte) 1);
-        // }
-        // 上传 JS 到 MinIO
-        // 方案②（FTL 服务端渲染）：article-static.js 为共用交互脚本，
-        // 已作为内容服务静态资源（classpath:/static/article-static.js）由网关 /content/article-static.js 统一提供，
-        // 无需再为每篇文章重复上传，此处移除冗余上传逻辑。
-        // 发布事件，由监听器处理后续逻辑（立即发布或添加延迟任务）
-        eventPublisher.publishEvent(new ArticleBuildCompleteEvent(
-            apArticle.getId(), taskId, lastExecuteInterval));
+        // 发布事件，由监听器统一置 DB/ES 发布态并消费任务（单延迟：同步完成即发布）
+        eventPublisher.publishEvent(new ArticleBuildCompleteEvent(apArticle.getId(), taskId));
     }
-
-    /**
-     * 解析文章内容：优先使用传入的内容，为空则从数据库读取
-     */
-    private String resolveContent(Long articleId, String content) {
-        if (StringUtils.isNotBlank(content)) {
-            return MarkdownUtils.normalizeContent(content);
-        }
-        ApArticleContent articleContent = apArticleContentMapper.selectOne(
-            Wrappers.<ApArticleContent>lambdaQuery().eq(ApArticleContent::getArticleId, articleId));
-        return articleContent != null ? MarkdownUtils.normalizeContent(articleContent.getContent()) : "";
-    }
-
-    /**
-     * 将 Markdown 渲染为 HTML 并提取目录
-     */
-    private void buildHtmlContent(SearchArticleVo vo, String markdown) {
-        String rawHtml = MarkdownUtils.toHtml(markdown);
-        List<TocItem> tocList = MarkdownUtils.extractToc(rawHtml);
-        String htmlContent = MarkdownUtils.injectHeadingAnchors(rawHtml);
-        vo.setHtmlContent(htmlContent);
-        vo.setTocList(tocList);
-    }
-
-    // MinIO 已移除，文章详情页改为 MVC 服务端渲染，不再依赖 MinIO 静态 HTML 文件
-    // private void buildFileNameAndPath(ApArticle apArticle, SearchArticleVo vo) {
-    //     // "yyyy/MM/dd/articleId"
-    //     String objectName = minioUtil.builderFilePath("articles", String.valueOf(apArticle.getId()));
-    //     vo.setFileName(objectName);
-    //     // path http://xx:9000/bucketName/2020/08/05/articleId
-    //     String path = prop.getReadPath() + "/" + prop.getBucket() + "/" + objectName;
-    //     vo.setStaticUrl(path);
-    // }
 
     /**
      * 更新本地消息表中指定操作的状态
      *
      * @param articleId 文章ID
-     * @param type 操作类型：minio/es
      * @param status 状态值：0=初始化 1=待重试 2=成功
      */
-    private void updateArticleEventStatus(Long articleId, String type, byte status) {
+    private void updateArticleEventStatus(Long articleId, byte status) {
         try {
             ArticleEvent event = apArticleEventMapper.selectOne(
                 Wrappers.<ArticleEvent>lambdaQuery().eq(ArticleEvent::getArticleId, articleId));
             if (event != null) {
-                // MinIO 已移除，文章详情页改为 MVC 服务端渲染，不再依赖 MinIO 静态 HTML 文件
-                // if ("minio".equals(type)) {
-                //     event.setMinioStatus(status);
-                // } else if ("es".equals(type)) {
-                if ("es".equals(type)) {
-                    event.setEsStatus(status);
-                }
+                event.setEsStatus(status);
                 if (status == 1) { // 待重试
                     event.setRetryTime(new Date(System.currentTimeMillis() + ArticleConstants.RETRY_INTERVAL_MS));
                 }
                 apArticleEventMapper.updateArticleEvent(event);
             }
         } catch (Exception e) {
-            log.error("更新本地消息表状态失败, articleId={}, type={}", articleId, type, e);
+            log.error("更新本地消息表状态失败, articleId={}", articleId, e);
         }
     }
-
 }

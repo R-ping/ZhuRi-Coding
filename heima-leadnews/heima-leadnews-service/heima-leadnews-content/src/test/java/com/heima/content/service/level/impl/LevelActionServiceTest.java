@@ -137,19 +137,21 @@ class LevelActionServiceTest {
     }
 
     @Test
-    @DisplayName("recordActionWithLimit - 今日积分已打满拒绝")
+    @DisplayName("recordActionWithLimit - 无每日总分上限，达到行为次数上限才拒绝")
     void testActionWithLimitReachDailyScore() {
         when(levelQueryService.getUserLevel(userId)).thenReturn(level(1, BigDecimal.ZERO));
-        when(actionLogMapper.selectCount(any())).thenReturn(0L);
+        when(levelQueryService.calculateLevel(eq(1), any(BigDecimal.class))).thenReturn(1);
+        // 今日已通过其他行为累计 200+ 分（旧规则有"每日总分上限 200"，现规则无总分上限）
         ApUserActionLog log = new ApUserActionLog();
-        log.setScoreChange(BigDecimal.valueOf(200)); // 今日已赚满200
+        log.setScoreChange(BigDecimal.valueOf(250));
         when(actionLogMapper.selectList(any())).thenReturn(Collections.singletonList(log));
+        when(actionLogMapper.selectCount(any())).thenReturn(0L); // 未达本行为次数上限
 
         Map<String, Object> result = levelActionService.recordActionWithLimit(userId, "publish_article", "发文章");
 
-        assertFalse((Boolean) result.get("success"));
-        assertEquals("今日积分已达上限", result.get("message"));
-        verify(actionLogMapper, never()).insert((ApUserActionLog) any());
+        // 新规则：只受单行为每日次数上限约束，无总分上限 → 正常加分
+        assertTrue((Boolean) result.get("success"));
+        verify(actionLogMapper).insert((ApUserActionLog) any());
     }
 
     @Test
@@ -206,19 +208,22 @@ class LevelActionServiceTest {
     }
 
     @Test
-    @DisplayName("recordPaymentAction - 超额金额按每日上限截断")
+    @DisplayName("recordPaymentAction - 大额支付不截断（无每日总分上限，金额即经验值）")
     void testPaymentExceedsDailyLimit() {
         when(levelQueryService.getUserLevel(userId)).thenReturn(level(1, BigDecimal.ZERO));
         when(levelQueryService.calculateLevel(eq(1), any(BigDecimal.class))).thenReturn(1);
+        // 今日已通过其他行为累计 150 分（旧规则会按 200 上限截断，现规则不截断）
         ApUserActionLog log = new ApUserActionLog();
-        log.setScoreChange(BigDecimal.valueOf(150)); // 今日已获150，余量50
+        log.setScoreChange(BigDecimal.valueOf(150));
         when(actionLogMapper.selectList(any())).thenReturn(Collections.singletonList(log));
+        when(actionLogMapper.selectCount(any())).thenReturn(0L);
 
         Map<String, Object> result = levelActionService.recordPaymentAction(
                 userId, "purchase_course", BigDecimal.valueOf(1000), "购课");
 
+        // 新规则：支付金额全额入账，不做总分截断
         assertTrue((Boolean) result.get("success"));
-        assertEquals(50, ((BigDecimal) result.get("score")).intValue()); // 1000 -> 截断为 50
+        assertEquals(1000, ((BigDecimal) result.get("score")).intValue());
     }
 
     @Test
@@ -249,17 +254,20 @@ class LevelActionServiceTest {
     }
 
     @Test
-    @DisplayName("checkIn - 今日积分打满不可签到")
+    @DisplayName("checkIn - 今日总分很高也可签到（无每日总分上限）")
     void testCheckInScoreFull() {
+        when(levelQueryService.getUserLevel(userId)).thenReturn(level(1, BigDecimal.ZERO));
+        when(levelQueryService.calculateLevel(eq(1), any(BigDecimal.class))).thenReturn(1);
         when(actionLogMapper.selectCount(any())).thenReturn(0L);
+        // 今日已有 200+ 分（旧规则会拦截签到，新规则无总分上限正常签到）
         ApUserActionLog log = new ApUserActionLog();
         log.setScoreChange(BigDecimal.valueOf(200));
         when(actionLogMapper.selectList(any())).thenReturn(Collections.singletonList(log));
 
         Map<String, Object> result = levelActionService.checkIn(userId);
-        assertFalse((Boolean) result.get("success"));
-        assertEquals(Boolean.FALSE, result.get("hasCheckedIn"));
-        verify(actionLogMapper, never()).insert((ApUserActionLog) any());
+        assertTrue((Boolean) result.get("success"));
+        assertEquals(Boolean.TRUE, result.get("hasCheckedIn"));
+        verify(actionLogMapper).insert((ApUserActionLog) any());
     }
 
     @Test

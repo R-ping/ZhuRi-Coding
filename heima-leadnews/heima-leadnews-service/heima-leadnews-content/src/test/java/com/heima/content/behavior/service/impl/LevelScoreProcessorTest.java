@@ -87,11 +87,11 @@ class LevelScoreProcessorTest {
     @Test
     @DisplayName("postProcess - 主动行为且无目标用户，仅记录逐日积分")
     void postProcessActiveOnly() {
-        // BROWSE_COURSE → actionType=browse_course，targetUserId=null
+        // BROWSE_COURSE → 归一化为 actionType=browse_article（浏览课程并入浏览文章任务），targetUserId=null
         processor.postProcess(context(BehaviorType.BROWSE_COURSE, 5, null, 4, 300L),
                 result(BehaviorType.BROWSE_COURSE));
 
-        verify(levelService).recordActionWithLimit(eq(5L), eq("browse_course"), eq("课程ID:300"));
+        verify(levelService).recordActionWithLimit(eq(5L), eq("browse_article"), eq("课程ID:300"));
         // 无目标用户 → 不触发被动进度与逐力值
         verify(levelActionService, never()).recordPassiveAction(anyLong(), anyString());
         verify(levelService, never()).calculatePower(anyLong(), anyLong(), anyString(), eq(1));

@@ -144,8 +144,7 @@
                                     <div class="task-progress-text">
                                         掘友分 +{{ task.score }}
                                         <template v-if="task.limit > 0">，已完成 {{ task.done || 0 }}/{{ task.limit }}</template>
-                                        <template v-else-if="task.limit === -1">，已完成 {{ task.done || 0 }} 次</template>
-                                        <template v-else>，已完成 {{ task.done || 0 }}</template>
+                                        <!-- limit === -1：无限制任务（社区影响力等）不展示已完成次数 -->
                                     </div>
                                 </div>
                                 <button class="task-btn" 

@@ -277,6 +277,9 @@ public class JScoreServiceImpl implements JScoreService {
                 return 3;
             case "社区影响力":
                 return 4;
+            // 内容创作加分归入"专项/创作"分类（编号5，明细页 spec）
+            case "内容创作":
+                return 5;
             default:
                 return null;
         }

@@ -1,5 +1,183 @@
 # CHANGELOG
 
+## 2026-09-05 — 统一逐日等级行为编码，消除 publish_pin/publish_pins 命名漂移
+
+### 现象（Brooks-Lint 健康看板）
+行为 action-code（like_article/follow_user/publish_pin 等）以魔法字符串硬编码在 8 处后端文件，且发布沸点存在同概念两词形：`LevelScoreProcessor`/`LevelScoreConstants` 用 `publish_pins`，配置表与进度表用 `publish_pin`，逼出 `normalizeActionCode` 补丁桥接两套命名。
+
+### 处理
+- 新增单一来源常量类 `LevelScoreActionCode`，统一承载所有等级行为编码。
+- `LevelScoreConstants.ACTION_SCORE_MAP / DAILY_ACTION_LIMIT` 的 key 改用常量引用，并将 `publish_pins` 规范为 `publish_pin`。
+- `LevelScoreProcessor.mapToLevelAction` 改用常量并返回规范 `publish_pin`；删除 `LevelActionService.normalizeActionCode` 中已冗余的 `publish_pins→publish_pin` 桥接（保留跨任务归一 `browse_course→browse_article`）。
+- `ArticleInteractionController` / `FansDataServiceImpl` 的行为编码改用常量引用，实现后端单一来源。
+
+### 验证
+`heima-leadnews-content` 相关单测全绿：LevelScoreProcessorTest 10、LevelActionServiceTest 19、TransactionRegressionTest 1 及其余 level 包共计 0 失败；`mvn -pl .../content compile` 通过。
+
+### 变更文件
+- `heima-leadnews-content/.../constants/LevelScoreActionCode.java`（新增）
+- `heima-leadnews-content/.../constants/LevelScoreConstants.java`
+- `heima-leadnews-content/.../behavior/service/impl/LevelScoreProcessor.java`
+- `heima-leadnews-content/.../service/level/impl/LevelActionService.java`
+- `heima-leadnews-content/.../controller/v1/article/ArticleInteractionController.java`
+- `heima-leadnews-content/.../service/fans/impl/FansDataServiceImpl.java`
+- `docs/CHANGELOG.md`
+
+## 2026-09-05 — 发布链路单延迟化（方案A）+ ArticleFreemarkerService 瘦身
+
+### 背景
+消费端动作已精简（本地消息表入库 + ES 同步 + 置发布状态），双延迟（提前执行复杂业务 + 二次延迟置可见）不再必要：
+- 原双延迟动机：500 个同点发布任务若全在发布时刻执行复杂业务，最后一批误差可达数十秒；故将复杂业务提前 5~10 分钟执行、到点只改可见状态。
+- 现在复杂业务已从"HTML 构建 + MinIO 上传"精简为"一次 Feign 同步 ES"（正文由 search 服务反向拉取），单次消费耗时可控；且本地消息表 20s 定时重试兜底失败项。初期用户量下单延迟误差可接受。
+
+### 处理
+- `ArticleTaskServiceImpl.addArticleToTask`：删除提前量三分支（≤5min 立即 / ≤15min 提前2min / >15min 随机提前5~10min），任务延迟直接 = publishTime-now，到点一次消费。
+- `RedissonDelayTaskEventListener`：删除 `TASK_LAST_EXECUTE_DELAY_QUEUE` 分支与 `handleLastExecDelay`；入口签名 `generateArticleEvent(article, taskId)` 去掉 lastExecuteInterval。
+- `ApArticleService / ApArticleServiceImpl.generateArticleEvent`：签名去掉 lastExecuteInterval。
+- `ArticleFreemarkerService / Impl`：`buildHTMLAndSend(apArticle, taskId)` 去掉 content/lastExecuteInterval 参数；删除 `resolveContent`（ES 端自拉正文）、`buildHtmlContent`（htmlContent/tocList 无消费方）、全部 MinIO 注释死代码与 import；实现收敛为 copyProperties → syncArticle → esStatus → 事件。
+- `ArticleBuildCompleteEvent`：去掉 lastExecuteInterval 字段；`ArticleBuildCompleteEventListener` 删除 ScheduleLastDelayTaskEvent 分支，恒 updateArticleStatus + consumerTask。
+- 删除类：`ScheduleLastDelayTaskEvent`、`LastDelayTaskScheduler`（mv 至 /tmp/last-del-files 留档）。
+- `RedissonDelayQueue.init`：仅启动 `TASK_FIRST_EXECUTE_DELAY_QUEUE` 消费者。
+- `ArticleConstants`：删除 5 个双延迟专用常量（DELAY_2_MIN_MS / DELAY_5_MIN_MS / DELAY_15_MIN_MS / RANDOM_DELAY_BASE_MIN / RANDOM_DELAY_RANGE_MIN），保留 DELAY_1_HOUR_MS（refresh 兜底仍用）。
+- `ApArticleServiceImplTest`：同步新签名断言（4 处）。
+
+### 验证
+- `ApArticleServiceImplTest`(13) + `ArticleAutoScanServiceImplTest`(7) + `ApArticleEventServiceImplTest`(4) 全绿。
+- content 服务全量测试 725 用例 0 失败，BUILD SUCCESS。
+- 单延迟语义：任务到 publishTime 触发 → 本地消息表入库（20s 重试兜底）→ @Async syncArticle → 事件 → DB/ES 置发布态 + consumerTask。`refreshTaskToRedis`（30min，分布式锁）兜底 Redis 重启丢队列场景保持不变。
+
+### 变更文件
+- `heima-leadnews-common/.../constants/ArticleConstants.java`
+- `content/.../event/ArticleBuildCompleteEvent.java`、`ArticleBuildCompleteEventListener.java`、`RedissonDelayTaskEventListener.java`、`(删)ScheduleLastDelayTaskEvent.java`
+- `content/.../schedule/listener/RedissonDelayQueue.java`、`(删)LastDelayTaskScheduler.java`
+- `content/.../service/article/ApArticleService.java`、`ArticleFreemarkerService.java`
+- `content/.../service/article/impl/ApArticleServiceImpl.java`、`ArticleFreemarkerServiceImpl.java`、`ArticleTaskServiceImpl.java`
+- `content/.../test/.../ApArticleServiceImplTest.java`
+- `docs/CHANGELOG.md`
+
+## 2026-09-03 — 补录文章页关注行为进度 + 全行为端到端回归验证
+
+### 现象
+上一轮已修复"社区活跃"任务进度不累计，但文章详情页右上角的"关注作者"按钮（`/api/v1/article/{id}/follow`）仍未补记 `follow_user` 进度：关注后积分卡与掘友分明细有 +4，但每日任务"关注一位掘友 0/5"不累计到 1。
+
+### 处理
+- 后端：`ArticleInteractionController.follow` 在新增关注分支调用 `LevelService.recordActionWithLimit(userId,"follow_user",...)`，与 `/behavior/follow`、`/api/v1/follow/do` 口径一致，失败不影响关注主流程。
+- 重建并重启 content 服务，使该修复生效。
+
+### 结果（端到端）
+- 浏览器用手机号 `20000000002`（新用户 用户176013 / id 1889522398）验证码登录后关注作者 zhangsan（文章 2087071668418568194）。
+- 关注后：资料卡"关注 0→1"、"逐日等级 ZR.1 0/15→4/15"、掘友分明细"社区活跃 +4"均同步；`ap_user_daily_progress` 写入 `follow_user count=1`（stat_date=今日），任务接口 `done=1, limit=5`。"已完成 0/5"卡片需刷新页面前端视图后显示 1/5（数据本身已入账）。
+- 此前已核验：`like_article`、`collect_article`、`like_pin`、`comment_pin`、`comment_article`、`publish_article/publish_pin`、粉丝页关注 均能写入今日进度。
+
+### 变更文件
+- `heima-leadnews-content/.../controller/v1/article/ArticleInteractionController.java`
+- `docs/CHANGELOG.md`
+
+## 2026-09-03 — 修复社区活跃任务进度不累计 + 创作者中心创作任务缺进度
+
+### 现象
+"点赞一篇文章 掘友分+1 已完成 0/5"等逐日等级"社区活跃"任务进度不变；创作者中心首页"创作任务"区域所有任务缺少进度。
+
+### 根因
+- **点赞文章不计进度（后端）**：文章详情页点赞走 `/api/v1/article/{id}/like`，该接口只写点赞表、未过度行为总线，`like_article` 进度/逐日分从不写入（`ap_user_daily_progress` 存在 comment/like_pin 唯独缺 like_article，为证）。
+- **创作者中心静态展示（前端）**：`GrowthTasks.vue` 为硬编码静态列表，`completed` 恒为 false，未绑定真实进度。
+- **每日上限口径不一致**：界面显示目标 `/5`，后端 `like_article/like_pin/comment_*` 原 `daily_limit=2`，即使能累计也最多 2/5。
+
+### 处理
+- 后端：`ArticleInteractionController.like` 在新增点赞时调用 `LevelService.recordActionWithLimit(userId,"like_article",...)`（与行为总线一致），失败不影响点赞主流程。
+- 常量：`LevelScoreConstants.DAILY_ACTION_LIMIT` 将 comment_article/comment_pin/like_article/like_pin 每日上限调整为 5。
+- 数据：`ap_behavior_config` 对应 `daily_limit` 更新为 5（migration）。
+- 前端：`GrowthTasks.vue` 改为拉取 `/api/v1/level/user/{id}/tasks` 真实进度，筛选"社区活跃"分组展示 `done/limit`，登录/接口失败时回退静态任务。
+
+### 结果
+端到端验证：点赞 3 篇文章后，任务接口返回 `like_article: done=3, limit=5`；`ap_user_daily_progress` 写入 count，`ap_user_action_log` 写入积分。
+
+### 变更文件
+- `heima-leadnews-content/.../controller/v1/article/ArticleInteractionController.java`
+- `heima-leadnews-content/.../constants/LevelScoreConstants.java`
+- `heima-leadnews-content/src/main/resources/db/migrations/align_daily_limit_comment_like_to_5.sql`（新增）
+- `src/pages/creator/dashboard/components/GrowthTasks.vue`
+- `docs/CHANGELOG.md`
+
+## 2026-09-03 — 从掘金搬运 10 门课程小册（作者优先，含章节）并完善课程列表上拉加载
+
+### 目标
+将 10 门掘金课程小册（含全部 265 个章节）搬运到本地库，并让课程列表页完整展示这些数据，避免出现"有课程无作者"或"数据不在页面展示"的空洞。
+
+### 实施
+- 作者优先策略：新增 `juejin-import/fetch-course.mjs`，先导 `ap_user`（作者用户，leadnews_user），再导 `ap_author_profile`（作者档案），最后 `ap_course` + `ap_course_chapter`，保证关联完整。
+- 显式 ID：作者用户 3000–3008、课程 1001–1010，规避 MySQL 自增 ID 冲突及 JS 大数精度丢失（此前章节曾误关联到同一课程）。
+- 已生成并执行导入脚本 `juejin-import/out/fetch_course_2026-09-03-09-18-22.sql`，共 9 作者 / 10 课程 / 265 章节；导入前清理了旧残留数据。
+
+### 结果
+- 网关 `GET /content/api/v1/course/list?status=9` 共返回 16 门已上架课程，其中 10 门为本次导入；每门 author 均关联正确作者、章节数量与 `chapter_count` 一致。
+- 课程列表页 `src/pages/course/index.vue` 修复无上拉加载问题：新增 `IntersectionObserver` 哨兵节点 + 触底后 `loadCourseList` 自动续载下一页，并把"加载完成后若已在底部则主动补载"纳入 finally，保证首屏触底也能加载全量；滚动到底显示「— 没有更多了 —」。
+
+### 变更文件
+- `juejin-import/fetch-course.mjs`（新增）
+- `juejin-import/out/fetch_course_2026-09-03-09-18-22.sql`（生成产物）
+- `src/pages/course/index.vue`
+- `docs/CHANGELOG.md`
+
+## 2026-09-03 — 首页文章/沸点分页优化（每页 20 条 + 提前 15 条预加载）
+
+### 目标
+解决应用首页文章列表无法分页、沸点页分页卡顿的问题；将文章/沸点每页条数提升至 20 条，并在下滑到约 15 条时即发起下一页请求，避免触底才分页造成的卡顿。
+
+### 实施
+- 首页文章：`feedMixin.js` 每页 `size` 由 10 → 20；滚动预加载阈值由"距离底部 150px"提前到"距离底部 600px"（约等于 20 条中的 15 条已下滑时触发），覆盖 `recommendOnScroll`/`onScroll`/`onDesktopScroll`。
+- 首页桌面端：`index.vue` 的 `handleWindowScroll` 触底阈值由 `docH - 200` 提前到 `docH - 600`，配合 `tryLoadMoreDesktop` 在到达底部前预加载。
+- 沸点页：`pins/index.vue` 的 `pinsSize` 由 10 → 20；`handleScroll` 预加载阈值由 `-200` 提前到 `-600`。
+- 修复桌面端跨分栏滚动位置错位：`feedMixin.js` 新增 `resetScrollDesktop()`，在切换频道（`switchTab`）、子分栏（`switchSubTab`）、标签（`selectTag`）以及 `index.vue` 的 `handleRetry`/`loadCategoryFromRoute`（切换已加载频道）时，将 window 滚动复位到顶部，避免“最新分栏分页到第 N 篇、切到推荐/其它频道仍定位到同篇数”的错位。
+- 后端无需改动：推荐接口 `MAX_SIZE=50`、支持 `page`/`size`/`hasMore`；沸点 `/pins/list` 接收前端传入的 `size`。
+
+### 变更文件
+- `src/pages/home/mixins/feedMixin.js`
+- `src/pages/home/index.vue`
+- `src/pages/pins/index.vue`
+- `docs/CHANGELOG.md`
+
+## 2026-09-03 — 从掘金拉取 40 篇推荐文章（进推荐分栏 + 入 ES 可搜索）
+
+### 目标
+在首页"推荐"分栏补充更多真实内容，并确保这些文章能被搜索系统检索到（入 ES）。
+
+### 实施
+- 新增脚本 `juejin-import/fetch-recommend.mjs`：按 8 大分类拉 `article_rank` 热门 + 全局 `recommend_all_feed` 双源去重（**追加，不删现有 origin=9**），并用详情接口（`?aid=2608&uuid=0&client_type=2608`）拉取 markdown 正文。
+- 每篇写入：`ap_article`（标题/摘要/频道/标签=分类名/封面）、`ap_article_content`(详情正文)、`ap_article_draft`(供 ES 正文)、`ap_article_config`(is_recommend=1 → 进推荐分栏)。
+- 封面 URL 去查询参数并截断至 256（列宽），避免 data too long。
+- 重建 ES：`node reindex_es_articles.cjs` → 186/186 文档入 `app_info_article` 索引，标题+正文均可检索。
+
+### 结果
+- origin=9 文章 175 篇（较上一状态的 149 净增 26；另有 14 篇误删后已由本批重新带入，总量不缺失）
+- 推荐分栏候选 53 篇（is_recommend=1）
+- ES 索引 186 篇全量可搜索
+
+### 遗留说明（过程记录）
+- 首次导入因封面 `cover_image` 超长部分失败，清理时按"标题集合"删除，误删了 14 篇与候选同标题的原有 origin=9 文章；随后用同一批 SQL 完整重导并恢复，原 id 引用（评论/浏览等）若指向被误删的旧 id 会存在孤儿，其余数据不受影响。
+
+### 变更文件
+- `juejin-import/fetch-recommend.mjs`（新增）
+- `juejin-import/out/fetch_recommend_2026-09-03-05-06-22.sql`（生成产物）
+- `docs/CHANGELOG.md`
+
+## 2026-09-03 — 修复搬运文章在首页不展示（补 ap_article_config）
+
+### 现象
+从稀土掘金搬运的已发布文章（status=9）在库中存在，但应用首页"推荐/最新"两分栏均不展示。
+
+### 根因
+首页"推荐"与"最新"分栏 SQL 均 `INNER JOIN ap_article_config` 并过滤 `is_delete!=1 and is_down!=1`：
+- 搬运文章原本没有 `ap_article_config` 行，被内连接直接滤掉；
+- `推荐` 分栏另需 `is_recommend=1`（原来仅 11 篇），`最新` 分栏则只需存在 config 行。
+
+### 处理（业务口径：不强制进"推荐"，放"最新"展示即可）
+- 新增迁移 `backfill_article_config_for_imported_articles.sql`：为缺失 config 的已发布文章补行，`is_recommend=0`（不进推荐分栏）、`is_down=0`、`is_delete=0`、评论/转发开启。
+- 执行后：`ap_article_config` 168 行；`推荐`分栏候选 11 篇（不变），`最新`分栏 160 篇。
+
+### 变更文件
+- `heima-leadnews-content/src/main/resources/db/migrations/backfill_article_config_for_imported_articles.sql`（新增）
+
 ## 2026-09-03 — 数据模型向稀土掘金对象属性对齐（概念修正：小册=课程、专栏免费、不加会员）
 
 ### 背景

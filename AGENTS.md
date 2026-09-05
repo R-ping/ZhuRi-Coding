@@ -230,6 +230,29 @@ heima-leadnews-service/heima-leadnews-{服务}/
     > src/main/resources/db/schema.sql
   ```
 
+#### 4.5 主键（id）设计规范（强制）
+
+> 背景：`ap_user` 曾因「`IdType.ASSIGN_ID`（雪花）配 `INT UNSIGNED` 列」导致注册插入主键溢出。修复后沉淀为统一约定，所有新增/改动的主键必须遵守。
+
+**铁律：主键列类型与 MyBatis-Plus 主键策略必须成对使用，禁止混搭。**
+
+| 数据库 `id` 列类型                 | 实体 id 字段类型         | @TableId 主键策略                        | 说明                  |
+| ---------------------------- | ------------------ | ------------------------------------ | ------------------- |
+| `BIGINT` / `BIGINT UNSIGNED` | `Long`             | `IdType.ASSIGN_ID`                   | 雪花/自分配大 id，约 2^63 内 |
+| `INT` / `INT UNSIGNED`       | `Integer` 或 `Long` | `IdType.AUTO`（依赖 `auto_increment` 列） | 数据库自增，值在 INT 范围内    |
+
+补充规则：
+
+- 各服务 `application.yml` 全局已配置 `mybatis-plus.global-config.db-config.id-type: auto`。因此**不带** **`@TableId`** **的实体默认走 DB 自增**，只要其 `id` 列是 `auto_increment`（例：`article_event` 为 `Long id` + `INT auto_increment`）。
+
+- **禁止**在 `INT` 主键列上用 `ASSIGN_ID`，**禁止**在 `BIGINT` 列上仅用 `AUTO`。
+
+- 若字段为 `Integer`：要么用 `AUTO`，要么把列升为 `BIGINT` 并改用 `Long + ASSIGN_ID`。
+
+- 新增表时：小表/低频用 `INT AUTO_INCREMENT`，需大 id（分布式）用 `BIGINT + ASSIGN_ID(Long)`，二选一并保持一致。
+
+- 完整的现状核对清单与说明见 `heima-leadnews-content/src/main/resources/db/README.md`。
+
 ***
 
 ### 5. 服务交互与微服务约束（分布式场景）

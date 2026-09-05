@@ -53,7 +53,7 @@ public class ApUser implements Serializable {
     /**
      * 主键
      */
-    @TableId(value = "id", type = IdType.ASSIGN_ID)
+    @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
     /**
      * 昵称

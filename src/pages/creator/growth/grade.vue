@@ -61,15 +61,16 @@
               <span class="reward-score">+{{ task.score }}</span>
               <span class="reward-unit">掘力值</span>
             </div>
-            <div class="task-limit" v-if="task.limit">
-              <span v-if="task.limit > 0">每日上限{{ task.limit }}篇</span>
-              <span v-else>无上限</span>
+            <div class="task-limit">
+              <span v-if="task.limit > 0">每日上限{{ task.limit }}次</span>
+              <span v-else-if="task.limit === -1 || task.limit === null || task.limit === undefined">次数不限</span>
             </div>
             <button
               class="task-btn"
+              :class="{ 'task-btn-done': task.completed }"
               @click="goToTask(task)"
             >
-              {{ task.btnName || '去完成' }}
+              {{ task.btnName || (task.completed ? '已完成' : '去完成') }}
             </button>
           </div>
         </div>
@@ -127,7 +128,7 @@ export default {
   },
   data() {
     return {
-      userId: 1,
+      userId: this.resolveCurrentUserId(),
       currentPower: 0,
       currentLevel: 1,
 
@@ -179,6 +180,19 @@ export default {
     this.loadData()
   },
   methods: {
+    /**
+     * 从 Vuex store 读取当前登录用户 ID（修复硬编码 userId=1 导致查错用户的 bug）。
+     */
+    resolveCurrentUserId() {
+      const u = this.$store && this.$store.state && this.$store.state.user
+        ? this.$store.state.user.userInfo
+        : null
+      if (u) {
+        const id = u.userId || u.id
+        if (id) return Number(id)
+      }
+      return 0
+    },
     async loadData() {
       await Promise.all([
         this.loadUserLevel(),
@@ -255,23 +269,23 @@ export default {
     },
 
     async loadGrowthTasks() {
-      try {
-        const res = await this.$http.get('/api/v1/level/growth-tasks')
-        if (res.data && res.data.growth_tasks) {
-          this.growthTasks = res.data.growth_tasks['100'] || []
-        }
-      } catch (e) {
-        this.loadMockTasks()
-      }
+      // 创作等级页的「如何提升等级」是静态引导卡（与掘金一致：规则说明，无实时进度）。
+      // 注意：后端 /api/v1/level/growth-tasks 返回的是逐日等级行为配置（另一体系，字段 group_type/daily_limit），
+      // 与掘力值引导任务语义不符，故此处直接用静态引导数据展示，避免结构错位导致任务区空白。
+      this.buildGrowthTasks()
     },
 
-    loadMockTasks() {
+    /**
+     * 构建创作等级（掘力值）引导任务：与 ap_behavior_config 中内容创作/影响力的语义映射
+     * 文案/样式对齐掘金「创作等级权益 - 如何提升等级」
+     */
+    buildGrowthTasks() {
       this.growthTasks = [
-        { taskId: 28, taskType: '创作行为', title: '发布1篇文章', score: 10, limit: 2, btnName: '去完成', icon: '' },
-        { taskId: 29, taskType: '创作影响力', title: '文章获得1个赞', score: 1, limit: -1, btnName: '去分享', icon: '' },
-        { taskId: 30, taskType: '创作影响力', title: '文章获得1人评论', score: 1, limit: -1, btnName: '去分享', icon: '' },
-        { taskId: 31, taskType: '创作影响力', title: '文章获得1个收藏', score: 1, limit: -1, btnName: '去分享', icon: '' },
-        { taskId: 32, taskType: '创作影响力', title: '文章获得100个阅读', score: 1, limit: -1, btnName: '去分享', icon: '' }
+        { taskId: 28, taskType: '创作行为', title: '发布1篇文章', score: 10, limit: 2, btnName: '去分享', icon: '', completed: false },
+        { taskId: 29, taskType: '创作影响力', title: '文章获得1个赞', score: 1, limit: -1, btnName: '去分享', icon: '', completed: false },
+        { taskId: 30, taskType: '创作影响力', title: '文章获得1人评论', score: 1, limit: -1, btnName: '去分享', icon: '', completed: false },
+        { taskId: 31, taskType: '创作影响力', title: '文章获得1个收藏', score: 1, limit: -1, btnName: '去分享', icon: '', completed: false },
+        { taskId: 32, taskType: '创作影响力', title: '文章获得100个阅读', score: 1, limit: -1, btnName: '去分享', icon: '', completed: false }
       ]
     },
 
@@ -498,16 +512,23 @@ export default {
       .task-btn {
         padding: 6px 16px;
         font-size: 13px;
-        color: @brandBlue;
-        border: 1px solid @brandBlue;
+        color: #fff;
+        border: none;
         border-radius: 4px;
-        background: transparent;
+        background: linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%);
         cursor: pointer;
         transition: all 0.2s;
 
         &:hover {
-          background: @brandBlue;
-          color: #fff;
+          opacity: 0.88;
+          box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
+        }
+
+        &.task-btn-done {
+          color: @textMuted;
+          background: #E5E7EB;
+          cursor: default;
+          box-shadow: none;
         }
       }
     }

@@ -84,10 +84,12 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     }
 
     /**
-     * 根据文章id生成文章事件,后续进行mq异步处理
+     * 根据文章id生成文章事件
+     * <p>单延迟方案：任务到点消费一次，本地消息表入库后异步同步 ES 并发布事件，
+     * 由监听器统一置 DB/ES 发布态并消费任务（不再二次延迟）。
      */
     @Override
-    public boolean generateArticleEvent(ApArticle article, Long taskId, long lastExecuteInterval) {
+    public boolean generateArticleEvent(ApArticle article, Long taskId) {
         //1.检查参数
         if (article == null) {
             log.error("文章保存失败，参数为空");
@@ -111,7 +113,7 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
             return false;
         }
         // 异步操作移到事务提交后，避免事务边界问题
-        articleFreemarkerService.buildHTMLAndSend(article, "", taskId, lastExecuteInterval);
+        articleFreemarkerService.buildHTMLAndSend(article, taskId);
         return true;
     }
 

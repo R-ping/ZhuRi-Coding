@@ -1,6 +1,7 @@
 package com.heima.content.behavior.service.impl;
 
 import com.heima.content.behavior.service.BehaviorPostProcessor;
+import com.heima.content.constants.LevelScoreActionCode;
 import com.heima.content.service.level.LevelService;
 import com.heima.content.service.level.impl.LevelActionService;
 import com.heima.model.behavior.BehaviorContext;
@@ -83,17 +84,18 @@ public class LevelScoreProcessor implements BehaviorPostProcessor {
      */
     private String mapToLevelAction(BehaviorType type) {
         switch (type) {
-            case LIKE_ARTICLE: return "like_article";
-            case LIKE_PIN: return "like_pin";
-            case COLLECT_ARTICLE: return "collect_article";
-            case COMMENT_ARTICLE: return "comment_article";
-            case COMMENT_PIN: return "comment_pin";
-            case FOLLOW_USER: return "follow_user";
-            case SHARE: return "share";
-            case PUBLISH_ARTICLE: return "publish_article";
-            case PUBLISH_PIN: return "publish_pins";
-            case BROWSE_ARTICLE: return "browse_article";
-            case BROWSE_COURSE: return "browse_course";
+            case LIKE_ARTICLE: return LevelScoreActionCode.LIKE_ARTICLE;
+            case LIKE_PIN: return LevelScoreActionCode.LIKE_PIN;
+            case COLLECT_ARTICLE: return LevelScoreActionCode.COLLECT_ARTICLE;
+            case COMMENT_ARTICLE: return LevelScoreActionCode.COMMENT_ARTICLE;
+            case COMMENT_PIN: return LevelScoreActionCode.COMMENT_PIN;
+            case FOLLOW_USER: return LevelScoreActionCode.FOLLOW_USER;
+            case SHARE: return LevelScoreActionCode.SHARE;
+            case PUBLISH_ARTICLE: return LevelScoreActionCode.PUBLISH_ARTICLE;
+            case PUBLISH_PIN: return LevelScoreActionCode.PUBLISH_PIN;
+            case BROWSE_ARTICLE: return LevelScoreActionCode.BROWSE_ARTICLE;
+            // 浏览课程与浏览文章并入同一任务（"浏览1篇文章/课程"），共享每日次数上限
+            case BROWSE_COURSE: return LevelScoreActionCode.BROWSE_ARTICLE;
             default: return null;
         }
     }

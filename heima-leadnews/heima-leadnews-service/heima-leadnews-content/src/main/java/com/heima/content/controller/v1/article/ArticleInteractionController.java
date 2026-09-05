@@ -2,11 +2,13 @@ package com.heima.content.controller.v1.article;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.heima.content.constants.LevelScoreActionCode;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.mapper.interaction.ApArticleReportMapper;
 import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
+import com.heima.content.service.level.LevelService;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.behavior.dtos.ArticleReportDto;
 import com.heima.model.behavior.pojos.ApArticleReport;
@@ -50,6 +52,9 @@ public class ArticleInteractionController {
 
     @Autowired
     private ApArticleMapper apArticleMapper;
+
+    @Autowired
+    private LevelService levelService;
 
     /**
      * 点赞/取消点赞文章（切换式）
@@ -107,6 +112,13 @@ public class ArticleInteractionController {
                     .setSql("likes = likes + 1"));
             liked = true;
             log.info("用户{}点赞文章{}", user.getId(), id);
+            // 记录逐日等级"点赞"行为（like_article）：累计今日进度 + 逐日分，失败不影响点赞主流程
+            // （与 /behavior/like 行为总线口径一致；受 like_article 每日上限控制）
+            try {
+                levelService.recordActionWithLimit(user.getId().longValue(), LevelScoreActionCode.LIKE_ARTICLE, "点赞文章ID:" + id);
+            } catch (Exception e) {
+                log.warn("点赞记录逐日等级行为失败: userId={}, articleId={}", user.getId(), id, e);
+            }
         }
 
         // 重新查询最新点赞数
@@ -177,6 +189,13 @@ public class ArticleInteractionController {
                 apArticleMapper.update(null, new LambdaUpdateWrapper<ApArticle>()
                         .eq(ApArticle::getId, id)
                         .setSql("collection = collection + 1"));
+                // 记录逐日等级"收藏"行为（collect_article）：累计今日进度 + 逐日分，失败不影响收藏主流程
+                // （与 /behavior/collect 行为总线口径一致；受 collect_article 每日上限控制）
+                try {
+                    levelService.recordActionWithLimit(user.getId().longValue(), LevelScoreActionCode.COLLECT_ARTICLE, "收藏文章ID:" + id);
+                } catch (Exception e) {
+                    log.error("记录逐日等级行为失败: action=collect_article, userId={}", user.getId(), e);
+                }
             }
             collected = true;
             log.info("用户{}收藏文章{}", user.getId(), id);
@@ -251,6 +270,13 @@ public class ArticleInteractionController {
             }
             followed = true;
             log.info("用户{}关注作者{}", user.getId(), authorId);
+            // 记录逐日等级"关注"行为（follow_user）：累计今日进度 + 逐日分，失败不影响关注主流程
+            // （与 /behavior/follow、/api/v1/follow/do 口径一致；受 follow_user 每日上限控制）
+            try {
+                levelService.recordActionWithLimit(user.getId().longValue(), LevelScoreActionCode.FOLLOW_USER, "关注用户ID:" + authorId);
+            } catch (Exception e) {
+                log.error("记录逐日等级行为失败: action=follow_user, userId={}, targetUserId={}", user.getId(), authorId, e);
+            }
         }
 
         Map<String, Object> result = new HashMap<>();

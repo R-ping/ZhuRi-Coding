@@ -19,7 +19,7 @@ public interface ApArticleService extends IService<ApArticle> {
      */
     public ResponseResult load(ArticleHomeDto dto,Short type);
 
-    boolean generateArticleEvent(ApArticle article, Long taskId, long lastExecuteInterval);
+    boolean generateArticleEvent(ApArticle article, Long taskId);
 
     /**
      * 根据行为变更更新文章热度分数
