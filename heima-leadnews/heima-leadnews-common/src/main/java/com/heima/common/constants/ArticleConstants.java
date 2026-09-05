@@ -14,18 +14,8 @@ public class ArticleConstants {
     public static final int HOT_ARTICLE_SCORE_MULTIPLIER = 3;
 
     // ========== 延迟发布任务时间阈值 ==========
-    /** 5分钟（毫秒） */
-    public static final long DELAY_5_MIN_MS = 5 * 60 * 1000L;
-    /** 15分钟（毫秒） */
-    public static final long DELAY_15_MIN_MS = 15 * 60 * 1000L;
-    /** 2分钟（毫秒） */
-    public static final long DELAY_2_MIN_MS = 2 * 60 * 1000L;
     /** 1小时（毫秒） */
     public static final long DELAY_1_HOUR_MS = 60 * 60 * 1000L;
-    /** 随机延迟基础值（分钟） */
-    public static final long RANDOM_DELAY_BASE_MIN = 5;
-    /** 随机延迟浮动范围（分钟） */
-    public static final long RANDOM_DELAY_RANGE_MIN = 5;
 
     // ========== AI 质量评分阈值 ==========
     /** 质量优秀阈值（含） */

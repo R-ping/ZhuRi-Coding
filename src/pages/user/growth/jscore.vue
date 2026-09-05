@@ -22,103 +22,171 @@
                     </div>
                 </div>
 
-                <!-- 现有内容 -->
-                <div class="jscore-content">
-            <!-- 统计周期 -->
-            <div class="stat-period">
-                <span class="period-label">统计周期：</span>
-                <span class="period-date">{{ statDate }}</span>
-            </div>
-
-            <!-- 维度概览卡片 -->
-            <div class="dimension-cards-wrapper">
-                <div class="dimension-cards" ref="dimensionCards">
-                    <div
-                        v-for="(dim, index) in dimensionList"
-                        :key="dim.key"
-                        class="dimension-card"
-                        :class="{ active: dim.key === activeDimensionKey }"
-                        @click="onDimensionClick(dim)"
-                    >
-                        <div class="dim-name">{{ dim.name }}</div>
-                        <div class="dim-today" :class="{ positive: dim.today > 0, negative: dim.today < 0 }">
-                            {{ dim.today > 0 ? '+' : '' }}{{ dim.today }}
+                <!-- 概览区：左黑卡雷达图 + 右6维数值网格 -->
+                <div class="overview-section">
+                    <div class="radar-card">
+                        <div class="radar-header">
+                            <span class="radar-title">掘友分概览</span>
+                            <span class="radar-period">统计周期：{{ statDate }}</span>
                         </div>
-                        <div class="dim-total">
-                            总计 <span class="dim-total-val">{{ dim.total }}</span>
+                        <div class="radar-body">
+                            <svg
+                                v-if="chartData && chartData.dimensions && chartData.values"
+                                viewBox="0 0 320 280"
+                                class="radar-svg"
+                            >
+                                <!-- 5 层网格 -->
+                                <g v-for="lvl in [1,2,3,4,5]" :key="'grid-'+lvl">
+                                    <polygon
+                                        :points="gridPolygon(lvl, 5, 110)"
+                                        fill="none"
+                                        stroke="rgba(255,255,255,0.10)"
+                                        stroke-width="1"
+                                    />
+                                </g>
+                                <!-- 轴线 -->
+                                <line
+                                    v-for="(d, i) in chartData.dimensions"
+                                    :key="'axis-'+i"
+                                    x1="160" y1="140"
+                                    :x2="axisEndX(i, 5, 110)"
+                                    :y2="axisEndY(i, 5, 110)"
+                                    stroke="rgba(255,255,255,0.10)"
+                                    stroke-width="1"
+                                />
+                                <!-- 数据多边形 -->
+                                <polygon
+                                    :points="dataPolygon(5, 110)"
+                                    fill="rgba(255,165,0,0.18)"
+                                    stroke="#FFA500"
+                                    stroke-width="2"
+                                />
+                                <!-- 数据点 -->
+                                <circle
+                                    v-for="(d, i) in chartData.dimensions"
+                                    :key="'pt-'+i"
+                                    :cx="dataPointX(i, chartData.values, 5, 110)"
+                                    :cy="dataPointY(i, chartData.values, 5, 110)"
+                                    r="3.5"
+                                    fill="#FFA500"
+                                    stroke="#1A1A1A"
+                                    stroke-width="1.5"
+                                />
+                                <!-- 维度标签 -->
+                                <text
+                                    v-for="(d, i) in chartData.dimensions"
+                                    :key="'lbl-'+i"
+                                    :x="labelX(i, 5, 110)"
+                                    :y="labelY(i, 5, 110)"
+                                    text-anchor="middle"
+                                    dominant-baseline="middle"
+                                    fill="#E5E7EB"
+                                    font-size="12"
+                                >{{ d }}</text>
+                            </svg>
+                            <div v-else class="radar-empty">暂无数据</div>
+                        </div>
+                        <div class="radar-legend">
+                            <span class="legend-dot"></span>
+                            <span class="legend-text">我的得分</span>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            <!-- 分类筛选 Tabs -->
-            <div class="category-tabs">
-                <div
-                    v-for="tab in categoryTabs"
-                    :key="tab.key"
-                    class="tab-item"
-                    :class="{ active: currentCategory === tab.key }"
-                    @click="switchCategory(tab.key)"
-                >
-                    {{ tab.name }}
-                </div>
-            </div>
-
-            <!-- 雷达图（仅总览 Tab） -->
-            <div class="radar-chart-section" v-if="currentCategory === 'overview' && chartData">
-                <div class="section-card">
-                    <canvas ref="radarCanvas" class="radar-canvas"></canvas>
-                </div>
-            </div>
-
-            <!-- 时间线列表 -->
-            <div class="timeline-section">
-                <div class="timeline-list" v-if="timelineList.length > 0">
-                    <div
-                        v-for="item in timelineList"
-                        :key="item.id"
-                        class="timeline-item"
-                    >
-                        <div class="timeline-left">
-                            <div class="timeline-time">{{ formatTime(item.created_at) }}</div>
-                            <div class="timeline-dot"></div>
-                        </div>
-                        <div class="timeline-line"></div>
-                        <div class="timeline-content">
-                            <div class="timeline-desc">{{ item.action_desc }}</div>
-                            <div class="timeline-score" :class="{ positive: item.score > 0, negative: item.score < 0 }">
-                                {{ item.score > 0 ? '+' : '' }}{{ item.score }}
+                    <!-- 右：6 维数值网格（总计变化 + 5维） -->
+                    <div class="dimension-grid">
+                        <div
+                            v-for="dim in dimensionList"
+                            :key="dim.key"
+                            class="dim-grid-card"
+                            :class="['dim-grid-' + dim.key]"
+                            @click="onDimensionClick(dim)"
+                        >
+                            <div class="dim-grid-name">
+                                <span>{{ dim.name }}</span>
+                                <span class="dim-grid-arrow">&gt;</span>
+                            </div>
+                            <div
+                                class="dim-grid-today"
+                                :class="{ positive: dim.today > 0, negative: dim.today < 0, zero: dim.today === 0 }"
+                            >
+                                <span v-if="dim.today > 0">+{{ formatScore(dim.today) }}</span>
+                                <span v-else>{{ formatScore(dim.today) }}</span>
                             </div>
                         </div>
                     </div>
-                    <div class="load-more" v-if="hasMore" @click="loadMore">
-                        <span class="load-more-text">加载更多</span>
-                    </div>
-                    <div class="load-more" v-if="!hasMore && timelineList.length > 0">
-                        <span class="load-more-text no-more">没有更多了</span>
-                    </div>
                 </div>
-                <div class="empty-state" v-else-if="!loading">
-                    <div class="empty-icon">
-                        <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-                            <rect x="10" y="20" width="60" height="45" rx="6" fill="#E8E8E8"/>
-                            <rect x="16" y="28" width="25" height="3" rx="1.5" fill="#D0D0D0"/>
-                            <rect x="16" y="35" width="40" height="3" rx="1.5" fill="#D0D0D0"/>
-                            <rect x="16" y="42" width="30" height="3" rx="1.5" fill="#D0D0D0"/>
-                            <rect x="16" y="49" width="35" height="3" rx="1.5" fill="#D0D0D0"/>
-                            <circle cx="40" cy="14" r="8" fill="#E8E8E8"/>
-                            <circle cx="40" cy="14" r="4" fill="#D0D0D0"/>
-                        </svg>
+
+                <!-- 行为数据区 -->
+                <div class="data-section">
+                    <div class="section-header">
+                        <span class="section-title">社区行为数据</span>
                     </div>
-                    <div class="empty-text">暂无任何数据噢~</div>
-                </div>
-                <div class="loading-spinner" v-if="loading">
-                    <span>加载中...</span>
-                </div>
+
+                    <!-- Pill 形 Tabs -->
+                    <div class="pill-tabs">
+                        <div
+                            v-for="tab in categoryTabs"
+                            :key="tab.key"
+                            class="pill-tab"
+                            :class="{ active: currentCategory === tab.key }"
+                            @click="switchCategory(tab.key)"
+                        >{{ tab.name }}</div>
+                    </div>
+
+                    <!-- 三列明细表 -->
+                    <div class="detail-table" v-if="timelineList.length > 0 || loading">
+                        <div class="detail-head">
+                            <div class="col col-behavior">升级行为</div>
+                            <div class="col col-score">掘友分变化</div>
+                            <div class="col col-time">时间</div>
+                        </div>
+                        <div class="detail-body">
+                            <div
+                                v-for="item in timelineList"
+                                :key="item.id"
+                                class="detail-row"
+                            >
+                                <div class="col col-behavior">{{ item.action_desc }}</div>
+                                <div
+                                    class="col col-score"
+                                    :class="{ positive: item.score > 0, negative: item.score < 0 }"
+                                >
+                                    <span v-if="item.score > 0">+{{ formatScore(item.score) }}</span>
+                                    <span v-else>{{ formatScore(item.score) }}</span>
+                                </div>
+                                <div class="col col-time">{{ formatDateTime(item.created_at) }}</div>
+                            </div>
+                        </div>
+
+                        <div class="load-more" v-if="hasMore && !loading" @click="loadMore">
+                            <span class="load-more-text">加载更多</span>
+                        </div>
+                        <div class="load-more" v-else-if="!hasMore && timelineList.length > 0 && !loading">
+                            <span class="load-more-text no-more">没有更多了</span>
+                        </div>
+                        <div class="loading-spinner" v-if="loading">
+                            <span>加载中...</span>
+                        </div>
+                    </div>
+
+                    <!-- 空状态 -->
+                    <div class="empty-state" v-else-if="!loading">
+                        <div class="empty-icon">
+                            <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                                <rect x="10" y="20" width="60" height="45" rx="6" fill="#F0F0F0"/>
+                                <rect x="16" y="28" width="25" height="3" rx="1.5" fill="#D0D0D0"/>
+                                <rect x="16" y="35" width="40" height="3" rx="1.5" fill="#D0D0D0"/>
+                                <rect x="16" y="42" width="30" height="3" rx="1.5" fill="#D0D0D0"/>
+                                <rect x="16" y="49" width="35" height="3" rx="1.5" fill="#D0D0D0"/>
+                                <circle cx="40" cy="14" r="8" fill="#F0F0F0"/>
+                                <circle cx="40" cy="14" r="4" fill="#D0D0D0"/>
+                            </svg>
+                        </div>
+                        <div class="empty-text">暂无任何数据噢~</div>
+                    </div>
                 </div>
             </div>
-            </div>
-            </div>
+        </div>
 
         <!-- 等级规则 Modal -->
         <div class="modal-overlay" v-if="showRulesModal" @click.self="showRulesModal = false">
@@ -161,14 +229,25 @@ import HomeBar from '@/components/bars/home_bar'
 import UserCenterSidebar from '@/components/user/UserCenterSidebar'
 import Utils from '@/utils/env'
 
-const CATEGORY_MAP = {
-    overview: { name: '总览', apiKey: '' },
-    effect: { name: '影响力', apiKey: 'effect' },
-    active: { name: '活跃', apiKey: 'active' },
-    learn: { name: '学习', apiKey: 'learn' },
-    basic: { name: '基础', apiKey: 'basic' },
-    spec: { name: '规范', apiKey: 'spec' }
-}
+// Tab 配置：key 与后端 CATEGORY_MAP 完全对齐（all/effect/active/learn/basic/spec）
+const CATEGORY_TABS = [
+    { key: 'all',    name: '掘友分总计' },
+    { key: 'effect', name: '影响力' },
+    { key: 'active', name: '活跃' },
+    { key: 'learn',  name: '学习' },
+    { key: 'basic',  name: '基础' },
+    { key: 'spec',   name: '规范' }
+]
+
+// 6 维数值网格配置（总计变化 + 5 个分类）
+const DIMENSION_GRID = [
+    { key: 'total',  name: '总计变化' },
+    { key: 'effect', name: '社区影响力' },
+    { key: 'active', name: '社区活跃' },
+    { key: 'learn',  name: '社区学习' },
+    { key: 'basic',  name: '社区基础' },
+    { key: 'spec',   name: '社区规范' }
+]
 
 export default {
     name: 'JScore',
@@ -179,9 +258,8 @@ export default {
             overviewData: null,
             chartData: null,
             dimensionList: [],
-            categoryTabs: [],
-            currentCategory: 'overview',
-            activeDimensionKey: '',
+            categoryTabs: CATEGORY_TABS,
+            currentCategory: 'all',
             timelineList: [],
             nextCursor: '',
             hasMore: false,
@@ -196,16 +274,11 @@ export default {
         }
     },
     created() {
-        this.categoryTabs = Object.entries(CATEGORY_MAP).map(([key, val]) => ({
-            key,
-            name: val.name
-        }))
         // 从 URL 参数恢复 category
         const category = this.$route.query.category
-        if (category && CATEGORY_MAP[category]) {
+        if (category && CATEGORY_TABS.find(t => t.key === category)) {
             this.currentCategory = category
         }
-        this.syncDimensionKey()
     },
     mounted() {
         this.loadOverview()
@@ -228,70 +301,11 @@ export default {
                 this.$router.push(path)
             }
         },
-        formatTime(timeStr) {
-            if (!timeStr) return ''
-            const parts = timeStr.split(' ')
-            return parts.length === 2 ? parts[1] : timeStr
-        },
-        syncDimensionKey() {
-            const mapping = {
-                overview: '',
-                effect: 'effect',
-                active: 'active',
-                learn: 'learn',
-                basic: 'basic',
-                spec: 'spec'
-            }
-            this.activeDimensionKey = mapping[this.currentCategory] || ''
-        },
-        onDimensionClick(dim) {
-            if (dim.key === 'total') return
-            const tabMap = {
-                basic: 'basic',
-                active: 'active',
-                learn: 'learn',
-                effect: 'effect',
-                spec: 'spec'
-            }
-            const tabKey = tabMap[dim.key]
-            if (tabKey) {
-                this.switchCategory(tabKey)
-            }
-        },
-        switchCategory(category) {
-            if (this.currentCategory === category) return
-            this.currentCategory = category
-            this.syncDimensionKey()
-            this.timelineList = []
-            this.nextCursor = ''
-            this.hasMore = false
-            // 更新 URL Query 参数
-            this.$router.replace({
-                query: { category: category }
-            })
-            this.loadDetail()
-            // 切换后重新绘制雷达图
-            if (category === 'overview') {
-                this.$nextTick(() => {
-                    this.drawRadarChart()
-                })
-            }
-        },
-        async loadOverview() {
-            try {
-                const res = await getJScoreOverview()
-                if (res.code === 200 && res.data) {
-                    this.overviewData = res.data
-                    this.statDate = this.formatDate(res.data.stat_date)
-                    this.chartData = res.data.chart
-                    this.buildDimensionList(res.data.summary)
-                    this.$nextTick(() => {
-                        this.drawRadarChart()
-                    })
-                }
-            } catch (e) {
-                // Keep defaults
-            }
+        formatScore(val) {
+            if (val === null || val === undefined) return '0'
+            const n = Number(val)
+            if (Number.isNaN(n)) return '0'
+            return Number.isInteger(n) ? String(n) : n.toFixed(1)
         },
         formatDate(dateStr) {
             if (!dateStr) {
@@ -301,23 +315,67 @@ export default {
                 const day = String(d.getDate()).padStart(2, '0')
                 return y + '.' + m + '.' + day
             }
-            return dateStr.replace(/-/g, '.')
+            return String(dateStr).replace(/-/g, '.')
+        },
+        formatDateTime(timeStr) {
+            if (!timeStr) return ''
+            // 形如 2026-09-04 03:38:31 → 2026-09-04 03:38:31
+            return String(timeStr).slice(0, 19).replace('T', ' ')
+        },
+        onDimensionClick(dim) {
+            if (dim.key === 'total') return
+            if (CATEGORY_TABS.find(t => t.key === dim.key)) {
+                this.switchCategory(dim.key)
+            }
+        },
+        switchCategory(category) {
+            if (this.currentCategory === category) return
+            this.currentCategory = category
+            this.timelineList = []
+            this.nextCursor = ''
+            this.hasMore = false
+            this.$router.replace({ query: { ...this.$route.query, category } })
+            this.loadDetail()
+        },
+        async loadOverview() {
+            try {
+                const res = await getJScoreOverview()
+                if (res && res.code === 200 && res.data) {
+                    this.overviewData = res.data
+                    this.statDate = this.formatDate(res.data.stat_date || res.data.statDate)
+                    this.chartData = res.data.chart || null
+                    this.buildDimensionList(res.data.summary)
+                    return
+                }
+                // 业务失败也走骨架
+                this.buildDimensionList(null)
+            } catch (e) {
+                this.buildDimensionList(null)
+            }
         },
         buildDimensionList(summary) {
-            if (!summary) return
-            const dimConfig = [
-                { key: 'total', name: '总计变化' },
-                { key: 'basic', name: '社区基础' },
-                { key: 'active', name: '社区活跃' },
-                { key: 'learn', name: '社区学习' },
-                { key: 'effect', name: '社区影响力' },
-                { key: 'spec', name: '社区规范' }
-            ]
-            this.dimensionList = dimConfig.map(cfg => {
+            if (!summary) {
+                this.dimensionList = DIMENSION_GRID.map(cfg => ({
+                    key: cfg.key, name: cfg.name, today: 0, total: 0
+                }))
+                return
+            }
+            // summary key 与 DIMENSION_GRID 的 key 对齐（total/basic/active/learn/effect/spec）
+            let totalToday = 0
+            let totalTotal = 0
+            DIMENSION_GRID.forEach(cfg => {
+                if (cfg.key !== 'total' && summary[cfg.key]) {
+                    totalToday += Number(summary[cfg.key].today || 0)
+                    totalTotal += Number(summary[cfg.key].total || 0)
+                }
+            })
+            this.dimensionList = DIMENSION_GRID.map(cfg => {
+                if (cfg.key === 'total') {
+                    return { key: cfg.key, name: cfg.name, today: totalToday, total: totalTotal }
+                }
                 const item = summary[cfg.key]
                 return {
-                    key: cfg.key,
-                    name: cfg.name,
+                    key: cfg.key, name: cfg.name,
                     today: item ? (item.today || 0) : 0,
                     total: item ? (item.total || 0) : 0
                 }
@@ -327,18 +385,15 @@ export default {
             if (this.loading) return
             this.loading = true
             try {
-                const params = {
-                    page_size: this.pageSize
-                }
-                const category = CATEGORY_MAP[this.currentCategory]
-                if (category.apiKey) {
-                    params.category = category.apiKey
+                const params = { size: this.pageSize }
+                if (this.currentCategory && this.currentCategory !== 'all') {
+                    params.category = this.currentCategory
                 }
                 if (this.nextCursor) {
                     params.cursor = this.nextCursor
                 }
                 const res = await getJScoreDetail(params)
-                if (res.code === 200 && res.data) {
+                if (res && res.code === 200 && res.data) {
                     const data = res.data
                     const list = data.list || []
                     if (this.nextCursor) {
@@ -360,143 +415,66 @@ export default {
                 this.loadDetail()
             }
         },
-        drawRadarChart() {
-            if (this.currentCategory !== 'overview') return
-            const canvas = this.$refs.radarCanvas
-            if (!canvas || !this.chartData) return
-            const ctx = canvas.getContext('2d')
-            const dpr = window.devicePixelRatio || 1
-            const rect = canvas.parentElement.getBoundingClientRect()
-            const width = rect.width || 300
-            const height = 280
-            canvas.width = width * dpr
-            canvas.height = height * dpr
-            canvas.style.width = width + 'px'
-            canvas.style.height = height + 'px'
-            ctx.scale(dpr, dpr)
-
-            const centerX = width / 2
-            const centerY = height / 2 + 10
-            const radius = Math.min(width, height) / 2 - 40
-
-            const dimensions = this.chartData.dimensions || ['影响力', '活跃', '学习', '基础', '规范']
-            const values = this.chartData.values || [0, 0, 0, 0, 0]
-            const sides = dimensions.length
-            const maxVal = Math.max(...values, 1)
-
-            const colors = [
-                '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA94D', '#A29BFE'
-            ]
-
-            // 绘制背景网格
-            const levels = 5
-            for (let l = 1; l <= levels; l++) {
-                const r = (radius / levels) * l
-                ctx.beginPath()
-                for (let i = 0; i < sides; i++) {
-                    const angle = (Math.PI * 2 * i) / sides - Math.PI / 2
-                    const x = centerX + r * Math.cos(angle)
-                    const y = centerY + r * Math.sin(angle)
-                    if (i === 0) {
-                        ctx.moveTo(x, y)
-                    } else {
-                        ctx.lineTo(x, y)
-                    }
-                }
-                ctx.closePath()
-                ctx.strokeStyle = '#E8E8E8'
-                ctx.lineWidth = 1
-                ctx.stroke()
+        // ===== 雷达图几何 =====
+        // 第 i 个角的角度（5 维，从正上方顺时针）
+        axisAngle(i, total) {
+            return -Math.PI / 2 + (Math.PI * 2 * i) / total
+        },
+        gridPolygon(level, total, radius) {
+            const r = (radius / 5) * level
+            const pts = []
+            for (let i = 0; i < total; i++) {
+                const a = this.axisAngle(i, total)
+                pts.push((160 + r * Math.cos(a)).toFixed(2) + ',' + (140 + r * Math.sin(a)).toFixed(2))
             }
-
-            // 绘制轴线
-            for (let i = 0; i < sides; i++) {
-                const angle = (Math.PI * 2 * i) / sides - Math.PI / 2
-                const x = centerX + radius * Math.cos(angle)
-                const y = centerY + radius * Math.sin(angle)
-                ctx.beginPath()
-                ctx.moveTo(centerX, centerY)
-                ctx.lineTo(x, y)
-                ctx.strokeStyle = '#E8E8E8'
-                ctx.lineWidth = 1
-                ctx.stroke()
+            return pts.join(' ')
+        },
+        axisEndX(i, total, radius) {
+            const a = this.axisAngle(i, total)
+            return (160 + radius * Math.cos(a)).toFixed(2)
+        },
+        axisEndY(i, total, radius) {
+            const a = this.axisAngle(i, total)
+            return (140 + radius * Math.sin(a)).toFixed(2)
+        },
+        dataPolygon(total, radius) {
+            const values = (this.chartData && this.chartData.values) || []
+            const maxVal = Math.max(1, ...values.map(v => Number(v) || 0))
+            const pts = []
+            for (let i = 0; i < total; i++) {
+                const v = Number(values[i] || 0)
+                const r = (v / maxVal) * radius
+                const a = this.axisAngle(i, total)
+                pts.push((160 + r * Math.cos(a)).toFixed(2) + ',' + (140 + r * Math.sin(a)).toFixed(2))
             }
-
-            // 绘制数据区域
-            ctx.beginPath()
-            for (let i = 0; i < sides; i++) {
-                const val = values[i] || 0
-                const r = (val / maxVal) * radius
-                const angle = (Math.PI * 2 * i) / sides - Math.PI / 2
-                const x = centerX + r * Math.cos(angle)
-                const y = centerY + r * Math.sin(angle)
-                if (i === 0) {
-                    ctx.moveTo(x, y)
-                } else {
-                    ctx.lineTo(x, y)
-                }
-            }
-            ctx.closePath()
-
-            // 填充渐变
-            const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
-            gradient.addColorStop(0, 'rgba(30, 128, 255, 0.3)')
-            gradient.addColorStop(1, 'rgba(30, 128, 255, 0.05)')
-            ctx.fillStyle = gradient
-            ctx.fill()
-
-            ctx.strokeStyle = '#1E80FF'
-            ctx.lineWidth = 2
-            ctx.stroke()
-
-            // 绘制数据点
-            for (let i = 0; i < sides; i++) {
-                const val = values[i] || 0
-                const r = (val / maxVal) * radius
-                const angle = (Math.PI * 2 * i) / sides - Math.PI / 2
-                const x = centerX + r * Math.cos(angle)
-                const y = centerY + r * Math.sin(angle)
-                ctx.beginPath()
-                ctx.arc(x, y, 4, 0, Math.PI * 2)
-                ctx.fillStyle = colors[i % colors.length]
-                ctx.fill()
-                ctx.strokeStyle = '#FFFFFF'
-                ctx.lineWidth = 2
-                ctx.stroke()
-            }
-
-            // 绘制维度标签
-            ctx.font = '12px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif'
-            ctx.textAlign = 'center'
-            ctx.textBaseline = 'middle'
-            for (let i = 0; i < sides; i++) {
-                const angle = (Math.PI * 2 * i) / sides - Math.PI / 2
-                const labelRadius = radius + 22
-                const x = centerX + labelRadius * Math.cos(angle)
-                const y = centerY + labelRadius * Math.sin(angle)
-                ctx.fillStyle = colors[i % colors.length]
-                ctx.fillText(dimensions[i], x, y)
-            }
-
-            // 绘制每个维度的数值
-            ctx.font = '11px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif'
-            ctx.fillStyle = '#666666'
-            for (let i = 0; i < sides; i++) {
-                const val = values[i] || 0
-                const r = (val / maxVal) * radius
-                const angle = (Math.PI * 2 * i) / sides - Math.PI / 2
-                const x = centerX + r * Math.cos(angle)
-                const y = centerY + r * Math.sin(angle)
-                const offsetR = 14
-                const nx = centerX + offsetR * Math.cos(angle)
-                const ny = centerY + offsetR * Math.sin(angle)
-                ctx.fillText(val, nx, ny)
-            }
+            return pts.join(' ')
+        },
+        dataPointX(i, values, total, radius) {
+            const maxVal = Math.max(1, ...values.map(v => Number(v) || 0))
+            const v = Number(values[i] || 0)
+            const r = (v / maxVal) * radius
+            const a = this.axisAngle(i, total)
+            return (160 + r * Math.cos(a)).toFixed(2)
+        },
+        dataPointY(i, values, total, radius) {
+            const maxVal = Math.max(1, ...values.map(v => Number(v) || 0))
+            const v = Number(values[i] || 0)
+            const r = (v / maxVal) * radius
+            const a = this.axisAngle(i, total)
+            return (140 + r * Math.sin(a)).toFixed(2)
+        },
+        labelX(i, total, radius) {
+            const a = this.axisAngle(i, total)
+            return (160 + (radius + 24) * Math.cos(a)).toFixed(2)
+        },
+        labelY(i, total, radius) {
+            const a = this.axisAngle(i, total)
+            return (140 + (radius + 24) * Math.sin(a)).toFixed(2)
         }
     },
     watch: {
         '$route.query.category': function(newVal) {
-            if (newVal && CATEGORY_MAP[newVal] && newVal !== this.currentCategory) {
+            if (newVal && CATEGORY_TABS.find(t => t.key === newVal) && newVal !== this.currentCategory) {
                 this.switchCategory(newVal)
             }
         }
@@ -539,7 +517,6 @@ export default {
     border-bottom: 1px solid #F0F2F5;
     margin-bottom: 20px;
 }
-
 .nav-back {
     display: flex;
     align-items: center;
@@ -547,268 +524,231 @@ export default {
     cursor: pointer;
     padding: 4px 0;
     user-select: none;
+    .back-arrow { font-size: 16px; color: #1A1A1A; font-weight: 600; }
+    .back-text { font-size: 14px; color: #1A1A1A; }
+}
+.nav-title { font-size: 18px; font-weight: 600; color: #1A1A1A; }
+.nav-right { cursor: pointer; user-select: none; }
+.rules-link { font-size: 14px; color: #1A73E8; &:hover { color: #1557B0; } }
+
+// ===== 概览区 =====
+.overview-section {
+    display: grid;
+    grid-template-columns: minmax(360px, 480px) 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
 }
 
-.back-arrow {
-    font-size: 16px;
-    color: #1A1A1A;
-    font-weight: 600;
-}
-
-.back-text {
-    font-size: 14px;
-    color: #1A1A1A;
-}
-
-.nav-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #1A1A1A;
-}
-
-.nav-right {
-    cursor: pointer;
-    user-select: none;
-}
-
-.rules-link {
-    font-size: 14px;
-    color: #1A73E8;
-    &:hover { color: #1557B0; }
-}
-
-// 内容区
-.jscore-content {
-    // 由 main-area 控制布局
-}
-
-// 统计周期
-.stat-period {
-    padding: 0 4px;
-    margin-bottom: 16px;
-    font-size: 13px;
-    color: #8C8C8C;
-}
-
-// 维度卡片
-.dimension-cards-wrapper {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    margin-bottom: 20px;
-    padding-bottom: 4px;
-    &::-webkit-scrollbar { height: 0; }
-}
-
-.dimension-cards {
-    display: flex;
-    gap: 12px;
-    padding: 2px 0;
-    min-width: min-content;
-}
-
-.dimension-card {
-    flex-shrink: 0;
-    width: 120px;
-    padding: 16px;
-    background: #F8F9FA;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: 2px solid transparent;
-    &:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        transform: translateY(-2px);
-    }
-    &.active {
-        border-color: #7C3AED;
-        background: #F3E8FF;
-    }
-}
-
-.dim-name {
-    font-size: 13px;
-    color: #666;
-    margin-bottom: 8px;
-    white-space: nowrap;
-}
-
-.dim-today {
-    font-size: 24px;
-    font-weight: 700;
-    color: #1A1A1A;
-    margin-bottom: 4px;
-    &.positive { color: #52C41A; }
-    &.negative { color: #F53F3F; }
-}
-
-.dim-total {
-    font-size: 12px;
-    color: #999;
-}
-
-.dim-total-val {
-    font-weight: 500;
-    color: #666;
-}
-
-// 分类 Tabs（pill 形状）
-.category-tabs {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-}
-
-.tab-item {
-    padding: 6px 16px;
-    font-size: 13px;
-    color: #666;
-    cursor: pointer;
+// 左：黑色雷达卡
+.radar-card {
+    background: #1F2126;
     border-radius: 16px;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-    user-select: none;
-    background: #F5F5F5;
-    &:hover {
-        color: #7C3AED;
-        background: #F3E8FF;
-    }
-    &.active {
-        color: #fff;
-        font-weight: 500;
-        background: #7C3AED;
-    }
-}
-
-// 雷达图
-.radar-chart-section {
-    margin-bottom: 20px;
-}
-
-.section-card {
-    background: #1A1A1A;
-    border-radius: 12px;
     padding: 20px;
-}
-
-.radar-canvas {
-    display: block;
-    width: 100%;
-    height: 300px;
-}
-
-// 时间线（表格样式）
-.timeline-section {
-    background: #fff;
-    border-radius: 12px;
-    min-height: 200px;
-}
-
-.timeline-list {
-    position: relative;
-}
-
-.timeline-item {
+    color: #fff;
     display: flex;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid #F0F2F5;
-    &:last-child { border-bottom: none; }
+    flex-direction: column;
 }
-
-.timeline-left {
+.radar-header {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    width: 140px;
-    flex-shrink: 0;
+    margin-bottom: 12px;
+    .radar-title { font-size: 15px; font-weight: 600; color: #FFFFFF; }
+    .radar-period { font-size: 12px; color: #9CA3AF; }
 }
-
-.timeline-time {
-    font-size: 13px;
-    color: #999;
-    white-space: nowrap;
-}
-
-.timeline-dot {
-    display: none;
-}
-
-.timeline-line {
-    display: none;
-}
-
-.timeline-content {
+.radar-body {
     flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 240px;
+}
+.radar-svg {
+    width: 100%;
+    max-width: 320px;
+    height: auto;
+}
+.radar-empty {
+    color: #6B7280;
+    font-size: 14px;
+    padding: 40px 0;
+}
+.radar-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 8px;
+    .legend-dot {
+        display: inline-block;
+        width: 12px;
+        height: 2px;
+        background: #FFA500;
+    }
+    .legend-text { font-size: 12px; color: #D1D5DB; }
+}
+
+// 右：6 维数值网格
+.dimension-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(3, 1fr);
+    gap: 12px;
+    min-height: 280px;
+}
+.dim-grid-card {
+    background: #F8F9FB;
+    border-radius: 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    &:hover {
+        background: #EEF2FF;
+        box-shadow: 0 2px 8px rgba(124,58,237,0.08);
+    }
+    &.dim-grid-total {
+        background: linear-gradient(135deg, #EDE9FE 0%, #DDD6FE 100%);
+        cursor: default;
+        &:hover { background: linear-gradient(135deg, #EDE9FE 0%, #DDD6FE 100%); box-shadow: none; }
+    }
+}
+.dim-grid-name {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-left: 16px;
-}
-
-.timeline-desc {
-    font-size: 14px;
-    color: #1A1A1A;
-    flex: 1;
-    margin-right: 12px;
-}
-
-.timeline-score {
-    font-size: 15px;
-    font-weight: 600;
-    flex-shrink: 0;
-    white-space: nowrap;
-    &.positive { color: #52C41A; }
-    &.negative { color: #F53F3F; }
-}
-
-// 加载更多
-.load-more {
-    text-align: center;
-    padding: 16px 0 8px;
-}
-
-.load-more-text {
     font-size: 13px;
-    color: #7C3AED;
+    color: #6B7280;
+    .dim-grid-arrow { color: #C0C4CC; font-size: 12px; }
+}
+.dim-grid-today {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-top: 8px;
+    color: #1F2126;
+    &.positive { color: #1A73E8; }
+    &.negative { color: #F53F3F; }
+    &.zero { color: #C0C4CC; }
+}
+
+// ===== 数据区 =====
+.data-section {
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid #F0F2F5;
+}
+.section-header {
+    margin-bottom: 14px;
+    .section-title { font-size: 16px; font-weight: 600; color: #1A1A1A; }
+}
+
+// pill 形 Tabs
+.pill-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.pill-tab {
+    padding: 6px 16px;
+    font-size: 13px;
+    color: #4B5563;
+    background: #F3F4F6;
+    border-radius: 16px;
     cursor: pointer;
-    &:hover { color: #6D28D9; }
-    &.no-more {
-        color: #C0C0C0;
-        cursor: default;
+    transition: all 0.2s ease;
+    user-select: none;
+    &:hover { color: #7C3AED; background: #EDE9FE; }
+    &.active {
+        color: #fff;
+        font-weight: 500;
+        background: linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%);
     }
 }
 
-// 空状态
+// 三列明细表
+.detail-table {
+    border: 1px solid #F0F2F5;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.detail-head, .detail-row {
+    display: grid;
+    grid-template-columns: 1fr 160px 200px;
+    align-items: center;
+}
+.detail-head {
+    background: #FAFAFA;
+    border-bottom: 1px solid #F0F2F5;
+    .col {
+        font-size: 13px;
+        font-weight: 500;
+        color: #6B7280;
+        padding: 12px 20px;
+    }
+}
+.detail-body {
+    .detail-row {
+        border-bottom: 1px solid #F5F5F5;
+        transition: background 0.15s ease;
+        &:last-child { border-bottom: none; }
+        &:hover { background: #FAFAFA; }
+    }
+    .col {
+        font-size: 14px;
+        color: #1A1A1A;
+        padding: 14px 20px;
+    }
+    .col-behavior {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .col-score {
+        text-align: left;
+        font-weight: 600;
+        &.positive { color: #1A73E8; }
+        &.negative { color: #F53F3F; }
+    }
+    .col-time { color: #6B7280; font-size: 13px; }
+}
+
+.load-more {
+    text-align: center;
+    padding: 14px 0 4px;
+    .load-more-text {
+        font-size: 13px;
+        color: #7C3AED;
+        cursor: pointer;
+        &:hover { color: #5B21B6; }
+        &.no-more { color: #C0C4CC; cursor: default; }
+    }
+}
+.loading-spinner {
+    text-align: center;
+    padding: 20px 0;
+    font-size: 13px;
+    color: #9CA3AF;
+}
+
 .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 60px 0;
+    .empty-icon { margin-bottom: 16px; opacity: 0.6; }
+    .empty-text { font-size: 14px; color: #C0C4CC; }
 }
 
-.empty-icon {
-    margin-bottom: 16px;
-    opacity: 0.6;
-}
-
-.empty-text {
-    font-size: 14px;
-    color: #C0C0C0;
-}
-
-// 加载中
-.loading-spinner {
-    text-align: center;
-    padding: 24px 0;
-    font-size: 13px;
-    color: #999;
-}
-
-// Modal
+// ===== Modal =====
 .modal-overlay {
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
+    inset: 0;
     background: rgba(0,0,0,0.5);
     display: flex;
     align-items: center;
@@ -816,7 +756,6 @@ export default {
     z-index: 1000;
     padding: 16px;
 }
-
 .modal-content {
     background: #fff;
     border-radius: 16px;
@@ -825,44 +764,18 @@ export default {
     max-height: 80vh;
     overflow-y: auto;
 }
-
 .modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 20px 20px 12px;
     border-bottom: 1px solid #F0F2F5;
+    .modal-title { font-size: 16px; font-weight: 600; color: #1A1A1A; }
+    .modal-close { font-size: 24px; color: #9CA3AF; cursor: pointer; &:hover { color: #1A1A1A; } }
 }
-
-.modal-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1A1A1A;
-}
-
-.modal-close {
-    font-size: 24px;
-    color: #999;
-    cursor: pointer;
-    &:hover { color: #1A1A1A; }
-}
-
-.modal-body {
-    padding: 16px 20px 20px;
-}
-
-.rules-section {
-    margin-bottom: 16px;
-    &:last-child { margin-bottom: 0; }
-}
-
-.rules-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 10px;
-}
-
+.modal-body { padding: 16px 20px 20px; }
+.rules-section { margin-bottom: 16px; &:last-child { margin-bottom: 0; } }
+.rules-title { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; }
 .rules-list {
     list-style: none;
     padding: 0;
@@ -879,31 +792,16 @@ export default {
     }
 }
 
-// 响应式
-@media screen and (max-width: 768px) {
-    .jscore-content-wrapper {
-        padding: 12px;
-        flex-direction: column;
+// ===== 响应式 =====
+@media screen and (max-width: 900px) {
+    .jscore-content-wrapper { padding: 12px; flex-direction: column; }
+    .main-area { padding: 16px; }
+    .overview-section {
+        grid-template-columns: 1fr;
     }
-    .main-area {
-        padding: 16px;
-    }
-    .dimension-card {
-        width: 100px;
-        padding: 12px;
-    }
-    .dim-today {
-        font-size: 20px;
-    }
-    .tab-item {
-        padding: 4px 12px;
-        font-size: 12px;
-    }
-    .timeline-left {
-        width: 100px;
-    }
-    .timeline-time {
-        font-size: 11px;
-    }
+    .dimension-grid { grid-template-columns: 1fr 1fr; min-height: auto; }
+    .detail-head, .detail-row { grid-template-columns: 1fr 100px 130px; }
+    .detail-head .col, .detail-body .col { padding: 10px 12px; font-size: 12px; }
+    .dim-grid-today { font-size: 22px; }
 }
 </style>

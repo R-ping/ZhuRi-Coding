@@ -1,6 +1,5 @@
 package com.heima.content.service.article.impl;
 
-import com.heima.common.constants.ArticleConstants;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.schedule.service.TaskService;
 import com.heima.content.service.article.ArticleTaskService;
@@ -32,24 +31,13 @@ public class ArticleTaskServiceImpl implements ArticleTaskService {
         log.info("添加文章到延迟发布队列, articleId={}, publishTime={}", articleId, publishTime);
 
         Date now = new Date();
-        long executeTimeInterval = publishTime.getTime() - now.getTime();
+        long executeTimeInterval = Math.max(0, publishTime.getTime() - now.getTime());
 
-        long firstTimeInterval;
-        if (executeTimeInterval <= 0) {
-            executeTimeInterval = 0;
-            firstTimeInterval = 0;
-        } else if (executeTimeInterval <= ArticleConstants.DELAY_5_MIN_MS) {
-            firstTimeInterval = 0;
-        } else if (executeTimeInterval <= ArticleConstants.DELAY_15_MIN_MS) {
-            firstTimeInterval = executeTimeInterval - ArticleConstants.DELAY_2_MIN_MS;
-        } else {
-            long delay = (long) (Math.random() * ArticleConstants.RANDOM_DELAY_RANGE_MIN + ArticleConstants.RANDOM_DELAY_BASE_MIN);
-            delay = delay * 60 * 1000;
-            firstTimeInterval = executeTimeInterval - delay;
-        }
-
+        // 单延迟：任务在 publishTime 才触发（不再提前执行复杂业务 + 二次延迟置可见的"双延迟"方案）。
+        // 原因：消费端动作已精简（本地消息表入库 + ES 同步 + 置发布状态），单次消费耗时可控；
+        // 一次到点消费即可完成"ES 可见 + DB 可见"，无需把耗时动作提前到发布前。
         Task task = new Task();
-        task.setFirstExecInterval(Math.max(0, firstTimeInterval));
+        task.setFirstExecInterval(executeTimeInterval);
         task.setObjExecInterval(executeTimeInterval);
         task.setExecuteTime(publishTime);
         // 序列化 ApArticle（仅包含ID，用于调度任务反序列化）
@@ -58,7 +46,8 @@ public class ArticleTaskServiceImpl implements ArticleTaskService {
         task.setParameters(ProtostuffUtil.serialize(apArticle));
 
         taskService.addTask(task);
-        log.info("文章延迟发布任务已添加, articleId={},", articleId);
+        log.info("文章延迟发布任务已添加, articleId={}, publishTime={}, delay={}ms", articleId, publishTime,
+            executeTimeInterval);
     }
 
     @Override

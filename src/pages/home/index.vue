@@ -244,9 +244,10 @@
       window.addEventListener('resize', this.checkDevice)
       // 顶部频道分栏点击当前频道时触发主动刷新
       window.addEventListener('feed-refresh', this.handleGlobalRefresh)
-      // 桌面端监听window滚动控制回顶按钮显示
+      // 桌面端监听window滚动控制回顶按钮显示 + 触底预加载分页。
+      // 项目 html/body height:100%，body 才是实际滚动容器，须用捕获阶段(true)才能收到 body 的 scroll 事件。
       if (this.isDesktop) {
-        window.addEventListener('scroll', this.handleWindowScroll)
+        window.addEventListener('scroll', this.handleWindowScroll, true)
       }
       this.$nextTick(() => {
         this.updateTabHeight()
@@ -321,6 +322,8 @@
           if (!this.tabStates[tabIndex].loaded) {
             this.switchTab(tabIndex)
           } else {
+            // 切换到已加载过的频道：复位滚动到顶部，避免沿用上个频道的滚动位置
+            this.resetScrollDesktop()
             this.currentTab = tabIndex
           }
         }
@@ -367,6 +370,8 @@
       },
       handleRetry(index) {
         var tabIndex = (index !== undefined) ? index : this.currentTab
+        // 桌面端点击重试时复位滚动到顶部
+        this.resetScrollDesktop()
         // 重置状态
         this.$set(this.tabStates, tabIndex, {
           loaded: false, loading: false, loadingMore: false,
@@ -453,11 +458,26 @@
         }
       },
       /**
-       * 监听window滚动：滚动超一屏时显示回顶按钮
+       * 监听window滚动：滚动超一屏时显示回顶按钮；接近底部时触发加载更多。
+       * 桌面端真实滚动容器是 window（.list-container 为 overflow:visible，@scroll 永不触发），
+       * 因此在这里统一驱动分页。
        */
       handleWindowScroll() {
         var scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0
         this.showBackToTop = scrollTop > 500
+        var docH = document.documentElement.scrollHeight || document.body.scrollHeight || 0
+        var winH = window.innerHeight || document.documentElement.clientHeight || 0
+        // 每页 20 条，下滑到约 15 条（约距底 600px）即预加载下一页，避免触底才分页的卡顿
+        if (scrollTop + winH >= docH - 600) {
+          this.tryLoadMoreDesktop(this.currentTab)
+        }
+      },
+      // 桌面端 window 滚动到底部时加载更多（仅当推荐状态已加载且非加载中/到底）
+      tryLoadMoreDesktop(index) {
+        var rs = this.recommendStates && this.recommendStates[index]
+        if (rs && rs.loaded && !rs.loadingMore && !rs.noMore && !rs.loading) {
+          this.recommendLoadMore(index)
+        }
       },
       // ============== 标签跳转 ==============
       // 点击文章卡片上的标签 -> 进入标签详情页

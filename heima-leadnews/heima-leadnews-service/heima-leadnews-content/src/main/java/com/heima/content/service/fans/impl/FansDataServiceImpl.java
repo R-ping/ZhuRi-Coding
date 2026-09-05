@@ -3,8 +3,10 @@ package com.heima.content.service.fans.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.heima.content.constants.LevelScoreActionCode;
 import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.service.fans.FansDataService;
+import com.heima.content.service.level.impl.LevelActionService;
 import com.heima.model.follow.pojos.ApFollow;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.user.pojos.ApUser;
@@ -31,6 +33,9 @@ public class FansDataServiceImpl implements FansDataService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private LevelActionService levelActionService;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -169,6 +174,13 @@ public class FansDataServiceImpl implements FansDataService {
             follow.setFollowUserId(targetUserId);
             follow.setCreatedTime(new Date());
             apFollowMapper.insert(follow);
+            // 记录逐日等级"关注"行为（follow_user）：累计今日进度 + 逐日分，失败不影响关注主流程
+            // （与 /behavior/follow 行为总线口径一致；受 follow_user 每日上限控制）
+            try {
+                levelActionService.recordActionWithLimit(userId.longValue(), LevelScoreActionCode.FOLLOW_USER, "关注用户ID:" + targetUserId);
+            } catch (Exception e) {
+                log.error("记录逐日等级行为失败: action=follow_user, userId={}", userId, e);
+            }
         } catch (DuplicateKeyException e) {
             // 并发下已关注，幂等静默处理
             log.info("并发关注冲突，幂等跳过, userId={}, targetUserId={}", userId, targetUserId);

@@ -579,7 +579,7 @@ export default {
             // 沸点帖子列表
             pinsList: [],
             pinsPage: 1,
-            pinsSize: 10,
+            pinsSize: 20,
             pinsLoading: false,
             hasMore: true,
             noMore: false,
@@ -832,30 +832,39 @@ export default {
             
             this.pinsLoading = true
             try {
-                const params = {
-                    tab: this.activeTab,
-                    page: this.pinsPage,
-                    size: this.pinsSize
-                }
-                const res = await getPinsList(params)
-                if (res && res.code === 200 && res.data) {
+                // 分页加载：一次加载足够填满接近一屏的内容，避免“下滑加载后新内容被挤到视口下方、需上滑再下滑才显示”
+                let guard = 0 // 兜底防死循环
+                let first = true
+                while (this.hasMore && guard++ < 20) {
+                    const params = {
+                        tab: this.activeTab,
+                        page: this.pinsPage,
+                        size: this.pinsSize
+                    }
+                    const res = await getPinsList(params)
+                    if (!(res && res.code === 200 && res.data)) {
+                        // 业务错误（如 503/接口异常返回）
+                        if (reset && first) this.pinsError = true
+                        break
+                    }
                     this.pinsError = false
                     const list = res.data.list || res.data || []
                     // total 经 json-bigint 解析为 BigNumber，统一转 number 参与比较
                     const total = Number(res.data.total || 0)
-                    if (reset) {
+                    if (reset && first) {
                         this.pinsList = list
                     } else {
                         this.pinsList = this.dedupPins(this.pinsList.concat(list))
                     }
+                    first = false
                     this.pinsPage++
                     if (this.pinsList.length >= total || list.length < this.pinsSize) {
                         this.hasMore = false
                         this.noMore = true
+                        break
                     }
-                } else {
-                    // 业务错误（如 503/接口异常返回）
-                    if (reset) this.pinsError = true
+                    // 内容高度接近视口则停止本轮填充，交给后续滚动继续分页
+                    if (this.viewportFilled()) break
                 }
             } catch (e) {
                 if (reset) {
@@ -865,6 +874,13 @@ export default {
             } finally {
                 this.pinsLoading = false
             }
+        },
+        // 主内容区高度是否已填满接近一屏（用于分页填充判断）
+        viewportFilled() {
+            const docH = document.body.scrollHeight || document.documentElement.scrollHeight || 0
+            const winH = window.innerHeight || document.documentElement.clientHeight || 0
+            // 列表内容高度 > 视口高度 + 一段余量即视为足够，无需继续填
+            return docH >= winH + 600
         },
         goToDetail(pins) {
             if (pins && pins.id) {
@@ -942,7 +958,8 @@ export default {
             const scrollTop = document.body.scrollTop || document.documentElement.scrollTop || window.pageYOffset || 0
             const windowHeight = window.innerHeight || document.documentElement.clientHeight || 0
             const documentHeight = document.body.scrollHeight || document.documentElement.scrollHeight || 0
-            if (scrollTop + windowHeight >= documentHeight - 200) {
+            // 每页 20 条，下滑到约 15 条（约距底 600px）即预加载下一页，避免触底才分页的卡顿
+            if (scrollTop + windowHeight >= documentHeight - 600) {
                 this.fetchPinsList(false)
             }
         },

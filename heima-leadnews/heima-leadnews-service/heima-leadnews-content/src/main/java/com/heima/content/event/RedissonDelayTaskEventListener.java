@@ -16,6 +16,10 @@ import org.springframework.stereotype.Component;
  * 处理 RedissonDelayQueue 发布的延迟任务事件，
  * 负责调用 ApArticleService 和 TaskService 执行具体业务逻辑。
  * 此监听器将 RedissonDelayQueue 与业务服务解耦，从而打破循环依赖链。
+ *
+ * <p>单延迟方案：任务在 publishTime 触发一次消费，完整链路
+ * 本地消息表入库 → ES 同步 → 事件（监听器置 DB/ES 发布态 + 消费任务）在单次消费内完成，
+ * 不再需要"提前执行复杂业务 + 二次延迟置可见"的双延迟方案。
  */
 @Component
 @Slf4j
@@ -37,9 +41,9 @@ public class RedissonDelayTaskEventListener {
             ApArticle article = ProtostuffUtil.deserialize(task.getParameters(), ApArticle.class);
 
             if ("TASK_FIRST_EXECUTE_DELAY_QUEUE".equals(queueName)) {
-                handleFirstExecDelay(task, article);
-            } else if ("TASK_LAST_EXECUTE_DELAY_QUEUE".equals(queueName)) {
-                handleLastExecDelay(task, article);
+                handleDelayExec(task, article);
+            } else {
+                log.warn("未知延迟队列, queueName={}", queueName);
             }
         } catch (Exception e) {
             log.error("Redisson延迟任务处理异常, queueName={}", queueName, e);
@@ -47,40 +51,21 @@ public class RedissonDelayTaskEventListener {
     }
 
     /**
-     * 处理首次执行延迟任务：生成文章事件并构建 HTML
+     * 处理单延迟任务：一次消费完成文章发布链路
+     * （本地消息表入库 + ES 同步 + 事件发布，事件监听器再置 DB/ES 发布态并消费任务）
      */
-    private void handleFirstExecDelay(Task task, ApArticle article) {
-        log.info("处理首次执行延迟任务，taskId={}, articleId={}", task.getTaskId(), article.getId());
+    private void handleDelayExec(Task task, ApArticle article) {
+        log.info("处理延迟发布任务，taskId={}, articleId={}", task.getTaskId(), article.getId());
         try {
-            long lastExecInterval = task.getObjExecInterval() - task.getFirstExecInterval();
-            boolean isArticleEventBuilt = apArticleService.generateArticleEvent(article, task.getTaskId(), lastExecInterval);
+            boolean isArticleEventBuilt = apArticleService.generateArticleEvent(article, task.getTaskId());
             if (isArticleEventBuilt) {
                 taskService.consumerTask(task.getTaskId());
             } else {
                 taskService.failTask(task.getTaskId());
             }
-            log.info("首次执行延迟任务消费成功，taskId={}", task.getTaskId());
+            log.info("延迟发布任务消费成功，taskId={}", task.getTaskId());
         } catch (Exception e) {
-            log.error("首次执行延迟任务处理异常，taskId={}", task.getTaskId(), e);
-            try {
-                taskService.failTask(task.getTaskId());
-            } catch (Exception ex) {
-                log.error("更新任务日志失败，taskId={}", task.getTaskId(), ex);
-            }
-        }
-    }
-
-    /**
-     * 处理最终执行延迟任务：更新文章发布状态
-     */
-    private void handleLastExecDelay(Task task, ApArticle article) {
-        log.info("处理最终执行延迟任务，taskId={}, articleId={}", task.getTaskId(), article.getId());
-        try {
-            apArticleService.updateArticleStatus(article.getId());
-            taskService.consumerTask(task.getTaskId());
-            log.info("最终执行延迟任务消费成功，taskId={}, articleId={}", task.getTaskId(), article.getId());
-        } catch (Exception e) {
-            log.error("最终执行延迟任务处理异常，taskId={}, articleId={}", task.getTaskId(), article.getId(), e);
+            log.error("延迟发布任务处理异常，taskId={}", task.getTaskId(), e);
             try {
                 taskService.failTask(task.getTaskId());
             } catch (Exception ex) {

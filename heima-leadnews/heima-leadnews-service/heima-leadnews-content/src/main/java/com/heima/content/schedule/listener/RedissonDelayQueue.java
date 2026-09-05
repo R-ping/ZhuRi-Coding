@@ -41,10 +41,10 @@ public class RedissonDelayQueue {
 
     @PostConstruct
     public void init() {
-        // 启动默认队列的消费者；Redis 不可用时优雅降级（记日志跳过），避免拖垮整个应用上下文
+        // 启动延迟队列消费者；Redis 不可用时优雅降级（记日志跳过），避免拖垮整个应用上下文
+        // 单延迟方案：仅保留一个发布延迟队列（任务到 publishTime 触发一次消费）
         try {
             startConsumer("TASK_FIRST_EXECUTE_DELAY_QUEUE");
-            startConsumer("TASK_LAST_EXECUTE_DELAY_QUEUE");
         } catch (Exception e) {
             log.error("初始化延迟队列消费者失败，Redis 可能不可用，相关延迟任务降级跳过", e);
         }

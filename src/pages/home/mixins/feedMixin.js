@@ -17,7 +17,7 @@ export default {
         loaddir: 1,
         index: 0,
         tag: '__all__',
-        size: 10,
+        size: 20,
         max_behot_time: 0,
         min_behot_time: 20000000000000
       },
@@ -43,6 +43,21 @@ export default {
     }
   },
   methods: {
+    /**
+     * 桌面端切换分栏/子分栏/标签时，将页面滚动复位到顶部。
+     * 桌面端真实滚动容器是 window(body)，切换列表时若不复位翻滚，新列表会沿用上个分栏的滚动位置，
+     * 造成“最新分成这样下分页到第35篇、切到推荐也定位到同样篇数”的错位。
+     */
+    resetScrollDesktop() {
+      if (!this.isDesktop) return
+      if (this.$refs.desktopList && this.$refs.desktopList.scrollTo) {
+        this.$refs.desktopList.scrollTo(0, 0)
+      } else {
+        window.scrollTo(0, 0)
+      }
+      document.documentElement.scrollTop = 0
+      document.body.scrollTop = 0
+    },
     /**
      * 判断某个标签页是否应使用推荐算法
      * 首页所有频道（综合/分类）统一走 recommend 系列接口，始终返回 true
@@ -244,6 +259,8 @@ export default {
     },
 
     switchTab(index) {
+      // 桌面端切换频道时，先把滚动复位到顶部，避免沿用上个频道的滚动位置
+      this.resetScrollDesktop()
       // 仅当目标分栏已是当前分栏且已加载过数据时才跳过；
       // 首载场景(currentTab 默认即为 index 但 loaded=false)必须继续走 recommendLoad，
       // 否则桌面端刷新应用首页当前默认分栏不会发起文章列表请求
@@ -355,7 +372,7 @@ export default {
       var reqParams = {
         endpoint: endpoint,
         channel: channel,
-        size: self.params.size || 10,
+        size: self.params.size || 20,
         subTab: subTab,
         tagName: self.subTabStates[index] ? self.subTabStates[index].selectedTag : '__all__'
       }
@@ -411,7 +428,7 @@ export default {
       var reqParams = {
         endpoint: endpoint,
         channel: channel,
-        size: self.params.size || 10,
+        size: self.params.size || 20,
         seed: state.seed,
         page: nextPage,
         subTab: subTab
@@ -439,6 +456,8 @@ export default {
 
     /**
      * 推荐滚动事件处理（无限滚动检测）
+     * 预加载阈值取“接近底部但未触底”——每页 20 条，下滑到约 15 条时即发起下一页请求，
+     * 新内容在用户滚到底前已就绪，避免触底才加载造成的卡顿。
      */
     recommendOnScroll(e, index) {
       var el = e.target
@@ -446,7 +465,7 @@ export default {
       var scrollHeight = el.scrollHeight
       var clientHeight = el.clientHeight
       var state = this.recommendStates[index]
-      if (scrollHeight - scrollTop - clientHeight < 150) {
+      if (scrollHeight - scrollTop - clientHeight < 600) {
         if (state && !state.loadingMore && !state.noMore && !state.loading && state.loaded) {
           this.recommendLoadMore(index)
         }
@@ -468,7 +487,7 @@ export default {
       var scrollHeight = el.scrollHeight
       var clientHeight = el.clientHeight
       var state = this.tabStates[index]
-      if (scrollHeight - scrollTop - clientHeight < 100) {
+      if (scrollHeight - scrollTop - clientHeight < 600) {
         if (state && !state.loadingMore && !state.noMore && !state.loading && state.loaded) {
           this.loadmore(index)
         }
@@ -486,7 +505,7 @@ export default {
       var scrollHeight = el.scrollHeight
       var clientHeight = el.clientHeight
       var state = this.currentState
-      if (scrollHeight - scrollTop - clientHeight < 150) {
+      if (scrollHeight - scrollTop - clientHeight < 600) {
         if (state && !state.loadingMore && !state.noMore && !state.loading && state.loaded) {
           this.loadmore(this.currentTab)
         }
@@ -535,6 +554,8 @@ export default {
         this.$store.dispatch('showLogin')
         return
       }
+      // 桌面端切换子分栏（推荐/最新/关注）时，先把滚动复位到顶部，避免沿用上个分栏的滚动位置
+      this.resetScrollDesktop()
       // 注意：即使点击当前已选中的子分栏（推荐/最新/关注），也走主动刷新，
       // 重新生成种子并查询文章列表，而非直接 return 跳过请求。
       this.$set(this.subTabStates[index], 'current', subTab)
@@ -566,6 +587,8 @@ export default {
      * 选择标签
      */
     selectTag(index, tagName) {
+      // 桌面端切换标签时，先把滚动复位到顶部，避免沿用上个标签的滚动位置
+      this.resetScrollDesktop()
       this.$set(this.subTabStates[index], 'selectedTag', tagName)
 
       // Reset tab state and clear list

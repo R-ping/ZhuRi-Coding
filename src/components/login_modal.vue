@@ -12,6 +12,8 @@
                         {{ isPasswordMode ? '手机号或邮箱登录' : '验证码登录' }}
                     </p>
 
+                    <p class="login-hint" v-if="!isPasswordMode">提示：手机号任意输入 11 个数字号码，验证码会自动填入</p>
+
                     <div class="form-wrapper">
                         <!-- 验证码登录 -->
                         <template v-if="!isPasswordMode">
@@ -437,6 +439,14 @@ export default {
     color: #999999;
     text-align: center;
     margin: 0 0 32px 0;
+}
+
+.login-hint {
+    font-size: 13px;
+    color: #fa8c16;
+    text-align: center;
+    margin: -20px 0 20px 0;
+    line-height: 1.6;
 }
 
 .form-wrapper {

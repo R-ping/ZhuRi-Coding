@@ -39,6 +39,9 @@
       />
     </div>
 
+    <!-- 上拉加载哨兵节点：作为 IntersectionObserver 观察目标，触底时自动加载下一页 -->
+    <div ref="loadMoreSentinel" class="load-more-sentinel"></div>
+
     <div class="loading-more" v-if="loading">
       <span class="loading-spinner"></span>
       <span class="loading-text">加载中...</span>
@@ -91,7 +94,9 @@ export default {
       loading: false,
       noMore: false,
       // 课程列表加载失败标记（503/超时等）
-      loadError: false
+      loadError: false,
+      // 上拉加载观察器实例（beforeDestroy 清理）
+      io: null
     }
   },
   computed: {
@@ -101,8 +106,37 @@ export default {
   },
   mounted() {
     this.loadCourseList()
+    this.setupInfiniteScroll()
+  },
+  beforeDestroy() {
+    // 页面销毁时断开观察器，避免泄漏与重复触发
+    if (this.io) {
+      this.io.disconnect()
+      this.io = null
+    }
   },
   methods: {
+    /**
+     * 设置上拉加载更多：监听哨兵节点进入视口后加载下一页课程。
+     */
+    setupInfiniteScroll() {
+      const el = this.$refs.loadMoreSentinel
+      if (!el) return
+      if (typeof IntersectionObserver === 'undefined') return
+      this.io = new IntersectionObserver((entries) => {
+        if (entries[0] && entries[0].isIntersecting) {
+          this.loadMoreCourses()
+        }
+      }, { rootMargin: '200px 0px' })
+      this.io.observe(el)
+    },
+    /**
+     * 触底加载下一页（去重：加载中 / 已无更多 时跳过）。
+     */
+    loadMoreCourses() {
+      if (this.loading || this.noMore) return
+      this.loadCourseList()
+    },
     getCategoryName(categoryId) {
       const cat = this.categories.find(c => c.id === categoryId)
       return cat ? cat.name : ''
@@ -159,6 +193,14 @@ export default {
         this.loadError = true
       } finally {
         this.loading = false
+        // 若当前已滚动到底（哨兵在视口内）且还有更多数据，主动补载下一页，
+        // 避免 IntersectionObserver 仅在 "进入/离开视口" 变化时触发而错过触底续载。
+        if (!this.noMore) {
+          const el = this.$refs.loadMoreSentinel
+          if (el && el.getBoundingClientRect().top < window.innerHeight) {
+            this.$nextTick(() => this.loadMoreCourses())
+          }
+        }
       }
     },
     goToDetail(courseId) {
@@ -268,6 +310,12 @@ export default {
   align-items: center;
   padding: 20px;
   gap: 8px;
+}
+
+/* 上拉加载哨兵：占位触底检测，无需视觉呈现 */
+.load-more-sentinel {
+  width: 1px;
+  height: 1px;
 }
 
 .loading-spinner {

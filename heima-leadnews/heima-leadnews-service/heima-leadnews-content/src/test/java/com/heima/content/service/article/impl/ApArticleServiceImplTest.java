@@ -113,24 +113,24 @@ class ApArticleServiceImplTest {
     @Test
     @DisplayName("generateArticleEvent - 参数为空返回 false")
     void testEventNullArticle() {
-        assertFalse(articleService.generateArticleEvent(null, 1L, 60_000));
-        verify(articleFreemarkerService, never()).buildHTMLAndSend(any(), any(), any(), anyLong());
+        assertFalse(articleService.generateArticleEvent(null, 1L));
+        verify(articleFreemarkerService, never()).buildHTMLAndSend(any(), any());
     }
 
     @Test
     @DisplayName("generateArticleEvent - 文章不存在(被审核回滚)返回 false")
     void testEventArticleMissing() {
         when(apArticleMapper.selectById(1L)).thenReturn(null);
-        assertFalse(articleService.generateArticleEvent(article(1L), 1L, 60_000));
+        assertFalse(articleService.generateArticleEvent(article(1L), 1L));
     }
 
     @Test
-    @DisplayName("generateArticleEvent - 成功入库事件并触发 HTML 构建")
+    @DisplayName("generateArticleEvent - 成功入库事件并触发 ES 同步")
     void testEventSuccess() {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
-        assertTrue(articleService.generateArticleEvent(article(1L), 1L, 60_000));
+        assertTrue(articleService.generateArticleEvent(article(1L), 1L));
         verify(apArticleEventMapper).insertArticleEvent(any(ArticleEvent.class));
-        verify(articleFreemarkerService).buildHTMLAndSend(any(ApArticle.class), any(), anyLong(), anyLong());
+        verify(articleFreemarkerService).buildHTMLAndSend(any(ApArticle.class), any());
     }
 
     @Test
@@ -139,7 +139,7 @@ class ApArticleServiceImplTest {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
         org.mockito.Mockito.doThrow(new RuntimeException("db down"))
                 .when(apArticleEventMapper).insertArticleEvent(any(ArticleEvent.class));
-        assertFalse(articleService.generateArticleEvent(article(1L), 1L, 60_000));
+        assertFalse(articleService.generateArticleEvent(article(1L), 1L));
     }
 
     // ==================== updateScoreByBehavior ====================
