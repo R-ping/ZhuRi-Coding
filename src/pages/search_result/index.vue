@@ -435,7 +435,7 @@
                 this.$set(target, 'isFollowed', !current)
 
                 var myId = this.$store.getters.userInfo.id
-                followUser(myId, targetId).then((res) => {
+                followUser(myId, targetId, current ? 1 : 0).then((res) => {
                     // 以服务端返回为准，失败则回滚
                     if (!res || res.code !== 200) {
                         self.$set(target, 'isFollowed', current)

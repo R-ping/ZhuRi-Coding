@@ -47,6 +47,14 @@ service.interceptors.response.use(
     if (data && data.code !== undefined && data.code !== 200) {
       return Promise.reject({ code: data.code, message: data.message || '服务器内部错误', data: data.data })
     }
+    // 用户行为（点赞/收藏/关注/评论/发布等）成功后，通知任务展示组件即时刷新"社区活跃"进度
+    // （GET 列表请求不触发，POST 行为接口匹配到互动路径才触发）
+    const cfg = response.config || {}
+    if (cfg.method === 'post' && /\/(like|unlike|collect|uncollect|follow|unfollow|comment|publish)/.test(cfg.url || '')) {
+      if (store.state && typeof store.dispatch === 'function') {
+        store.dispatch('notifyTaskChange')
+      }
+    }
     return data
   },
   error => {

@@ -125,6 +125,53 @@ public class LevelActionService {
     }
 
     /**
+     * 回退一次已累计的用户主动行为（取消点赞/收藏/关注等切换式互动）：
+     * 扣减今日 ap_user_daily_progress 计数与当日逐日分，并在分值回退后重算逐日等级。
+     * <p>
+     * 语义：允许用户重复点赞；每次取消点赞时把该次获得的进度与积分一并回退，
+     * 从而反复"点赞→取消"不会虚增今日进度（每次净贡献为 0）。
+     * 事务与悲观行锁同 recordActionWithLimit，保证"回退校验 + 扣减+落库"原子串行。
+     * </p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> rollbackActionWithLimit(Long userId, String actionType, String actionDetail) {
+        BigDecimal score = resolveScore(actionType);
+        if (score == null || score.compareTo(BigDecimal.ZERO) <= 0) {
+            return buildFailResult("无效的行为类型");
+        }
+        Map<String, Object> result = new HashMap<>();
+
+        ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
+        userLevel = lockUserLevel(userId, userLevel);
+
+        // 1. 扣减今日该行为进度（ap_user_daily_progress）
+        decrementDailyProgress(userId, actionType);
+
+        // 2. 回退今日逐日分（当日与累计均不低于 0）
+        BigDecimal curToday = userLevel.getDailyScoreToday() != null ? userLevel.getDailyScoreToday() : BigDecimal.ZERO;
+        BigDecimal curTotal = userLevel.getDailyScore() != null ? userLevel.getDailyScore() : BigDecimal.ZERO;
+        BigDecimal newToday = curToday.subtract(score).max(BigDecimal.ZERO);
+        BigDecimal newTotal = curTotal.subtract(score).max(BigDecimal.ZERO);
+        userLevel.setDailyScoreToday(newToday);
+        userLevel.setDailyScore(newTotal);
+
+        // 3. 回退后重算逐日等级（仅调整等级字段；权益/钻石只增不退，属轻量降级）
+        int newDailyLevel = levelQueryService.calculateLevel(1, newTotal);
+        if (newDailyLevel != userLevel.getDailyLevel()) {
+            log.info("回退行为{}后用户{}逐日等级由{}调整为{}", actionType, userId,
+                userLevel.getDailyLevel(), newDailyLevel);
+            userLevel.setDailyLevel(newDailyLevel);
+        }
+
+        userLevelMapper.updateById(userLevel);
+
+        result.put("success", true);
+        result.put("message", "取消行为成功，已回退进度与积分");
+        result.put("score", score);
+        return result;
+    }
+
+    /**
      * 支付行为：按实际支付金额加逐日经验（金额即经验值，支持小数），仅受支付行为每日次数上限约束
      */
     @Transactional(rollbackFor = Exception.class)
@@ -380,6 +427,33 @@ public class LevelActionService {
             }
         } catch (Exception e) {
             log.warn("写入用户每日行为进度失败: userId={}, actionType={}", userId, actionType, e);
+        }
+    }
+
+    /**
+     * 扣减今日某行为进度（ap_user_daily_progress）1 次，用于取消行为时的进度回退。
+     * 当日无记录或计数已为 0 时静默跳过，失败不影响主流程。
+     */
+    private void decrementDailyProgress(Long userId, String actionType) {
+        try {
+            String actionCode = normalizeActionCode(actionType);
+            if (actionCode == null) {
+                return;
+            }
+            java.sql.Date today = new java.sql.Date(System.currentTimeMillis());
+            LambdaQueryWrapper<ApUserDailyProgress> progressQuery = new LambdaQueryWrapper<>();
+            progressQuery.eq(ApUserDailyProgress::getUserId, userId);
+            progressQuery.eq(ApUserDailyProgress::getStatDate, today);
+            progressQuery.eq(ApUserDailyProgress::getActionCode, actionCode);
+            ApUserDailyProgress progress = userDailyProgressMapper.selectOne(progressQuery);
+            if (progress != null && progress.getCount() != null && progress.getCount() > 0) {
+                progress.setCount(progress.getCount() - 1);
+                progress.setUpdatedTime(new Date());
+                userDailyProgressMapper.updateById(progress);
+                log.debug("用户{}行为{}今日进度-1（当前{}）", userId, actionCode, progress.getCount());
+            }
+        } catch (Exception e) {
+            log.warn("扣减用户每日行为进度失败: userId={}, actionType={}", userId, actionType, e);
         }
     }
 

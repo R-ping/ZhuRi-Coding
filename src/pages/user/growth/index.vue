@@ -411,7 +411,7 @@ export default {
             return Utils.isDesktop()
         },
         userName() {
-            const userInfo = this.$store.state.user.userInfo
+            const userInfo = this.$store.state.userInfo
             return userInfo ? (userInfo.nickName || '用户') : '用户'
         },
         // 当前等级配置
@@ -552,10 +552,15 @@ export default {
                     this.selectedLevel = val.dailyLevel
                 }
             }
+        },
+        // 用户行为（点赞/收藏/关注/评论/发布）成功后 store 自增 taskVersion，即时刷新等级与任务进度
+        '$store.state.taskVersion': function () {
+            this.loadData()
         }
     },
     created() {
-        this.userId = this.$store.state.user.userInfo ? this.$store.state.user.userInfo.userId : null
+        // 用户信息存于单 store 顶层 userInfo（Vuex 无 user 子模块）
+        this.userId = this.$store.state.userInfo ? this.$store.state.userInfo.userId : null
     },
     mounted() {
         this.loadData()

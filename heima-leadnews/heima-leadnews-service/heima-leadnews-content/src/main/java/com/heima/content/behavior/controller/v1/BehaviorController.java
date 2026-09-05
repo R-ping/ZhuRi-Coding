@@ -27,55 +27,6 @@ public class BehaviorController {
     private BehaviorEventBus behaviorEventBus;
 
     /**
-     * 关注用户
-     * POST /api/v1/behavior/follow
-     * {"targetUserId": 123}
-     */
-    @PostMapping("/follow")
-    public ResponseResult follow(@RequestBody Map<String, Object> params) {
-        ApUser user = AppThreadLocalUtil.getUser();
-        if (user == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
-        }
-        Integer targetUserId = params.get("targetUserId") != null
-            ? Integer.valueOf(params.get("targetUserId").toString()) : null;
-        if (targetUserId == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "targetUserId不能为空");
-        }
-
-        BehaviorContext context = new BehaviorContext(BehaviorType.FOLLOW_USER, user.getId());
-        context.withTarget(3, targetUserId.longValue())
-            .withTargetUser(targetUserId)
-            .withUserInfo(user.getNickname(), user.getImage());
-
-        return behaviorEventBus.execute(context);
-    }
-
-    /**
-     * 取消关注用户
-     * POST /api/v1/behavior/unfollow
-     * {"targetUserId": 123}
-     */
-    @PostMapping("/unfollow")
-    public ResponseResult unfollow(@RequestBody Map<String, Object> params) {
-        ApUser user = AppThreadLocalUtil.getUser();
-        if (user == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
-        }
-        Integer targetUserId = params.get("targetUserId") != null
-            ? Integer.valueOf(params.get("targetUserId").toString()) : null;
-        if (targetUserId == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "targetUserId不能为空");
-        }
-
-        BehaviorContext context = new BehaviorContext(BehaviorType.UNFOLLOW_USER, user.getId());
-        context.withTarget(3, targetUserId.longValue())
-            .withTargetUser(targetUserId);
-
-        return behaviorEventBus.rollback(context);
-    }
-
-    /**
      * 点赞文章/沸点
      * POST /api/v1/behavior/like
      * {"targetType": 1, "targetId": 456, "targetUserId": 789}

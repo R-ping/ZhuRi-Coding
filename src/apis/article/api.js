@@ -127,19 +127,7 @@ Api.prototype = {
             })
         })
     },
-    // 关注（operation: 0=关注 1=取消关注，统一走事件总线 follow/unfollow）
-    follow: function (data) {
-        let url = conf.urls.get(data.operation === 0 ? 'follow_behavior' : 'unfollow_behavior')
-        return new Promise((resolve, reject) => {
-            request.post(url, {
-                targetUserId: data.targetUserId || data.articleId
-            }).then((d) => {
-                resolve(d)
-            }).catch((e) => {
-                reject(e)
-            })
-        })
-    }
+    // 关注/取关已统一收敛到 /api/v1/follow/do（见 src/apis/follow.js），此处不再走事件总线
 }
 
 export default new Api()

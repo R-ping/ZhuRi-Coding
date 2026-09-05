@@ -116,7 +116,10 @@ var store = new Vuex.Store({
         isLoginPopupShowing: false,  // 防止重复弹出登录框
         showSocialBindModal: false,
         // 社交登录绑定状态（暂存，用于OAuth回调后弹出绑定弹窗）
-        socialBindInfo: null  // { platform, platformUid }
+        socialBindInfo: null,  // { platform, platformUid }
+        // 任务进度刷新信号：任何影响"社区活跃/逐日分"的用户行为成功后自增，
+        // 成长页/创作者任务的展示组件 watch 该值以即时刷新进度（无需整页刷新）
+        taskVersion: 0
     },
     mutations: {
         SET_ACCESS_TOKEN(state, token) {
@@ -160,6 +163,9 @@ var store = new Vuex.Store({
         },
         CLEAR_SOCIAL_BIND_INFO(state) {
             state.socialBindInfo = null
+        },
+        BUMP_TASK_VERSION(state) {
+            state.taskVersion += 1
         }
     },
     actions: {
@@ -220,6 +226,12 @@ var store = new Vuex.Store({
         },
         clearSocialBindInfo({ commit }) {
             commit('CLEAR_SOCIAL_BIND_INFO')
+        },
+        /**
+         * 用户行为（点赞/收藏/关注/评论/发布等）成功后通知：任务展示组件据此即时刷新进度
+         */
+        notifyTaskChange({ commit }) {
+            commit('BUMP_TASK_VERSION')
         }
     },
     getters: {
