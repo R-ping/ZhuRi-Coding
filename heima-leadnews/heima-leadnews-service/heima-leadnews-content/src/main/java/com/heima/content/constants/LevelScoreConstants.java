@@ -20,8 +20,6 @@ public final class LevelScoreConstants {
     /** 行为类型 → 积分值（key 统一引用 LevelScoreActionCode） */
     public static final Map<String, Integer> ACTION_SCORE_MAP = new HashMap<>();
     static {
-        ACTION_SCORE_MAP.put(LevelScoreActionCode.DAILY_LOGIN, 2);
-        ACTION_SCORE_MAP.put(LevelScoreActionCode.READ_ARTICLE, 2);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.COMMENT_ARTICLE, 2);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.COMMENT_PIN, 2);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.LIKE_ARTICLE, 1);
@@ -52,7 +50,6 @@ public final class LevelScoreConstants {
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.COLLECT_ARTICLE, 2);
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.BROWSE_ARTICLE, 10);
         DAILY_ACTION_LIMIT.put("browse_course", 10);
-        DAILY_ACTION_LIMIT.put(LevelScoreActionCode.DAILY_LOGIN, 2);
     }
 
     /** 逐力变更类型 → 每日次数上限 */

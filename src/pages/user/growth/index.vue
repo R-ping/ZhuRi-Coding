@@ -411,7 +411,7 @@ export default {
             return Utils.isDesktop()
         },
         userName() {
-            const userInfo = this.$store.state.user.userInfo
+            const userInfo = this.$store.state.userInfo
             return userInfo ? (userInfo.nickName || '用户') : '用户'
         },
         // 当前等级配置
@@ -447,29 +447,30 @@ export default {
             return '还需 ' + this.dailyNextLevelScore + ' 分可升至 ' + (nextTitle || ('JY' + ((this.levelInfo.dailyLevel || 1) + 1)))
         },
         taskGroups() {
+            // 分组展示顺序与掘金一致：社区基础 → 社区活跃 → 社区学习 → 社区影响力（影响力在最底）
+            // 仅展示 TASK_GROUP_CONFIG 声明的分组；DB 已清理多余动作配置，此处兜底过滤未知分组
+            const GROUP_ORDER = ['社区基础', '社区活跃', '社区学习', '社区影响力']
             const groups = {}
             const groupIconMap = {}
             for (const [groupName, groupConfig] of Object.entries(TASK_GROUP_CONFIG)) {
                 groupIconMap[groupName] = groupConfig.icon
+                groups[groupName] = { name: groupName, icon: groupConfig.icon, tasks: [] }
             }
 
             for (const task of this.tasks) {
                 const type = task.task_type || '其他'
-                if (!groups[type]) {
-                    groups[type] = {
-                        name: type,
-                        icon: groupIconMap[type] || '📌',
-                        tasks: []
-                    }
+                const group = groups[type]
+                if (!group) {
+                    continue // 非掘金分组（如已清理的"内容创作"）不展示
                 }
                 const completed = task.limit > 0 && (task.done || 0) >= task.limit
-                groups[type].tasks.push({
+                group.tasks.push({
                     ...task,
                     buttonText: task.btn_name || task.buttonText || '去完成',
                     completed: completed
                 })
             }
-            return Object.values(groups)
+            return GROUP_ORDER.filter(name => groups[name].tasks.length > 0).map(name => groups[name])
         },
         levelChartConfigs() {
             if (this.dailyLevelConfigs && this.dailyLevelConfigs.length > 0) {
@@ -552,10 +553,15 @@ export default {
                     this.selectedLevel = val.dailyLevel
                 }
             }
+        },
+        // 用户行为（点赞/收藏/关注/评论/发布）成功后 store 自增 taskVersion，即时刷新等级与任务进度
+        '$store.state.taskVersion': function () {
+            this.loadData()
         }
     },
     created() {
-        this.userId = this.$store.state.user.userInfo ? this.$store.state.user.userInfo.userId : null
+        // 用户信息存于单 store 顶层 userInfo（Vuex 无 user 子模块）
+        this.userId = this.$store.state.userInfo ? this.$store.state.userInfo.userId : null
     },
     mounted() {
         this.loadData()

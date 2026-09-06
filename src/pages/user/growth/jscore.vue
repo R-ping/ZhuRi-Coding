@@ -146,7 +146,10 @@
                                 :key="item.id"
                                 class="detail-row"
                             >
-                                <div class="col col-behavior">{{ item.action_desc }}</div>
+                                <div class="col col-behavior">
+                                    <span class="behavior-name">{{ item.actionName || item.action_code || '行为' }}</span>
+                                    <span v-if="item.actionDesc && item.actionName !== item.actionDesc" class="behavior-desc">{{ item.actionDesc }}</span>
+                                </div>
                                 <div
                                     class="col col-score"
                                     :class="{ positive: item.score > 0, negative: item.score < 0 }"
@@ -154,7 +157,7 @@
                                     <span v-if="item.score > 0">+{{ formatScore(item.score) }}</span>
                                     <span v-else>{{ formatScore(item.score) }}</span>
                                 </div>
-                                <div class="col col-time">{{ formatDateTime(item.created_at) }}</div>
+                                <div class="col col-time">{{ item.createdAt }}</div>
                             </div>
                         </div>
 
@@ -401,8 +404,8 @@ export default {
                     } else {
                         this.timelineList = list
                     }
-                    this.nextCursor = data.next_cursor || ''
-                    this.hasMore = !!data.has_more
+                    this.nextCursor = data.nextCursor || data.next_cursor || ''
+                    this.hasMore = !!data.hasMore || !!data.has_more
                 }
             } catch (e) {
                 // Keep current list
@@ -704,6 +707,22 @@ export default {
         padding: 14px 20px;
     }
     .col-behavior {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .behavior-name {
+        display: block;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .behavior-desc {
+        display: block;
+        margin-top: 2px;
+        font-size: 12px;
+        color: #8A8F8A;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;

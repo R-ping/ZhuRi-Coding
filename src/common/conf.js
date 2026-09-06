@@ -51,8 +51,7 @@ const  config = {
         unlike_behavior:{url:'api/v1/behavior/unlike',sv:'content'},
         collection_behavior:{url:'api/v1/behavior/collect',sv:'content'},
         uncollect_behavior:{url:'api/v1/behavior/uncollect',sv:'content'},
-        follow_behavior:{url:'api/v1/behavior/follow',sv:'content'},
-        unfollow_behavior:{url:'api/v1/behavior/unfollow',sv:'content'},
+        // 关注/取关统一走 /api/v1/follow/do（见 src/apis/follow.js），不再走行为总线配置
         // ==========  user (后端已实现)
         // 后端未提供 user_follow 接口，已在前端注释对应调用
         // ==========  login (login 属于 user 微服务)

@@ -107,6 +107,12 @@ export default {
       return this.tasks.filter(t => t.completed).length
     }
   },
+  watch: {
+    // 用户行为（点赞/收藏/关注/评论/发布）成功后 store 自增 taskVersion，即时刷新进度
+    '$store.state.taskVersion': function () {
+      this.loadTasks()
+    }
+  },
   created() {
     this.loadTasks()
   },
@@ -119,8 +125,9 @@ export default {
       this.loading = true
       this.loadError = null
 
-      const userInfo = this.$store && this.$store.state && this.$store.state.user
-        ? this.$store.state.user.userInfo : null
+      // 用户信息存于单 store 顶层 userInfo（Vuex 无 user 子模块）
+      const userInfo = this.$store && this.$store.state
+        ? this.$store.state.userInfo : null
       const userId = userInfo ? (userInfo.userId || userInfo.id) : null
 
       if (!userId) {

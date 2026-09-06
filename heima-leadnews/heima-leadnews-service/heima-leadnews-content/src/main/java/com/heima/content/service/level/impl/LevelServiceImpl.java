@@ -110,6 +110,11 @@ public class LevelServiceImpl implements LevelService {
     }
 
     @Override
+    public Map<String, Object> rollbackActionWithLimit(Long userId, String actionType, String actionDetail) {
+        return levelActionService.rollbackActionWithLimit(userId, actionType, actionDetail);
+    }
+
+    @Override
     public Map<String, Object> recordPaymentAction(Long userId, String actionType, BigDecimal amount,
         String actionDetail) {
         return levelActionService.recordPaymentAction(userId, actionType, amount, actionDetail);

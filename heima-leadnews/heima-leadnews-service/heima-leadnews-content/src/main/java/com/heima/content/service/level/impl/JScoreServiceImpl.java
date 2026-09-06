@@ -188,6 +188,9 @@ public class JScoreServiceImpl implements JScoreService {
         List<JScoreDetailItem> items = new ArrayList<>();
         String nextCursor = "";
 
+        // 行为 code → 展示名映射（一次性查全部配置，避免逐条查库）
+        Map<String, String> actionNameMap = loadActionNameMap();
+
         for (int i = 0; i < records.size(); i++) {
             UserScoreDetails record = records.get(i);
             JScoreDetailItem item = new JScoreDetailItem();
@@ -196,6 +199,10 @@ public class JScoreServiceImpl implements JScoreService {
                 ? SDF.format(record.getCreatedAt()) : "");
             item.setActionCode(record.getActionCode() != null ? record.getActionCode() : "");
             item.setActionDesc(record.getActionDesc() != null ? record.getActionDesc() : "");
+            // 行为展示名：优先 ap_behavior_config.action_name（如"点赞一篇文章"），
+            // 未配置时回退 action_code 本身（避免行为名列空白）
+            item.setActionName(actionNameMap.getOrDefault(
+                record.getActionCode(), record.getActionCode() != null ? record.getActionCode() : ""));
             item.setScore(record.getScore() != null ? record.getScore() : BigDecimal.ZERO);
             String catName = CATEGORY_NAME_MAP.get(record.getCategory());
             item.setCategory(catName != null ? catName : "");
@@ -214,6 +221,27 @@ public class JScoreServiceImpl implements JScoreService {
         vo.setHasMore(hasMore);
 
         return vo;
+    }
+
+    /**
+     * 加载行为配置 code → 展示名映射（全部启用配置一次查库）
+     */
+    private Map<String, String> loadActionNameMap() {
+        Map<String, String> map = new HashMap<>();
+        try {
+            List<ApBehaviorConfig> configs = behaviorConfigMapper.selectList(
+                new LambdaQueryWrapper<ApBehaviorConfig>().eq(ApBehaviorConfig::getIsActive, 1));
+            if (configs != null) {
+                for (ApBehaviorConfig config : configs) {
+                    if (config.getActionCode() != null && config.getActionName() != null) {
+                        map.put(config.getActionCode(), config.getActionName());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("加载行为配置名映射失败，明细行为名回退 action_code", e);
+        }
+        return map;
     }
 
     /**

@@ -2,8 +2,10 @@ package com.heima.content.behavior.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.content.behavior.service.BehaviorHandler;
+import com.heima.content.constants.LevelScoreActionCode;
 import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.mapper.user.UserBehaviorRecordMapper;
+import com.heima.content.service.level.LevelService;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.behavior.BehaviorResult;
 import com.heima.model.behavior.BehaviorType;
@@ -29,6 +31,9 @@ public class FollowBehaviorHandler implements BehaviorHandler {
 
     @Autowired
     private UserBehaviorRecordMapper behaviorRecordMapper;
+
+    @Autowired(required = false)
+    private LevelService levelService;
 
     @Override
     public BehaviorType getType() {
@@ -120,6 +125,17 @@ public class FollowBehaviorHandler implements BehaviorHandler {
 
         // 删除关注记录
         apFollowMapper.deleteById(existing.getId());
+
+        // 回退本次关注获得的逐日进度/积分（行为总线 rollback 不走 LevelScoreProcessor，需在此主动回退），
+        // 保证"允许重复关注、取消关注时进度一并收回"，失败不影响主流程
+        if (levelService != null) {
+            try {
+                levelService.rollbackActionWithLimit(userId.longValue(), LevelScoreActionCode.FOLLOW_USER,
+                    "取消关注用户ID:" + targetUserId);
+            } catch (Exception e) {
+                log.warn("取消关注回退逐日等级行为失败: userId={}, targetUserId={}", userId, targetUserId, e);
+            }
+        }
 
         // 更新行为记录状态为已撤销
         LambdaQueryWrapper<UserBehaviorRecord> recordQuery = new LambdaQueryWrapper<>();

@@ -1213,7 +1213,7 @@ export default {
         goToUserPage(userId) {
             this.goToUserHome(userId)
         },
-        async onAuthorFollow(userId) {
+        async onAuthorFollow(userId, willFollow) {
             var currentUserId = this.userInfo && this.userInfo.userId
             if (!currentUserId) {
                 toast('请先登录')
@@ -1221,7 +1221,7 @@ export default {
                 return
             }
             try {
-                const res = await followUser(currentUserId, userId)
+                const res = await followUser(currentUserId, userId, willFollow ? 0 : 1)
                 if (res && res.code === 200) {
                     toast('操作成功', 2)
                 } else {

@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.heima.content.constants.LevelScoreActionCode;
 import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.mapper.interaction.ApArticleReportMapper;
 import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
@@ -16,7 +15,6 @@ import com.heima.model.behavior.pojos.ApBehaviorLikes;
 import com.heima.model.behavior.pojos.ApCollection;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.follow.pojos.ApFollow;
 import com.heima.model.user.pojos.ApUser;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -43,9 +41,6 @@ public class ArticleInteractionController {
 
     @Autowired
     private ApCollectionMapper apCollectionMapper;
-
-    @Autowired
-    private ApFollowMapper apFollowMapper;
 
     @Autowired
     private ApArticleReportMapper apArticleReportMapper;
@@ -78,42 +73,51 @@ public class ArticleInteractionController {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
         }
 
-        // 查询是否已点赞（type=0 表示文章，operation=0 表示点赞）
+        // 查询该用户对这篇文章的全部点赞记录（不看 operation，用于切换点赞/取消状态并复用同一行）
         LambdaQueryWrapper<ApBehaviorLikes> query = new LambdaQueryWrapper<>();
         query.eq(ApBehaviorLikes::getEntryId, id);
         query.eq(ApBehaviorLikes::getUserId, user.getId());
         query.eq(ApBehaviorLikes::getType, 0);
-        query.eq(ApBehaviorLikes::getOperation, 0);
-        ApBehaviorLikes existing = apBehaviorLikesMapper.selectOne(query);
+        ApBehaviorLikes record = apBehaviorLikesMapper.selectOne(query);
 
         boolean liked;
-        if (existing != null) {
-            // 已点赞 → 取消点赞（operation=1 表示取消）
-            existing.setOperation(1);
-            apBehaviorLikesMapper.updateById(existing);
+        Integer currentOperation = record == null ? null : record.getOperation();
+        if (record != null && currentOperation != null && currentOperation == 0) {
+            // 已点赞 → 取消点赞（operation=1 表示取消），并回退本次点赞获得的逐日进度/积分
+            record.setOperation(1);
+            apBehaviorLikesMapper.updateById(record);
             // 更新文章点赞数减1
             apArticleMapper.update(null, new LambdaUpdateWrapper<ApArticle>()
                     .eq(ApArticle::getId, id)
                     .setSql("likes = GREATEST(likes - 1, 0)"));
             liked = false;
             log.info("用户{}取消点赞文章{}", user.getId(), id);
+            try {
+                levelService.rollbackActionWithLimit(user.getId().longValue(), LevelScoreActionCode.LIKE_ARTICLE, "取消点赞文章ID:" + id);
+            } catch (Exception e) {
+                log.warn("取消点赞回退逐日等级行为失败: userId={}, articleId={}", user.getId(), id, e);
+            }
         } else {
-            // 未点赞 → 新增点赞记录
-            ApBehaviorLikes like = new ApBehaviorLikes();
-            like.setEntryId(id);
-            like.setUserId(user.getId());
-            like.setType(0); // 文章
-            like.setOperation(0); // 点赞
-            like.setCreatedTime(new Date());
-            apBehaviorLikesMapper.insert(like);
-            // 更新文章点赞数加1
+            // 未点赞 → 置为已点赞：有旧记录则复用（operation 1→0），无记录则新增；点赞数加1
+            if (record != null) {
+                record.setOperation(0);
+                apBehaviorLikesMapper.updateById(record);
+            } else {
+                ApBehaviorLikes like = new ApBehaviorLikes();
+                like.setEntryId(id);
+                like.setUserId(user.getId());
+                like.setType(0); // 文章
+                like.setOperation(0); // 点赞
+                like.setCreatedTime(new Date());
+                apBehaviorLikesMapper.insert(like);
+            }
             apArticleMapper.update(null, new LambdaUpdateWrapper<ApArticle>()
                     .eq(ApArticle::getId, id)
                     .setSql("likes = likes + 1"));
             liked = true;
             log.info("用户{}点赞文章{}", user.getId(), id);
-            // 记录逐日等级"点赞"行为（like_article）：累计今日进度 + 逐日分，失败不影响点赞主流程
-            // （与 /behavior/like 行为总线口径一致；受 like_article 每日上限控制）
+            // 每次点赞都累计逐日等级"点赞"行为（like_article）：受 like_article 每日上限控制，
+            // 取消点赞时通过 rollbackActionWithLimit 回退本次累计，避免反复取消/点赞刷分
             try {
                 levelService.recordActionWithLimit(user.getId().longValue(), LevelScoreActionCode.LIKE_ARTICLE, "点赞文章ID:" + id);
             } catch (Exception e) {
@@ -161,7 +165,7 @@ public class ArticleInteractionController {
 
         boolean collected;
         if (existing != null) {
-            // 已收藏 → 删除收藏记录
+            // 已收藏 → 删除收藏记录，并回退本次收藏获得的逐日进度/积分
             apCollectionMapper.deleteById(existing.getId());
             // 更新文章收藏数减1
             apArticleMapper.update(null, new LambdaUpdateWrapper<ApArticle>()
@@ -169,6 +173,11 @@ public class ArticleInteractionController {
                     .setSql("collection = GREATEST(collection - 1, 0)"));
             collected = false;
             log.info("用户{}取消收藏文章{}", user.getId(), id);
+            try {
+                levelService.rollbackActionWithLimit(user.getId().longValue(), LevelScoreActionCode.COLLECT_ARTICLE, "取消收藏文章ID:" + id);
+            } catch (Exception e) {
+                log.error("取消收藏回退逐日等级行为失败: action=collect_article, userId={}, articleId={}", user.getId(), id, e);
+            }
         } else {
             // 未收藏 → 新增收藏记录；唯一索引 uk_collection_user_article 保证同用户同文章仅一条
             boolean newlyInserted;
@@ -208,79 +217,6 @@ public class ArticleInteractionController {
         Map<String, Object> result = new HashMap<>();
         result.put("collected", collected);
         result.put("collectCount", collectCount);
-        return ResponseResult.okResult(result);
-    }
-
-    /**
-     * 关注/取消关注作者（切换式）
-     * POST /api/v1/article/{id}/follow
-     *
-     * @param id 文章ID
-     * @return { "followed": true/false }
-     */
-    @PostMapping("/{id}/follow")
-    @Transactional(rollbackFor = Exception.class)
-    public ResponseResult follow(@PathVariable Long id) {
-        // 检查登录
-        ApUser user = AppThreadLocalUtil.getUser();
-        if (user == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
-        }
-
-        // 查询文章获取作者ID
-        ApArticle article = apArticleMapper.selectById(id);
-        if (article == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
-        }
-
-        Long authorIdLong = article.getAuthorId();
-        if (authorIdLong == null) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章作者不存在");
-        }
-        Integer authorId = authorIdLong.intValue();
-
-        // 不能关注自己
-        if (user.getId().equals(authorId)) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "不能关注自己");
-        }
-
-        // 查询是否已关注
-        LambdaQueryWrapper<ApFollow> query = new LambdaQueryWrapper<>();
-        query.eq(ApFollow::getUserId, user.getId());
-        query.eq(ApFollow::getFollowUserId, authorId);
-        ApFollow existing = apFollowMapper.selectOne(query);
-
-        boolean followed;
-        if (existing != null) {
-            // 已关注 → 删除关注记录
-            apFollowMapper.deleteById(existing.getId());
-            followed = false;
-            log.info("用户{}取消关注作者{}", user.getId(), authorId);
-        } else {
-            // 未关注 → 新增关注记录；唯一索引 uk_follow_user_target 保证同用户关注同一作者仅一条
-            try {
-                ApFollow follow = new ApFollow();
-                follow.setUserId(user.getId());
-                follow.setFollowUserId(authorId);
-                follow.setCreatedTime(new Date());
-                apFollowMapper.insert(follow);
-            } catch (DuplicateKeyException e) {
-                // 并发下另一请求已插入关注记录，幂等视为已关注
-                log.info("并发关注冲突，视为已关注, userId={}, authorId={}", user.getId(), authorId);
-            }
-            followed = true;
-            log.info("用户{}关注作者{}", user.getId(), authorId);
-            // 记录逐日等级"关注"行为（follow_user）：累计今日进度 + 逐日分，失败不影响关注主流程
-            // （与 /behavior/follow、/api/v1/follow/do 口径一致；受 follow_user 每日上限控制）
-            try {
-                levelService.recordActionWithLimit(user.getId().longValue(), LevelScoreActionCode.FOLLOW_USER, "关注用户ID:" + authorId);
-            } catch (Exception e) {
-                log.error("记录逐日等级行为失败: action=follow_user, userId={}, targetUserId={}", user.getId(), authorId, e);
-            }
-        }
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("followed", followed);
         return ResponseResult.okResult(result);
     }
 

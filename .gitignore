@@ -72,3 +72,14 @@ positions.yaml
 # 个人/临时文件
 *.pdf
 .vite_test_dist/
+
+# 个人参考截图与资料（不纳入版本控制，保留在磁盘）
+/*.png
+docs/code-review-quality-report.md
+docs/interview-core-business-points.md
+docs/juejin-design-reference.md
+docs/resume-project-zhuri-coding.md
+cdp-browser.js
+
+# 掘金数据导入工具与生成产物（一次性数据脚本，不入库）
+juejin-import/

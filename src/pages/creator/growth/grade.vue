@@ -184,9 +184,8 @@ export default {
      * 从 Vuex store 读取当前登录用户 ID（修复硬编码 userId=1 导致查错用户的 bug）。
      */
     resolveCurrentUserId() {
-      const u = this.$store && this.$store.state && this.$store.state.user
-        ? this.$store.state.user.userInfo
-        : null
+      // 用户信息存于单 store 顶层 userInfo（Vuex 无 user 子模块）
+      const u = this.$store && this.$store.state ? this.$store.state.userInfo : null
       if (u) {
         const id = u.userId || u.id
         if (id) return Number(id)
