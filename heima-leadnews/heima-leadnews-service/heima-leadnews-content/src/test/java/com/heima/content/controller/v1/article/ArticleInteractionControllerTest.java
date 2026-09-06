@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.follow.ApFollowMapper;
 import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.heima.content.mapper.interaction.ApCollectionMapper;
 import com.heima.model.article.pojos.ApArticle;
@@ -20,7 +19,6 @@ import com.heima.model.behavior.pojos.ApBehaviorLikes;
 import com.heima.model.behavior.pojos.ApCollection;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.follow.pojos.ApFollow;
 import com.heima.model.user.pojos.ApUser;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import java.util.Date;
@@ -44,9 +42,6 @@ class ArticleInteractionControllerTest {
 
     @Mock
     private ApCollectionMapper apCollectionMapper;
-
-    @Mock
-    private ApFollowMapper apFollowMapper;
 
     @Mock
     private ApArticleMapper apArticleMapper;
@@ -224,74 +219,5 @@ class ArticleInteractionControllerTest {
         assertEquals(4, data.get("collectCount"));
 
         verify(apCollectionMapper).deleteById(1L);
-    }
-
-    // ==================== follow ====================
-
-    @Test
-    @DisplayName("关注作者 - 未登录时返回需要登录")
-    void testFollowNotLoggedIn() {
-        threadLocalMock.when(AppThreadLocalUtil::getUser).thenReturn(null);
-
-        ResponseResult result = interactionController.follow(TEST_ARTICLE_ID);
-        assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), result.getCode());
-    }
-
-    @Test
-    @DisplayName("关注作者 - 文章不存在时返回错误")
-    void testFollowArticleNotFound() {
-        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(null);
-
-        ResponseResult result = interactionController.follow(TEST_ARTICLE_ID);
-        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), result.getCode());
-    }
-
-    @Test
-    @DisplayName("关注作者 - 不能关注自己")
-    void testFollowSelf() {
-        testArticle.setAuthorId(TEST_USER_ID.longValue());
-        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle);
-
-        ResponseResult result = interactionController.follow(TEST_ARTICLE_ID);
-        assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), result.getCode());
-    }
-
-    @Test
-    @DisplayName("关注作者 - 成功关注（未关注过）")
-    void testFollowSuccess() {
-        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle);
-        // 作者ID != 当前用户ID
-        when(apFollowMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
-        when(apFollowMapper.insert(any(ApFollow.class))).thenReturn(1);
-
-        ResponseResult result = interactionController.follow(TEST_ARTICLE_ID);
-        assertEquals(200, result.getCode());
-
-        Map<String, Object> data = (Map<String, Object>) result.getData();
-        assertNotNull(data);
-        assertTrue((Boolean) data.get("followed"));
-
-        verify(apFollowMapper).insert(any(ApFollow.class));
-    }
-
-    @Test
-    @DisplayName("关注作者 - 取消关注（已关注过）")
-    void testFollowCancel() {
-        ApFollow existingFollow = new ApFollow();
-        existingFollow.setId(1L);
-        existingFollow.setUserId(TEST_USER_ID);
-        existingFollow.setFollowUserId(TEST_AUTHOR_ID.intValue());
-
-        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle);
-        when(apFollowMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existingFollow);
-
-        ResponseResult result = interactionController.follow(TEST_ARTICLE_ID);
-        assertEquals(200, result.getCode());
-
-        Map<String, Object> data = (Map<String, Object>) result.getData();
-        assertNotNull(data);
-        assertFalse((Boolean) data.get("followed"));
-
-        verify(apFollowMapper).deleteById(1L);
     }
 }

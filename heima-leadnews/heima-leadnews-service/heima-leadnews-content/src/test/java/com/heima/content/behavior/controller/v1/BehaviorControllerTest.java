@@ -28,10 +28,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * BehaviorController 单元测试（统一用户行为入口，8 个端点）
+ * BehaviorController 单元测试（统一用户行为入口，8 个端点；关注已收敛到 /api/v1/follow/do）
  *
  * 覆盖：
- * - 未登录：follow/unfollow/like/unlike/collect/uncollect/comment 返回 NEED_LOGIN；
+ * - 未登录：like/unlike/collect/uncollect/comment 返回 NEED_LOGIN；
  * - browse 未登录放行返回 okResult(200)；
  * - 参数缺失（targetUserId/targetType/targetId 为 null）返回 PARAM_INVALID；
  * - 参数齐全时通过 ArgumentCaptor 断言 BehaviorContext 的
@@ -85,13 +85,11 @@ class BehaviorControllerTest {
     // ==================== 未登录 ====================
 
     @Test
-    @DisplayName("未登录 - follow/unfollow/like/unlike/collect/uncollect/comment 均返回 NEED_LOGIN")
+    @DisplayName("未登录 - like/unlike/collect/uncollect/comment 均返回 NEED_LOGIN")
     void testAllEndpointsNeedLogin() throws Exception {
         injectEventBus();
         AppThreadLocalUtil.clear();
 
-        assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), controller.follow(params("targetUserId", 789)).getCode());
-        assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), controller.unfollow(params("targetUserId", 789)).getCode());
         assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), controller.like(params("targetType", 1, "targetId", 456)).getCode());
         assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), controller.unlike(params("targetType", 1, "targetId", 456)).getCode());
         assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), controller.collect(params("targetType", 1, "targetId", 456)).getCode());
@@ -114,20 +112,6 @@ class BehaviorControllerTest {
     }
 
     // ==================== 参数缺失 ====================
-
-    @Test
-    @DisplayName("参数缺失 - follow/unfollow 缺 targetUserId 返回 PARAM_INVALID")
-    void testFollowParamInvalid() throws Exception {
-        injectEventBus();
-        AppThreadLocalUtil.setUser(loggedUser());
-
-        assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
-            controller.follow(new HashMap<>()).getCode());
-        assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
-            controller.unfollow(new HashMap<>()).getCode());
-        verify(behaviorEventBus, never()).execute(any());
-        verify(behaviorEventBus, never()).rollback(any());
-    }
 
     @Test
     @DisplayName("参数缺失 - like/unlike/collect 缺 targetType 或 targetId 返回 PARAM_INVALID")
@@ -176,49 +160,6 @@ class BehaviorControllerTest {
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
             controller.browse(new HashMap<>()).getCode());
         verify(behaviorEventBus, never()).execute(any());
-    }
-
-    // ==================== 关注 / 取消关注 ====================
-
-    @Test
-    @DisplayName("follow - 构造 FOLLOLLOW_USER 上下文并调用 execute")
-    void testFollow() throws Exception {
-        injectEventBus();
-        AppThreadLocalUtil.setUser(loggedUser());
-        stubExecuteOk();
-
-        ResponseResult result = controller.follow(params("targetUserId", 789));
-        assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), result.getCode());
-
-        ArgumentCaptor<BehaviorContext> captor = ArgumentCaptor.forClass(BehaviorContext.class);
-        verify(behaviorEventBus).execute(captor.capture());
-        BehaviorContext ctx = captor.getValue();
-        assertEquals(BehaviorType.FOLLOW_USER, ctx.getBehaviorType());
-        assertEquals(1, ctx.getUserId());
-        assertEquals(3, ctx.getTargetType());   // 用户
-        assertEquals(789L, ctx.getTargetId());
-        assertEquals(789, ctx.getTargetUserId());
-        assertEquals("张三", ctx.getUserName());
-        assertEquals("avatar.png", ctx.getUserAvatar());
-    }
-
-    @Test
-    @DisplayName("unfollow - 构造 UNFOLLOW_USER 上下文并调用 rollback")
-    void testUnfollow() throws Exception {
-        injectEventBus();
-        AppThreadLocalUtil.setUser(loggedUser());
-        stubRollbackOk();
-
-        controller.unfollow(params("targetUserId", 789));
-
-        ArgumentCaptor<BehaviorContext> captor = ArgumentCaptor.forClass(BehaviorContext.class);
-        verify(behaviorEventBus).rollback(captor.capture());
-        BehaviorContext ctx = captor.getValue();
-        assertEquals(BehaviorType.UNFOLLOW_USER, ctx.getBehaviorType());
-        assertEquals(1, ctx.getUserId());
-        assertEquals(3, ctx.getTargetType());
-        assertEquals(789L, ctx.getTargetId());
-        assertEquals(789, ctx.getTargetUserId());
     }
 
     // ==================== 点赞 / 取消点赞 ====================
