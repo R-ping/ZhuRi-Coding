@@ -7,9 +7,18 @@ import com.heima.model.article.pojos.ApArticle;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface ApArticleMapper extends BaseMapper<ApArticle> {
+
+    /**
+     * 幂等置文章为已发布（PUBLISHED=9）：仅当当前处于审核中(SUBMIT=1)才更新，防并发/重放重复置位。
+     *
+     * @return 受影响行数：1=本次完成置位；0=状态非 SUBMIT（可能已是 PUBLISHED 或其他终态，由调用方查状态区分）
+     */
+    @Update("UPDATE ap_article SET status = 9 WHERE id = #{articleId} AND status = 1")
+    int markPublishedIfPending(@Param("articleId") Long articleId);
 
     /**
      * 加载文章列表

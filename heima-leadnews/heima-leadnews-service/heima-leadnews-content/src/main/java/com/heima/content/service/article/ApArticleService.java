@@ -30,11 +30,4 @@ public interface ApArticleService extends IService<ApArticle> {
     void updateScoreByBehavior(Long articleId, UpdateArticleMess.UpdateArticleType type, Integer add);
 
     List<Map<String, Object>> listByAuthorId(ArticleDto dto);
-
-    /**
-     * 更新文章发布状态（延迟任务到期后调用）
-     * 更新 DB 文章状态为 PUBLISHED，同步更新 ES 状态，更新本地消息表
-     * @param articleId 文章ID
-     */
-    void updateArticleStatus(Long articleId);
 }

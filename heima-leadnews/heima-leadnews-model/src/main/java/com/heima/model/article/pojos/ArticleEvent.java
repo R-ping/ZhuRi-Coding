@@ -15,17 +15,29 @@ public class ArticleEvent {
      */
     private Long articleId;
 
-    private Byte retryCount; // 重试次数，默认0，理想情况minio、es都可重试1次
-    private Byte maxRetryCount; // 最大重试次数
-    private Date retryTime; // 重试时间
+    /**
+     * 任务状态（单一状态机，替代原 es_status/pub_status 双状态位）：
+     * 1=INIT 已落消息待处理；2=DB_SET_FAIL 文章可见态(DB PUBLISHED)置位失败，待扫描重试；
+     * 3=ES_SYNC_FAIL 文章已发布但 ES 同步失败，待扫描重试；4=DONE 全部完成可删除。
+     */
+    private Byte status;
+
+    private Byte retryCount; // ES 同步失败连续重试次数（DB_SET_FAIL 幂等自愈，不计入）
+    private Byte maxRetryCount; // ES 同步最大重试次数
+    private Date retryTime; // 下次重试时间
 
 //    private Byte minioStatus; // minio状态，0初始化，1为还未成功，2已成功
 
-    private Byte esStatus; // es状态，0初始化，1为还未成功，2已成功
+    /**
+     * @deprecated 已由 status 单一状态机替代；字段保留以兼容存量数据与 SQL，新代码禁止读写。
+     */
+    @Deprecated
+    private Byte esStatus;
 
     /**
-     * 发布状态 0=初始化 1=待重试 2=成功
+     * @deprecated 已由 status 单一状态机替代；字段保留以兼容存量数据与 SQL，新代码禁止读写。
      */
+    @Deprecated
     private Byte pubStatus;
 
     private String parameter;

@@ -21,9 +21,4 @@ public class SearchClient implements ISearchClient {
         return articleSearchService.syncArticle(searchArticleVo);
     }
 
-    @PostMapping("/api/v1/search/article/status/up")
-    public ResponseResult updateArticleStatus(@RequestParam Long articleId){
-        return articleSearchService.updateArticleStatus(articleId);
-    }
-
 }
