@@ -98,16 +98,24 @@ public class TagSubscribeServiceImpl implements TagSubscribeService {
         relationWrapper.eq(UserTagRelation::getRelType, 2);
         List<UserTagRelation> relations = userTagRelationMapper.selectList(relationWrapper);
 
-        List<Map<String, Object>> tagList = new ArrayList<>();
+        // 与 discover 返回同口径（TagDiscoverVO：id/tagName/followCount/articleCount/isFollowing），
+        // 保证设置页"全部标签"与"已关注标签"两栏展示的统计一致
+        List<TagDiscoverVO> tagList = new ArrayList<>();
         for (UserTagRelation relation : relations) {
             SysTag tag = sysTagMapper.selectById(relation.getTagId());
             if (tag != null) {
-                Map<String, Object> tagMap = new HashMap<>();
-                tagMap.put("id", tag.getId());
-                tagMap.put("tagName", tag.getTagName());
-                tagMap.put("categoryCode", tag.getCategoryCode());
-                tagMap.put("categoryName", tag.getCategoryName());
-                tagList.add(tagMap);
+                TagDiscoverVO vo = new TagDiscoverVO();
+                vo.setId(tag.getId());
+                vo.setTagName(tag.getTagName());
+                vo.setArticleCount(tag.getSortOrder() != null ? tag.getSortOrder() : 0);
+                // 关注数：该标签被多少人关注（rel_type=2）
+                LambdaQueryWrapper<UserTagRelation> countWrapper = new LambdaQueryWrapper<>();
+                countWrapper.eq(UserTagRelation::getTagId, tag.getId());
+                countWrapper.eq(UserTagRelation::getRelType, 2);
+                Long followCount = userTagRelationMapper.selectCount(countWrapper);
+                vo.setFollowCount(followCount != null ? followCount.intValue() : 0);
+                vo.setIsFollowing(true);
+                tagList.add(vo);
             }
         }
 

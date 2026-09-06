@@ -590,15 +590,15 @@ export default {
             const routeId = this.$route.params && this.$route.params.id
             if (routeId) return routeId
             const storeUser = this.$store.getters.userInfo
-            return storeUser && storeUser.id ? storeUser.id : ''
+            return storeUser && storeUser.userId ? storeUser.userId : ''
         },
         // 是否自己的主页（决定是否展示「设置」「新建专栏」等仅本人可见的操作）
         isOwnProfile() {
             const routeId = this.$route.params && this.$route.params.id
             if (!routeId) return true
             const storeUser = this.$store.getters.userInfo
-            if (!storeUser || !storeUser.id) return false
-            return String(routeId) === String(storeUser.id)
+            if (!storeUser || !storeUser.userId) return false
+            return String(routeId) === String(storeUser.userId)
         },
         // 逐友等级徽章（取自成就接口，动态展示当前等级）
         dailyLevelBadge() {

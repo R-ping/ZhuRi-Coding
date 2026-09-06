@@ -403,7 +403,7 @@
                                 <span class="empty-text">{{ tagTab === 'followed' ? '暂无关注的标签' : '暂无标签' }}</span>
                             </div>
                             <div v-else class="tag-grid">
-                                <div class="tag-card" v-for="tag in tagList" :key="tag.id">
+                                <div class="tag-card" v-for="tag in tagList" :key="tag.id" @click="openTagDetail(tag)">
                                     <span class="tag-name">{{ tag.tagName }}</span>
                                     <div class="tag-stats">
                                         <span class="tag-stat">{{ tag.followCount || 0 }}关注</span>
@@ -412,7 +412,7 @@
                                     <button 
                                         class="tag-follow-btn"
                                         :class="{ following: tag.isFollowing }"
-                                        @click="handleTagFollow(tag)"
+                                        @click.stop="handleTagFollow(tag)"
                                     >{{ tag.isFollowing ? '已关注' : '关注' }}</button>
                                 </div>
                             </div>
@@ -744,7 +744,7 @@ export default {
                 if (res && res.code === 200 && res.data) {
                     this.tagList = (res.data.list || res.data).map(tag => ({
                         ...tag,
-                        isFollowing: true
+                        isFollowing: tag.isFollowing !== undefined ? tag.isFollowing : true
                     }))
                 }
             } catch (e) {
@@ -752,6 +752,12 @@ export default {
             } finally {
                 this.tagLoading = false
             }
+        },
+        // 点击标签卡片 → 新窗口打开标签详情页
+        openTagDetail(tag) {
+            if (!tag || !tag.tagName) return
+            const name = encodeURIComponent(String(tag.tagName).trim())
+            window.open('/tag/' + name, '_blank')
         },
         async handleTagFollow(tag) {
             try {
