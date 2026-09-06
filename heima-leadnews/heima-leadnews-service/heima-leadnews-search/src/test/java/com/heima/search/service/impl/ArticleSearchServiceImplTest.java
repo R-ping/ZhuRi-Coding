@@ -19,7 +19,6 @@ import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
-import org.springframework.data.elasticsearch.core.query.UpdateQuery;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -32,7 +31,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * ArticleSearchServiceImpl 单元测试（ES 文章检索 / 同步 / 状态更新）
+ * ArticleSearchServiceImpl 单元测试（ES 文章检索 / 同步）
  *
  * 纯 @Service，依赖经 @Autowired 由 @InjectMocks 注入：
  * - ElasticsearchOperations 检索执行（search/save/update）全部 Mock；
@@ -211,34 +210,6 @@ class ArticleSearchServiceImplTest {
 
             assertEquals(AppHttpCodeEnum.SERVER_ERROR.getCode(), r.getCode());
             verify(elasticsearchOperations, never()).save(any(SearchArticle.class));
-        }
-    }
-
-    // ==================== 状态更新 ====================
-
-    @Nested
-    @DisplayName("updateArticleStatus - 更新 ES 状态")
-    class UpdateArticleStatus {
-
-        @Test
-        @DisplayName("更新成功")
-        void testUpdateSuccess() {
-            // getIndexCoordinatesFor/update 默认返回 null，不抛异常即走成功分支
-            ResponseResult r = articleSearchService.updateArticleStatus(999L);
-
-            assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
-            verify(elasticsearchOperations).update(any(UpdateQuery.class), any());
-        }
-
-        @Test
-        @DisplayName("更新失败：ES 异常 → 服务端错误")
-        void testUpdateException() {
-            when(elasticsearchOperations.update(any(UpdateQuery.class), any()))
-                    .thenThrow(new RuntimeException("es down"));
-
-            ResponseResult r = articleSearchService.updateArticleStatus(888L);
-
-            assertEquals(AppHttpCodeEnum.SERVER_ERROR.getCode(), r.getCode());
         }
     }
 

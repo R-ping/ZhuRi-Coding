@@ -16,6 +16,4 @@ public interface ArticleSearchService {
     public ResponseResult search(UserSearchDto dto) throws IOException;
 
     ResponseResult syncArticle(SearchArticleVo searchArticleVo);
-
-    ResponseResult updateArticleStatus(Long articleId);
 }

@@ -23,9 +23,7 @@ import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
-import org.springframework.data.elasticsearch.core.document.Document;
 import org.springframework.data.elasticsearch.core.query.HighlightQuery;
-import org.springframework.data.elasticsearch.core.query.UpdateQuery;
 import org.springframework.data.elasticsearch.core.query.highlight.Highlight;
 import org.springframework.data.elasticsearch.core.query.highlight.HighlightField;
 import org.springframework.data.elasticsearch.core.query.highlight.HighlightFieldParameters;
@@ -187,6 +185,8 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
                         .collect(Collectors.toList()));
             }
             article.setAuthorWorks(searchArticleVo.getAuthorWorks());
+            // 发布态一步写入：调用方保证 syncArticle 时文章已置 PUBLISHED(9)，避免事后二次更新
+            article.setStatus(9);
 
             // 索引到 ES
             elasticsearchOperations.save(article);
@@ -195,25 +195,6 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
         } catch (Exception e) {
             log.error("同步文章到ES索引失败, articleId={}", searchArticleVo.getId(), e);
             return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, "同步文章到ES索引失败");
-        }
-    }
-
-    @Override
-    public ResponseResult updateArticleStatus(Long articleId) {
-        log.info("在es中更新文章状态, articleId={}", articleId);
-        try {
-            // 使用 UpdateQuery 更新 ES 文档的 status 字段
-            Document doc = Document.create();
-            doc.put("status", 9);  // PUBLISHED
-            UpdateQuery updateQuery = UpdateQuery.builder(articleId.toString())
-                    .withDocument(doc)
-                    .build();
-            elasticsearchOperations.update(updateQuery, elasticsearchOperations.getIndexCoordinatesFor(SearchArticle.class));
-            log.info("ES文章状态更新成功, articleId={}", articleId);
-            return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
-        } catch (Exception e) {
-            log.error("ES文章状态更新失败, articleId={}", articleId, e);
-            return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, "更新文章状态失败");
         }
     }
 }

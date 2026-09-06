@@ -5,7 +5,6 @@ import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.apis.search.ISearchClient;
 import com.heima.common.constants.ArticleConstants;
 import com.heima.content.mapper.article.ApArticleEventMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
@@ -42,8 +41,6 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     private ArticleFreemarkerService articleFreemarkerService;
     @Autowired
     private ApArticleEventMapper apArticleEventMapper;
-    @Autowired
-    private ISearchClient searchClient;
 
     /**
      * 加载文章列表
@@ -95,26 +92,81 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
             log.error("文章保存失败，参数为空");
             return false;
         }
-        if(getById(article.getId())==null){
-            log.error("文章不存在，可能有由于审核逻辑出问题，导致文章回滚掉了，文章id：{}", article.getId());
+        Long articleId = article.getId();
+        if (articleId == null || getById(articleId) == null) {
+            log.error("文章不存在，可能有由于审核逻辑出问题，导致文章回滚掉了，文章id：{}", articleId);
             return false;
         }
+        // ① 先落本地消息表（status=INIT）。顺序保证：即使后续置位/同步失败，记录一定存在可被补偿；
+        //    event 落库失败属本地异常，直接返回 false 交由调度标记失败（重试/人工）。
         try {
-            // 本地消息表入库（事务内）
             ArticleEvent event = buildArticleEvent();
-            event.setArticleId(article.getId());
+            event.setArticleId(articleId);
             SearchArticleVo searchArticleVo = new SearchArticleVo();
-            searchArticleVo.setId(article.getId());
+            searchArticleVo.setId(articleId);
             event.setParameter(JSONUtil.toJsonStr(searchArticleVo));
             apArticleEventMapper.insertArticleEvent(event);
-            log.info("文章本地消息表保存成功，文章id：{}", article.getId());
+            log.info("文章本地消息表保存成功，文章id：{}", articleId);
         } catch (Exception e) {
-            log.error("文章保存失败", e);
+            log.error("文章本地消息表保存失败", e);
             return false;
         }
-        // 异步操作移到事务提交后，避免事务边界问题
-        articleFreemarkerService.buildHTMLAndSend(article, taskId);
+        // ② 置 DB 可见态 PUBLISHED：幂等条件更新（仅 SUBMIT→PUBLISHED）
+        boolean dbOk = apArticleMapper.markPublishedIfPending(articleId) == 1;
+        if (!dbOk) {
+            ApArticle latest = getById(articleId);
+            byte status = latest == null || latest.getStatus() == null ? -1 : latest.getStatus().byteValue();
+            if (status == Status.PUBLISHED.getCode()) {
+                dbOk = true; // 已是发布态：并发/重放场景，幂等继续
+            } else if (status == Status.SUBMIT.getCode()) {
+                // ③ 瞬时抖动本地重试 1 次
+                sleepQuietly(500L);
+                if (apArticleMapper.markPublishedIfPending(articleId) == 1) {
+                    dbOk = true;
+                } else {
+                    // 仍失败：落 DB_SET_FAIL，由 20s 扫描持续重试置位（幂等自愈，不进死信）
+                    updateEventStatus(articleId, ArticleConstants.EVENT_STATUS_DB_SET_FAIL, null);
+                    log.warn("文章置发布态失败(本地重试 1 次后仍失败)，落 DB_SET_FAIL 待扫描补偿, articleId={}", articleId);
+                }
+            } else {
+                // 文章处于 FAIL 等不可发布终态：删除事件防滞留，返回 false 由调度标记失败
+                log.error("文章状态非可发布态，终止发布流程, articleId={}, status={}", articleId, status);
+                apArticleEventMapper.deleteByArticleId(articleId);
+                return false;
+            }
+        }
+        // ④ 置位成功 → 同步 ES（内部成功置 DONE / 失败置 ES_SYNC_FAIL，由扫描补偿）
+        if (dbOk) {
+            articleFreemarkerService.buildHTMLAndSend(article, taskId);
+        }
         return true;
+    }
+
+    /** 状态机内短暂退避（重试 1 次前的瞬时抖动窗口），不入调用方请求线程 */
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** 更新本地消息表 status（单状态机），retryTime 为 null 表示不修改 */
+    private void updateEventStatus(Long articleId, byte status, Date retryTime) {
+        try {
+            ArticleEvent event = apArticleEventMapper.selectOne(
+                Wrappers.<ArticleEvent>lambdaQuery().eq(ArticleEvent::getArticleId, articleId));
+            if (event != null) {
+                event.setStatus(status);
+                if (retryTime != null) {
+                    event.setRetryTime(retryTime);
+                }
+                event.setUpdateTime(new Date());
+                apArticleEventMapper.updateArticleEvent(event);
+            }
+        } catch (Exception e) {
+            log.error("更新本地消息表状态失败, articleId={}", articleId, e);
+        }
     }
 
 
@@ -123,6 +175,8 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
      */
     private static ArticleEvent buildArticleEvent() {
         ArticleEvent event = new ArticleEvent();
+        event.setStatus(ArticleConstants.EVENT_STATUS_INIT);
+        event.setMaxRetryCount(ArticleConstants.EVENT_ES_MAX_RETRY);
         event.setRetryCount((byte) 0);
         event.setCreateTime(new Date());
         event.setUpdateTime(new Date());
@@ -163,67 +217,5 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
 
         List<ApArticle> articles = list(wrapper);
         return articles.stream().map(ApArticle::nullSafeToMap).collect(Collectors.toList());
-    }
-
-    /**
-     * 更新文章行为数量
-     */
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void updateArticleStatus(Long articleId) {
-        log.info("更新文章发布状态, articleId={}", articleId);
-        boolean dbSuccess = false;
-        boolean esSuccess = false;
-
-        try {
-            // 1. 更新 DB 文章状态
-            boolean updated = update(Wrappers.<ApArticle>lambdaUpdate()
-                .eq(ApArticle::getId, articleId)
-                .set(ApArticle::getStatus, Status.PUBLISHED.getCode()));
-            if (updated) {
-                dbSuccess = true;
-                log.info("DB文章状态更新成功, articleId={}", articleId);
-            } else {
-                log.warn("DB文章状态更新可能未生效, articleId={}", articleId);
-            }
-        } catch (Exception e) {
-            log.error("DB文章状态更新失败, articleId={}", articleId, e);
-        }
-
-        try {
-            // 2. Feign 调用 ES 更新状态
-            ResponseResult result = searchClient.updateArticleStatus(articleId);
-            if (result != null && result.getCode() == 200) {
-                esSuccess = true;
-                log.info("ES文章状态更新成功, articleId={}", articleId);
-            } else {
-                log.warn("ES文章状态更新返回异常, articleId={}, result={}", articleId,
-                    result != null ? result.getCode() : "null");
-            }
-        } catch (Exception e) {
-            log.error("ES文章状态更新Feign调用失败, articleId={}", articleId, e);
-        }
-
-        // 3. 更新本地消息表 pub_status
-        try {
-            ArticleEvent event = apArticleEventMapper.selectOne(
-                Wrappers.<ArticleEvent>lambdaQuery().eq(ArticleEvent::getArticleId, articleId));
-            if (event != null) {
-                if (dbSuccess && esSuccess) {
-                    event.setPubStatus((byte) 2); // 成功
-                } else {
-                    event.setPubStatus((byte) 1); // 待重试
-                    event.setRetryTime(new Date(System.currentTimeMillis() + ArticleConstants.RETRY_INTERVAL_MS));
-                }
-                event.setUpdateTime(new Date());
-                apArticleEventMapper.updateById(event);
-                log.info("本地消息表pub_status更新成功, articleId={}, status={}",
-                    articleId, dbSuccess && esSuccess ? 2 : 1);
-            } else {
-                log.warn("未找到本地消息表记录, articleId={}", articleId);
-            }
-        } catch (Exception e) {
-            log.error("更新本地消息表pub_status失败, articleId={}", articleId, e);
-        }
     }
 }

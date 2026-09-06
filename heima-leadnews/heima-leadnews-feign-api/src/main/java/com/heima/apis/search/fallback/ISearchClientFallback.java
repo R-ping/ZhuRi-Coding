@@ -17,9 +17,4 @@ public class ISearchClientFallback implements ISearchClient {
         throw new RuntimeException("同步文章到ES索引异常, articleId=" + articleId);
     }
 
-    @Override
-    public ResponseResult updateArticleStatus(Long articleId) {
-        log.error("远程更新文章状态异常, articleId={}", articleId);
-        throw new RuntimeException("更新文章状态异常, articleId=" + articleId);
-    }
 }

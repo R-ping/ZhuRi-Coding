@@ -6,7 +6,6 @@ import com.heima.model.search.vos.SearchArticleVo;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(value = "leadnews-search", contextId = "leadnews-search-searchClient", fallback = ISearchClientFallback.class)
 public interface ISearchClient {
@@ -14,8 +13,4 @@ public interface ISearchClient {
     /** 同步文章到 ES 索引 */
     @PostMapping("/api/v1/search/sync/article")
     ResponseResult syncArticle(@RequestBody SearchArticleVo searchArticleVo);
-
-
-    @PostMapping("/api/v1/search/article/status/up")
-    public ResponseResult updateArticleStatus(@RequestParam Long articleId);
 }

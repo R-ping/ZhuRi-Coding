@@ -39,16 +39,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * ApArticleServiceImpl 单元测试（文章加载/事件生成/热度分更新/作者文章列表/发布状态同步）
+ * ApArticleServiceImpl 单元测试（文章加载/事件生成/热度分更新/作者文章列表）
  *
  * 继承 MyBatis-Plus ServiceImpl，私有 baseMapper 以反射注入；其余 @Autowired 依赖由 @InjectMocks 注入。
  * 覆盖：
  * - load：size 缺省/上限 50、type 非法回退、tag 缺省、时间缺省；null-safe 列表映射；
- * - generateArticleEvent：article 为空、DB 无记录、成功/异常回滚(false)；
+ * - generateArticleEvent：参数为空、DB 无记录、事件落库成功并触发 ES 同步、落库异常(false)、
+ *   置位 0 行后按文章状态分流（已发布续跑 / 本地重试一次仍失败落 DB_SET_FAIL / FAIL 终态删除）；
  * - updateScore：文章不存在、正常计算并累加热度分、updateArticle 数值累加；
  * - updateScoreByBehavior：文章不存在、正常更新热度分；
- * - listByAuthorId：仅作者、按频道/标签/删除过滤（JSON_OVERLAPS）；
- * - updateArticleStatus：DB+ES 都成功→pub_status=2；部分失败→pub_status=1 且置重试时间；无本地消息记录。
+ * - listByAuthorId：仅作者、按频道/标签/删除过滤（JSON_OVERLAPS）。
  */
 class ApArticleServiceImplTest {
 
@@ -125,21 +125,68 @@ class ApArticleServiceImplTest {
     }
 
     @Test
-    @DisplayName("generateArticleEvent - 成功入库事件并触发 ES 同步")
+    @DisplayName("generateArticleEvent - 成功落事件并置位后触发 ES 同步")
     void testEventSuccess() {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(1);
         assertTrue(articleService.generateArticleEvent(article(1L), 1L));
         verify(apArticleEventMapper).insertArticleEvent(any(ArticleEvent.class));
         verify(articleFreemarkerService).buildHTMLAndSend(any(ApArticle.class), any());
     }
 
     @Test
-    @DisplayName("generateArticleEvent - 事件入库异常返回 false")
+    @DisplayName("generateArticleEvent - 事件落库异常返回 false（不进入置位与同步）")
     void testEventInsertFailure() {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
         org.mockito.Mockito.doThrow(new RuntimeException("db down"))
                 .when(apArticleEventMapper).insertArticleEvent(any(ArticleEvent.class));
         assertFalse(articleService.generateArticleEvent(article(1L), 1L));
+        verify(articleFreemarkerService, never()).buildHTMLAndSend(any(), any());
+    }
+
+    @Test
+    @DisplayName("generateArticleEvent - 置位 0 行但文章已是发布态：幂等续跑同步")
+    void testEventAlreadyPublished() {
+        when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
+        ApArticle published = article(1L);
+        published.setStatus((byte) ApArticle.Status.PUBLISHED.getCode());
+        when(apArticleMapper.selectById(1L)).thenReturn(article(1L), published);
+        assertTrue(articleService.generateArticleEvent(article(1L), 1L));
+        verify(articleFreemarkerService).buildHTMLAndSend(any(ApArticle.class), any());
+    }
+
+    @Test
+    @DisplayName("generateArticleEvent - 置位失败且文章仍 SUBMIT：本地重试一次仍失败落 DB_SET_FAIL")
+    void testEventDbSetFailMarked() {
+        when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
+        ApArticle submit = article(1L);
+        submit.setStatus((byte) ApArticle.Status.SUBMIT.getCode());
+        when(apArticleMapper.selectById(1L)).thenReturn(article(1L), submit);
+        ArticleEvent row = new ArticleEvent();
+        row.setArticleId(1L);
+        when(apArticleEventMapper.selectOne(any(Wrapper.class))).thenReturn(row);
+        assertTrue(articleService.generateArticleEvent(article(1L), 1L));
+        verify(articleFreemarkerService, never()).buildHTMLAndSend(any(), any());
+        org.mockito.ArgumentCaptor<ArticleEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(ArticleEvent.class);
+        verify(apArticleEventMapper).updateArticleEvent(captor.capture());
+        org.junit.jupiter.api.Assertions.assertEquals(
+            ArticleConstants.EVENT_STATUS_DB_SET_FAIL, captor.getValue().getStatus().byteValue());
+    }
+
+    @Test
+    @DisplayName("generateArticleEvent - 文章处于 FAIL 终态：删除事件返回 false")
+    void testEventArticleUnpublishable() {
+        when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
+        ApArticle failed = article(1L);
+        failed.setStatus((byte) ApArticle.Status.FAIL.getCode());
+        when(apArticleMapper.selectById(1L)).thenReturn(article(1L), failed);
+        assertFalse(articleService.generateArticleEvent(article(1L), 1L));
+        verify(apArticleEventMapper).deleteByArticleId(1L);
+        verify(articleFreemarkerService, never()).buildHTMLAndSend(any(), any());
     }
 
     // ==================== updateScoreByBehavior ====================
@@ -184,45 +231,6 @@ class ApArticleServiceImplTest {
         assertEquals(0, articleService.listByAuthorId(dto).size());
     }
 
-    // ==================== updateArticleStatus ====================
-
-    @Test
-    @DisplayName("updateArticleStatus - DB+ES 都成功则 pub_status=2")
-    void testStatusAllSuccess() {
-        when(apArticleMapper.update(any(), any())).thenReturn(1);
-        when(searchClient.updateArticleStatus(1L)).thenReturn(ResponseResult.okResult());
-        ArticleEvent event = new ArticleEvent();
-        event.setArticleId(1L);
-        when(apArticleEventMapper.selectOne(any(Wrapper.class))).thenReturn(event);
-
-        articleService.updateArticleStatus(1L);
-        assertEquals((byte) 2, event.getPubStatus());
-        verify(apArticleEventMapper).updateById(event);
-    }
-
-    @Test
-    @DisplayName("updateArticleStatus - ES 失败则 pub_status=1 并置重试时间")
-    void testStatusEsFail() {
-        when(apArticleMapper.update(any(), any())).thenReturn(1);
-        when(searchClient.updateArticleStatus(1L)).thenReturn(
-                ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.SERVER_ERROR));
-        ArticleEvent event = new ArticleEvent();
-        when(apArticleEventMapper.selectOne(any(Wrapper.class))).thenReturn(event);
-        articleService.updateArticleStatus(1L);
-        assertEquals((byte) 1, event.getPubStatus());
-        org.junit.jupiter.api.Assertions.assertNotNull(event.getRetryTime());
-    }
-
-    @Test
-    @DisplayName("updateArticleStatus - 无本地消息记录则不更新")
-    void testStatusNoEvent() {
-        when(apArticleMapper.update(any(), any())).thenReturn(0);
-        when(searchClient.updateArticleStatus(1L)).thenThrow(new RuntimeException("feign fail"));
-        when(apArticleEventMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-        articleService.updateArticleStatus(1L); // 不抛异常即可
-        verify(apArticleEventMapper, never()).updateById(any(ArticleEvent.class));
-    }
-
     @Test
     @DisplayName("computeScore - null 字段按 0 计")
     void testComputeNullFields() {
@@ -233,7 +241,6 @@ class ApArticleServiceImplTest {
         a.setCollection(null);
         when(apArticleMapper.selectById(1L)).thenReturn(a);
         when(apArticleMapper.update(any(), any())).thenReturn(1);
-        articleService.updateArticleStatus(1L); // 触发 computeScore? 否，用 updateScore 覆盖
         articleService.updateScoreByBehavior(1L, null, 1);
     }
 }
