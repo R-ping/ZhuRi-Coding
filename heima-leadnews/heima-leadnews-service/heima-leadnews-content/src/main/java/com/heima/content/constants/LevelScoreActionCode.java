@@ -13,12 +13,8 @@ public final class LevelScoreActionCode {
     private LevelScoreActionCode() {
     }
 
-    /** 每日登录 */
-    public static final String DAILY_LOGIN = "daily_login";
     /** 每日签到 */
     public static final String DAILY_CHECKIN = "daily_checkin";
-    /** 阅读文章 */
-    public static final String READ_ARTICLE = "article_read";
     /** 评论文章 */
     public static final String COMMENT_ARTICLE = "comment_article";
     /** 评论沸点 */
