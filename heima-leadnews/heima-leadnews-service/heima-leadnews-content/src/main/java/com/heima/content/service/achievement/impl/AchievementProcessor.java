@@ -14,7 +14,6 @@ import com.heima.model.achievement.pojos.ApUserAchievement;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.behavior.BehaviorResult;
-import com.heima.model.behavior.BehaviorType;
 import com.heima.model.behavior.pojos.ApBehaviorLikes;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.follow.pojos.ApFollow;
@@ -102,8 +101,8 @@ public class AchievementProcessor implements BehaviorPostProcessor {
 
     @Override
     public int getOrder() {
-        // 在等级积分(1)、文章热度(2)、统计(3)、通知(4)之后执行，解锁通知紧随其后的顺序
-        return 5;
+        // 在等级积分(1)、文章热度(2)、成就(3)、通知(4)之后执行，解锁通知紧随其后的顺序
+        return 3;
     }
 
     /** 发布文章/沸点：更新 publish_article / publish_content 勋章进度 */
