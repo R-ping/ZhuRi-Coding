@@ -201,16 +201,15 @@ class ArticleAutoScanServiceImplTest {
         verify(similarityProcessor, never()).process(any(), anyString(), any());
     }
 
-    // ==================== 可重试环节（isRetryable=true） ====================
+    // ==================== 可重试环节（抛 AuditRetryableException） ====================
 
     @Test
-    @DisplayName("可重试环节失败后重试成功 → 审核通过")
+    @DisplayName("环节抛AuditRetryableException失败后重试成功 → 审核通过")
     void testRetryableStageRetriesThenPass() throws Exception {
         when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
         when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
         when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
         when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(similarityProcessor.isRetryable()).thenReturn(true);
         AtomicInteger calls = new AtomicInteger();
         doAnswer(inv -> {
             if (calls.incrementAndGet() == 1) {
@@ -232,13 +231,12 @@ class ArticleAutoScanServiceImplTest {
     }
 
     @Test
-    @DisplayName("可重试环节重试耗尽 → 顶层兜底转终态失败")
+    @DisplayName("环节抛AuditRetryableException重试耗尽 → 顶层兜底转终态失败")
     void testRetryableStageExhausted() throws Exception {
         when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
         when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
         when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
         when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
-        when(similarityProcessor.isRetryable()).thenReturn(true);
         when(similarityProcessor.process(any(), anyString(), any()))
             .thenThrow(new AuditRetryableException("相似度服务持续不可用"));
         setField("auxRetryAttempts", 2);
@@ -248,6 +246,81 @@ class ArticleAutoScanServiceImplTest {
 
         // 顶层兜底：转终态失败并通知作者
         verify(auditFailProcessor).handleFail(any(), eq(AuditFailProcessor.SYSTEM_ERROR_REASON));
+        verify(articleTaskService, never()).addArticleToTask(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("AI服务不可用抛AuditRetryableException → 重试成功后通过(不再直接判违规)")
+    void testAiViolationServiceUnavailableRetriesThenPass() throws Exception {
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
+        when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
+        AtomicInteger calls = new AtomicInteger();
+        // 第一次：AI 服务瞬时故障 → 抛可重试异常；第二次恢复正常
+        doAnswer(inv -> {
+            if (calls.incrementAndGet() == 1) {
+                throw new AuditRetryableException("LLM 连接超时");
+            }
+            return true;
+        }).when(aiViolationProcessor).process(any(), anyString(), any());
+        when(imageScanProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
+        doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
+
+        CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
+        assertTrue(future.get());
+
+        assertEquals(2, calls.get());
+        verify(auditFailProcessor, never()).handleFail(any(), anyString());
+        verify(articleTaskService).addArticleToTask(eq(TEST_ARTICLE_ID), any());
+    }
+
+    @Test
+    @DisplayName("图片审核服务异常抛AuditRetryableException → 重试成功后通过")
+    void testImageScanServiceUnavailableRetriesThenPass() throws Exception {
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
+        when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
+        when(aiViolationProcessor.process(any(), anyString(), any())).thenReturn(true);
+        AtomicInteger calls = new AtomicInteger();
+        doAnswer(inv -> {
+            if (calls.incrementAndGet() == 1) {
+                throw new AuditRetryableException("图片审核服务超时");
+            }
+            return true;
+        }).when(imageScanProcessor).process(any(), anyString(), any());
+        when(similarityProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(powerBonusProcessor.process(any(), anyString(), any())).thenReturn(true);
+        when(behaviorEventProcessor.process(any(), anyString(), any())).thenReturn(true);
+        doNothing().when(articleTaskService).addArticleToTask(anyLong(), any());
+
+        CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
+        assertTrue(future.get());
+
+        assertEquals(2, calls.get());
+        verify(auditFailProcessor, never()).handleFail(any(), anyString());
+        verify(articleTaskService).addArticleToTask(eq(TEST_ARTICLE_ID), any());
+    }
+
+    @Test
+    @DisplayName("业务判定环节返回false(真实违规) → 正常驳回且不重试")
+    void testViolationReturnsFalseNoRetry() throws Exception {
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(normalArticle);
+        when(apArticleContentMapper.selectOne(any())).thenReturn(articleContent);
+        // 真实违规：始终返回 false（若被错误重试会多次调用）
+        doAnswer(invocation -> {
+            AuditProcessorContext ctx = invocation.getArgument(2);
+            ctx.putExtra("failReason", "涉政: 包含违规内容");
+            return false;
+        }).when(aiViolationProcessor).process(any(), anyString(), any());
+
+        CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
+        assertFalse(future.get());
+
+        // 违规只调用 1 次：不重试，避免白耗 token
+        verify(aiViolationProcessor).process(any(), anyString(), any());
+        verify(auditFailProcessor).handleFail(any(), anyString());
+        verify(imageScanProcessor, never()).process(any(), anyString(), any());
         verify(articleTaskService, never()).addArticleToTask(anyLong(), any());
     }
 

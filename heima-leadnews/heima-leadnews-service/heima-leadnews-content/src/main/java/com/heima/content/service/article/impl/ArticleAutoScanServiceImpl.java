@@ -27,11 +27,18 @@ import java.util.concurrent.CompletableFuture;
 /**
  * 文章自动审核服务实现
  *
- * 采用责任链模式编排审核流程，每个审核环节由独立的 {@link ArticleAuditProcessor} 处理。
+ * <p>采用责任链模式编排审核流程，每个审核环节由独立的 {@link ArticleAuditProcessor} 处理。
  * 处理器通过 Spring 注入为 List 并按 {@link ArticleAuditProcessor#getOrder()} 升序自动排序，
- * 顺序由各处理器的 @Order 注解声明，新增环节无需改动本类。
- * 业务判定类环节（isRetryable=false）返回 false 即正常驳回；
- * 系统类环节（isRetryable=true）由 {@link #performWithRetry} 统一做有界指数退避重试，耗尽转终态失败。
+ * 顺序由各处理器的 @Order 注解声明，新增环节无需改动本类。</p>
+ *
+ * <p>异常分类策略（核心）：</p>
+ * <ul>
+ *   <li><b>业务判定不通过</b>（真实内容违规、图片命中 high/medium）：处理器返回 {@code false}，
+ *       编排方直接正常驳回，不做重试——重试同样内容仍会违规，只会白白消耗 LLM token。</li>
+ *   <li><b>非业务系统异常</b>（LLM/图片服务网络中断、连接超时、连接数打满等瞬时故障）：
+ *       处理器抛出 {@link AuditRetryableException}，编排方 {@link #performWithRetry}
+ *       做有界指数退避重试，重试耗尽转终态失败——避免把「服务抖动」误判成「内容违规」拒绝用户文章。</li>
+ * </ul>
  */
 @Service
 @Slf4j
@@ -103,14 +110,12 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
         AuditProcessorContext context = new AuditProcessorContext();
 
         // 按 @Order 顺序执行审核责任链：
-        // 业务判定环节（isRetryable=false，如违规/图片审核）返回 false 即正常驳回；
-        // 系统环节（isRetryable=true，如相似度/逐力值/行为事件）由 performWithRetry 有界指数退避重试，
-        // 重试耗尽抛出 AuditRetryableException 交由 autoScanArticle 顶层兜底转终态失败。
+        // - 处理器抛 AuditRetryableException（如 LLM/图片服务网络抖动、超时、连接满等非业务异常）
+        //   → 由 performWithRetry 做有界指数退避重试，重试耗尽转终态失败；
+        // - 处理器返回 false（真实违规/图片命中）→ 正常驳回，不重试。
         for (ArticleAuditProcessor processor : auditProcessors) {
             String stageName = processor.getClass().getSimpleName();
-            boolean pass = processor.isRetryable()
-                ? performWithRetry(stageName, () -> processor.process(article, content, context))
-                : processor.process(article, content, context);
+            boolean pass = performWithRetry(stageName, () -> processor.process(article, content, context));
             if (!pass) {
                 String failReason = context.getExtra("failReason");
                 auditFailProcessor.handleFail(article, failReason);
@@ -130,8 +135,9 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
     }
 
     /**
-     * 对单个可重试审核环节执行有界重试。
-     * <p>依赖处理器在失败时抛出 {@link AuditRetryableException}（而非静默吞掉），
+     * 对单个审核环节执行有界重试。
+     * <p>处理器在「外部服务不可用/网络抖动/超时等非业务异常」时抛出 {@link AuditRetryableException}
+     * （而非返回 false），本方法统一捕获并按指数退避重试；返回 false 一律视为业务驳回，不重试。
      * 重试策略：最多 {@link #auxRetryAttempts} 次、指数退避（base × 2^(attempt-1)，封顶 30s）。
      * 重试耗尽后继续抛出，交由顶层处理为终态失败。</p>
      */
@@ -139,11 +145,12 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
         int attempt = 0;
         while (true) {
             try {
+                // 业务判定（违规/图片命中）→ 返回 false 即正常驳回，不做重试
                 Boolean result = stage.get();
-                if (Boolean.TRUE.equals(result)) {
-                    return true; // 本阶段通过
+                if (result != null) {
+                    return result;
                 }
-                throw new AuditRetryableException(stageName + " 返回未通过");
+                return false;
             } catch (AuditRetryableException e) {
                 attempt++;
                 if (attempt >= auxRetryAttempts) {

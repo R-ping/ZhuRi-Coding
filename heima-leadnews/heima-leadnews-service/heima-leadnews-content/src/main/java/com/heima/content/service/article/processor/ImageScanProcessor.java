@@ -52,11 +52,10 @@ public class ImageScanProcessor implements ArticleAuditProcessor {
             for (ContPic contPic : contPics) {
                 Map map = greenImageScanPlusForOss.imageScan(contPic.getPicUrl());
                 if (map == null) {
-                    // fail-closed：图片审核服务异常/空结果时按不通过处理，
-                    // 与文本审核（AIViolationProcessor）策略保持一致，避免系统故障时违规图片漏审上架
-                    log.warn("图片审核服务返回空结果, 按不通过处理, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
-                    context.putExtra("failReason", "图片审核服务暂不可用，请稍后重试");
-                    return false;
+                    // 图片审核服务返回空（网络抖动/服务不可用等瞬时故障）→ 抛 AuditRetryableException 由编排方重试，
+                    // 不按"内容违规"直接拒绝用户文章
+                    log.warn("图片审核服务返回空结果, 转入可重试处理, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
+                    throw new AuditRetryableException("图片审核服务暂不可用, articleId=" + article.getId());
                 }
                 String level = (String) map.get("level");
                 if ("high".equals(level)) {
@@ -71,10 +70,12 @@ public class ImageScanProcessor implements ArticleAuditProcessor {
                 log.info("图片审核通过, articleId={}, pic={}", article.getId(), contPic.getPicUrl());
             }
             return true;
+        } catch (AuditRetryableException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("图片审核异常, articleId={}", article.getId(), e);
-            context.putExtra("failReason", "图片审核异常");
-            return false;
+            // 调用异常（连接超时等瞬时故障）→ 可重试，而非按违规拒绝
+            log.error("图片审核异常，转入可重试处理, articleId={}", article.getId(), e);
+            throw new AuditRetryableException("图片审核异常: " + e.getMessage() + ", articleId=" + article.getId(), e);
         }
     }
 }

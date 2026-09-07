@@ -20,10 +20,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 文章 AI 综合审核处理器测试（B4 安全收紧）
+ * 文章 AI 综合审核处理器测试（B4 安全收紧 + 2026-09 异常分类调整）
  *
- * 目标：AI 审核服务不可用 / 违规 / 正常通过三类分支不"降级通过"，
- * 违规内容或故障时都不允许流入后续"上架"流程。
+ * 目标：
+ * - 真实违规 → 返回 false（正常驳回，不重试）
+ * - AI 服务不可用/异常（网络中断、超时、连接满等瞬时故障）→ 抛 AuditRetryableException，
+ *   由编排方有界重试，而非把"服务抖动"误判成"内容违规"拒绝用户文章
  */
 class AIViolationProcessorTest {
 
@@ -53,23 +55,21 @@ class AIViolationProcessorTest {
     }
 
     @Test
-    @DisplayName("B4 - AI服务不可用(返回success=false): fail-closed 拒绝通过，不降级")
-    void testFailClosedOnUnavailable() {
+    @DisplayName("AI服务不可用(返回success=false): 抛可重试异常，而非判违规")
+    void testRetryableOnUnavailable() {
         Map<String, Object> auditResult = new HashMap<>();
         auditResult.put("success", false);
         auditResult.put("is_violation", false);
         when(bailianAiService.comprehensiveAudit(any(), anyString())).thenReturn(auditResult);
 
         AuditProcessorContext context = new AuditProcessorContext();
-        boolean passed = processor.process(article(), "content", context);
-
-        assertFalse(passed);
-        assertTrue(context.getExtra("failReason").toString().contains("暂不可用"));
+        org.junit.jupiter.api.Assertions.assertThrows(AuditRetryableException.class,
+            () -> processor.process(article(), "content", context));
         verify(bailianAiService).comprehensiveAudit(any(), anyString());
     }
 
     @Test
-    @DisplayName("B4 - 违规: 返回false并写入违规原因")
+    @DisplayName("违规: 返回false并写入违规原因")
     void testViolation() {
         Map<String, Object> auditResult = new HashMap<>();
         auditResult.put("success", true);
@@ -86,7 +86,7 @@ class AIViolationProcessorTest {
     }
 
     @Test
-    @DisplayName("B4 - 通过: 返回true并保存AI分析结果")
+    @DisplayName("通过: 返回true并保存AI分析结果")
     void testPassed() {
         Map<String, Object> auditResult = new HashMap<>();
         auditResult.put("success", true);
@@ -101,15 +101,13 @@ class AIViolationProcessorTest {
     }
 
     @Test
-    @DisplayName("B4 - AI异常抛出: fail-closed 拒绝通过，不降级")
-    void testExceptionFailClosed() {
+    @DisplayName("AI异常抛出: 包装为可重试异常，而非判违规")
+    void testExceptionRetryable() {
         when(bailianAiService.comprehensiveAudit(any(), anyString()))
                 .thenThrow(new RuntimeException("AI服务调用失败"));
 
         AuditProcessorContext context = new AuditProcessorContext();
-        boolean passed = processor.process(article(), "content", context);
-
-        assertFalse(passed);
-        assertTrue(context.getExtra("failReason").toString().contains("暂不可用"));
+        org.junit.jupiter.api.Assertions.assertThrows(AuditRetryableException.class,
+            () -> processor.process(article(), "content", context));
     }
 }
