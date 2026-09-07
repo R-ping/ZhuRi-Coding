@@ -74,12 +74,6 @@ public class LevelController {
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/check-in")
-    public ResponseEntity<Map<String, Object>> checkIn(@RequestParam Long userId) {
-        Map<String, Object> result = levelService.checkIn(userId);
-        return ResponseEntity.ok(result);
-    }
-
     @PostMapping("/action/with-limit")
     public ResponseEntity<Map<String, Object>> recordActionWithLimit(
             @RequestParam Long userId,

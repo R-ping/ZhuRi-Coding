@@ -37,8 +37,6 @@ public interface LevelService {
 
     Map<String, Object> getUserLevelData(Long userId);
 
-    Map<String, Object> checkIn(Long userId);
-
     Map<String, Object> recordActionWithLimit(Long userId, String actionType, String actionDetail);
 
     /**
