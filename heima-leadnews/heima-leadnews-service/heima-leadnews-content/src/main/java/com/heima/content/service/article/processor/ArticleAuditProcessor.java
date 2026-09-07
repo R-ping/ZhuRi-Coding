@@ -29,8 +29,12 @@ public interface ArticleAuditProcessor {
 
     /**
      * 该环节失败（返回 false 或抛异常）时是否值得重试。
-     * <p>true=系统类环节（如外部依赖抖动），由编排方统一做有界重试，耗尽转终态失败；
-     * false=业务判定类环节（如违规/图片审核），返回 false 即正常驳回，不重试。
+     *
+     * <p><b>已废弃标记位</b>：自 2026-09 起编排方不再按此方法分流，重试与否改由<b>异常类型</b>驱动——
+     * 处理器在「外部服务不可用等瞬时故障」时抛 {@link AuditRetryableException}，编排方统一有界重试；
+     * 返回 {@code false} 一律视为业务判定不通过（真违规），直接驳回不重试。</p>
+     *
+     * <p>保留此方法仅为历史兼容，新处理器无需 override。</p>
      */
     default boolean isRetryable() {
         return false;
