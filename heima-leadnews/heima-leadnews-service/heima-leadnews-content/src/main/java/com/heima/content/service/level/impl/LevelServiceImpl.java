@@ -120,10 +120,6 @@ public class LevelServiceImpl implements LevelService {
         return levelActionService.recordPaymentAction(userId, actionType, amount, actionDetail);
     }
 
-    @Override
-    public Map<String, Object> checkIn(Long userId) {
-        return levelActionService.checkIn(userId);
-    }
 
     @Override
     public Map<String, Object> getTodayTaskProgress(Long userId) {

@@ -190,7 +190,17 @@ var store = new Vuex.Store({
             }
             commit('HIDE_LOGIN_MODAL')
         },
-        logout({ commit }) {
+        logout({ commit, state }) {
+            // 服务端吊销 refresh_token（登出安全：access 1h 过期 + refresh 一次性仍不够，
+            // 若不吊销，泄露的 refresh_token 在 7 天内仍可续期）。尽力而为：网络失败/已失效不阻塞登出。
+            var refreshToken = state.refreshToken
+            if (refreshToken) {
+                fetch('/user/api/v1/token/logout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refreshToken: refreshToken })
+                }).catch(function () { /* 吊销失败静默忽略，本地清理照常 */ })
+            }
             commit('CLEAR_AUTH')
         },
         /**

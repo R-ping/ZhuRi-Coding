@@ -1,6 +1,5 @@
 package com.heima.content.service.level.impl;
 
-import static com.heima.content.constants.LevelScoreActionCode.DAILY_CHECKIN;
 import static com.heima.content.constants.LevelScoreConstants.ACTION_SCORE_MAP;
 import static com.heima.content.constants.LevelScoreConstants.DAILY_ACTION_LIMIT;
 
@@ -219,49 +218,6 @@ public class LevelActionService {
         result.put("success", false);
         result.put("message", message);
         result.put("score", BigDecimal.ZERO);
-        return result;
-    }
-
-    /**
-     * 每日签到
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> checkIn(Long userId) {
-        Map<String, Object> result = new HashMap<>();
-
-        String today = new java.sql.Date(System.currentTimeMillis()).toString();
-
-        // 悲观行锁：串行化同一用户当日签到，防止并发重复签到（TOCTOU）
-        ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
-        userLevel = lockUserLevel(userId, userLevel);
-
-        LambdaQueryWrapper<ApUserActionLog> logQuery = new LambdaQueryWrapper<>();
-        logQuery.eq(ApUserActionLog::getUserId, userId);
-        logQuery.eq(ApUserActionLog::getActionType, DAILY_CHECKIN);
-        logQuery.apply("DATE(created_time) = {0}", today);
-        long todayCheckinCount = actionLogMapper.selectCount(logQuery);
-
-        if (todayCheckinCount > 0) {
-            result.put("success", false);
-            result.put("hasCheckedIn", true);
-            result.put("score", BigDecimal.ZERO);
-            return result;
-        }
-
-        Integer dailyLimit = DAILY_ACTION_LIMIT.get(DAILY_CHECKIN);
-        if (dailyLimit != null && todayCheckinCount >= dailyLimit) {
-            result.put("success", false);
-            result.put("hasCheckedIn", true);
-            result.put("score", BigDecimal.ZERO);
-            return result;
-        }
-
-        BigDecimal score = BigDecimal.valueOf(ACTION_SCORE_MAP.getOrDefault(DAILY_CHECKIN, 0));
-        grantScore(userLevel, userId, DAILY_CHECKIN, score, "每日签到");
-
-        result.put("success", true);
-        result.put("hasCheckedIn", true);
-        result.put("score", score);
         return result;
     }
 

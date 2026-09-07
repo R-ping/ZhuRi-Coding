@@ -28,7 +28,6 @@ public final class LevelScoreConstants {
         ACTION_SCORE_MAP.put(LevelScoreActionCode.FOLLOW_USER, 4);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.PUBLISH_ARTICLE, 8);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.PUBLISH_PIN, 8);
-        ACTION_SCORE_MAP.put(LevelScoreActionCode.DAILY_CHECKIN, 2);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.UPLOAD_AVATAR, 1);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.COLLECT_ARTICLE, 1);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.BROWSE_ARTICLE, 0);
@@ -45,7 +44,6 @@ public final class LevelScoreConstants {
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.LIKE_ARTICLE, 5);
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.LIKE_PIN, 5);
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.FOLLOW_USER, 2);
-        DAILY_ACTION_LIMIT.put(LevelScoreActionCode.DAILY_CHECKIN, 1);
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.UPLOAD_AVATAR, 1);
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.COLLECT_ARTICLE, 2);
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.BROWSE_ARTICLE, 10);

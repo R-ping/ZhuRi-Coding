@@ -241,65 +241,6 @@ class LevelActionServiceTest {
         assertEquals(0, BigDecimal.valueOf(88.5).compareTo((BigDecimal) result.get("score")));
     }
 
-    // ==================== checkIn ====================
-
-    @Test
-    @DisplayName("checkIn - 今日已签到拒绝")
-    void testCheckInAlready() {
-        when(actionLogMapper.selectCount(any())).thenReturn(1L);
-        Map<String, Object> result = levelActionService.checkIn(userId);
-        assertFalse((Boolean) result.get("success"));
-        assertEquals(Boolean.TRUE, result.get("hasCheckedIn"));
-        verify(actionLogMapper, never()).insert((ApUserActionLog) any());
-    }
-
-    @Test
-    @DisplayName("checkIn - 今日总分很高也可签到（无每日总分上限）")
-    void testCheckInScoreFull() {
-        when(levelQueryService.getUserLevel(userId)).thenReturn(level(1, BigDecimal.ZERO));
-        when(levelQueryService.calculateLevel(eq(1), any(BigDecimal.class))).thenReturn(1);
-        when(actionLogMapper.selectCount(any())).thenReturn(0L);
-        // 今日已有 200+ 分（旧规则会拦截签到，新规则无总分上限正常签到）
-        ApUserActionLog log = new ApUserActionLog();
-        log.setScoreChange(BigDecimal.valueOf(200));
-        when(actionLogMapper.selectList(any())).thenReturn(Collections.singletonList(log));
-
-        Map<String, Object> result = levelActionService.checkIn(userId);
-        assertTrue((Boolean) result.get("success"));
-        assertEquals(Boolean.TRUE, result.get("hasCheckedIn"));
-        verify(actionLogMapper).insert((ApUserActionLog) any());
-    }
-
-    @Test
-    @DisplayName("checkIn - 签到成功加2分")
-    void testCheckInSuccess() {
-        when(levelQueryService.getUserLevel(userId)).thenReturn(level(1, BigDecimal.ZERO));
-        when(levelQueryService.calculateLevel(eq(1), any(BigDecimal.class))).thenReturn(1);
-        when(actionLogMapper.selectCount(any())).thenReturn(0L);
-
-        Map<String, Object> result = levelActionService.checkIn(userId);
-        assertTrue((Boolean) result.get("success"));
-        assertEquals(2, ((BigDecimal) result.get("score")).intValue());
-        verify(actionLogMapper).insert((ApUserActionLog) any());
-    }
-
-    @Test
-    @DisplayName("checkIn - S5修复:先加行锁再查当日签到次数,杜绝并发重复签到")
-    void testCheckInLocksBeforeCount() {
-        when(levelQueryService.getUserLevel(userId)).thenReturn(level(1, BigDecimal.ZERO));
-        when(levelQueryService.calculateLevel(eq(1), any(BigDecimal.class))).thenReturn(1);
-        when(userLevelMapper.selectByUserIdForUpdate(userId)).thenReturn(level(1, BigDecimal.ZERO));
-        when(actionLogMapper.selectCount(any())).thenReturn(0L);
-        when(actionLogMapper.selectList(any())).thenReturn(Collections.emptyList());
-
-        Map<String, Object> result = levelActionService.checkIn(userId);
-        assertTrue((Boolean) result.get("success"));
-
-        // 关键时序：行锁获取必须先于当日签到次数查询与落库
-        var inOrder = Mockito.inOrder(userLevelMapper, actionLogMapper);
-        inOrder.verify(userLevelMapper).selectByUserIdForUpdate(userId);
-        inOrder.verify(actionLogMapper).insert(org.mockito.ArgumentMatchers.any(ApUserActionLog.class));
-    }
 
     // ==================== grantScore - 等级提升分支 ====================
 
