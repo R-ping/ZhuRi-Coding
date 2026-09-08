@@ -30,12 +30,6 @@ public class GreenImageScanPlusForOss {
 
     /**
      * 创建请求客户端
-     *
-     * @param accessKeyId
-     * @param accessKeySecret
-     * @param endpoint
-     * @return
-     * @throws Exception
      */
     public static Client createClient(String accessKeyId, String accessKeySecret, String endpoint) throws Exception {
         Config config = new Config();
@@ -55,14 +49,14 @@ public class GreenImageScanPlusForOss {
      * 发起单张图片检测（OBS 版）。
      * <p>objectName 通过方法参数传递，不再使用静态字段，避免多线程并发审核时互相覆盖。
      *
-     * @param accessKeyId    阿里云 AccessKey ID
+     * @param accessKeyId 阿里云 AccessKey ID
      * @param accessKeySecret 阿里云 AccessKey Secret
-     * @param endpoint       内容安全接入端点
-     * @param objectName     待检测文件在 OSS 中的 objectName
+     * @param endpoint 内容安全接入端点
+     * @param objectName 待检测文件在 OSS 中的 objectName
      * @return 检测响应；异常时返回 null（由调用方决定降级策略）
      */
     private ImageModerationResponse invokeFunction(String accessKeyId, String accessKeySecret, String endpoint,
-                                                   String objectName) throws Exception {
+        String objectName) throws Exception {
         //注意，此处实例化的client请尽可能重复使用，避免重复建立连接，提升检测性能。
         Client client = createClient(accessKeyId, accessKeySecret, endpoint);
 
@@ -117,7 +111,8 @@ public class GreenImageScanPlusForOss {
             // 自动路由。
             if (response != null) {
                 //区域切换到cn-beijing。
-                if (500 == response.getStatusCode() || (response.getBody() != null && 500 == (response.getBody().getCode()))) {
+                if (500 == response.getStatusCode() || (response.getBody() != null && 500 == (response.getBody()
+                    .getCode()))) {
                     // 接入区域和地址请根据实际情况修改。
                     response = invokeFunction(accessKeyId, accessKeySecret, resolveEndpoint(), objectName);
                 }
@@ -125,22 +120,23 @@ public class GreenImageScanPlusForOss {
             HashMap<String, String> resultMap = new HashMap<>();
             // 打印检测结果。
             if (response != null) {
-                    if (response.getStatusCode() == 200) {
-                        ImageModerationResponseBody body = response.getBody();
-                        log.info("图片审核 requestId={}, code={}, msg={}", body.getRequestId(), body.getCode(), body.getMsg());
-                        if (body.getCode() == 200) {
-                            ImageModerationResponseBodyData data = body.getData();
-                            log.info("图片审核响应数据 data={}", JSON.toJSONString(data,  true));
-                            resultMap.put("level", data.getRiskLevel());
-                            return resultMap;
-                        } else {
-                            log.warn("图片审核未通过 code:{}", body.getCode());
-                            return null;
-                        }
+                if (response.getStatusCode() == 200) {
+                    ImageModerationResponseBody body = response.getBody();
+                    log.info("图片审核 requestId={}, code={}, msg={}", body.getRequestId(), body.getCode(),
+                        body.getMsg());
+                    if (body.getCode() == 200) {
+                        ImageModerationResponseBodyData data = body.getData();
+                        log.info("图片审核响应数据 data={}", JSON.toJSONString(data, true));
+                        resultMap.put("level", data.getRiskLevel());
+                        return resultMap;
                     } else {
-                        log.warn("图片审核响应异常 status:{}", response.getStatusCode());
+                        log.warn("图片审核未通过 code:{}", body.getCode());
                         return null;
                     }
+                } else {
+                    log.warn("图片审核响应异常 status:{}", response.getStatusCode());
+                    return null;
+                }
             }
         } catch (Exception e) {
             log.error("图片审核发生异常，异常信息", e);
@@ -149,28 +145,36 @@ public class GreenImageScanPlusForOss {
         return null;
     }
 
-    /** 内容安全接入端点：优先取配置，缺省 green-cip.cn-beijing.aliyuncs.com */
+    /**
+     * 内容安全接入端点：优先取配置，缺省 green-cip.cn-beijing.aliyuncs.com
+     */
     private String resolveEndpoint() {
         return ossConfig != null && ossConfig.getEndpoint() != null && !ossConfig.getEndpoint().isEmpty()
-                ? ossConfig.getEndpoint() : "green-cip.cn-beijing.aliyuncs.com";
+            ? ossConfig.getEndpoint() : "green-cip.cn-beijing.aliyuncs.com";
     }
 
-    /** 待审核图片所在地域：优先取配置，缺省 cn-beijing */
+    /**
+     * 待审核图片所在地域：优先取配置，缺省 cn-beijing
+     */
     private String resolveRegion() {
         return ossConfig != null && ossConfig.getRegion() != null && !ossConfig.getRegion().isEmpty()
-                ? ossConfig.getRegion() : "cn-beijing";
+            ? ossConfig.getRegion() : "cn-beijing";
     }
 
-    /** 待审核图片所在 Bucket：优先取配置，缺省 zhuri-leadnews */
+    /**
+     * 待审核图片所在 Bucket：优先取配置，缺省 zhuri-leadnews
+     */
     private String resolveBucket() {
         return ossConfig != null && ossConfig.getBucket() != null && !ossConfig.getBucket().isEmpty()
-                ? ossConfig.getBucket() : "zhuri-leadnews";
+            ? ossConfig.getBucket() : "zhuri-leadnews";
     }
 
-    /** OSS 访问域名（不含 bucket 前缀）：优先取配置，缺省 oss-cn-beijing.aliyuncs.com */
+    /**
+     * OSS 访问域名（不含 bucket 前缀）：优先取配置，缺省 oss-cn-beijing.aliyuncs.com
+     */
     private String resolveOssDomain() {
         return ossConfig != null && ossConfig.getOssDomain() != null && !ossConfig.getOssDomain().isEmpty()
-                ? ossConfig.getOssDomain() : "oss-cn-beijing.aliyuncs.com";
+            ? ossConfig.getOssDomain() : "oss-cn-beijing.aliyuncs.com";
     }
 
     @NotNull
