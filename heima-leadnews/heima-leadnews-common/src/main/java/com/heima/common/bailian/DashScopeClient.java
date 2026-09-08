@@ -93,6 +93,8 @@ public class DashScopeClient {
      * @param userMessage 用户消息
      * @return 模型响应文本
      */
+    /** @deprecated 文本/向量调用已迁移 Spring AI（ChatModel/EmbeddingModel），本方法仅保留兼容 */
+    @Deprecated
     public String callGeneration(String systemPrompt, String userMessage) {
         if (bailianConfig.getApiKey() == null || bailianConfig.getApiKey().isEmpty()) {
             log.warn("DashScope API Key not configured, skipping AI call");
@@ -303,6 +305,8 @@ public class DashScopeClient {
      * @param onDelta      增量文本回调（线程内同步，勿阻塞）
      * @return true=正常完成；false=网络/解析失败
      */
+    /** @deprecated 文本/向量调用已迁移 Spring AI（ChatModel/EmbeddingModel），本方法仅保留兼容 */
+    @Deprecated
     public boolean streamChat(String systemPrompt, String userMessage,
                               java.util.function.Consumer<String> onDelta) {
         if (bailianConfig.getApiKey() == null || bailianConfig.getApiKey().isEmpty()) {
@@ -413,6 +417,8 @@ public class DashScopeClient {
     /**
      * 文本向量（OpenAI compatible /embeddings）。与 chat 同源，避免 SDK 静态 base 配置时机问题。
      */
+    /** @deprecated 文本/向量调用已迁移 Spring AI（ChatModel/EmbeddingModel），本方法仅保留兼容 */
+    @Deprecated
     public double[] callEmbedding(String text) {
         if (bailianConfig.getApiKey() == null || bailianConfig.getApiKey().isEmpty()) {
             log.warn("DashScope API Key not configured, skipping embedding call");

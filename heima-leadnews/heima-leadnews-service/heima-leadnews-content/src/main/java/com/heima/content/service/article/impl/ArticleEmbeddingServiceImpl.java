@@ -1,7 +1,7 @@
 package com.heima.content.service.article.impl;
 
 import com.heima.content.service.article.ArticleEmbeddingService;
-import com.heima.common.bailian.DashScopeClient;
+import org.springframework.ai.embedding.EmbeddingModel;
 import com.heima.model.article.pojos.ApArticleEmbedding;
 import java.sql.Array;
 import java.sql.Connection;
@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
 public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
 
     @Autowired
-    private DashScopeClient dashScopeClient;
+    private EmbeddingModel embeddingModel;
 
     @Autowired(required = false)
     @Qualifier("pgVectorJdbcTemplate")
@@ -149,6 +149,14 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
         }
         // 截断过长内容（embedding模型有token限制）
         String truncated = content.length() > 2000 ? content.substring(0, 2000) : content;
-        return dashScopeClient.callEmbedding(truncated);
+        float[] emb = embeddingModel.embed(truncated);
+        if (emb == null || emb.length == 0) {
+            return null;
+        }
+        double[] vector = new double[emb.length];
+        for (int i = 0; i < emb.length; i++) {
+            vector[i] = emb[i];
+        }
+        return vector;
     }
 }

@@ -9,13 +9,17 @@ spring:
       base-url: ${DASH_SCOPE_COMPATIBLE_BASE:https://llm-07pvgms9s4t42iko.cn-beijing.maas.aliyuncs.com/compatible-mode}
       chat:
         options:
-          model: ${DASH_SCOPE_MODEL:deepseek-v4-flash-0731}
+          model: ${DASH_SCOPE_MODEL:qwen3.8-27b}
           temperature: 0.3
           max-tokens: 2048
           max-completion-tokens: 2048
           reasoning-effort: high
           output-modalities:
             - text
+      embedding:
+        options:
+          model: ${DASH_SCOPE_EMBEDDING_MODEL:qwen3.7-text-embedding}
+          dimensions: 1024
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true

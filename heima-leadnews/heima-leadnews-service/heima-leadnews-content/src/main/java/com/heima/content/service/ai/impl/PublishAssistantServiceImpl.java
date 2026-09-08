@@ -7,9 +7,8 @@ import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.ai.PublishAssistantService;
 import com.heima.content.service.ai.agent.AgentResult;
 import com.heima.content.service.ai.agent.AgentRunner;
-import com.heima.content.service.ai.agent.AgentTool;
-import com.heima.content.service.ai.agent.tools.ContentSafetyTool;
-import com.heima.content.service.ai.agent.tools.SimilaritySearchTool;
+import com.heima.content.service.ai.spring.AiSafetyTools;
+import com.heima.content.service.ai.spring.AiSimilarityTools;
 import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
 import com.heima.model.article.dtos.AiPrecheckVo;
 import com.heima.model.article.pojos.ApArticle;
@@ -45,11 +44,8 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         "可用工具：\n" +
         "- content_safety_check：参数 {\"title\":\"标题\",\"content\":\"正文\"}，返回违规检测结果。\n" +
         "- search_similar_article：参数 {\"content\":\"正文\"}，检索最相似的已发布文章。\n\n" +
-        "执行协议（一次只做一步）：\n" +
-        "1) 需要调用工具时，输出：\n" +
-        "ACTION: 工具名\n" +
-        "ARGS: {JSON 参数}\n" +
-        "2) 拿到所有工具结果后，输出最终报告：\n" +
+        "执行方式：你拥有 content_safety_check / search_similar_article 两个工具，需要时请直接调用（框架会自动执行并把结果给你）；\n" +
+        "拿到所有工具结果后，输出最终报告（仅输出这一行）：\n" +
         "FINAL: {JSON}\n\n" +
         "FINAL 的 JSON 结构（严格遵守）：\n" +
         "{\"is_violation\":false,\"violation_type\":\"\",\"violation_reason\":\"\",\"quality_score\":0,\"is_tech\":true," +
@@ -85,7 +81,10 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     private static final String USER_PROMPT = "标题：%s\n\n正文：%s";
 
     @Autowired
-    private DashScopeClient dashScopeClient;
+    private DashScopeClient dashScopeClient; // 仅多模态封面审核(callVision)使用
+
+    @Autowired
+    private org.springframework.ai.chat.model.ChatModel chatModel;
 
     @Autowired
     private ArticleEmbeddingServiceImpl embeddingService;
@@ -97,10 +96,10 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     private AgentRunner agentRunner;
 
     @Autowired
-    private SimilaritySearchTool similaritySearchTool;
+    private AiSafetyTools aiSafetyTools;
 
     @Autowired
-    private ContentSafetyTool contentSafetyTool;
+    private AiSimilarityTools aiSimilarityTools;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -123,7 +122,7 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         String user = String.format(USER_PROMPT, t, truncate(c, LLM_CONTENT_CHARS));
         try {
             // 主路径：Agent 工具调用（模型自主决定查重/安全再作答）
-            List<AgentTool> tools = Arrays.asList(contentSafetyTool, similaritySearchTool);
+            List<Object> tools = java.util.Arrays.asList(aiSafetyTools, aiSimilarityTools);
             AgentResult result = agentRunner.run(AGENT_SYSTEM_PROMPT, user, tools, AGENT_MAX_STEPS);
             if (result.isCompleted() && result.getFinalAnswer() != null) {
                 JsonNode root = parseJson(result.getFinalAnswer());
@@ -141,7 +140,8 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         if (vo == null) {
             // 兜底：一次性结构化调用
             try {
-                String raw = dashScopeClient.callGeneration(DIRECT_SYSTEM_PROMPT, user);
+                String raw = org.springframework.ai.chat.client.ChatClient.builder(chatModel).build()
+                    .prompt().system(DIRECT_SYSTEM_PROMPT).user(user).call().content();
                 JsonNode root = parseJson(raw);
                 if (root != null) {
                     vo = fromJson(root);

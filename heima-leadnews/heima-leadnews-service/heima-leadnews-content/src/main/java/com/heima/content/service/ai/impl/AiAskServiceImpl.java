@@ -2,7 +2,6 @@ package com.heima.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.common.bailian.DashScopeClient;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.ai.AiAskService;
@@ -28,7 +27,7 @@ import org.springframework.stereotype.Service;
  * 社区 AI 问答实现（RAG）
  *
  * <p>复用审核链已有的向量基建：DashScope embedding + pgvector(ap_article_embedding) 余弦检索；
- * 生成回答复用 DashScopeClient.callGeneration 通用文本能力。
+ * 生成（同步/流式/改写/重排）统一走 Spring AI ChatClient；向量检索经 Spring AI EmbeddingModel + pgvector。
  */
 @Slf4j
 @Service
@@ -73,7 +72,7 @@ public class AiAskServiceImpl implements AiAskService {
     private ApArticleContentMapper contentMapper;
 
     @Autowired
-    private DashScopeClient dashScopeClient;
+    private org.springframework.ai.chat.model.ChatModel chatModel;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -188,7 +187,7 @@ public class AiAskServiceImpl implements AiAskService {
         // 5. 生成回答
         String answer;
         try {
-            answer = dashScopeClient.callGeneration(SYSTEM_PROMPT, userPrompt);
+            answer = genText(SYSTEM_PROMPT, userPrompt);
         } catch (Exception e) {
             log.error("[AiAsk] 大模型生成失败, question={}", truncate(q, 50), e);
             return null;
@@ -268,11 +267,12 @@ public class AiAskServiceImpl implements AiAskService {
         StringBuilder acc = new StringBuilder();
         boolean ok = false;
         try {
-            ok = dashScopeClient.streamChat(SYSTEM_PROMPT, userPrompt,
+            genStream(SYSTEM_PROMPT, userPrompt,
                 delta -> {
                     acc.append(delta);
                     onDelta.accept(delta);
                 });
+            ok = true;
         } catch (Exception e) {
             log.error("[AiAsk-stream] 生成失败, question={}", truncate(q, 40), e);
         }
@@ -342,7 +342,7 @@ public class AiAskServiceImpl implements AiAskService {
         String userPrompt = buildUser(history, docs, q);
         String answer;
         try {
-            answer = dashScopeClient.callGeneration(SYSTEM_PROMPT, userPrompt);
+            answer = genText(SYSTEM_PROMPT, userPrompt);
         } catch (Exception e) {
             log.error("[AiAsk-fast] 大模型生成失败, question={}", truncate(q, 50), e);
             return null;
@@ -398,6 +398,31 @@ public class AiAskServiceImpl implements AiAskService {
         }
     }
 
+    /** Spring AI 同步文本生成（system + user） */
+    private String genText(String systemPrompt, String user) {
+        try {
+            return org.springframework.ai.chat.client.ChatClient.builder(chatModel).build()
+                .prompt().system(systemPrompt).user(user).call().content();
+        } catch (Exception e) {
+            log.error("[AiAsk] Spring AI 生成失败", e);
+            return null;
+        }
+    }
+
+    /** Spring AI 流式生成（逐段回调增量文本；返回完整文本） */
+    private String genStream(String systemPrompt, String user,
+                             java.util.function.Consumer<String> onDelta) {
+        reactor.core.publisher.Flux<String> flux =
+            org.springframework.ai.chat.client.ChatClient.builder(chatModel).build()
+                .prompt().system(systemPrompt).user(user).stream().content();
+        StringBuilder acc = new StringBuilder();
+        flux.doOnNext(t -> {
+            acc.append(t);
+            onDelta.accept(t);
+        }).blockLast();
+        return acc.toString();
+    }
+
     /** 组装 user 输入：对话历史（可选，滑窗最近几轮）+ 参考资料 + 问题 */
     private String buildUser(java.util.List<java.util.Map<String, String>> history,
                              StringBuilder docs, String q) {
@@ -423,7 +448,7 @@ public class AiAskServiceImpl implements AiAskService {
     /** Query Rewrite：一次小模型调用（失败返回 null -> 调用方回退原文） */
     private String queryRewrite(String question) {
         try {
-            String raw = dashScopeClient.callGeneration(REWRITE_PROMPT, question);
+            String raw = genText(REWRITE_PROMPT, question);
             if (raw == null) {
                 return null;
             }
@@ -449,7 +474,7 @@ public class AiAskServiceImpl implements AiAskService {
         String prompt = RERANK_PROMPT.replace("{maxN}", String.valueOf(maxN))
             + "\n\n【问题】" + question + "\n【候选】\n" + sb;
         try {
-            String raw = dashScopeClient.callGeneration(
+            String raw = genText(
                 "你是信息检索重排器，严格按要求输出 JSON。", prompt);
             if (raw == null) {
                 return null;
