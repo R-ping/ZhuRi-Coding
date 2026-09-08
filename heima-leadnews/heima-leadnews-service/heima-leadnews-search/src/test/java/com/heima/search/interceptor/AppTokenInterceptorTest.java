@@ -14,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,7 +51,8 @@ class AppTokenInterceptorTest {
         when(request.getHeader("userId")).thenReturn(userId);
         when(request.getHeader("nickName")).thenReturn(nickName);
         when(request.getHeader("image")).thenReturn(image);
-        when(request.getHeader(InternalAuthSigner.HEADER_SIGN)).thenReturn(sign);
+        // lenient：密钥为空（降级信任）的用例不会读取签名头，避免严格模式下 UnnecessaryStubbing
+        lenient().when(request.getHeader(InternalAuthSigner.HEADER_SIGN)).thenReturn(sign);
     }
 
     @Test

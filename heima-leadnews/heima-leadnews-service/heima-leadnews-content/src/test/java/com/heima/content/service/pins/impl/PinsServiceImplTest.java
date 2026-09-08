@@ -22,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.lang.reflect.Field;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -72,13 +73,8 @@ class PinsServiceImplTest {
 
     /** 通过反射写入 ServiceImpl 继承来的私有字段 baseMapper。 */
     private void injectBaseMapper(Object service, Object mapper) {
-        try {
-            Field f = service.getClass().getSuperclass().getDeclaredField("baseMapper");
-            f.setAccessible(true);
-            f.set(service, mapper);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new IllegalStateException("无法注入 baseMapper", e);
-        }
+        // 3.5.12 起 baseMapper 上移至父类 CrudRepository，ReflectionTestUtils 沿继承链查找
+        ReflectionTestUtils.setField(service, "baseMapper", mapper);
     }
 
     /** 直接改 PinsServiceImpl 自身的字段（用于覆盖 notificationClient 为空的场景）。 */

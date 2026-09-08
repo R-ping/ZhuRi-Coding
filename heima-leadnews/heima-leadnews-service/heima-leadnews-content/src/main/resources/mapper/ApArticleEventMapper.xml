@@ -15,9 +15,6 @@
       <if test="articleEvent.status != null">
         status = #{articleEvent.status},
       </if>
-      <if test="articleEvent.minioStatus != null">
-        minio_status = #{articleEvent.minioStatus},
-      </if>
       <if test="articleEvent.esStatus != null">
         es_status = #{articleEvent.esStatus},
       </if>

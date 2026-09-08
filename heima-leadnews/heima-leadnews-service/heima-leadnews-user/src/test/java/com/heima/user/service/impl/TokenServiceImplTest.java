@@ -108,7 +108,8 @@ class TokenServiceImplTest {
         @DisplayName("刷新成功：返回新的双Token")
         void testRefreshSuccess() {
             // Arrange
-            when(cacheService.get("refresh_token:" + VALID_REFRESH_TOKEN))
+            // 实现为原子 GET+DEL 消费（防止同一 refresh_token 并发刷新出多个新 token）
+            when(cacheService.getAndDelete("refresh_token:" + VALID_REFRESH_TOKEN))
                     .thenReturn(USER_INFO_JSON);
 
             // Act
@@ -119,8 +120,8 @@ class TokenServiceImplTest {
             assertNotNull(result.getAccessToken());
             assertNotNull(result.getRefreshToken());
 
-            // 验证旧的refresh_token被删除
-            verify(cacheService).delete("refresh_token:" + VALID_REFRESH_TOKEN);
+            // 验证旧的refresh_token被原子消费删除
+            verify(cacheService).getAndDelete("refresh_token:" + VALID_REFRESH_TOKEN);
 
             // 验证新的refresh_token被存储
             verify(cacheService).setEx(
@@ -153,7 +154,8 @@ class TokenServiceImplTest {
         @DisplayName("刷新失败：refresh_token无效或已过期")
         void testRefreshWithExpiredToken() {
             // Arrange
-            when(cacheService.get("refresh_token:" + INVALID_REFRESH_TOKEN))
+            // 无效 token：getAndDelete 返回 null（无值 = 无效/过期/已消费）
+            when(cacheService.getAndDelete("refresh_token:" + INVALID_REFRESH_TOKEN))
                     .thenReturn(null);
 
             // Act

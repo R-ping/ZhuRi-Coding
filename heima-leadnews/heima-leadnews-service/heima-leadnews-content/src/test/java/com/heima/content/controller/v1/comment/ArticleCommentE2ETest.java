@@ -38,11 +38,13 @@ import org.springframework.test.web.servlet.MvcResult;
  * Controller → Service → Mapper → MySQL 全链路，并校验数据库真实落库结果。
  *
  * 隔离策略：
- * - 登录态通过请求头 userId / nickName 注入（匹配 ContentTokenInterceptor），未登录场景即不携带该头
+ * - 覆盖 app.internal-auth.secret 为空，使 ContentTokenInterceptor 按"本地直连"降级信任
+ *   请求头 userId / nickName（不携带则视为匿名）。生产环境该密钥已配置，请求必须带 HMAC 签名头，
+ *   测试环境置空可避免伪造签名头即可模拟登录态。
  * - @MockBean 屏蔽 CommentAuditService 异步审核，避免触发 AI 审核、行为上报、站内信等外部副作用，聚焦评论主链路
  * - 使用独立测试文章ID与用户ID，@AfterEach 清理 ap_comment / ap_comment_like 测试数据，不污染线上数据
  */
-@SpringBootTest
+@SpringBootTest(properties = "app.internal-auth.secret=")
 @AutoConfigureMockMvc
 class ArticleCommentE2ETest {
 

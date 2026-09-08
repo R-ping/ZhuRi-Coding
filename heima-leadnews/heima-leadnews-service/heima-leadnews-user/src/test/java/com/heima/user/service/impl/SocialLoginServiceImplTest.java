@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -62,10 +63,7 @@ class SocialLoginServiceImplTest {
     @BeforeEach
     void setUp() throws Exception {
         // ServiceImpl 私有 baseMapper 反射注入，供 getOne 使用
-        Field f = Class.forName("com.baomidou.mybatisplus.extension.service.impl.ServiceImpl")
-                .getDeclaredField("baseMapper");
-        f.setAccessible(true);
-        f.set(socialLoginService, apUserSocialMapper);
+        ReflectionTestUtils.setField(socialLoginService, "baseMapper", apUserSocialMapper);
         // 初始化表元数据，让 LambdaQueryWrapper 能解析列名
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApUserSocial.class);

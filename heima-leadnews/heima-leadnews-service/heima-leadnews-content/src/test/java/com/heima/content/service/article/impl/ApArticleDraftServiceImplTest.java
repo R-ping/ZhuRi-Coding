@@ -31,6 +31,7 @@ import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 
 import java.lang.reflect.Field;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.Arrays;
 import java.util.Date;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -75,11 +76,8 @@ class ApArticleDraftServiceImplTest {
     @BeforeEach
     void setUp() throws Exception {
         MockitoAnnotations.openMocks(this);
-        Field f = com.baomidou.mybatisplus.extension.service.IService.class.getClassLoader()
-                .loadClass("com.baomidou.mybatisplus.extension.service.impl.ServiceImpl")
-                .getDeclaredField("baseMapper");
-        f.setAccessible(true);
-        f.set(draftService, apArticleDraftMapper);
+        // 3.5.12 起 baseMapper 上移至父类 CrudRepository，ReflectionTestUtils 沿继承链查找
+        ReflectionTestUtils.setField(draftService, "baseMapper", apArticleDraftMapper);
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApArticleDraft.class);
         TableInfoHelper.initTableInfo(
