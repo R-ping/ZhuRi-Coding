@@ -24,6 +24,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import java.lang.reflect.Field;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -50,13 +51,7 @@ class ApUserServiceImplTest {
     @BeforeEach
     void setUp() {
         // 通过反射设置 baseMapper，避免 MyBatisPlus baseMapper null 检查
-        try {
-            Field field = ServiceImpl.class.getDeclaredField("baseMapper");
-            field.setAccessible(true);
-            field.set(apUserService, apUserMapper);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to set baseMapper", e);
-        }
+        ReflectionTestUtils.setField(apUserService, "baseMapper", apUserMapper);
     }
 
     private static final String TEST_PHONE = "13800138000";

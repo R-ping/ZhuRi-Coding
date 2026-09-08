@@ -6,9 +6,11 @@ import com.heima.model.user.dtos.LoginDto;
 import com.heima.model.user.dtos.SocialBindDto;
 import com.heima.user.service.ApUserService;
 import com.heima.user.service.SocialLoginService;
+import com.heima.common.redis.CacheService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -32,6 +34,10 @@ class ApUserLoginControllerTest {
     private ApUserService apUserService;
     @Mock
     private SocialLoginService socialLoginService;
+
+    /** 短信发送间隔检查依赖 CacheService（深度桩：RedisTemplate 链返回 null = 不触发限流放行） */
+    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    private CacheService cacheService;
 
     @InjectMocks
     private ApUserLoginController apUserLoginController;
@@ -119,6 +125,9 @@ class ApUserLoginControllerTest {
     @Test
     @DisplayName("getCode 返回空 → 手机号已绑定其他账号错误")
     void testGetCodeBlankResult() {
+        // 首次发送验证码：setIfAbsent 返回 true 表示未处于 60 秒冷却期，放行
+        when(cacheService.getstringRedisTemplate().opsForValue()
+                .setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
         when(socialLoginService.checkSocialBind("13800138000", "github", "bind")).thenReturn("");
 
         assertEquals(AppHttpCodeEnum.SOCIAL_PHONE_BOUND_OTHER.getCode(),
@@ -128,6 +137,9 @@ class ApUserLoginControllerTest {
     @Test
     @DisplayName("getCode 成功 → 透传验证码")
     void testGetCodeOk() {
+        // 首次发送验证码：setIfAbsent 返回 true 表示未处于 60 秒冷却期，放行
+        when(cacheService.getstringRedisTemplate().opsForValue()
+                .setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
         when(socialLoginService.checkSocialBind("13800138000", "github", "login")).thenReturn("abcd");
 
         ResponseResult r = apUserLoginController.getCode("13800138000", "github", "login");

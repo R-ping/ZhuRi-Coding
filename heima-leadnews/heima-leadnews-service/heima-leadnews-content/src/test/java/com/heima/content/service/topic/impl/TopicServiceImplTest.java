@@ -30,6 +30,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.lang.reflect.Field;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -85,11 +86,8 @@ class TopicServiceImplTest {
     @BeforeEach
     void setUp() throws Exception {
         MockitoAnnotations.openMocks(this);
-        // ServiceImpl 私有 baseMapper 由反射注入，跨 MP 版本稳定
-        Field f = Class.forName("com.baomidou.mybatisplus.extension.service.impl.ServiceImpl")
-                .getDeclaredField("baseMapper");
-        f.setAccessible(true);
-        f.set(topicService, topicMapper);
+        // ServiceImpl 私有 baseMapper 由反射注入，跨 MP 版本稳定（3.5.12 起字段上移至父类 CrudRepository）
+        ReflectionTestUtils.setField(topicService, "baseMapper", topicMapper);
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApTopic.class);
     }
