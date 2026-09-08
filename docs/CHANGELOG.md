@@ -1,5 +1,78 @@
 # CHANGELOG
 
+## 2026-09-08 — AI 模块 Code Review 遗留问题修复（P1×4 + P2×2）
+
+### P1 安全/成本/交付
+- **ping 鉴权**：`/frame-ping`、`/tools-ping` 原为匿名可调用且每次触发 LLM（token 成本攻击面），补登录校验 + USER 5/分 + IP 20/分限频；`/backfill` 补 USER 维度限频。
+- **backfill 扫不全**：`backfillEmbeddings` 原 `LIMIT 200` 只扫前 200 条 → 永远填不完；改为按 `id > lastId` 游标分页扫全量（幂等跳过已有向量）。
+- **SSE 公共 ForkJoinPool**：`/ask/stream` 原 `CompletableFuture.runAsync` 走共享池，长时间 LLM 阻塞会拖垮并发；新增 `AiAsyncConfig.aiSseExecutor`（2~4 线程 + 50 队列，AbortPolicy），控制器改用它。
+- **Agent maxSteps 失效**：Spring AI 1.1.8 内部工具循环不暴露轮次上限，`maxSteps` 形同虚设；`AgentRunner` 重写为自持有界 ReAct 循环（关闭 internalToolExecution、每轮走 ChatClient + PromptSafetyAdvisor、直接执行 `ToolCallback` 并以 `ToolResponseMessage` 回填），`maxSteps` 成为硬上限，`AgentResult.steps` 返回真实轮次。
+
+### P2 维护性
+- **三份重复检索管线**：ask / askFast / streamFastAsk 原先各 ~60 行重复的「向量化→召回→过滤→组装文档/来源」；抽出 `retrieveAndAssemble(searchQuery, userQuestion, topK, doRerank)` + `Retrieval` 载体，三处共用。
+- **工具层绕路（相似度重复实现）**：`PublishAssistant.fillSimilarity` 原与 `SimilaritySearchTool` 各自实现同一套向量检索；`SimilaritySearchTool` 抽出公共 `searchSimilar(content)` 核心方法（排序后返回 `SimilarArticle`），工具 JSON 输出与预检相似度兜底共用；同时删除 `fillSimilarity` 内重复代码、死方法 `sampleContent` 及多余注入。
+
+### 说明（未改动项）
+- 双客户端并存：内容审核链（`BailianAiService` → `StructuredOutputInvoker` → `DashScopeClient`）仍走 DashScope 原生客户端；AI 问答/预检已全部走 Spring AI ChatClient。全量迁移审核链涉及审核 API 配置与既有测试（BailianAiServiceImplTest / AIViolationProcessorTest / StructuredOutputInvokerTest），建议单独排期。
+
+### 验证
+- 全模块 `mvn compile`、`mvn test-compile` 通过；`PromptSafetyAdvisorTest` 5/5 + `AiAskMemoryAdvisorTest` 2/2 全绿。
+
+### 变更文件
+- `content/.../controller/v1/ai/AiAskController.java`（ping 鉴权限频 / SSE 线程池接入）
+- `content/.../config/AiAsyncConfig.java`（新增，SSE 专用线程池）
+- `content/.../service/ai/agent/AgentRunner.java`（有界 ReAct 循环）
+- `content/.../service/ai/agent/tools/SimilaritySearchTool.java`（抽公共 searchSimilar）
+- `content/.../service/ai/impl/AiAskServiceImpl.java`（backfill 分页 + 检索管线去重）
+- `content/.../service/ai/impl/PublishAssistantServiceImpl.java`（相似度兜底复用工具层）
+- `docs/CHANGELOG.md`
+
+## 2026-09-08 — AiAsk 会话历史迁移为 MessageChatMemoryAdvisor（声明式记忆接入）
+
+### 背景
+AiAsk 的对话历史此前在 `buildUser` 里以「【对话历史】文本块」手拼进 user 消息（滑窗最近 6 轮）。参考成功接入 Spring AI 的应用框架项目（interview-guide）的成熟模式：会话记忆交由 `MessageChatMemoryAdvisor + MessageWindowChatMemory` 以真实 user/assistant 消息结构注入，同时保留手写参考资料注入（参考项目同样手写 `buildUserPrompt(context, question)`，未使用 QuestionAnswerAdvisor——该类在 1.1.8 已移出核心模块且与自定义 rewrite/rerank/sources 编号管线强耦合，经评估不引入）。
+
+### 处理
+- `AiAskServiceImpl` 新增 `buildConversationMemory(history)`：把前端携带的历史转成 Spring AI 消息并预载入请求级 `MessageWindowChatMemory`（`maxMessages=12` ≈ 6 轮，实例随请求销毁，天然会话隔离）。
+- `genText` / `genStream` 通过 `ChatClient.defaultAdvisors` 追加 `MessageChatMemoryAdvisor`，并用 `.advisors(a -> a.param(ChatMemory.CONVERSATION_ID, ...))` 指定会话 key；不再手拼【对话历史】。
+- `buildUser(history, docs, q)` 简化为 `buildUser(docs, q)`，只负责【参考资料】+【问题】；SYSTEM_PROMPT 第 5 条措辞同步微调。
+- 新增 `AiAskMemoryAdvisorTest`（2 用例）：验证历史以真实消息结构注入且位于当前问题之前、空历史不注入额外消息。
+- 文档注入结论：保持手写 `buildUser`（与参考项目一致），不引入 spring-ai-vector-store 依赖。
+
+### 验证
+- 全模块 `mvn compile` 通过；`AiAskMemoryAdvisorTest` 2/2 + `PromptSafetyAdvisorTest` 5/5 全绿。
+
+### 变更文件
+- `content/.../service/ai/impl/AiAskServiceImpl.java`
+- `content/.../test/.../ai/spring/AiAskMemoryAdvisorTest.java`（新增）
+- `docs/CHANGELOG.md`
+
+## 2026-09-08 — AI 调用安全逻辑收敛为 Spring AI Advisor（PromptSafetyAdvisor）
+
+### 背景
+PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「逐方法手写」形式散落在 AiAsk / PublishAssistant / AgentRunner 的 LLM 调用点，每处都要手工拼接 securedUser/securedSystem 并判定顺从短语，维护成本高且易漏加。
+
+### 处理
+- 新增 `PromptSafetyAdvisor`（BaseAdvisor），把三层防御收敛为声明式横切层，注册到 `ChatClient.defaultAdvisors` 后对所有模型调用统一生效：
+  - Layer 1：user 消息经 `PromptSanitizer.sanitizeAndWrap` 净化并加 UUID 动态边界标签（幂等，已包裹不再重复处理）；
+  - Layer 2：system 消息末尾追加 `ANTI_INJECTION_INSTRUCTION`（幂等，已含【安全约束】则跳过）；
+  - Layer 3：非流式响应经 `ComplianceGuard` 检测顺从短语，命中抛 `SafetyGuardException` 由调用方降级。
+- 覆写 `adviseStream`：流式路径仅保留前置净化，不做逐 chunk 护栏判定（默认实现的 `onErrorResume` 会吞掉阻塞异常且逐块判定易误伤），由调用方在汇聚完整文本后调用 `guardStreamed` 兜底。
+- `AiAskServiceImpl`：`genText`/`genStream` 移除手写 secured 逻辑，改用 `defaultAdvisors(promptSafetyAdvisor)`；删除 `generateAnswer` 冗余出口；流式完整文本检查替换为 `promptSafetyAdvisor.guardStreamed`。
+- `PublishAssistantServiceImpl`：移除兜底路径手写净化/加固/护栏，改注册同一 Advisor；补 `vo == null` 兜底返回（此前护栏命中后可能在 `setLatencyMs` 处 NPE）。
+- `AgentRunner`：构造器注册 Advisor；prompt 结构从「整段拼进 user」更正为 `system() + user()` 分开传，使 Layer 2 加固真正落在 system 消息上。
+- 新增 `PromptSafetyAdvisorTest`（5 用例）：净化/加固幂等、正常输出放行、顺从短语抛异常、流式 `guardStreamed` 拦截、依赖缺失时直通降级。
+
+### 验证
+- `mvn test-compile`（全模块）通过；`PromptSafetyAdvisorTest` 5/5 通过。
+
+### 变更文件
+- `content/.../service/ai/spring/PromptSafetyAdvisor.java`（新增）、`SafetyGuardException.java`（新增）
+- `content/.../service/ai/impl/AiAskServiceImpl.java`、`PublishAssistantServiceImpl.java`
+- `content/.../service/ai/agent/AgentRunner.java`
+- `content/.../test/.../ai/spring/PromptSafetyAdvisorTest.java`（新增）
+- `docs/CHANGELOG.md`
+
 ## 2026-09-05 — 统一逐日等级行为编码，消除 publish_pin/publish_pins 命名漂移
 
 ### 现象（Brooks-Lint 健康看板）

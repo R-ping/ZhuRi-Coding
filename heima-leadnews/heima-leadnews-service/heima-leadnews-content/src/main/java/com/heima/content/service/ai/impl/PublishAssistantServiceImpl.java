@@ -3,18 +3,16 @@ package com.heima.content.service.ai.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.common.bailian.DashScopeClient;
-import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.ai.PublishAssistantService;
 import com.heima.content.service.ai.agent.AgentResult;
 import com.heima.content.service.ai.agent.AgentRunner;
+import com.heima.content.service.ai.agent.tools.SimilaritySearchTool;
 import com.heima.content.service.ai.spring.AiSafetyTools;
 import com.heima.content.service.ai.spring.AiSimilarityTools;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
+import com.heima.content.service.ai.spring.SafetyGuardException;
 import com.heima.model.article.dtos.AiPrecheckVo;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -87,12 +85,6 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     private org.springframework.ai.chat.model.ChatModel chatModel;
 
     @Autowired
-    private ArticleEmbeddingServiceImpl embeddingService;
-
-    @Autowired
-    private ApArticleMapper apArticleMapper;
-
-    @Autowired
     private AgentRunner agentRunner;
 
     @Autowired
@@ -100,6 +92,12 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
 
     @Autowired
     private AiSimilarityTools aiSimilarityTools;
+
+    @Autowired
+    private PromptSafetyAdvisor promptSafetyAdvisor;
+
+    @Autowired
+    private SimilaritySearchTool similaritySearchTool;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -120,6 +118,8 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
 
         AiPrecheckVo vo = null;
         String user = String.format(USER_PROMPT, t, truncate(c, LLM_CONTENT_CHARS));
+        // 提示词安全（净化 user + system 加固 + 输出护栏）由 PromptSafetyAdvisor 声明式处理；
+        // Agent 主路径走 AgentRunner 内嵌的 Advisor，兜底路径在下方 ChatClient 上注册同一 Advisor。
         try {
             // 主路径：Agent 工具调用（模型自主决定查重/安全再作答）
             List<Object> tools = java.util.Arrays.asList(aiSafetyTools, aiSimilarityTools);
@@ -138,18 +138,29 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         }
 
         if (vo == null) {
-            // 兜底：一次性结构化调用
+            // 兜底：一次性结构化调用（安全三层防御由 Advisor 横切处理）
             try {
-                String raw = org.springframework.ai.chat.client.ChatClient.builder(chatModel).build()
-                    .prompt().system(DIRECT_SYSTEM_PROMPT).user(user).call().content();
+                String raw = org.springframework.ai.chat.client.ChatClient.builder(chatModel)
+                    .defaultAdvisors(promptSafetyAdvisor)
+                    .build()
+                    .prompt().system(DIRECT_SYSTEM_PROMPT).user(user)
+                    .call().content();
                 JsonNode root = parseJson(raw);
                 if (root != null) {
                     vo = fromJson(root);
                 }
+            } catch (SafetyGuardException e) {
+                log.warn("[AiPrecheck] 兜底输出护栏命中（顺从短语），丢弃该结果: {}", e.getMessage());
+                return null;
             } catch (Exception e) {
                 log.error("[AiPrecheck] 兜底调用失败", e);
                 return null;
             }
+        }
+
+        if (vo == null) {
+            log.warn("[AiPrecheck] Agent 与兜底均未产出预检结果，返回 null");
+            return null;
         }
 
         // 兜底补相似预警（无论 Agent 是否已查，双保险且排除自身）
@@ -186,53 +197,26 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         return vo;
     }
 
-    /** 独立相似度兜底：向量 TopK → 过滤 PUBLISHED/排除自身 → ≥ 阈值填充 */
+    /** 独立相似度兜底：与 Agent 的 search_similar_article 工具共用同一检索实现（排除自身、双保险） */
     private void fillSimilarity(AiPrecheckVo vo, String content, Long articleId) {
         if (vo == null) {
             return;
         }
         try {
-            String sample = content.length() > 2000 ? content.substring(0, 2000) : content;
-            double[] emb = embeddingService.generateEmbedding(sample);
-            if (emb == null) {
-                return;
-            }
-            List<Object[]> hits = embeddingService.findSimilarArticles(emb, 5, 0);
-            if (hits == null || hits.isEmpty()) {
-                return;
-            }
-            List<Long> ids = new ArrayList<>();
-            for (Object[] h : hits) {
-                ids.add((Long) h[0]);
-            }
-            for (ApArticle a : apArticleMapper.selectBatchIds(ids)) {
-                if (a.getStatus() == null || a.getStatus() != Status.PUBLISHED.getCode()) {
-                    continue;
+            for (SimilaritySearchTool.SimilarArticle hit : similaritySearchTool.searchSimilar(content)) {
+                if (articleId != null && articleId.equals(hit.article().getId())) {
+                    continue; // 排除自身
                 }
-                if (articleId != null && articleId.equals(a.getId())) {
-                    continue;
+                if (hit.similarity() >= SIMILAR_ALERT) {
+                    vo.setSimilarArticleId(hit.article().getId());
+                    vo.setSimilarTitle(hit.article().getTitle());
+                    vo.setSimilarity(Math.round(hit.similarity() * 10000) / 10000.0);
                 }
-                double sim = 0;
-                for (Object[] h : hits) {
-                    if (a.getId().equals(h[0]) && h.length > 1 && h[1] != null) {
-                        sim = (Double) h[1];
-                    }
-                }
-                if (sim >= SIMILAR_ALERT) {
-                    vo.setSimilarArticleId(a.getId());
-                    vo.setSimilarTitle(a.getTitle());
-                    vo.setSimilarity(Math.round(sim * 10000) / 10000.0);
-                }
-                break;
+                break; // 与历史行为一致：仅以最相似一篇作为预警
             }
         } catch (Exception e) {
             log.warn("[AiPrecheck] 相似度兜底失败", e);
         }
-    }
-
-    private String sampleContent(AiPrecheckVo vo) {
-        // 预检内容不可得时用空（Agent 主路径已提供 content 给工具；此处仅兜底场景退化）
-        return "";
     }
 
     /** 封面图多模态审核：调用 vision 模型判断违规与主题契合度 */

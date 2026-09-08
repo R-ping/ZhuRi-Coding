@@ -41,6 +41,11 @@ public class AiAskController {
     @Autowired
     private com.heima.content.service.ai.spring.AiSafetyTools aiSafetyTools;
 
+    /** SSE 流式问答专用线程池（见 AiAsyncConfig），隔离 LLM 长时间阻塞与公共 ForkJoinPool */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.beans.factory.annotation.Qualifier("aiSseExecutor")
+    private java.util.concurrent.Executor aiSseExecutor;
+
     /**
      * AI 发布预检（作者提交审核前）：违规预警 + 质量分 + 优化建议 + 推荐标签 + 摘要 + 相似度预警。
      * 限频：单用户 5 次/分钟 + 单 IP 20 次/分钟。
@@ -126,13 +131,18 @@ public class AiAskController {
             } finally {
                 emitter.complete();
             }
-        });
+        }, aiSseExecutor);
         return emitter;
     }
 
-    /** 临时验证：Spring AI(OpenAI compatible) 链路是否可用 */
+    /** 临时验证：Spring AI(OpenAI compatible) 链路是否可用（鉴权 + 限频，防匿名打接口烧 token） */
     @PostMapping("/frame-ping")
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public ResponseResult framePing() {
+        if (AppThreadLocalUtil.getUser() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
         try {
             if (frameChatModel == null) {
                 return ResponseResult.errorResult(500, "ChatModel 未初始化（spring-ai 自动配置未生效，检查 api-key 配置）");
@@ -148,9 +158,14 @@ public class AiAskController {
         }
     }
 
-    /** 全迁 Gate：验证 Spring AI 原生工具调用（@Tool → qwen compatible tools 协议） */
+    /** 全迁 Gate：验证 Spring AI 原生工具调用（@Tool → qwen compatible tools 协议）（鉴权 + 限频，防匿名打接口烧 token） */
     @PostMapping("/tools-ping")
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public ResponseResult toolsPing() {
+        if (AppThreadLocalUtil.getUser() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
         try {
             if (frameChatModel == null) {
                 return ResponseResult.errorResult(500, "ChatModel 未初始化");
@@ -173,6 +188,7 @@ public class AiAskController {
     }
 
     @PostMapping("/backfill")
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 2, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     @RateLimit(dimension = RateLimit.Dimension.IP, count = 3, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public ResponseResult backfill() {
         if (AppThreadLocalUtil.getUser() == null) {

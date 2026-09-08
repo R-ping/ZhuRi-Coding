@@ -1,17 +1,18 @@
 -- ============================================
 -- PostgreSQL pgvector 向量存储设置脚本
 -- 执行环境: PostgreSQL (192.168.44.128:5432, 密码: 123456)
--- 数据库: leadnews_article
+-- 数据库: leadnews_content
 -- ============================================
 
 -- 启用pgvector扩展
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 创建文章向量嵌入表
+-- 注意：维度必须与 application.yml 中 spring.ai.openai.embedding.options.dimensions 一致（qwen3.7-text-embedding 默认 1024 维）
 CREATE TABLE IF NOT EXISTS ap_article_embedding (
     id BIGSERIAL PRIMARY KEY,
     article_id BIGINT NOT NULL,
-    embedding vector(1536),
+    embedding vector(1024),
     created_time TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_article_embedding UNIQUE (article_id)
 );
