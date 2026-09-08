@@ -92,6 +92,12 @@
             <artifactId>tika-parsers-standard-package</artifactId>
             <version>3.3.1</version>
         </dependency>
+    <!-- Spring AI OpenAI 兼容接入（DashScope compatible-mode/v1） -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-starter-model-openai</artifactId>
+    </dependency>
+
     </dependencies>
 
     <build>

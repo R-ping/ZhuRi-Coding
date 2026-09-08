@@ -13,6 +13,8 @@ public class BailianConfig {
     private String apiHost;
     private String model;
     private String embeddingModel;
+    /** 多模态（图文理解）模型 */
+    private String visionModel;
     private Timeout timeout = new Timeout();
     private Retry retry = new Retry();
 

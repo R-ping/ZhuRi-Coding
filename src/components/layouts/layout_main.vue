@@ -205,6 +205,7 @@
             </div>
         </template>
 
+        <ai-ask-floating />
         </div>
 </template>
 
@@ -219,6 +220,7 @@
     import NotificationBell from '@/components/bars/NotificationBell.vue'
     import CreatorDropdown from './CreatorDropdown.vue'
     import RecommendTopics from '@/components/RecommendTopics.vue'
+    import AiAskFloating from '@/components/ai/AiAskFloating.vue'
     import conf from '@/common/conf'
     import request from '@/common/request'
 
@@ -274,7 +276,7 @@
 
     export default {
         name: "HeiMaLayoutMain",
-        components: { UserDropdown, NotificationBell, CreatorDropdown, RecommendTopics },
+        components: { UserDropdown, NotificationBell, CreatorDropdown, RecommendTopics, AiAskFloating },
         data() {
             return {
                 showUserDropdown: false,

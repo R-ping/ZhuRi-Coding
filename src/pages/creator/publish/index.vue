@@ -16,7 +16,10 @@
           <template v-else-if="saveStatus === 'error'">出现异常</template>
         </span>
         <el-button size="medium" @click="goDraftBox">草稿箱</el-button>
-        <el-button size="medium" type="primary" :disabled="saveStatus !== 'saved'" @click="openPublishDrawer">发布</el-button>
+        <el-button size="medium" :disabled="saveStatus !== 'saved' || aiChecking" @click="runAiPrecheck">
+          {{ aiChecking ? '预检中…' : 'AI 预检' }}
+        </el-button>
+        <el-button size="medium" type="primary" :disabled="saveStatus !== 'saved' || aiChecking" @click="openPublishDrawer">发布</el-button>
         <div class="user-avatar">
           <img v-if="userAvatar" :src="userAvatar" class="avatar-img" />
           <span v-else class="avatar-placeholder">&#xf007;</span>
@@ -254,6 +257,77 @@
         <el-button type="primary" :loading="importLoading" @click="confirmImport">导入文档</el-button>
       </span>
     </el-dialog>
+
+    <!-- AI 发布预检报告 -->
+    <el-dialog
+      title="AI 发布预检报告"
+      :visible.sync="aiReportVisible"
+      width="620px"
+      :close-on-click-modal="true"
+      :modal-append-to-body="true"
+      :append-to-body="true"
+      custom-class="ai-precheck-dialog"
+    >
+      <div v-if="aiReport" class="ai-report">
+        <el-alert
+          v-if="aiReport.violation"
+          type="error"
+          :closable="false"
+          show-icon
+          title="疑似存在违规内容，建议修改后再发布"
+          :description="(aiReport.violationType || '') + '：' + (aiReport.violationReason || '')"
+        />
+
+        <div class="ai-line">
+          <span class="ai-k">质量分</span>
+          <span class="ai-score" :class="{ 'ai-score-low': aiReport.qualityScore < 60 }">{{ aiReport.qualityScore }}</span>
+          <span class="ai-tech" :class="{ 'notech': !aiReport.tech }">{{ aiReport.tech ? '技术内容' : '非技术内容' }}</span>
+          <span v-if="aiReport.similarArticleId" class="ai-similar">⚠ 与已发布文章相似</span>
+        </div>
+        <div v-if="aiReport.similarTitle" class="ai-similar-tip">
+          最相似：《{{ aiReport.similarTitle }}》（相似度 {{ Math.round((aiReport.similarity || 0) * 100) }}%），请确认内容非搬运或适度改写。
+        </div>
+
+        <div class="ai-sec" v-if="aiReport.imageUrl">
+          <div class="ai-sec-title">封面图合规检查（AI 识别）</div>
+          <div class="ai-cover">
+            <img :src="aiReport.imageUrl" class="ai-cover-img" alt="封面" />
+            <div class="ai-cover-info">
+              <div v-if="aiReport.imageViolation" class="ai-cover-v">⚠ {{ aiReport.imageReason || '封面疑似违规' }}</div>
+              <div v-else class="ai-cover-ok">✓ 封面合规（仅违规检查，不做主题契合评判）</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-sec" v-if="aiReport.suggestions && aiReport.suggestions.length">
+          <div class="ai-sec-title">优化建议</div>
+          <ol class="ai-sugg">
+            <li v-for="(s, i) in aiReport.suggestions" :key="i">{{ s }}</li>
+          </ol>
+        </div>
+
+        <div class="ai-sec" v-if="aiReport.tags && aiReport.tags.length">
+          <div class="ai-sec-title">推荐标签（点击采用到发布表单）</div>
+          <div class="ai-tags">
+            <el-tag
+              v-for="(t, i) in aiReport.tags"
+              :key="i"
+              class="ai-tag"
+              effect="plain"
+              @click="useAiTag(t)"
+            >{{ t }}</el-tag>
+          </div>
+        </div>
+
+        <div class="ai-sec" v-if="aiReport.summary">
+          <div class="ai-sec-title">一句话摘要（点击填入）</div>
+          <div class="ai-summary" @click="useAiSummary">{{ aiReport.summary }}</div>
+        </div>
+      </div>
+      <span slot="footer">
+        <el-button @click="aiReportVisible = false">关闭</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -270,6 +344,7 @@
   import { permission } from "@/utils/permission";
   import { API_DRAFT_CREATE, API_DRAFT_UPDATE, API_DRAFT_PUBLISH } from "@/pages/creator/constants/api";
   import wemediaRequest from '@/common/article_request';
+  import { precheckArticle } from '@/apis/ai';
 
   export default {
     name: "PublishEditor",
@@ -295,6 +370,9 @@
         host: '',
         channel_list: [],
         publishDrawerVisible: false,
+        aiChecking: false,
+        aiReport: null,
+        aiReportVisible: false,
         syncScroll: true,
         charCount: 0,
         lineCount: 1,
@@ -739,6 +817,41 @@
       },
       goDraftBox() {
         this.$router.push({ path: '/creator/article/list' })
+      },
+      runAiPrecheck() {
+        if (this.aiChecking) return
+        if (!this.FormData.title || !this.FormData.content) {
+          this.$message && this.$message.warning('请先填写标题与正文（已自动保存）后再预检')
+          return
+        }
+        this.aiChecking = true
+        precheckArticle({
+          title: this.FormData.title,
+          content: this.FormData.content,
+          articleId: this.FormData.id || null,
+          coverImageUrl: this.FormData.cover_image || null
+        }).then(res => {
+          if (res && res.code === 200 && res.data) {
+            this.aiReport = res.data
+            this.aiReportVisible = true
+          } else {
+            this.$message && this.$message.warning((res && res.message) || 'AI 服务暂不可用')
+          }
+        }).catch(() => {
+          this.$message && this.$message.error('AI 预检失败，请稍后再试')
+        }).finally(() => {
+          this.aiChecking = false
+        })
+      },
+      /** 采用推荐标签（当前支持单个，取推荐首位可手点替换） */
+      useAiTag(tag) {
+        this.selectedTags = [tag]
+        this.$message && this.$message.success('已采用标签「' + tag + '」，发布时将随文章提交')
+      },
+      /** 采用一句话摘要 */
+      useAiSummary() {
+        this.FormData.summary = this.aiReport ? this.aiReport.summary : ''
+        this.$message && this.$message.success('已填入文章摘要')
       },
       openPublishDrawer() {
         if (!this.FormData.summary) {
@@ -1259,4 +1372,90 @@
       }
     }
   }
+  .ai-report {
+    font-size: 13px;
+    color: #333;
+  }
+  .ai-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0 4px;
+    flex-wrap: wrap;
+  }
+  .ai-k {
+    color: #86909c;
+  }
+  .ai-score {
+    font-size: 26px;
+    font-weight: 700;
+    color: #18a058;
+  }
+  .ai-score-low {
+    color: #d03050;
+  }
+  .ai-tech {
+    font-size: 12px;
+    color: #4f7cff;
+    border: 1px solid #4f7cff;
+    border-radius: 4px;
+    padding: 0 6px;
+    line-height: 18px;
+  }
+  .ai-tech.notech {
+    color: #d03050;
+    border-color: #d03050;
+  }
+  .ai-similar {
+    color: #d03050;
+    font-size: 12px;
+  }
+  .ai-similar-tip {
+    color: #d03050;
+    background: #fff1f0;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin: 8px 0;
+  }
+  .ai-sec {
+    margin-top: 14px;
+  }
+  .ai-sec-title {
+    font-weight: 600;
+    color: #1f2329;
+    margin-bottom: 6px;
+  }
+  .ai-sugg {
+    margin: 0;
+    padding-left: 18px;
+    color: #4e5969;
+    line-height: 1.8;
+  }
+  .ai-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ai-tag {
+    cursor: pointer;
+  }
+  .ai-summary {
+    background: #f2f6ff;
+    color: #4e5969;
+    border-radius: 6px;
+    padding: 8px 10px;
+    line-height: 1.7;
+    cursor: pointer;
+  }
+  .ai-summary:hover {
+    background: #e6efff;
+  }
+  .ai-cover { display: flex; gap: 12px; }
+  .ai-cover-img {
+    width: 96px; height: 64px; object-fit: cover; border-radius: 6px;
+    border: 1px solid #eee; flex: none;
+  }
+  .ai-cover-info { font-size: 13px; color: #4e5969; line-height: 1.8; }
+  .ai-cover-v { color: #d03050; }
+  .ai-cover-ok { color: #18a058; }
 </style>

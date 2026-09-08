@@ -83,10 +83,12 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
                     ));
                     // 时间范围过滤（小于 minBehotTime）
                     if (dto.getMinBehotTime() != null) {
-                        b.filter(f -> f.range(r -> r
+                        co.elastic.clients.elasticsearch._types.query_dsl.DateRangeQuery dateRange =
+                            new co.elastic.clients.elasticsearch._types.query_dsl.DateRangeQuery.Builder()
                                 .field("publishTime")
-                                .lt(JsonData.of(dto.getMinBehotTime().getTime()))
-                        ));
+                                .lt(String.valueOf(dto.getMinBehotTime().getTime()))
+                                .build();
+                        b.filter(f -> f.range(r -> r.date(dateRange)));
                     }
                     return b;
                 }))
