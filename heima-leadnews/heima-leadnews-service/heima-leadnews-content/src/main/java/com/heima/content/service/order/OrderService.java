@@ -91,6 +91,26 @@ public interface OrderService {
     void markRefundPending(String orderNo);
 
     /**
+     * 标记退款待重试（带原因）：P0-5 修复时新增。
+     * <p>与 {@link #markRefundPending(String)} 的区别在于：把「为什么需要退款」写进
+     * {@code ap_course_order.refund_pending_reason} 字段，便于运维直接 SQL 排查，
+     * 避免只能去 ELK 翻日志定位。复用现成的 refund_pending=1 + RefundRetryTask 链路。
+     *
+     * <p><b>典型使用场景</b>：支付成功但订单已 PAID + 券核销失败（用户已享受折扣但券未扣），
+     * 走「退款兜底」流程而非「事务回滚」—— 因为钱已真实到账，回滚订单状态已无意义。
+     *
+     * @param orderNo 订单号
+     * @param reason  待重试原因，建议使用 {@link #REFUND_REASON_DISCOUNT_EXHAUSTED} /
+     *               {@link #REFUND_REASON_COUPON_FAILED} 等常量
+     */
+    void markRefundPending(String orderNo, String reason);
+
+    /** 退款待重试原因常量（写到 DB 字段，便于 SQL 排查） */
+    String REFUND_REASON_ORDER_CLOSED = "order_closed";
+    String REFUND_REASON_DISCOUNT_EXHAUSTED = "discount_code_exhausted";
+    String REFUND_REASON_COUPON_FAILED = "coupon_consume_failed";
+
+    /**
      * 记录一次退款重试失败：将 refund_retry_count +1；当累计达到 {@code maxRetries} 时
      * 把 refund_pending 置 2（已告警、停止自动重试，需人工介入）。
      *

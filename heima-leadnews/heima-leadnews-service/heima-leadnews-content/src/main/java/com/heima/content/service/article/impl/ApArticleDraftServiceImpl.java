@@ -11,6 +11,7 @@ import com.heima.content.mapper.article.ApArticleDraftMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ApArticleDraftService;
 import com.heima.content.service.article.ArticleAutoScanService;
+import com.heima.content.service.aigc.AigcDetectService;
 import com.heima.content.service.level.LevelPermissionService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
@@ -45,6 +46,9 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
 
     @Autowired
     private ArticleAutoScanService articleAutoScanService;
+
+    @Autowired
+    private AigcDetectService aigcDetectService;
 
     @Autowired
     private LevelPermissionService levelPermissionService;
@@ -133,6 +137,8 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
             @Override
             public void afterCommit() {
                 articleAutoScanService.autoScanArticle(article.getId());
+                // Step4 内容诚信：AIGC 水文检测（同步 L1 快检打标，打赏/向量库闸门即时生效）
+                aigcDetectService.detectAndFlagArticle(article.getId());
                 log.info("文章已提交审核（异步）, articleId: {}", article.getId());
             }
         });

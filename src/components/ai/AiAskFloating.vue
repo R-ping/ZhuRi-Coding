@@ -13,9 +13,19 @@
                     <div class="ai-title">
                         <span class="ai-logo">✦</span>
                         问社区 AI
-                        <span class="ai-sub">基于社区文章回答 · 可溯源</span>
+                        <span class="ai-sub">基于社区文章回答 · 可溯源 · 记忆持久化</span>
                     </div>
-                    <div class="ai-close" @click="closePanel">&#10005;</div>
+                    <div class="ai-actions">
+                        <span class="ai-clear" v-if="messages.length && !loading" @click="clearMemory">清空记忆</span>
+                        <div class="ai-close" @click="closePanel">&#10005;</div>
+                    </div>
+                </div>
+
+                <!-- 额度条：今日免费剩余 + 钱包额度 + 充值入口 -->
+                <div class="ai-quota-bar" v-if="quotaLoaded">
+                    <span class="qb-item">今日免费 <b>{{ freeQuota.remainToday }}/{{ freeQuota.dailyLimit }}</b></span>
+                    <span class="qb-item">钱包 <b>{{ wallet }} 次</b></span>
+                    <span class="qb-link" @click.stop="goRecharge">去充值 ›</span>
                 </div>
 
                 <div class="ai-body" ref="body">
@@ -40,6 +50,14 @@
                                 </template>
                                 <template v-else>
                                     <div class="a-text" v-html="renderAnswer(m.answer)" @click="onAnswerClick($event, mi)"></div>
+                                    <div class="a-feedback" v-if="m.answer && !m.loading && !m.streaming && !m.error">
+                                        <template v-if="!m.feedbackGiven">
+                                            <span class="fb-label">这个回答有帮助吗？</span>
+                                            <button type="button" class="fb-btn" @click="giveFeedback(mi, 1)">有帮助</button>
+                                            <button type="button" class="fb-btn" @click="giveFeedback(mi, -1)">没帮助</button>
+                                        </template>
+                                        <span v-else class="fb-done">已反馈，感谢</span>
+                                    </div>
                                     <div class="a-sources" v-if="m.sources && m.sources.length">
                                         <div class="src-title">参考来源（点击阅读原文）</div>
                                         <div class="src-item"
@@ -65,6 +83,11 @@
             <span class="mode-chip" :class="{ 'on': !fastMode }" @click="fastMode = false">深度</span>
             <span class="mode-hint">{{ fastMode ? '约 5s' : '更精准 · 约 15s' }}</span>
         </div>
+        <!-- 额度用尽引导 -->
+        <div class="ai-quota-banner" v-if="quotaExhausted">
+            <span>今日免费额度与钱包额度已用尽，购买额度包后继续提问</span>
+            <button type="button" class="qb-buy" @click="goRecharge">立即充值</button>
+        </div>
         <div class="ai-footer">
                     <input
                         class="ai-input"
@@ -84,7 +107,7 @@
 </template>
 
 <script>
-    import { askAi } from '@/apis/ai'
+    import { askAi, getAiQuotaStatus, getAiConversation, clearAiConversation } from '@/apis/ai'
     import { toast } from '@/utils/toast'
 
     export default {
@@ -97,10 +120,37 @@
                 messages: [],
                 activeMsg: -1,
                 activeSource: -1,
-                fastMode: true
+                fastMode: true,
+                // 商业化额度状态（阶段3）：面板内展示 + 用尽引导
+                quotaLoaded: false,
+                freeQuota: { dailyLimit: 0, usedToday: 0, remainToday: 0 },
+                wallet: 0,
+                quotaExhausted: false
             }
         },
         methods: {
+            /** 拉取额度总览：今日免费剩余 + 钱包次数；未登录静默忽略 */
+            loadQuota() {
+                getAiQuotaStatus().then(res => {
+                    if (res && res.code === 200 && res.data) {
+                        this.quotaLoaded = true
+                        this.freeQuota = Object.assign({ dailyLimit: 0, usedToday: 0, remainToday: 0 }, res.data.freeQuota || {})
+                        this.wallet = Number(res.data.walletBalance) || 0
+                        // 免费与钱包双双用尽才在面板提示充值（每日免费额度未满时不做干扰）
+                        this.quotaExhausted = (this.freeQuota.remainToday <= 0) && this.wallet <= 0
+                    }
+                }).catch(() => {
+                    // 未登录 / 服务异常：保持无额度条，不影响问答主流程
+                })
+            },
+            /** 跳转 AI 额度中心（未登录先弹登录） */
+            goRecharge() {
+                if (!this.$store.state.accessToken) {
+                    this.$store.commit('SHOW_LOGIN_MODAL')
+                    return
+                }
+                this.$router.push('/user/ai/quota')
+            },
             togglePanel() {
                 if (this.panelVisible) {
                     this.closePanel()
@@ -111,11 +161,49 @@
                     return
                 }
                 this.panelVisible = true
+                this.loadQuota()
+                this.restoreConversation()
             },
             closePanel() {
                 this.panelVisible = false
                 this.activeMsg = -1
                 this.activeSource = -1
+            },
+            /** 打开面板时恢复持久化会话（Memory 持久化：刷新/换设备后上下文不丢） */
+            restoreConversation() {
+                if (this.messages.length || !this.$store.state.accessToken) return
+                this.loading = true
+                getAiConversation().then(res => {
+                    this.loading = false
+                    if (res && res.code === 200 && Array.isArray(res.data) && res.data.length) {
+                        const msgs = []
+                        let pendingQ = null
+                        res.data.forEach(t => {
+                            if (!t || !t.content) return
+                            if (t.role === 'user') {
+                                pendingQ = String(t.content).slice(0, 200)
+                            } else if (t.role === 'assistant' && pendingQ != null) {
+                                msgs.push({ q: pendingQ, answer: String(t.content), sources: [], loading: false, streaming: false })
+                                pendingQ = null
+                            }
+                        })
+                        this.messages = msgs
+                        this.$nextTick(this.scrollBottom)
+                    }
+                }).catch(() => {
+                    this.loading = false
+                })
+            },
+            /** 清空持久化会话记忆（服务端 Redis + 本地消息） */
+            clearMemory() {
+                clearAiConversation().then(() => {
+                    this.messages = []
+                    this.loading = false
+                    this.quotaExhausted = false
+                    toast('会话记忆已清空', 2)
+                }).catch(() => {
+                    toast('清空失败，请稍后重试', 2)
+                })
             },
             send() {
                 const q = (this.question || '').trim()
@@ -137,6 +225,8 @@
                         if (!last.sources.length) {
                             last.answer = last.answer || '知识库暂未检索到相关内容。'
                         }
+                        // 回答成功：刷新额度条（本次已消耗 1 次）
+                        this.loadQuota()
                     } else {
                         last.error = (res && res.message) || 'AI 服务暂不可用，请稍后再试'
                     }
@@ -145,9 +235,15 @@
                 }).catch(err => {
                     const last = this.messages[this.messages.length - 1]
                     last.loading = false
-                    last.error = 'AI 服务暂不可用，请稍后再试'
+                    // 3301 额度用尽：显示引导横幅（错误文案来自后端，不带编码展示）
+                    if (err && err.code === 3301) {
+                        last.error = (err.message && String(err.message).replace(/^\[\d+\]\s*/, '')) || '今日额度已用尽，请充值后继续'
+                        this.loadQuota()
+                    } else {
+                        last.error = 'AI 服务暂不可用，请稍后再试'
+                        toast('提问失败，请稍后重试', 2)
+                    }
                     this.loading = false
-                    toast('提问失败，请稍后重试', 2)
                     this.$nextTick(this.scrollBottom)
                 })
             },
@@ -200,7 +296,13 @@
                                         last.latency = vo.latencyMs
                                     } catch (e) { /* ignore */ }
                                 } else if (eventName === 'error') {
-                                    last.error = data || 'AI 服务暂不可用'
+                                    // 流式额度用尽：后端发 "[3301] 文案"，识别后仅展示文案并触发引导
+                                    if (typeof data === 'string' && data.indexOf('[3301]') === 0) {
+                                        last.error = data.replace(/^\[\d+\]\s*/, '')
+                                        this.loadQuota()
+                                    } else {
+                                        last.error = data || 'AI 服务暂不可用'
+                                    }
                                 }
                                 eventName = ''
                             }
@@ -218,6 +320,8 @@
                 last.loading = false
                 this.loading = false
                 if (!last.answer) last.error = last.error || '未获得回答，请重试'
+                // 流式回答结束：刷新额度条
+                this.loadQuota()
                 this.scrollBottom()
             },
             /** 回答中的 [n] 引用 → 高亮序号（点击经事件委托定位来源） */
@@ -246,6 +350,30 @@
             },
             openArticle(articleId) {
                 window.open('/content/article/' + articleId, '_blank')
+            },
+            /** 回答反馈（👍/👎 反馈闭环，幂等由后端保证） */
+            giveFeedback(mi, fb) {
+                const m = this.messages[mi]
+                if (!m || m.feedbackGiven) return
+                const token = this.$store.state.accessToken
+                if (!token) {
+                    this.$store.commit('SHOW_LOGIN_MODAL')
+                    return
+                }
+                m.feedbackGiven = true
+                fetch('/content/api/v1/ai/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', accToken: token },
+                    body: JSON.stringify({
+                        feature: 'aiask_global',
+                        sceneId: '',
+                        question: String(m.q || '').slice(0, 200),
+                        answer: String(m.answer || '').slice(0, 500),
+                        feedback: fb
+                    })
+                }).then(r => r.json()).then(res => {
+                    if (!res || res.code !== 200) m.feedbackGiven = false
+                }).catch(() => { m.feedbackGiven = false })
             },
             scrollBottom() {
                 const body = this.$refs.body
@@ -309,6 +437,50 @@
     .ai-sub { font-size: 11px; color: #999; font-weight: 400; margin-left: 8px; }
     .ai-close { cursor: pointer; color: #999; font-size: 14px; padding: 2px 6px; }
     .ai-close:hover { color: #333; }
+    .ai-actions { display: flex; align-items: center; gap: 6px; }
+    .ai-clear { font-size: 12px; color: #86909c; cursor: pointer; padding: 2px 4px; }
+    .ai-clear:hover { color: #d93026; }
+
+    .ai-quota-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 16px;
+        background: #f7f9ff;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 12px;
+        color: #86909c;
+    }
+    .ai-quota-bar b { color: #4f7cff; font-weight: 600; }
+    .qb-link {
+        margin-left: auto;
+        color: #4f7cff;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .qb-link:hover { text-decoration: underline; }
+
+    .ai-quota-banner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: #fff7e6;
+        border-top: 1px solid #ffe6b3;
+        font-size: 12px;
+        color: #8a6d3b;
+    }
+    .qb-buy {
+        flex: none;
+        font-size: 12px;
+        color: #fff;
+        background: #ff9900;
+        border: none;
+        border-radius: 4px;
+        padding: 2px 10px;
+        cursor: pointer;
+    }
+    .qb-buy:hover { background: #e68a00; }
 
     .ai-body {
         flex: 1;
@@ -332,6 +504,19 @@
     .a-error { color: #d93026; }
     .typing { color: #999; }
     .a-sources { margin-top: 10px; border-top: 1px dashed #e5e6eb; padding-top: 8px; }
+    .a-feedback { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+    .a-feedback .fb-label { font-size: 12px; color: #86909c; }
+    .a-feedback .fb-btn {
+        font-size: 12px;
+        color: #86909c;
+        background: none;
+        border: 1px solid #e5e6eb;
+        border-radius: 10px;
+        padding: 1px 10px;
+        cursor: pointer;
+    }
+    .a-feedback .fb-btn:hover { color: #4f7cff; border-color: #4f7cff; }
+    .a-feedback .fb-done { font-size: 12px; color: #86909c; }
     .src-title { font-size: 12px; color: #86909c; margin-bottom: 6px; }
     .src-item {
         display: flex; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer;

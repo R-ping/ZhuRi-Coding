@@ -66,6 +66,13 @@ public class ApPins implements Serializable {
     private Integer views = 0;
 
     private Byte status;
+    /** 内容诚信治理：1-疑似AI水文 */
+    @TableField("is_aigc")
+    private Integer isAigc;
+
+    /** 内容诚信治理：AI水文疑似分 0-100 */
+    @TableField("aigc_score")
+    private Integer aigcScore;
 
     private String reason;
 

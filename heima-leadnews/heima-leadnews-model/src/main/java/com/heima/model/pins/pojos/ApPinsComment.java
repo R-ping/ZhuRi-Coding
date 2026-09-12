@@ -36,6 +36,10 @@ public class ApPinsComment implements Serializable {
     @TableField("content")
     private String content;
 
+    /** 社区治理折叠标记：1=AI 判定引战/软广等温和违规，列表默认不展示（沸点评论治理，Step3） */
+    @TableField("is_hidden")
+    private Integer isHidden;
+
     /** 评论图片URL列表，逗号分隔 */
     @TableField("image_urls")
     private String imageUrls = "";

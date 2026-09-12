@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
-import com.heima.common.redis.CacheService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dtos.LoginResultVo;
@@ -14,6 +13,7 @@ import com.heima.model.user.pojos.ApUser;
 import com.heima.model.user.pojos.ApUserSocial;
 import com.heima.user.mapper.ApUserMapper;
 import com.heima.user.mapper.ApUserSocialMapper;
+import com.heima.user.service.LoginCodeService;
 import com.heima.user.service.TokenService;
 import com.heima.utils.common.SimpleAesECBUtil;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +27,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
 import org.springframework.test.util.ReflectionTestUtils;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -53,7 +52,7 @@ class SocialLoginServiceImplTest {
     @Mock
     private TokenService tokenService;
     @Mock
-    private CacheService cacheService;
+    private LoginCodeService loginCodeService;
 
     @InjectMocks
     private SocialLoginServiceImpl socialLoginService;
@@ -196,7 +195,8 @@ class SocialLoginServiceImplTest {
         @DisplayName("验证码错误/缺失 → 验证码错误")
         void testCodeMismatch() {
             when(apUserSocialMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-            when(cacheService.get(anyString())).thenReturn("9999"); // 与传入 code 不一致
+            // 验证码校验失败（错误、已过期或已被消费）
+            when(loginCodeService.verifyAndConsume("github", PHONE, "1234")).thenReturn(false);
 
             ResponseResult r = socialLoginService.socialBind(
                     bindDto("github", "uid-x", PHONE, "1234"));
@@ -209,7 +209,7 @@ class SocialLoginServiceImplTest {
         void testBindSuccess() {
             // existBind / 手机号校验 / insertOrUpdate 前的手机号查询 三处 selectOne 均视为无既有绑定
             when(apUserSocialMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-            when(cacheService.get(anyString())).thenReturn("1234");
+            when(loginCodeService.verifyAndConsume("github", PHONE, "1234")).thenReturn(true);
             when(tokenService.generateDualToken(any(), anyString(), any(), any()))
                     .thenReturn(LoginResultVo.builder().status("login").build());
 
@@ -243,7 +243,7 @@ class SocialLoginServiceImplTest {
 
             assertNotNull(code);
             assertEquals(4, code.length());
-            verify(cacheService).setEx(anyString(), anyString(), anyLong(), any(TimeUnit.class));
+            verify(loginCodeService).issueCode(eq("github"), eq(PHONE), anyString());
         }
     }
 }

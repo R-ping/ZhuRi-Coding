@@ -9,10 +9,12 @@ import com.heima.model.user.dtos.LoginDto;
 import com.heima.model.user.dtos.SocialBindDto;
 import com.heima.user.service.ApUserService;
 import com.heima.user.service.SocialLoginService;
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,6 +35,27 @@ public class ApUserLoginController {
 
     /** 同一手机号验证码发送最小间隔（秒），防短信轰炸 */
     private static final long SMS_INTERVAL_SECONDS = 60;
+
+    /**
+     * 是否在响应体中回传登录验证码。
+     * <p>
+     * 本项目没有接真实短信通道，前端依赖回传值自动填充以便本地联调（见 login_modal.vue）。
+     * 因此该开关默认开启，但<b>生产环境必须通过 AUTH_EXPOSE_LOGIN_CODE=false 关闭</b>，
+     * 否则任何人无需接收短信即可拿到验证码完成登录/绑定。
+     */
+    @Value("${app.auth.expose-login-code:true}")
+    private boolean exposeLoginCode;
+
+    /**
+     * 启动期自检：开启回传验证码时给出告警，避免生产环境带着演示开关上线。
+     */
+    @PostConstruct
+    public void warnIfExposingLoginCode() {
+        if (exposeLoginCode) {
+            log.warn("app.auth.expose-login-code=true：验证码会随响应体明文返回，仅适用于本地/演示环境；"
+                + "生产环境请设置 AUTH_EXPOSE_LOGIN_CODE=false 关闭。");
+        }
+    }
 
     /**
      * 1、手机号验证码 登录/注册
@@ -72,7 +95,7 @@ public class ApUserLoginController {
     @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     @RateLimit(dimension = RateLimit.Dimension.IP, count = 3, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public ResponseResult socialBind(@RequestBody SocialBindDto dto) {
-        log.info("收到社交绑定请求: name={}", dto.getPhone());
+        log.info("收到社交绑定请求: phone={}", maskPhone(dto.getPhone()));
         // 1. 参数校验
         if (StringUtils.isAnyBlank(dto.getPlatform(), dto.getPlatformUid(), dto.getPhone(), dto.getCode())) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_REQUIRE);
@@ -100,11 +123,21 @@ public class ApUserLoginController {
         if (!Boolean.TRUE.equals(firstTime)) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "发送过于频繁，请60秒后再试");
         }
-        log.info("收到获取验证码请求: phone={}", phone);
+        // 手机号脱敏后记录，避免完整号码落日志
+        log.info("收到获取验证码请求: phone={}", maskPhone(phone));
         String resultCode = socialLoginService.checkSocialBind(phone, platform, tag);
         if (StrUtil.isBlank(resultCode)) {
             return ResponseResult.errorResult(AppHttpCodeEnum.SOCIAL_PHONE_BOUND_OTHER);
         }
-        return ResponseResult.okResult(resultCode);
+        // 生产环境不回传验证码，前端会降级提示"验证码已发送"
+        return ResponseResult.okResult(exposeLoginCode ? resultCode : "");
+    }
+
+    /** 手机号脱敏：保留前 3 位与后 4 位 */
+    private String maskPhone(String phone) {
+        if (StrUtil.isBlank(phone) || phone.length() < 7) {
+            return "***";
+        }
+        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
     }
 }

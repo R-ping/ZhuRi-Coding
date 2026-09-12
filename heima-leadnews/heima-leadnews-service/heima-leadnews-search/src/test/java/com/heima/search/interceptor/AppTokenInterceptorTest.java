@@ -82,7 +82,7 @@ class AppTokenInterceptorTest {
     }
 
     @Test
-    @DisplayName("密钥未配置 → 降级信任（兼容本地直连）")
+    @DisplayName("密钥未配置 → fail-closed，拒绝信任身份头（防绕过网关伪造 userId）")
     void testPreHandleWithoutSecret() throws Exception {
         interceptor = new AppTokenInterceptor(null);
         stubUserHeaders("1001", "%E6%B5%8B%E8%AF%95%E7%94%A8%E6%88%B7", "", null);
@@ -90,7 +90,7 @@ class AppTokenInterceptorTest {
         boolean allowed = interceptor.preHandle(request, response, null);
 
         assertTrue(allowed);
-        assertNotNull(AppThreadLocalUtil.getUser());
+        assertNull(AppThreadLocalUtil.getUser());
     }
 
     @Test

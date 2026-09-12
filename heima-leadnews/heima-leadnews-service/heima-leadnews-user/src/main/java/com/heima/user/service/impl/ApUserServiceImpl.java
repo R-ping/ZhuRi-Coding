@@ -7,7 +7,6 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.heima.common.constants.ArticleConstants;
-import com.heima.common.redis.CacheService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dtos.LoginDto;
@@ -15,6 +14,7 @@ import com.heima.model.user.dtos.LoginResultVo;
 import com.heima.model.user.pojos.ApUser;
 import com.heima.user.mapper.ApUserMapper;
 import com.heima.user.service.ApUserService;
+import com.heima.user.service.LoginCodeService;
 import com.heima.user.service.TokenService;
 import java.util.ArrayList;
 import java.util.Date;
@@ -38,7 +38,7 @@ public class ApUserServiceImpl extends ServiceImpl<ApUserMapper, ApUser> impleme
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
     @Autowired
-    private CacheService cacheService;
+    private LoginCodeService loginCodeService;
 
     /**
      * 登录功能（使用BCrypt + 双Token）
@@ -110,9 +110,8 @@ public class ApUserServiceImpl extends ServiceImpl<ApUserMapper, ApUser> impleme
 
     private ResponseResult phoneCodeLogin(LoginDto dto) {
         String phone = dto.getPhoneOrEmail();
-        String key = "socialBind:" + dto.getPlatform() +":"+ phone;
-        String cacheCode = cacheService.get(key);
-        if (cacheCode == null || !cacheCode.equals(dto.getCode())) {
+        // 校验并一次性消费验证码：通过后该验证码立即失效，杜绝同一验证码被反复重放
+        if (!loginCodeService.verifyAndConsume(dto.getPlatform(), phone, dto.getCode())) {
             return ResponseResult.errorResult(AppHttpCodeEnum.LOGIN_CODE_ERROR);
         }
         ApUser dbUser = getOne(Wrappers.<ApUser>lambdaQuery().eq(ApUser::getPhone, dto.getPhoneOrEmail()));

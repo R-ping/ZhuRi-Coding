@@ -1,5 +1,7 @@
 package com.heima.content.service.course.impl;
 
+import com.heima.content.service.aigc.AigcDetectService;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.heima.content.mapper.course.ApCourseChapterMapper;
 import com.heima.content.mapper.course.ApCourseMapper;
@@ -31,6 +33,9 @@ public class ApCourseChapterServiceImpl implements ApCourseChapterService {
 
     @Autowired
     private ApCourseMapper courseMapper;
+
+    @Autowired
+    private AigcDetectService aigcDetectService;
 
     @Autowired
     private ApUserCourseMapper userCourseMapper;
@@ -71,6 +76,9 @@ public class ApCourseChapterServiceImpl implements ApCourseChapterService {
         chapter.setUpdatedTime(new Date());
 
         chapterMapper.insert(chapter);
+
+        // Step4 内容诚信：AIGC 水文检测（同步 L1 打标，售课接口按 is_aigc 拦截）
+        aigcDetectService.detectAndFlagChapter(chapter.getId());
 
         // 更新课程章节数
         updateCourseChapterCount(dto.getCourseId());
@@ -113,6 +121,9 @@ public class ApCourseChapterServiceImpl implements ApCourseChapterService {
         chapter.setUpdatedTime(new Date());
 
         chapterMapper.updateById(chapter);
+
+        // Step4 内容诚信：内容变更后重跑检测
+        aigcDetectService.detectAndFlagChapter(chapter.getId());
 
         return ResponseResult.okResult(chapter);
     }

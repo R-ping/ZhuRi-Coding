@@ -2,13 +2,13 @@ package com.heima.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.heima.common.redis.CacheService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dtos.LoginDto;
 import com.heima.model.user.dtos.LoginResultVo;
 import com.heima.model.user.pojos.ApUser;
 import com.heima.user.mapper.ApUserMapper;
+import com.heima.user.service.LoginCodeService;
 import com.heima.user.service.TokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -41,7 +41,7 @@ class ApUserServiceImplTest {
     @Mock
     private BCryptPasswordEncoder passwordEncoder;
     @Mock
-    private CacheService cacheService;
+    private LoginCodeService loginCodeService;
     @Mock
     private ApUserMapper apUserMapper;
 
@@ -209,7 +209,7 @@ class ApUserServiceImplTest {
             dto.setCode("123456");
             dto.setPlatform("wechat");
 
-            when(cacheService.get("socialBind:wechat:" + TEST_PHONE)).thenReturn("123456");
+            when(loginCodeService.verifyAndConsume("wechat", TEST_PHONE, "123456")).thenReturn(true);
             ApUser dbUser = createTestUser();
             when(apUserMapper.selectOne(any(LambdaQueryWrapper.class), anyBoolean())).thenReturn(dbUser);
             when(tokenService.generateDualToken(1001, "测试用户", TEST_PHONE, "avatar_head_1"))
@@ -232,7 +232,7 @@ class ApUserServiceImplTest {
             dto.setCode("123456");
             dto.setPlatform("wechat");
 
-            when(cacheService.get("socialBind:wechat:" + TEST_PHONE)).thenReturn("123456");
+            when(loginCodeService.verifyAndConsume("wechat", TEST_PHONE, "123456")).thenReturn(true);
             // 第一次查询返回null（新用户）
             when(apUserMapper.selectOne(any(LambdaQueryWrapper.class), anyBoolean())).thenReturn(null);
             when(tokenService.generateDualToken(any(), anyString(), eq(TEST_PHONE), anyString()))
@@ -257,7 +257,7 @@ class ApUserServiceImplTest {
             dto.setCode("wrong-code");
             dto.setPlatform("wechat");
 
-            when(cacheService.get("socialBind:wechat:" + TEST_PHONE)).thenReturn("123456");
+            when(loginCodeService.verifyAndConsume("wechat", TEST_PHONE, "wrong-code")).thenReturn(false);
 
             // Act
             ResponseResult result = apUserService.allLoginAuth(dto, "phoneCode");
@@ -276,7 +276,7 @@ class ApUserServiceImplTest {
             dto.setCode("123456");
             dto.setPlatform("wechat");
 
-            when(cacheService.get("socialBind:wechat:" + TEST_PHONE)).thenReturn(null);
+            when(loginCodeService.verifyAndConsume("wechat", TEST_PHONE, "123456")).thenReturn(false);
 
             // Act
             ResponseResult result = apUserService.allLoginAuth(dto, "phoneCode");

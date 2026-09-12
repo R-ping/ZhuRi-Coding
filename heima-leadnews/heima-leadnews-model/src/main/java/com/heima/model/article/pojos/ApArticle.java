@@ -195,6 +195,17 @@ public class ApArticle implements Serializable {
      * 审核状态  0:草稿  1:提交审核  2:审核失败  9:已发布
      */
     private Byte status;
+    /** 内容诚信治理：1-疑似AI水文(关闭打赏/不入RAG向量库) */
+    @TableField("is_aigc")
+    private Integer isAigc;
+
+    /** 内容诚信治理：AI水文疑似分 0-100 */
+    @TableField("aigc_score")
+    private Integer aigcScore;
+
+    /** 内容诚信治理：检测时间 */
+    @TableField("aigc_checked_at")
+    private Date aigcCheckedAt;
 
     /**
      * 审核拒绝理由

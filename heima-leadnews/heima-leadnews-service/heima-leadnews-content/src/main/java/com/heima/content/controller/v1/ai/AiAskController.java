@@ -12,6 +12,8 @@ import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,6 +43,15 @@ public class AiAskController {
     @Autowired
     private com.heima.content.service.ai.spring.AiSafetyTools aiSafetyTools;
 
+    @Autowired
+    private com.heima.content.service.ai.AiQuotaService aiQuotaService;
+
+    @Autowired
+    private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
+
+    @Autowired
+    private com.heima.content.service.ai.memory.AiConversationMemoryService conversationMemoryService;
+
     /** SSE 流式问答专用线程池（见 AiAsyncConfig），隔离 LLM 长时间阻塞与公共 ForkJoinPool */
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.beans.factory.annotation.Qualifier("aiSseExecutor")
@@ -54,12 +65,18 @@ public class AiAskController {
     @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public ResponseResult precheck(@RequestBody AiPrecheckDto dto) {
+        aiMetricsCollector.incr("ai_precheck");
         if (AppThreadLocalUtil.getUser() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
         }
         if (dto == null || dto.getTitle() == null || dto.getTitle().trim().isEmpty()
                 || dto.getContent() == null || dto.getContent().trim().isEmpty()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "标题与内容不能为空");
+        }
+        // AI 预检消耗提问额度（免费优先 → 钱包额度包兜底），防批量刷预检烧模型成本
+        Integer uid = AppThreadLocalUtil.getUser().getId();
+        if (uid == null || !aiQuotaService.tryConsume(uid)) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.AI_QUOTA_EXHAUSTED);
         }
         try {
             AiPrecheckVo vo = publishAssistantService.precheck(dto.getTitle(), dto.getContent(), dto.getArticleId(), dto.getCoverImageUrl());
@@ -83,6 +100,7 @@ public class AiAskController {
     @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public org.springframework.web.servlet.mvc.method.annotation.SseEmitter askStream(@RequestBody AiAskDto dto) {
+        aiMetricsCollector.incr("aiask_ask_stream");
         org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter =
             new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(120_000L);
         if (AppThreadLocalUtil.getUser() == null) {
@@ -93,9 +111,25 @@ public class AiAskController {
             emitter.completeWithError(new RuntimeException("问题不能为空"));
             return emitter;
         }
+        // AI 每日免费配额 → 钱包额度包（免费优先；超限发 error 事件友好提示，再正常收尾）
+        Integer uid = AppThreadLocalUtil.getUser().getId();
+        if (uid == null || !aiQuotaService.tryConsume(uid)) {
+            try {
+                emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                    .name("error")
+                    .data("[" + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode() + "] "
+                        + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getErrorMessage(),
+                        org.springframework.http.MediaType.TEXT_PLAIN));
+            } catch (Exception ignore) {
+            }
+            emitter.complete();
+            return emitter;
+        }
         // 异步执行：立即返回 emitter，流式事件在工作线程逐步发送
         String question = dto.getQuestion();
         Integer topK = dto.getTopK();
+        // SSE 异步线程内 ThreadLocal 不可见，userId 须在此显式捕获传入，供会话/语义记忆持久化
+        Integer uidForAsync = uid;
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
                 com.heima.model.article.dtos.AiAnswerVo vo = aiAskService.streamFastAsk(question, topK, dto.getHistory(),
@@ -106,7 +140,7 @@ public class AiAskController {
                         } catch (Exception ignore) {
                             // 客户端断开
                         }
-                    });
+                    }, uidForAsync);
                 try {
                     if (vo == null) {
                         emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
@@ -206,8 +240,14 @@ public class AiAskController {
     @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
     public ResponseResult ask(@RequestBody AiAskDto dto) {
+        aiMetricsCollector.incr("aiask_ask");
         if (AppThreadLocalUtil.getUser() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        // AI 每日免费配额 → 钱包额度包（免费优先）
+        Integer uid = AppThreadLocalUtil.getUser().getId();
+        if (uid == null || !aiQuotaService.tryConsume(uid)) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.AI_QUOTA_EXHAUSTED);
         }
         if (dto == null || dto.getQuestion() == null || dto.getQuestion().trim().isEmpty()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "问题不能为空");
@@ -222,5 +262,33 @@ public class AiAskController {
             log.error("AI 问答异常", e);
             return ResponseResult.errorResult(500, "AI 服务暂不可用，请稍后再试");
         }
+    }
+
+    /**
+     * 拉取本人持久化会话记忆（[{role, content}]，oldest→newest）。
+     * 页面刷新/换设备后调用，用于恢复对话上下文（Memory 持久化）。
+     */
+    @GetMapping("/conversation")
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 30, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 60, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    public ResponseResult getConversation() {
+        if (AppThreadLocalUtil.getUser() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        Integer uid = AppThreadLocalUtil.getUser().getId();
+        return ResponseResult.okResult(conversationMemoryService.load(uid));
+    }
+
+    /** 清空本人持久化会话记忆（服务端 Redis 与本地消息一并清除） */
+    @DeleteMapping("/conversation")
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 10, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    public ResponseResult clearConversation() {
+        if (AppThreadLocalUtil.getUser() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        Integer uid = AppThreadLocalUtil.getUser().getId();
+        conversationMemoryService.clear(uid);
+        return ResponseResult.okResult(Boolean.TRUE);
     }
 }

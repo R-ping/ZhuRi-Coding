@@ -41,6 +41,9 @@ public enum AppHttpCodeEnum {
     ORDER_CLOSED(3200,"订单已关闭，请重新下单"),
     ORDER_STATUS_INVALID(3201,"订单状态异常"),
 
+    // AI 错误 3300~3400
+    AI_QUOTA_EXHAUSTED(3301,"今日免费提问次数与钱包额度已用尽，请购买额度包"),
+
     // 自媒体文章错误 3501~3600
     MATERIASL_REFERENCE_FAIL(3501,"素材引用失效"),
 

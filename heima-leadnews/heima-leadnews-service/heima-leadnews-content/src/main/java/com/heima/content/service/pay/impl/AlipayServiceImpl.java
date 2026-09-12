@@ -152,23 +152,44 @@ public class AlipayServiceImpl implements AlipayService {
             return false;
         }
 
-        // 尝试将支付应用到订单（PENDING/PROCESSING→PAID 并放权）。若返回 false，
-        // 说明订单已不在可支付态（多半已在超时关单的并发窗口内被置为 CANCELLED），
-        // 但钱已真实入账 → 触发退款兜底，避免“用户付款却拿不到课程”。
+        // 尝试将支付应用到订单（PENDING/PROCESSING→PAID 并放权）。若返回 false：
+        //  场景 1：订单已不在可支付态（多半已在超时关单的并发窗口内被置为 CANCELLED），
+        //          但钱已真实入账 → 触发退款兜底，避免"用户付款却拿不到课程"。
+        //  场景 2（P0-5 新增）：订单已 PAID 但 handlePaySuccess 内部因券核销失败返回 false，
+        //          订单被置为 refund_pending=1 → 同样走退款兜底。
         boolean applied = orderService.handlePaySuccess(orderNo, tradeNo);
         if (!applied) {
             ApCourseOrder order = orderService.getByOrderNo(orderNo);
-            if (order != null && order.getStatus() != null
-                    && order.getStatus().intValue() == ApCourseOrder.Status.CANCELLED.getCode()) {
+            if (order == null) {
+                log.warn("支付回调后查不到订单: orderNo={}", orderNo);
+                return true;
+            }
+            Integer orderStatus = order.getStatus();
+            boolean needRefund = false;
+            if (orderStatus != null && orderStatus.intValue() == ApCourseOrder.Status.CANCELLED.getCode()) {
+                needRefund = true;
+            } else if (orderStatus != null && orderStatus.intValue() == ApCourseOrder.Status.PAID.getCode()
+                    && order.getRefundPending() != null && order.getRefundPending() == 1) {
+                // P0-5：已 PAID + 券核销失败场景（refund_pending_reason ∈ {discount_code_exhausted, coupon_consume_failed}）
+                needRefund = true;
+                log.warn("订单已 PAID 但券核销失败，触发自动退款兜底: orderNo={}, reason={}",
+                        orderNo, order.getRefundPendingReason());
+            }
+            if (needRefund) {
                 String refundAmount = order.getPaidAmount() != null ? order.getPaidAmount().toString() : "0";
-                log.warn("支付成功但订单已关闭，触发自动退款兜底: orderNo={}, amount={}", orderNo, refundAmount);
+                log.warn("支付成功但订单需退款兜底: orderNo={}, amount={}, status={}, refundPending={}",
+                        orderNo, refundAmount, orderStatus, order.getRefundPending());
                 String refundNo = refund(orderNo, refundAmount, tradeNo);
                 if (refundNo != null) {
                     orderService.markRefunded(orderNo, refundNo);
                 } else {
                     // 首次退款失败：标记待重试，由定时任务（RefundRetryTask）兜底补偿
                     log.error("订单退款兜底失败，标记待重试: orderNo={}", orderNo);
-                    orderService.markRefundPending(orderNo);
+                    if (orderStatus != null && orderStatus.intValue() == ApCourseOrder.Status.CANCELLED.getCode()) {
+                        orderService.markRefundPending(orderNo);
+                    }
+                    // 若 status=PAID 且 refund_pending=1 时退款失败：保持原 refund_pending=1 状态，
+                    // RefundRetryTask 会重试（不会重复覆盖 reason）
                 }
             }
         }

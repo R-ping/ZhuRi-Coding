@@ -2,10 +2,8 @@ package com.heima.user.service.impl;
 
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.RandomUtil;
-import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.common.redis.CacheService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.user.dtos.LoginResultVo;
@@ -15,11 +13,11 @@ import com.heima.model.user.pojos.ApUser;
 import com.heima.model.user.pojos.ApUserSocial;
 import com.heima.user.mapper.ApUserMapper;
 import com.heima.user.mapper.ApUserSocialMapper;
+import com.heima.user.service.LoginCodeService;
 import com.heima.user.service.SocialLoginService;
 import com.heima.user.service.TokenService;
 import com.heima.utils.common.SimpleAesECBUtil;
 import java.util.Date;
-import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,7 +40,7 @@ public class SocialLoginServiceImpl extends ServiceImpl<ApUserSocialMapper, ApUs
     @Autowired
     private TokenService tokenService;
     @Autowired
-    private CacheService cacheService;
+    private LoginCodeService loginCodeService;
 
     @Override
     public ResponseResult socialAuth(SocialAuthDto dto) {
@@ -109,9 +107,8 @@ public class SocialLoginServiceImpl extends ServiceImpl<ApUserSocialMapper, ApUs
         if (userSocial != null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.SOCIAL_ACCOUNT_BOUND_OTHER);
         }
-        // 3. 校验code
-        String code = cacheService.get("socialBind:" + dto.getPlatform() + ":" + dto.getPhone());
-        if (StrUtil.isBlank(code) || !dto.getCode().equals(code)) {
+        // 3. 校验并一次性消费验证码：通过后立即失效，防止同一验证码被重放
+        if (!loginCodeService.verifyAndConsume(dto.getPlatform(), dto.getPhone(), dto.getCode())) {
             return ResponseResult.errorResult(AppHttpCodeEnum.LOGIN_CODE_ERROR);
         }
         ApUser apUser = randomUser(dto);
@@ -182,7 +179,7 @@ public class SocialLoginServiceImpl extends ServiceImpl<ApUserSocialMapper, ApUs
         }
         // 4位随机数
         String code = RandomUtil.randomString(4);
-        cacheService.setEx("socialBind:" + platform + ":" + phone, code, 5, TimeUnit.MINUTES);
+        loginCodeService.issueCode(platform, phone, code);
         return code;
     }
 

@@ -61,10 +61,11 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         int page = dto.getPage() != null ? dto.getPage() : 1;
         int size = dto.getSize() != null ? dto.getSize() : 3;
 
-        // 查询一级评论：parentId IS NULL
+        // 查询一级评论：parentId IS NULL（AI 折叠评论 is_hidden=1 不展示）
         LambdaQueryWrapper<ApComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApComment::getArticleId, dto.getArticleId())
                .isNull(ApComment::getParentId)
+               .eq(ApComment::getIsHidden, 0)
                .orderByDesc(ApComment::getCreatedTime);
 
         // 分页
@@ -76,10 +77,11 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             return ResponseResult.okResult(Collections.emptyList());
         }
 
-        // 查询每个一级评论的子评论（最多2条）
+        // 查询每个一级评论的子评论（最多2条），折叠回复不展示
         List<Long> parentIds = topComments.stream().map(ApComment::getId).collect(Collectors.toList());
         LambdaQueryWrapper<ApComment> childWrapper = new LambdaQueryWrapper<>();
         childWrapper.in(ApComment::getParentId, parentIds)
+                    .eq(ApComment::getIsHidden, 0)
                     .orderByAsc(ApComment::getCreatedTime)
                     .last("LIMIT " + (parentIds.size() * 2)); // 粗略限制
 
@@ -230,6 +232,10 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         if (comment == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "评论不存在");
         }
+        // 折叠评论仅本人可见（折叠条），禁止继续点赞互动
+        if (isHiddenComment(comment)) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "该评论已被折叠，无法点赞");
+        }
 
         // 检查是否已点赞
         LambdaQueryWrapper<ApCommentLike> likeWrapper = new LambdaQueryWrapper<>();
@@ -289,11 +295,16 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             size = 10;
         }
 
-        // 查询一级评论：article_id = ? AND parent_id IS NULL，按createdTime降序，游标分页
+        // 当前登录用户：决定"折叠仅本人可见"的放行范围（游客一律看不到折叠评论）
+        Integer currentUserId = getCurrentUserId();
+
+        // 查询一级评论：article_id = ? AND parent_id IS NULL，按createdTime降序，游标分页。
+        // 折叠一级评论（is_hidden=1）对他人整树无痕；仅其作者本人可见折叠条。
         LambdaQueryWrapper<ApComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApComment::getArticleId, articleId)
                .isNull(ApComment::getParentId)
                .orderByDesc(ApComment::getCreatedTime);
+        appendHiddenVisible(wrapper, currentUserId);
 
         // 游标分页：WHERE id < cursor
         if (cursor != null && cursor > 0) {
@@ -325,31 +336,35 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             return ResponseResult.okResult(emptyResult);
         }
 
-        // 获取当前用户ID
-        Integer currentUserId = getCurrentUserId();
-
         // 查询每个一级评论的子回复：既包含直接回复(parent_id=一级评论ID)，也包含多级嵌套回复(root_id=一级评论ID)
         // 说明：二级及更深回复通过 root_id 关联到所属一级评论，仅按 parent_id 查询会漏掉“回复的回复”，导致展示不全。
         // 这里按 root_id 或 parent_id 命中即拉取，再按所属一级评论聚合。每页展示10条，更多通过 getCommentReplies 分页加载。
+        // 折叠语义：一级折叠整树无痕（本人折叠条不拉子树）；二级折叠仅作者本人可见折叠条、对他人隐藏。
         final int maxRepliesPerTop = 10; // 单条一级评论首屏展示的回复数，更多回复分页加载
-        List<Long> topIds = topComments.stream().map(ApComment::getId).collect(Collectors.toList());
-        Set<Long> topIdSet = new HashSet<>(topIds);
-        LambdaQueryWrapper<ApComment> childWrapper = new LambdaQueryWrapper<>();
-        childWrapper.in(ApComment::getRootId, topIds)
-                    .or(w -> w.in(ApComment::getParentId, topIds))
-                    .orderByAsc(ApComment::getCreatedTime);
-        List<ApComment> allChildren = list(childWrapper);
-
-        // 按所属一级评论分组（优先 rootId，兼容历史数据回退 parentId）
+        // 仅对"可见"的一级评论拉取子树：折叠评论本人只看到折叠条，不带任何回复
+        List<Long> visibleTopIds = topComments.stream()
+                .filter(c -> !isHiddenComment(c))
+                .map(ApComment::getId)
+                .collect(Collectors.toList());
+        Set<Long> topIdSet = new HashSet<>(visibleTopIds);
         Map<Long, List<ApComment>> childrenMap = new HashMap<>();
-        for (ApComment child : allChildren) {
-            Long groupId = topIdSet.contains(child.getRootId()) ? child.getRootId() : child.getParentId();
-            if (groupId == null || !topIdSet.contains(groupId)) {
-                continue;
-            }
-            List<ApComment> group = childrenMap.computeIfAbsent(groupId, k -> new ArrayList<>());
-            if (group.size() < maxRepliesPerTop) {
-                group.add(child);
+        if (!visibleTopIds.isEmpty()) {
+            // 注意：or() 需整体包进 and()，否则后续 eq 过滤会被并入 OR 分支导致条件失效
+            LambdaQueryWrapper<ApComment> childWrapper = new LambdaQueryWrapper<>();
+            childWrapper.and(w -> w.in(ApComment::getRootId, visibleTopIds)
+                        .or(v -> v.in(ApComment::getParentId, visibleTopIds)))
+                    .orderByAsc(ApComment::getCreatedTime);
+            appendHiddenVisible(childWrapper, currentUserId);
+            List<ApComment> allChildren = list(childWrapper);
+            for (ApComment child : allChildren) {
+                Long groupId = topIdSet.contains(child.getRootId()) ? child.getRootId() : child.getParentId();
+                if (groupId == null || !topIdSet.contains(groupId)) {
+                    continue;
+                }
+                List<ApComment> group = childrenMap.computeIfAbsent(groupId, k -> new ArrayList<>());
+                if (group.size() < maxRepliesPerTop) {
+                    group.add(child);
+                }
             }
         }
 
@@ -370,17 +385,22 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             userInfo.put("avatarLarge", top.getUserAvatar() != null ? top.getUserAvatar() : "");
             item.put("userInfo", userInfo);
 
-            // 是否点赞
-            item.put("isDigg", isLiked(top.getId(), currentUserId));
+            // 是否点赞（折叠评论禁用互动，不查点赞态）
+            item.put("isDigg", isHiddenComment(top) ? false : isLiked(top.getId(), currentUserId));
+            // 折叠标记：仅作者本人可见自己的折叠评论（他人/游客已在查询层过滤）
+            item.put("hidden", isHiddenComment(top));
 
-            // 子回复列表（首屏最多10条）
-            List<ApComment> children = childrenMap.getOrDefault(top.getId(), Collections.emptyList());
+            // 折叠评论：整树无痕 → 不返回任何回复与"查看更多"入口
+            List<ApComment> children = isHiddenComment(top)
+                    ? Collections.emptyList()
+                    : childrenMap.getOrDefault(top.getId(), Collections.emptyList());
             List<Map<String, Object>> replyInfos = children.stream()
                     .map(child -> buildReplyMap(child, currentUserId))
                     .collect(Collectors.toList());
             item.put("replyInfos", replyInfos);
             // 是否还有更多二级/更深回复（供前端“查看全部N条回复”加载更多）
-            boolean hasMoreReplies = top.getReplyCount() != null && top.getReplyCount() > replyInfos.size();
+            boolean hasMoreReplies = !isHiddenComment(top)
+                    && top.getReplyCount() != null && top.getReplyCount() > replyInfos.size();
             item.put("hasMoreReplies", hasMoreReplies);
 
             list.add(item);
@@ -499,6 +519,10 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         if (parentComment == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "被回复的评论不存在");
         }
+        // 折叠评论仅本人可见（折叠条），禁止在其下继续回复（防争议在已折叠根上生长）
+        if (isHiddenComment(parentComment)) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "该评论已被折叠，无法回复");
+        }
 
         // 创建回复
         ApComment reply = new ApComment();
@@ -525,6 +549,26 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             if (rootComment != null) {
                 rootComment.setReplyCount((rootComment.getReplyCount() != null ? rootComment.getReplyCount() : 0) + 1);
                 updateById(rootComment);
+            }
+        }
+
+        // 异步审核回复：与一级评论同一链路（先展示后审核，延迟 5-10 秒）。
+        // 红线违规 → 物理删除并通知回复者；温和违规（引战/阴阳/软广）→ is_hidden=1 折叠，
+        // 对他人隐藏、仅回复者本人可见折叠条。与 addArticleComment 一致不设 targetUserId，
+        // 避免审核回调重复发通知（通知模型缺陷另记，不在此扩大改动）。
+        if (reply.getId() != null) {
+            try {
+                AuditContext auditContext = new AuditContext(AuditEntityType.COMMENT, reply.getId(), user.getId().longValue());
+                auditContext.withTitle("")
+                    .withContent(reply.getContent())
+                    .withAuthorName(reply.getUserName())
+                    .withUserId(user.getId())
+                    .withTargetType(1)
+                    .withTargetId(parentComment.getArticleId());
+                commentAuditService.asyncAuditComment(auditContext);
+                log.info("回复已加入异步审核队列, replyId={}, rootId={}", reply.getId(), rootId);
+            } catch (Exception e) {
+                log.error("触发回复异步审核异常, replyId={}", reply.getId(), e);
             }
         }
 
@@ -567,6 +611,10 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         if (comment == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "评论不存在");
         }
+        // 折叠评论仅本人可见（折叠条），禁止继续点赞互动
+        if (isHiddenComment(comment)) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "该评论已被折叠，无法点赞");
+        }
 
         // 检查是否已点赞
         LambdaQueryWrapper<ApCommentLike> likeWrapper = new LambdaQueryWrapper<>();
@@ -606,10 +654,12 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         if (articleId == null) {
             return 0;
         }
-        // 一级评论数（parent_id IS NULL）：与 getArticleComments 列表口径一致，避免与 article.comment 冗余计数漂移不符
+        // 一级评论数（parent_id IS NULL）：与 getArticleComments 列表口径一致，避免与 article.comment 冗余计数漂移不符。
+        // AI 折叠评论（is_hidden=1）不计数，保持"展示数=计数"一致
         return count(new LambdaQueryWrapper<ApComment>()
                 .eq(ApComment::getArticleId, articleId)
-                .isNull(ApComment::getParentId));
+                .isNull(ApComment::getParentId)
+                .eq(ApComment::getIsHidden, 0));
     }
 
     @Override
@@ -621,10 +671,23 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             size = 10;
         }
 
-        // 二级及更深回复：root_id 指向所属一级评论，按创建时间升序 + 自增ID游标分页（每页10条）
+        // 折叠一级评论整树无痕：非作者本人不可查看其下任何回复（本人也只见折叠条、无回复展开）
+        ApComment root = getById(rootId);
+        if (root != null && isHiddenComment(root)) {
+            Map<String, Object> emptyResult = new HashMap<>();
+            emptyResult.put("list", Collections.emptyList());
+            emptyResult.put("cursor", 0);
+            emptyResult.put("has_more", false);
+            return ResponseResult.okResult(emptyResult);
+        }
+
+        Integer currentUserId = getCurrentUserId();
+        // 二级及更深回复：root_id 指向所属一级评论，按创建时间升序 + 自增ID游标分页（每页10条）。
+        // 折叠回复（is_hidden=1）对他人隐藏；仅其作者本人可见折叠条。
         LambdaQueryWrapper<ApComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApComment::getRootId, rootId)
                .orderByAsc(ApComment::getCreatedTime);
+        appendHiddenVisible(wrapper, currentUserId);
         if (cursor != null && cursor > 0) {
             wrapper.gt(ApComment::getId, cursor);
         }
@@ -637,7 +700,6 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             replies = replies.subList(0, size);
         }
 
-        Integer currentUserId = getCurrentUserId();
         List<Map<String, Object>> list = replies.stream()
                 .map(reply -> buildReplyMap(reply, currentUserId))
                 .collect(Collectors.toList());
@@ -650,7 +712,7 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         return ResponseResult.okResult(result);
     }
 
-    /** 构建单条回复的返回结构（含附带图片） */
+    /** 构建单条回复的返回结构（含附带图片）；折叠回复带 hidden 标记供前端渲染"仅自己可见"折叠条 */
     private Map<String, Object> buildReplyMap(ApComment child, Integer currentUserId) {
         Map<String, Object> reply = new HashMap<>();
         reply.put("commentId", child.getId());
@@ -658,14 +720,35 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         reply.put("commentPics", dbPicsToList(child.getCommentPics()));
         reply.put("diggCount", child.getLikeCount() != null ? child.getLikeCount() : 0);
         reply.put("ctime", child.getCreatedTime());
+        reply.put("hidden", isHiddenComment(child));
 
         Map<String, Object> replyUserInfo = new HashMap<>();
         replyUserInfo.put("userName", child.getUserName() != null ? child.getUserName() : "");
         replyUserInfo.put("avatarLarge", child.getUserAvatar() != null ? child.getUserAvatar() : "");
         reply.put("userInfo", replyUserInfo);
 
-        reply.put("isDigg", isLiked(child.getId(), currentUserId));
+        reply.put("isDigg", isHiddenComment(child) ? false : isLiked(child.getId(), currentUserId));
         return reply;
+    }
+
+    /** 是否 AI 折叠评论（is_hidden=1） */
+    private boolean isHiddenComment(ApComment c) {
+        return c != null && c.getIsHidden() != null && c.getIsHidden() == 1;
+    }
+
+    /**
+     * 折叠评论可见性条件：
+     * - is_hidden=0（正常）：所有人可见；
+     * - is_hidden=1（折叠）：仅其作者本人（登录态）可见折叠条，他人与游客一律不可见。
+     * 注意调用需置于包装器其它 AND 条件之后；本方法自带 and() 括号，避免 or 扩散。
+     */
+    private void appendHiddenVisible(LambdaQueryWrapper<ApComment> w, Integer currentUserId) {
+        if (currentUserId == null) {
+            w.eq(ApComment::getIsHidden, 0);
+            return;
+        }
+        w.and(x -> x.eq(ApComment::getIsHidden, 0)
+                .or(y -> y.eq(ApComment::getIsHidden, 1).eq(ApComment::getUserId, currentUserId)));
     }
 
     /**

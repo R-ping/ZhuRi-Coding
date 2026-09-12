@@ -1,0 +1,62 @@
+[
+  {
+    "question": "AI Agent 为什么会烧 token？有哪些成本工程手段？",
+    "goldenArticleIds": [2091867593875820901, 2091867593875820912],
+    "note": "Agent 成本工程 + Coding Agent 笔记"
+  },
+  {
+    "question": "Codex 回退对话却不回退文件的问题怎么解决？",
+    "goldenArticleIds": [2091867593875820909],
+    "note": "Codex 回退坑的第三种解法"
+  },
+  {
+    "question": "公司还需要 Java 程序员吗，AI 能写大部分代码之后我们的价值在哪？",
+    "goldenArticleIds": [2091867593875820917, 2091867593875820897],
+    "note": "AI 时代程序员价值讨论"
+  },
+  {
+    "question": "React 18 和 19 各有哪些新特性？",
+    "goldenArticleIds": [2091867593875820913],
+    "note": "React 版本特性"
+  },
+  {
+    "question": "为什么项目从 Redux 换到 Zustand，状态管理怎么演进？",
+    "goldenArticleIds": [2091867593875820892],
+    "note": "状态管理选型"
+  },
+  {
+    "question": "SQL:2023 标准里有哪些新特性？",
+    "goldenArticleIds": [2091867593875820906],
+    "note": "SQL 标准新特性"
+  },
+  {
+    "question": "Docker 镜像怎么从 1GB 优化到 100MB？",
+    "goldenArticleIds": [2091867593875820907],
+    "note": "Docker 镜像瘦身"
+  },
+  {
+    "question": "用 AI 开发一款微信小游戏并上线的可行吗？",
+    "goldenArticleIds": [2091867593875820918],
+    "note": "AI 全流程开发小游戏"
+  },
+  {
+    "question": "关系型数据库的核心组件有哪些？",
+    "goldenArticleIds": [2091867593875820910],
+    "note": "数据库原理系列"
+  },
+  {
+    "question": "从零搭建 Next.js 单词管理系统的全栈实践",
+    "goldenArticleIds": [2091867593875820911],
+    "note": "Next.js 全栈项目"
+  },
+  {
+    "question": "网页也可以提供 MCP 服务了吗？",
+    "goldenArticleIds": [2091867593875820898],
+    "note": "MCP 网页化"
+  },
+  {
+    "question": "多人共用开发环境时记忆隔离怎么避免串号？",
+    "goldenArticleIds": [2091867593875820904],
+    "note": "记忆隔离方案"
+  }
+]

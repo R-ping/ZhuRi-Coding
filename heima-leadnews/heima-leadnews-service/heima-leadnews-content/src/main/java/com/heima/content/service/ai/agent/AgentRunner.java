@@ -4,6 +4,8 @@ import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
 import com.heima.content.service.ai.spring.SafetyGuardException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -17,6 +19,7 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,7 +32,9 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>每轮仍走 ChatClient（{@link PromptSafetyAdvisor} 全程横切：净化/加固/护栏）；</li>
  *   <li>模型返回工具调用 → 本类直接调用 {@link ToolCallback} 执行并把结果以
- *       {@link ToolResponseMessage} 回填对话，进入下一轮；</li>
+ *       {@link ToolResponseMessage} 回填对话，进入下一轮；
+ *       <b>同一轮内的多个工具调用经 aiAgentToolExecutor 并发执行</b>（Workflow 的
+ *       Parallelization 模式），逐个等待以保持回填顺序稳定；</li>
  *   <li>模型返回非工具内容 → 收敛，得到 FINAL 文本；达到 maxSteps 仍不收敛 → 返回未完成交给调用方降级。</li>
  * </ul>
  */
@@ -39,10 +44,15 @@ public class AgentRunner {
 
     private final ChatClient chatClient;
 
-    public AgentRunner(ChatModel chatModel, PromptSafetyAdvisor promptSafetyAdvisor) {
+    /** 单轮多工具并行执行专用池（见 AiAsyncConfig#aiAgentToolExecutor） */
+    private final Executor toolExecutor;
+
+    public AgentRunner(ChatModel chatModel, PromptSafetyAdvisor promptSafetyAdvisor,
+                       @Qualifier("aiAgentToolExecutor") Executor toolExecutor) {
         this.chatClient = ChatClient.builder(chatModel)
             .defaultAdvisors(promptSafetyAdvisor)
             .build();
+        this.toolExecutor = toolExecutor;
     }
 
     /**
@@ -83,18 +93,17 @@ public class AgentRunner {
                     }
                     return new AgentResult(answer.trim(), step, true);
                 }
-                // 执行本轮所有工具调用，结果以 ToolResponseMessage 回填
+                // 执行本轮工具调用：同一轮多个调用并行（Parallelization），按原顺序回填结果
+                List<AssistantMessage.ToolCall> calls = out.getToolCalls();
+                List<CompletableFuture<ToolExecution>> futures = new ArrayList<>();
+                for (AssistantMessage.ToolCall tc : calls) {
+                    futures.add(CompletableFuture.supplyAsync(() -> executeTool(callbacks, tc), toolExecutor));
+                }
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
                 List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>();
-                for (AssistantMessage.ToolCall tc : out.getToolCalls()) {
-                    ToolCallback callback = findCallback(callbacks, tc.name());
-                    String toolResult;
-                    if (callback == null) {
-                        toolResult = String.format("{\"error\":\"tool not found: %s\"}", tc.name());
-                        log.warn("[AgentRunner] 模型调用了未注册工具: {}", tc.name());
-                    } else {
-                        toolResult = safelyCall(callback, tc.arguments());
-                    }
-                    responses.add(new ToolResponseMessage.ToolResponse(tc.id(), tc.name(), toolResult));
+                for (CompletableFuture<ToolExecution> f : futures) {
+                    ToolExecution ex = f.join();
+                    responses.add(new ToolResponseMessage.ToolResponse(ex.toolCallId(), ex.toolName(), ex.result()));
                 }
                 history = new ArrayList<>(history);
                 history.add(out);
@@ -118,6 +127,20 @@ public class AgentRunner {
             }
         }
         return null;
+    }
+
+    /** 并行执行单个工具调用（未注册工具返回错误 JSON，不抛异常打断循环） */
+    private ToolExecution executeTool(ToolCallback[] callbacks, AssistantMessage.ToolCall tc) {
+        ToolCallback callback = findCallback(callbacks, tc.name());
+        if (callback == null) {
+            log.warn("[AgentRunner] 模型调用了未注册工具: {}", tc.name());
+            return new ToolExecution(tc.id(), tc.name(), String.format("{\"error\":\"tool not found: %s\"}", tc.name()));
+        }
+        return new ToolExecution(tc.id(), tc.name(), safelyCall(callback, tc.arguments()));
+    }
+
+    /** 单次工具执行结果载体（含原始调用 id/name，用于稳定回填顺序） */
+    private record ToolExecution(String toolCallId, String toolName, String result) {
     }
 
     /** 工具执行异常不中断循环：以错误 JSON 回填，让模型自行纠偏或收敛 */

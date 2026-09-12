@@ -62,6 +62,17 @@ public class ApCourseOrder implements Serializable {
     @TableField("refund_pending")
     private Integer refundPending;
 
+    /**
+     * 退款待重试原因（与 refund_pending=1 配合使用）：
+     * <ul>
+     *   <li>{@code order_closed}：支付成功但订单已关单（并发关单 vs 支付回调竞争）</li>
+     *   <li>{@code discount_code_exhausted}：订单使用折扣码但核销失败（并发超卖/已用完）</li>
+     *   <li>{@code coupon_consume_failed}：订单使用通用5折券但远程核销失败（reward 不可用）</li>
+     * </ul>
+     */
+    @TableField("refund_pending_reason")
+    private String refundPendingReason;
+
     @TableField("refund_retry_count")
     private Integer refundRetryCount;
 

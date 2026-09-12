@@ -1,5 +1,89 @@
 # CHANGELOG
 
+## 2026-09-10 — AI Memory 持久化模块落地（Memory & State：会话记忆 Redis + 语义记忆 PGVector）
+
+### 背景
+此前 AI 问答的记忆仅是「前端携带 history + 请求级 `MessageWindowChatMemory` 滑窗」：服务端无状态，刷新页面/更换设备后上下文即丢失，模型无法做跨会话的指代理解。本次按 Spring AI "Memory & State" 范式补齐两层持久化记忆。
+
+### 短期会话记忆（Redis 持久化，替换"仅前端传 history"）
+- 新增 `AiConversationMemoryService`（`memory/impl/RedisConversationMemoryService`）：Key `ai:memory:conv:{userId}`，Redis **List** 按序存储 `{role,content}` JSON；追加一轮 = `RIGHT PUSH`(user/assistant) → `LTRIM` 保留最近 60 条 → `EXPIRE` 7 天。用 List 追加/裁剪天然规避 read-modify-write 并发覆盖；全链路异常 fail-open，不影响问答主流程。
+- `AiAskServiceImpl.buildConversationMemory` 升级：记忆 = 服务端持久化（按用户）+ 前端 history 合并（尾部重叠去重，兼容同端增量/刷新恢复/跨端），再按 12 条滑窗预载注入模型；**内部调用（Query Rewrite / Rerank）传 userId=null 跳过 Redis**，杜绝内部 prompt 污染用户话题记忆。
+- 回答成功后 `persistMemory` 统一写回会话记忆；SSE 异步线程 ThreadLocal 不可见，`streamFastAsk` 增加显式 `userId` 参数由控制器捕获传入。
+
+### 长期语义记忆（PGVector，向量语义检索）
+- 新增 `UserMemoryService`（`ap_user_memory` 表：user_id/content/embedding(1024 维)/created_time，DDL 见 `db/migrations/ai_memory_setup.sql`，服务端首次使用幂等建表兜底）。
+- 写路径：提问成功即把该问题作为兴趣轨迹向量入库（**复用检索阶段已生成的 queryEmbedding，零额外 embedding/LLM 成本**）；同用户同内容覆盖、每用户上限 100 条淘汰最旧。
+- 读路径：`buildUser` 对当前问题向量做余弦召回（top2、≥0.35），命中则注入 `【长期记忆】` 提示词做个性化参考。
+- 差异化定位：语义记忆（向量，能理解"相似但不相同"的问题轨迹）与既有 `UserInterestService`（规则式收藏标签聚合）互补并存。
+
+### 会话恢复/清空 API 与前端
+- 新增 `GET /api/v1/ai/conversation`（拉取本人持久化会话，刷新/换设备后恢复上下文）、`DELETE /api/v1/ai/conversation`（清空记忆），均鉴权 + 限频。
+- 前端 `AiAskFloating.vue`：打开面板自动 `restoreConversation()` 恢复历史对话；标题旁新增「清空记忆」按钮；`src/apis/ai.js` 新增 `getAiConversation` / `clearAiConversation`。
+
+### 验证
+- `heima-leadnews-content` `mvn test-compile` 通过；新增 `RedisConversationMemoryServiceTest` 5 用例（追加/解析/脏数据容忍/异常 fail-open/清空）全部通过；既有的 `AiAskMemoryAdvisorTest` 不受影响。
+
+### 变更文件
+- 新增：`service/ai/memory/AiConversationMemoryService.java`、`service/ai/memory/impl/RedisConversationMemoryService.java`、`service/ai/memory/UserMemoryService.java`、`service/ai/memory/impl/UserMemoryServiceImpl.java`、`resources/db/migrations/ai_memory_setup.sql`、`test/.../ai/memory/RedisConversationMemoryServiceTest.java`
+- 修改：`service/ai/impl/AiAskServiceImpl.java`、`service/ai/AiAskService.java`、`controller/v1/ai/AiAskController.java`、前端 `src/apis/ai.js`、`src/components/ai/AiAskFloating.vue`、`docs/CHANGELOG.md`
+
+## 2026-09-10 — AI 发布助手升级为多智能体编排（Orchestrator-Workers + Evaluator-Optimizer）
+
+### 背景
+预检此前是"单 Agent + 两个事实工具"：模型自己在 ReAct 循环里调安全/查重工具并综合出 FINAL JSON。本次按 Spring AI 生态的进阶范式将其工程化为「主编(Supervisor) 调度专家团队(Workers)」的多智能体形态，前端接口与返回结构零改动。
+
+### 多智能体编排（新增 `service/ai/agent/workers/`）
+- **主编（Supervisor）**：仍是 `AgentRunner` 有界 ReAct 循环；系统提示词升级为主编版——拆解任务、调度专家、汇总 FINAL JSON。
+- **安全审查专家** `SafetyExpertWorker`（`expert_safety`）：内部先跑机械安全检测 `ContentSafetyTool`，再以审核员视角裁定，保证"客观技术讨论不算违规"的口径。
+- **质量评审专家** `QualityExpertWorker`（`expert_quality`）：原创性/逻辑/表达/信息密度评分 + 可执行建议。
+- **SEO 运营专家** `SeoExpertWorker`（`expert_seo`）：标签(3~5) + 摘要(≤120字)。
+- **终审专家** `CriticExpertWorker`（`expert_critic`，Evaluator-Optimizer 的评审-优化角色）：基于各专家草稿做一致性/完整性复查，输出修正后的完整 JSON。
+- 各专家复用共享 `ChatClient` Bean（`AiExpertConfig.aiExpertChatClient`，已内置 `PromptSafetyAdvisor` 三层安全防御），角色化 system prompt 独立，互不污染。
+
+### Workflow 模式落地
+- **Parallelization**：`AgentRunner` 单轮内多个工具调用（如三个专家并行）从串行改为 `CompletableFuture` 并发执行，新增 `AiAsyncConfig.aiAgentToolExecutor` 独立有界线程池（2~6 线程 + 50 队列）隔离 LLM 阻塞，响应按调用顺序稳定回填。
+- 保留既有降级链：主编异常/超步/解析失败 → 一次性结构化直答 → 相似度兜底 → 封面多模态审核。
+
+### 验证
+- `heima-leadnews-content` `mvn compile` / `test-compile` 通过（EXIT=0）；无既有测试引用旧结构。
+
+### 变更文件
+- 新增：`service/ai/agent/workers/ExpertWorkerBase.java`、`SafetyExpertWorker.java`、`QualityExpertWorker.java`、`SeoExpertWorker.java`、`CriticExpertWorker.java`；`config/AiExpertConfig.java`
+- 修改：`service/ai/agent/AgentRunner.java`（并行工具执行）、`config/AiAsyncConfig.java`（+aiAgentToolExecutor）、`service/ai/impl/PublishAssistantServiceImpl.java`（主编 prompt + 专家清单 + 降级链保留）、`docs/CHANGELOG.md`
+
+## 2026-09-10 — AI 商业化闭环前端落地（额度扣费接线 + 额度中心 + 面板引导）
+
+### 背景
+AI 问答/预检此前"只计量不扣费"（钱包只入账不消耗，免费额度可无限用），购买额度包无意义；前端无购买入口、无额度展示。本次打通「消费 → 充值 → 引导」的完整闭环。按 OpenAI/知乎创意助手"免费功能为主、额度包可选"的定位落地，不做硬性付费墙。
+
+### 阶段 0：后端扣费接线（免费优先）
+- **消费顺序调整**：`AiQuotaServiceImpl.tryConsume` 由「钱包优先」改为「每日免费额度优先」，免费用尽后扣减钱包额度包；超限时回补计数保证 `usedToday` 展示封顶 DAILY_QUOTA（原实现限额后计数继续累加、展示虚高）。
+- **新增错误码**：`AppHttpCodeEnum.AI_QUOTA_EXHAUSTED(3301)`，替换 `/ask` 裸 429；`/ask/stream`、`/api/v1/ai/ask-article`（该端点原已有扣费，本次仅统一错误事件为 `[3301]` 前缀）同步。
+- **`/precheck` 补扣费**：入参校验通过后消耗 1 次提问额度（免费→钱包），防批量刷预检烧模型成本。
+- **说明**：`/summary`、`/related-questions` 属设计内豁免（24h 缓存 + IP 限频，不烧 token），未纳入计费。
+
+### 阶段 1：前端 API 层（`src/apis/ai.js`）
+- 新增 `getAiQuotaStatus` / `aiTopupCreate`（注意后端为 `@RequestParam`，走查询参数）/ `aiTopupStatus` / `fetchTopupPayHtml`（因 `/topup/page` 依赖登录态 `accToken` 头，不能用 `window.open(url)` 直开，需 fetch 文本后写入新窗口）。
+
+### 阶段 2：AI 额度中心页（路由 `/user/ai/quota`）
+- 新增页面展示：今日免费剩余（进度条）+ 钱包额度包次数 + 三档套餐卡（数据来自 `/quota/status`，动态渲染）。
+- 支付闭环：下单 → 同步开空窗（保用户手势防弹窗拦截）→ 写入支付宝收银台 HTML 自动提交 → 3s 轮询订单状态 → 支付成功 toast + 刷新额度；订单可重新拉起支付，超时自动停止轮询。
+- 支付状态：0 待支付 / 1 已支付（入账钱包）/ 2 已关闭。
+
+### 阶段 3：AI 问答面板接入（`AiAskFloating.vue`）
+- 面板顶部新增额度条：今日免费 `剩余 n/20` + 钱包次数 + 「去充值」入口（同时作为额度中心主入口）；打开面板与每轮问答结束后刷新。
+- 深度问答未登录额尽（`code 3301`）与流式问答 `[3301]` 事件均识别为额度用尽：气泡仅展示后端文案，并触发顶部「立即充值」引导横幅。
+- 保持免费优先体验：额度条仅做展示与引导，不阻断提问。
+
+### 验证
+- 后端：`heima-leadnews-model` + `heima-leadnews-content` `mvn compile` 通过（EXIT=0）。
+- 前端：`vite build` 通过。
+
+### 变更文件
+- 后端：`AppHttpCodeEnum.java`（+AI_QUOTA_EXHAUSTED）、`AiQuotaServiceImpl.java`（免费优先+计数回补）、`AiAskController.java`（precheck 扣费 + ask/stream 错误码化）、`AiArticleController.java`（ask-article 错误事件统一）、`AiQuotaService.java` / `AiWalletService.java`（注释语义）
+- 前端：`src/apis/ai.js`（+4 API）、`src/pages/user/ai_quota/index.vue`（新增额度中心页）、`src/routers/home.js`（+路由）、`src/components/ai/AiAskFloating.vue`（额度条 + 引导）
+- `docs/CHANGELOG.md`
+
 ## 2026-09-08 — AI 模块 Code Review 遗留问题修复（P1×4 + P2×2）
 
 ### P1 安全/成本/交付

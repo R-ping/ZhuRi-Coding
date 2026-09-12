@@ -311,11 +311,12 @@ public class PinsQueryService {
 
         boolean hot = "hot".equalsIgnoreCase(sort);
 
-        // 分页查询顶级评论
+        // 分页查询顶级评论（AI 折叠评论 is_hidden=1 全局隐藏，不展示）
         Page<ApPinsComment> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<ApPinsComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApPinsComment::getPinsId, pinsId);
         wrapper.and(w -> w.isNull(ApPinsComment::getParentId).or().eq(ApPinsComment::getParentId, 0));
+        wrapper.eq(ApPinsComment::getIsHidden, 0);
         if (hot) {
             wrapper.orderByDesc(ApPinsComment::getLikeCount).orderByDesc(ApPinsComment::getCreatedTime);
         } else {
@@ -331,6 +332,7 @@ public class PinsQueryService {
             List<Long> parentIds = pageComments.stream().map(ApPinsComment::getId).collect(Collectors.toList());
             LambdaQueryWrapper<ApPinsComment> replyWrapper = new LambdaQueryWrapper<>();
             replyWrapper.in(ApPinsComment::getParentId, parentIds);
+            replyWrapper.eq(ApPinsComment::getIsHidden, 0);
             replyWrapper.orderByAsc(ApPinsComment::getCreatedTime);
             allSubReplies = apPinsCommentMapper.selectList(replyWrapper);
         }

@@ -40,6 +40,10 @@ public class ApComment implements Serializable {
     @TableField("content")
     private String content;
 
+    /** 社区治理折叠标记：1=AI 判定引战/软广等温和违规，列表默认不展示 */
+    @TableField("is_hidden")
+    private Integer isHidden;
+
     /** 评论附带图片：URL 逗号分隔，独立字段（不嵌入 content），URL 已清洗去掉签名参数 */
     @TableField("comment_pics")
     private String commentPics;

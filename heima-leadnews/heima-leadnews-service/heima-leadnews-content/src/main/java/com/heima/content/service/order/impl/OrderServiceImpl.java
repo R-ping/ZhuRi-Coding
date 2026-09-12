@@ -5,15 +5,20 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.heima.content.mapper.course.ApCourseChapterMapper;
 import com.heima.content.mapper.course.ApCourseMapper;
 import com.heima.content.mapper.course.ApCourseOrderMapper;
 import com.heima.content.mapper.course.ApUserCourseMapper;
 import com.heima.content.service.order.DiscountService;
 import com.heima.content.service.order.OrderService;
-import com.heima.content.service.payment.PaymentRewardService;
+import com.heima.content.service.outbox.OutboxService;
+import com.heima.content.service.outbox.handler.PayRewardOutboxHandler;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.course.pojos.ApCourse;
+import com.heima.model.course.pojos.ApCourseChapter;
 import com.heima.model.course.pojos.ApCourseDiscount;
 import com.heima.model.course.pojos.ApCourseOrder;
 import com.heima.model.course.pojos.ApCourseOrder.PayType;
@@ -42,13 +47,19 @@ public class OrderServiceImpl implements OrderService {
     private ApCourseMapper courseMapper;
 
     @Autowired
+    private ApCourseChapterMapper courseChapterMapper;
+
+    @Autowired
     private ApUserCourseMapper userCourseMapper;
 
     @Autowired
     private DiscountService discountService;
 
     @Autowired
-    private PaymentRewardService paymentRewardService;
+    private OutboxService outboxService;
+
+    /** 支付联动事件载荷序列化（Outbox payload） */
+    private static final ObjectMapper PAY_REWARD_MAPPER = new ObjectMapper();
 
     @Autowired
     private IRewardClient rewardClient;
@@ -67,6 +78,13 @@ public class OrderServiceImpl implements OrderService {
         ApCourse course = courseMapper.selectById(courseId);
         if (course == null || course.getIsDeleted() == 1) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "课程不存在");
+        }
+        // Step4 内容诚信：课程含疑似 AI 水文小节禁止售卖（防付费凑数）
+        Long aigcChapters = courseChapterMapper.selectCount(new LambdaQueryWrapper<ApCourseChapter>()
+            .eq(ApCourseChapter::getCourseId, courseId)
+            .eq(ApCourseChapter::getIsAigc, 1));
+        if (aigcChapters != null && aigcChapters > 0) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "该课程包含疑似 AI 生成内容，暂不可购买");
         }
 
         BigDecimal originalAmount = course.getPrice() != null ? course.getPrice() : BigDecimal.ZERO;
@@ -329,7 +347,13 @@ public class OrderServiceImpl implements OrderService {
         if (order.getDiscountCode() != null && !order.getDiscountCode().isEmpty()) {
             boolean consumed = discountService.consumeDiscountCode(order.getDiscountCode());
             if (!consumed) {
-                log.warn("折扣码使用次数已达上限或无效: code={}", order.getDiscountCode());
+                // 资损兜底：订单已 PAID 但折扣码已用完/无效——走「退款待重试」链路，
+                // 由 AlipayServiceImpl.handleNotify 在本方法返回 false 后触发自动退款。
+                // 不能只 log.warn，否则用户享受折扣但券未扣，同一张券可反复使用（P0-5）。
+                log.warn("折扣码使用次数已达上限或无效，置为退款待重试: code={}, orderNo={}",
+                        order.getDiscountCode(), orderNo);
+                markRefundPending(orderNo, OrderService.REFUND_REASON_DISCOUNT_EXHAUSTED);
+                return false;
             }
         }
 
@@ -339,11 +363,20 @@ public class OrderServiceImpl implements OrderService {
                 ResponseResult consumeResult = rewardClient.consumeVirtualAsset(
                         order.getUserId().longValue(), order.getCouponItemCode(), 1);
                 if (consumeResult == null || consumeResult.getCode() != 200) {
-                    log.warn("5折券核销失败，需补偿: orderNo={}, coupon={}",
-                            orderNo, order.getCouponItemCode());
+                    // 资损兜底：同上，5 折券远程核销失败（reward 不可用 / 数量不足），
+                    // 把订单置为 refund_pending=1，AlipayServiceImpl 触发退款。
+                    log.warn("5折券核销失败，置为退款待重试: orderNo={}, coupon={}, msg={}",
+                            orderNo, order.getCouponItemCode(),
+                            consumeResult != null ? consumeResult.getMessage() : "null");
+                    markRefundPending(orderNo, OrderService.REFUND_REASON_COUPON_FAILED);
+                    return false;
                 }
             } catch (Exception e) {
-                log.error("5折券核销异常: orderNo={}, coupon={}", orderNo, order.getCouponItemCode(), e);
+                // 异常路径同样置为待退款（不能因 catch 吞掉就让用户免费使用 5 折券）
+                log.error("5折券核销异常，置为退款待重试: orderNo={}, coupon={}",
+                        orderNo, order.getCouponItemCode(), e);
+                markRefundPending(orderNo, OrderService.REFUND_REASON_COUPON_FAILED);
+                return false;
             }
         }
 
@@ -384,13 +417,21 @@ public class OrderServiceImpl implements OrderService {
             userCourseMapper.updateById(userCourse);
         }
 
-        // 4. 支付成功联动：加逐日等级经验 + 发"系统通知"站内信（失败不影响支付主流程）
+        // 4. 支付成功联动：加逐日等级经验 + 发"系统通知"站内信
+        //    方案 B（Transactional Outbox）：主事务内只写事件，联动由 OutboxDispatcher 异步执行；
+        //    主事务回滚事件一起回滚（原子），联动失败指数退避重试、超限死信告警 —— 不再 try-catch 丢事件。
+        //    （资金类核销仍走上方同步 + 退款兜底语义，不进 Outbox —— 见铁律 4。）
+        String payRewardPayload;
         try {
-            paymentRewardService.onCoursePurchaseSuccess(order.getUserId().longValue(),
-                order.getCourseId(), order.getPaidAmount(), order.getOrderNo());
-        } catch (Exception e) {
-            log.error("课程支付成功联动失败: orderNo={}", orderNo, e);
+            payRewardPayload = PAY_REWARD_MAPPER.writeValueAsString(
+                    PayRewardOutboxHandler.PayRewardPayload.of(order.getUserId().longValue(),
+                            order.getCourseId(), order.getPaidAmount(), order.getOrderNo()));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            // 序列化失败属于编程错误（字段固定）：显式失败让主事务回滚，绝不能让"订单 PAID 但联动事件丢失"
+            throw new IllegalStateException("支付联动事件序列化失败: orderNo=" + orderNo, e);
         }
+        outboxService.record(PayRewardOutboxHandler.EVENT_TYPE + ":" + orderNo,
+                PayRewardOutboxHandler.EVENT_TYPE, payRewardPayload);
 
         log.info("订单支付成功: orderNo={}, tradeNo={}, userId={}, courseId={}",
                 orderNo, tradeNo, order.getUserId(), order.getCourseId());
@@ -420,20 +461,31 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public void markRefundPending(String orderNo) {
+        // 兼容旧调用：AlipayServiceImpl.handleNotify 触发「订单已关闭 → 自动退款失败」时仍走此入口，
+        // 原因用默认常量 ORDER_CLOSED 与 P0-5 新增 reason 入参保持统一。
+        markRefundPending(orderNo, OrderService.REFUND_REASON_ORDER_CLOSED);
+    }
+
+    @Override
+    public void markRefundPending(String orderNo, String reason) {
         if (orderNo == null || orderNo.isEmpty()) {
             return;
         }
-        // 仅对仍处 CANCELLED 且尚未待重试的订单初始化（refund_pending=1, 重试计数=1）；
-        // 已待重试则忽略，避免重复回调把计数灌高
+        String safeReason = reason == null ? OrderService.REFUND_REASON_ORDER_CLOSED : reason;
+        // 仅对仍处 PAID 或 CANCELLED 且尚未待重试的订单初始化（refund_pending=1, 重试计数=1）；
+        // 已待重试则忽略，避免重复回调把计数灌高。
         int updated = orderMapper.update(null, new LambdaUpdateWrapper<ApCourseOrder>()
                 .eq(ApCourseOrder::getOrderNo, orderNo)
-                .eq(ApCourseOrder::getStatus, ApCourseOrder.Status.CANCELLED.getCode())
+                .in(ApCourseOrder::getStatus,
+                        ApCourseOrder.Status.CANCELLED.getCode(),
+                        ApCourseOrder.Status.PAID.getCode())
                 .ne(ApCourseOrder::getRefundPending, 1)
                 .set(ApCourseOrder::getRefundPending, 1)
+                .set(ApCourseOrder::getRefundPendingReason, safeReason)
                 .set(ApCourseOrder::getRefundRetryCount, 1)
                 .set(ApCourseOrder::getUpdatedTime, new Date()));
         if (updated == 1) {
-            log.info("订单退款置为待重试: orderNo={}", orderNo);
+            log.info("订单退款置为待重试: orderNo={}, reason={}", orderNo, safeReason);
         }
     }
 

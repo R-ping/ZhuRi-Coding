@@ -18,6 +18,7 @@ const UserWelfareRedeem = () => import('@/pages/user/welfare/redeem')
 const UserHarvest = () => import('@/pages/user/harvest/index')
 const UserCourses = () => import('@/pages/user/courses/index')
 const UserHistory = () => import('@/pages/user/history/index')
+const UserAiQuota = () => import('@/pages/user/ai_quota/index')
 const Notification = () => import('@/pages/notification/index')
 const Pins = () => import('@/pages/pins/index.vue')
 const PinsCircles = () => import('@/pages/pins/circles.vue')
@@ -107,6 +108,11 @@ let routes = [
                 path:'/user/history',
                 name:'user-history',
                 component:UserHistory
+            },
+            {
+                path:'/user/ai/quota',
+                name:'user-ai-quota',
+                component:UserAiQuota
             },
             {
                 path:'/user/:id',

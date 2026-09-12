@@ -76,5 +76,17 @@ management:
   zipkin:
     tracing:
       endpoint: http://localhost:9411/api/v2/spans
+# 微信公众号（公众号后台"服务器配置"里的 Token；未配置则回调一律拒绝，fail-closed）
+# 原 Token 保留为兜底默认值（huhudong），生产环境务必通过 WECHAT_GZH_TOKEN 环境变量覆盖。
+wechat:
+  gzh:
+    token: ${WECHAT_GZH_TOKEN:huhudong}
+
 # 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
-app:/n  internal-auth:/n    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+app:
+  internal-auth:
+    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+  auth:
+    # 是否在响应体中回传登录验证码：仅为本地/演示环境缺少真实短信通道时的联调便利。
+    # 生产环境必须设为 false（AUTH_EXPOSE_LOGIN_CODE=false），否则无需收短信即可登录/绑定他人手机号。
+    expose-login-code: ${AUTH_EXPOSE_LOGIN_CODE:true}

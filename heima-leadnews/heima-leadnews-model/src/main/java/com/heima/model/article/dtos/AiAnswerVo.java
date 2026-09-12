@@ -1,6 +1,7 @@
 package com.heima.model.article.dtos;
 
 import java.util.List;
+import java.util.Map;
 import lombok.Data;
 
 /**
@@ -17,4 +18,10 @@ public class AiAnswerVo {
 
     /** 总耗时 ms（向量+生成） */
     private long latencyMs;
+
+    /**
+     * 忠实度校验简报（可选，仅在开启同步校验时填充；前端不读也不影响）：
+     * {checked, suspect, invalidCitations, unsupported, method, llmReviewed}
+     */
+    private Map<String, Object> faithfulness;
 }

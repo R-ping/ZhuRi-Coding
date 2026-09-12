@@ -88,6 +88,7 @@ public class ArticlePageController {
         // 2. 填充模板数据
         model.addAttribute("articleId", id);
         model.addAttribute("title", nullSafe(article.getTitle()));
+        model.addAttribute("isAigc", article.getIsAigc() != null ? article.getIsAigc() : 0);
         model.addAttribute("authorName", nullSafe(article.getAuthorName()));
         // 作者头像：为空时回退到占位头像，避免 <img src=""> 显示裂图
         model.addAttribute("authorAvatar", defaultAvatar(article.getAuthorImage()));

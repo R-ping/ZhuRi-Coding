@@ -844,13 +844,23 @@
         })
       },
       /** 采用推荐标签（当前支持单个，取推荐首位可手点替换） */
+      /** 采用 AI 推荐标签：追加去重，最多 maxTags 个（随文章提交并参与推荐/分发） */
       useAiTag(tag) {
-        this.selectedTags = [tag]
-        this.$message && this.$message.success('已采用标签「' + tag + '」，发布时将随文章提交')
+        if (this.selectedTags.indexOf(tag) !== -1) {
+          this.$message && this.$message.info('标签「' + tag + '」已采纳')
+          return
+        }
+        if (this.selectedTags.length >= this.maxTags) {
+          this.$message && this.$message.warning('标签最多 ' + this.maxTags + ' 个，可先移除再添加')
+          return
+        }
+        this.selectedTags.push(tag)
+        this.$message && this.$message.success('已采用标签「' + tag + '」（' + this.selectedTags.length + '/' + this.maxTags + '）')
       },
-      /** 采用一句话摘要 */
+      /** 采用一句话摘要（截断至发布表单上限 100 字） */
       useAiSummary() {
-        this.FormData.summary = this.aiReport ? this.aiReport.summary : ''
+        const s = (this.aiReport && this.aiReport.summary) || ''
+        this.FormData.summary = s.length > 100 ? s.slice(0, 100) : s
         this.$message && this.$message.success('已填入文章摘要')
       },
       openPublishDrawer() {

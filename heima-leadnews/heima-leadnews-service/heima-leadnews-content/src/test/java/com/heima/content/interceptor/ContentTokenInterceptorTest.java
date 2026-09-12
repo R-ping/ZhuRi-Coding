@@ -77,7 +77,7 @@ class ContentTokenInterceptorTest {
     }
 
     @Test
-    @DisplayName("密钥未配置 → 降级信任（本地直连）")
+    @DisplayName("密钥未配置 → fail-closed，拒绝信任身份头（防绕过网关伪造 userId）")
     void testPreHandleWithoutSecret() throws Exception {
         interceptor = new ContentTokenInterceptor(null);
         HttpServletRequest request = mock(HttpServletRequest.class);
@@ -87,7 +87,23 @@ class ContentTokenInterceptorTest {
         boolean ok = interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
 
         assertTrue(ok);
-        assertNotNull(AppThreadLocalUtil.getUser());
+        assertNull(AppThreadLocalUtil.getUser());
+    }
+
+    @Test
+    @DisplayName("密钥为空白串 → 同样 fail-closed，不信任身份头")
+    void testPreHandleWithBlankSecret() throws Exception {
+        interceptor = new ContentTokenInterceptor("   ");
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("userId")).thenReturn("7");
+        when(request.getHeader("nickName")).thenReturn("");
+        when(request.getHeader(InternalAuthSigner.HEADER_SIGN))
+            .thenReturn(InternalAuthSigner.sign("   ", "7", "", ""));
+
+        boolean ok = interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
+
+        assertTrue(ok);
+        assertNull(AppThreadLocalUtil.getUser());
     }
 
     @Test

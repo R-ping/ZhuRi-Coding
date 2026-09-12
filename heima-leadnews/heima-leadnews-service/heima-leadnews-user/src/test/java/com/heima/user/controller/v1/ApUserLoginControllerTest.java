@@ -7,6 +7,7 @@ import com.heima.model.user.dtos.SocialBindDto;
 import com.heima.user.service.ApUserService;
 import com.heima.user.service.SocialLoginService;
 import com.heima.common.redis.CacheService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,7 +26,7 @@ import static org.mockito.Mockito.*;
  * ApUserLoginController 单元测试（登录/社交绑定/验证码）
  *
  * 覆盖 login 的三种流程判定（邮箱密码/手机密码/手机验证码），socialBind 参数校验，
- * getCode 的空参数与绑定冲突分支。
+ * getCode 的空参数与绑定冲突分支，以及验证码是否随响应体回传的开关行为。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ApUserLoginController 登录")
@@ -41,6 +43,15 @@ class ApUserLoginControllerTest {
 
     @InjectMocks
     private ApUserLoginController apUserLoginController;
+
+    /**
+     * 非 Spring 上下文下 @Value 字段不会被注入，需显式打开「回传验证码」开关，
+     * 以覆盖本地/演示环境的默认行为（生产应关闭，见 testGetCodeNotExposedInProduction）。
+     */
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(apUserLoginController, "exposeLoginCode", true);
+    }
 
     private LoginDto dto(String phoneOrEmail, String password) {
         LoginDto d = new LoginDto();
