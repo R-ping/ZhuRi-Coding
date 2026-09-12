@@ -3,6 +3,23 @@ server:
 spring:
   application:
     name: leadnews-content
+  ai:
+    openai:
+      api-key: ${DASH_SCOPE_API_KEY:}
+      base-url: ${DASH_SCOPE_COMPATIBLE_BASE:https://llm-07pvgms9s4t42iko.cn-beijing.maas.aliyuncs.com/compatible-mode}
+      chat:
+        options:
+          model: ${DASH_SCOPE_MODEL:qwen3.8-27b}
+          temperature: 0.3
+          max-tokens: 2048
+          max-completion-tokens: 2048
+          reasoning-effort: high
+          output-modalities:
+            - text
+      embedding:
+        options:
+          model: ${DASH_SCOPE_EMBEDDING_MODEL:qwen3.7-text-embedding}
+          dimensions: 1024
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
@@ -76,12 +93,27 @@ bailian:
     api-host: ${DASH_SCOPE_API_HOST:}
     model: ${DASH_SCOPE_MODEL:qwen3.7-max}
     embedding-model: ${DASH_SCOPE_EMBEDDING_MODEL:qwen3.7-text-embedding}
+    vision-model: ${DASH_SCOPE_VISION_MODEL:qwen3.8-27b}
     timeout:
       connect: 5000
       read: 30000
     retry:
       max-attempts: 3
       backoff-delay: 1000
+
+# PostgreSQL pgvector 向量库（文章向量/相似度检索；配合 PgVectorConfig，enabled=true 才装配）
+pgvector:
+  enabled: true
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    jdbc-url: ${PGVECTOR_URL:jdbc:postgresql://192.168.44.128:5432/leadnews_content}
+    username: ${PGVECTOR_USERNAME:postgres}
+    password: ${PGVECTOR_PASSWORD:123456}
+    maximum-pool-size: 5
+    minimum-idle: 1
+    connection-timeout: 10000
+    idle-timeout: 300000
+    initialization-fail-timeout: -1
 
 # 文章推荐配置（全局公平 + 多样性配额）
 recommend:

@@ -18,17 +18,8 @@ public class PgVectorConfig {
     @Bean
     @ConfigurationProperties(prefix = "pgvector.datasource")
     public HikariConfig pgVectorHikariConfig() {
-        HikariConfig config = new HikariConfig();
-        config.setDriverClassName("org.postgresql.Driver");
-        config.setJdbcUrl("jdbc:postgresql://192.168.44.128:5432/leadnews_content");
-        config.setUsername("postgres");
-        config.setPassword("123456");
-        config.setMaximumPoolSize(5);
-        config.setMinimumIdle(1);
-        config.setConnectionTimeout(10000);
-        config.setIdleTimeout(300000);
-        config.setInitializationFailTimeout(-1);
-        return config;
+        // 连接信息全部由配置注入（pgvector.datasource.*，见 application.yml；支持 ${PGVECTOR_*} 环境变量覆盖），此处不再硬编码
+        return new HikariConfig();
     }
 
     @Bean

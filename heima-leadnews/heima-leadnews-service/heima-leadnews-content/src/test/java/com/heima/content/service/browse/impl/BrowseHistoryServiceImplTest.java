@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.lang.reflect.Field;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Map;
 
@@ -51,13 +52,8 @@ class BrowseHistoryServiceImplTest {
     }
 
     private void injectBaseMapper(Object service, Object mapper) {
-        try {
-            Field f = service.getClass().getSuperclass().getDeclaredField("baseMapper");
-            f.setAccessible(true);
-            f.set(service, mapper);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new IllegalStateException("无法注入 baseMapper", e);
-        }
+        // 3.5.12 起 baseMapper 上移至父类 CrudRepository，ReflectionTestUtils 沿继承链查找
+        ReflectionTestUtils.setField(service, "baseMapper", mapper);
     }
 
     private ApBrowseHistory history(Long id) {
