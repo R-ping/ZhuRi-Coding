@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,30 +34,12 @@ public class DashScopeClient {
     @Autowired
     private BailianConfig bailianConfig;
 
+    @Autowired
+    private ComplianceGuard complianceGuard;
+
     private final int maxRetries=3;
 
     private final long backoffDelay=1000;
-
-    // ==================== Layer 3: 输出护栏 - 顺从短语检测 ====================
-    // 检查 LLM 响应中是否包含"顺从短语"——模型已遵从注入指令的迹象
-    // 匹配到则阻断响应，返回空值
-
-    // 中文顺从短语
-    private static final Pattern COMPLIANCE_PHRASE_CN = Pattern.compile(
-        "(好的|可以|没问题|明白|收到|理解)[，,。.]?(我)?(已经|将|会|正在)?(忽略|忘记|无视|跳过|遵守|执行)(之前的|上面的|所有的)?(指令|指示|要求|规则|设定|命令)" +
-        "|(我(现在|将|会)(成为|作为|扮演)(一个|一名|一位)?(翻译|助手|自由|不同))" +
-        "|(新的角色|已切换角色|角色已变更)",
-        Pattern.CASE_INSENSITIVE
-    );
-
-    // 英文顺从短语
-    private static final Pattern COMPLIANCE_PHRASE_EN = Pattern.compile(
-        "(i('ll| will| have| am)( now)? (act as|become|behave as|serve as|work as)( a| an| the)?)" +
-        "|(sure, (i will|i'll|let me) (ignore|forget|disregard))" +
-        "|(forget all previous instructions|ignoring previous instructions|override all instructions)" +
-        "|(i('ll| will) (switch|change|shift) (my role|to a))",
-        Pattern.CASE_INSENSITIVE
-    );
 
     // 被阻断时的固定回复
     private static final String BLOCKED_RESPONSE = "审核分析异常，请重新提交。";
@@ -109,7 +90,7 @@ public class DashScopeClient {
                 String response = httpChat(systemPrompt, userMessage, false, null);
                 
                 // Layer 3: 输出护栏 —— 检查响应是否包含顺从短语
-                if (isComplianceResponse(response)) {
+                if (complianceGuard.isComplianceResponse(response)) {
                     log.warn("Output guardrail triggered: LLM response contains compliance phrases, blocking response");
                     return BLOCKED_RESPONSE;
                 }
@@ -475,34 +456,5 @@ public class DashScopeClient {
             }
         }
         return null;
-    }
-
-    // ==================== Layer 3: 输出护栏 ====================
-
-    /**
-     * 检查 LLM 响应是否包含"顺从短语"——模型已遵从注入指令的迹象
-     *
-     * 匹配中英文顺从短语，命中则说明模型可能已被注入攻击成功。
-     * 这是三层防御的最后一道兜底，捕获的是"模型已经妥协并明确说出来"的情况。
-     *
-     * @param response LLM 响应文本
-     * @return true 如果响应包含顺从短语
-     */
-    private boolean isComplianceResponse(String response) {
-        if (response == null || response.isEmpty()) {
-            return false;
-        }
-        String substring = response.substring(0, Math.min(100, response.length()));
-        if (COMPLIANCE_PHRASE_CN.matcher(response).find()) {
-            log.warn("Compliance phrase detected (CN) in response: {}",
-                substring);
-            return true;
-        }
-        if (COMPLIANCE_PHRASE_EN.matcher(response).find()) {
-            log.warn("Compliance phrase detected (EN) in response: {}",
-                substring);
-            return true;
-        }
-        return false;
     }
 }

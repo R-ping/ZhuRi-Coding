@@ -1,17 +1,16 @@
 package com.heima.content.service.article.impl;
 
-import com.heima.common.aliyun.GreenImageScanPlus;
+import com.heima.common.aliyun.util.GreenImageScanPlusForOss;
 import com.heima.content.service.article.AuditService;
 import com.heima.content.service.article.BailianAiService;
 import com.heima.model.audit.AuditContext;
 import com.heima.model.audit.AuditResult;
 import com.heima.model.audit.AuditServiceUnavailableException;
 import com.heima.model.audit.ImageScanResult;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 抽象审核模板类
@@ -29,7 +28,8 @@ public abstract class AbstractAuditService implements AuditService {
     private BailianAiService bailianAiService;
 
     @Autowired(required = false)
-    private GreenImageScanPlus greenImageScan;
+//    private GreenImageScanPlus greenImageScan;
+    private GreenImageScanPlusForOss greenImageScanPlusForOss;
 
     @Override
     public AuditResult audit(AuditContext context) {
@@ -52,7 +52,7 @@ public abstract class AbstractAuditService implements AuditService {
         }
 
         // Step 2: 图片审核
-        if (context.hasImages() && greenImageScan != null) {
+        if (context.hasImages() && greenImageScanPlusForOss != null) {
             AuditResult imageResult = checkImages(context);
             if (!imageResult.isPassed()) {
                 log.warn("图片审核未通过: entityType={}, entityId={}, reason={}",
@@ -107,7 +107,7 @@ public abstract class AbstractAuditService implements AuditService {
             List<String> imageUrls = context.getImageUrls();
             for (String imageUrl : imageUrls) {
                 if (imageUrl == null || imageUrl.isEmpty()) continue;
-                ImageScanResult result = toImageScanResult(greenImageScan.imageScan(imageUrl));
+                ImageScanResult result = toImageScanResult(greenImageScanPlusForOss.imageScan(imageUrl));
                 if (result.isHighRisk()) {
                     return AuditResult.failed("图片违规", "图片存在违规内容");
                 }
