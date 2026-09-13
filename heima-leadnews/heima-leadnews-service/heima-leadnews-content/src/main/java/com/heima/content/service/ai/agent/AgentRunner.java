@@ -16,7 +16,6 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
-import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -66,8 +65,13 @@ public class AgentRunner {
      */
     public AgentResult run(String systemPrompt, String userInput, List<Object> toolBeans, int maxSteps) {
         int limit = Math.max(1, maxSteps);
-        ToolCallback[] callbacks = ToolCallbacks.from(
-            MethodToolCallbackProvider.builder().toolObjects(toolBeans.toArray()).build());
+        // 注意：Spring AI 1.1.8 的 ToolCallbacks.from(Object...) 会把传入对象当作工具 Bean 重新扫描，
+        // 把已构建的 ToolCallbackProvider 作为参数传入会因扫描不到 @Tool 方法而抛异常（主编路径将静默降级直答）。
+        // 正确用法：由 Provider 直接产出 ToolCallback[]。
+        ToolCallback[] callbacks = MethodToolCallbackProvider.builder()
+            .toolObjects(toolBeans.toArray())
+            .build()
+            .getToolCallbacks();
         List<Message> history = new ArrayList<>();
         history.add(new SystemMessage(systemPrompt));
         history.add(new UserMessage(userInput == null ? "" : userInput));

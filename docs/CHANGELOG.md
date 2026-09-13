@@ -1,5 +1,76 @@
 # CHANGELOG
 
+## 2026-09-13 — AgentRunner 单测补齐 + 修复「主编多智能体路径静默降级直答」Bug
+
+### 背景
+为 `AgentRunner`（有界 ReAct 循环）编写单测时，暴露一个**生产 Bug**：`AgentRunner.run` 用 `ToolCallbacks.from(MethodToolCallbackProvider...)` 构建工具回调，但 Spring AI 1.1.8 的 `ToolCallbacks.from` 只有 `from(Object...)` 单重载——它会把传入的「已构建 ToolCallbackProvider」当作普通工具 Bean 重新扫描，provider 上没有 @Tool 方法 → 抛 `IllegalStateException` → 被 `catch (Exception)` 吞掉。结果：**主编 + 专家团的多智能体路径从一开始就从未真正执行**，每次预检都静默降级为一次性直答（此前 PublishAssistant 测试 mock 掉了 AgentRunner，故未被发现）。
+
+### 变更
+- **修复生产代码** `service/ai/agent/AgentRunner.java#run`：`ToolCallbacks.from(provider)` → 直接 `provider.getToolCallbacks()` 产出 `ToolCallback[]`，并删除废弃 import、补充注释说明 1.1.8 的 API 陷阱。修复后主编 Agent 才能真正调度专家团队工具。
+- **新增 `AgentRunnerTest`（9 用例）**：模型无工具调用直接输出 FINAL 收敛；空白文本 → 未完成；output 非 AssistantMessage → 未完成；单轮工具调用被同步执行后收敛（Parallelization 回填顺序）；工具抛异常以错误 JSON 回填仍可收敛；模型调用未注册工具返回错误 JSON 不中断；每轮都返回工具调用 → maxSteps 上限未收敛；SafetyGuardException / 普通异常 → 降级未完成（-1）。
+  - 关键手法：`AssistantMessage.builder().toolCalls([ToolCall(id,type,name,args)])` 构造工具调用响应；工具执行器用 `Runnable::run` 同步直跑使 CompletableFuture 主线程内完成；`@Tool` 注解工具 Bean 与生产 Worker 同机制注册。
+
+### 验证
+- `AgentRunnerTest` 9/9 通过；content 模块 `mvn verify`（`jacoco.line.min=0.56`）全量通过。
+- 行为影响面：`PublishAssistantServiceImpl` 的预检主路径由「必然降级直答」变为「真正执行主编 Agent」（兜底链保留）。
+
+### 变更文件
+- 新增：`test/.../service/ai/agent/AgentRunnerTest.java`
+- 修改：`service/ai/agent/AgentRunner.java`、`docs/CHANGELOG.md`
+
+## 2026-09-13 — JaCoCo 覆盖率门禁上调至 0.56（AI 单测补齐后的回归闸收紧）
+
+### 背景
+AI 增强批次（`jacoco.line.min` 0.62 → 0.54）后，经两轮单测补齐（AIGC 检测/语义记忆/混合召回/语义缓存/忠实度校验/配额钱包/发布助手/RAG 问答共 89 个 AI 用例），content 模块全量 858 用例通过，行覆盖率由 54.89% 回升至约 61.8%。本轮把门禁从 0.54 上调到 0.56，锁住 AI 单测补强带来的覆盖收益，防止覆盖率再次下滑。
+
+### 变更
+- content `pom.xml`：`jacoco.line.min` 0.54 → 0.56；更新注释说明回升背景与后续继续上调计划。
+
+### 验证
+- 本地完整复现 CI 门禁：`mvn verify -pl heima-leadnews-service/heima-leadnews-content -am` → **BUILD SUCCESS**（858 用例全部通过，`All coverage checks have been met`）。
+
+### 遗留（后续随剩余模块补测继续上调）
+- 可选补点：`AgentRunner`（有界 ReAct 循环与工具并行）、`AiTopupServiceImpl`（充值回调幂等）、`AiEvalServiceImpl`（Recall@k 评测）。覆盖稳定后可将门禁逐步上调至 0.60 并向 65% 靠拢。
+
+## 2026-09-13 — AI 商业化/问答链路单测补齐：配额钱包 / 发布助手 / RAG 问答
+
+### 背景
+继 AIGC 检测、语义记忆、混合召回、语义缓存、忠实度校验的测试覆盖补强后，本轮补齐剩余的 AI 主链路模块：额度消费（免费优先 + 钱包兜底）、多智能体发布助手（主编 + 降级链）、社区 AI 问答（RAG 检索 + 记忆持久化 + 向量回填）。
+
+### 变更
+- **新增 `AiQuotaServiceImplTest`（10 用例）**：`tryConsume` 的 userId 短路、首次计数设置当日过期、免费 20 次内放行、用尽后回补计数防虚高并转钱包扣减、免费与钱包均尽不放行、Redis 异常 fail-open 放行；`usedToday`/`remainToday` 的读取、异常与负数钳制。Redis 调用链（CacheService → template → valueOps）显式装配，避免 fail-open 掩盖真实路径。
+- **新增 `AiWalletServiceImplTest`（11 用例）**：余额查询（空行/空余额兜底 0）；入账（无行建行 / 有行累加 / 空余额视 0 / 非法参数忽略）；原子扣 1（`update ... where balance>0` 按影响行数判定，异常 fail-open 不超扣）。
+- **新增 `PublishAssistantServiceImplTest`（12 用例）**：空标题/正文短路；主编 Agent 收敛（FINAL JSON → VO 映射）；Agent 未收敛 / JSON 无法解析 / 循环异常三路降级为一次性直答；兜底输出护栏命中（SafetyGuardException）与调用异常返回 null；相似度兜底（命中并 4 位小数精度 / 低于阈值不提示 / 最相似为自身时排除，双保险）；封面图多模态审核（判违规回填 / vision 异常 fail-open 不影响主结果）。兜底路径使用真实空组件 PromptSafetyAdvisor（sanitizer/guard 均 null）保证 Advisor 链不 NPE 且可精确打桩 chatModel。
+- **新增 `AiAskServiceImplTest`（9 用例）**：空白/超长问题短路；语义缓存命中快速返回（省 rewrite/rerank/生成 三次模型调用）；完整 RAG 链路（Query Rewrite → 混合召回 → 组装参考资料 → 生成 → 语义缓存落库；无登录态时记忆写回跳过）；无命中返回知识库兜底文案；向量化失败降级；流式链路（缓存命中按 chunk 回放 + 补记会话记忆 / 正常链路增量回调 + 输出护栏放行 + 成功后写回会话与语义记忆）；向量回填游标分页补齐缺失文章，已就绪文章幂等跳过。chatModel 按 system 提示词路由（改写/生成）稳定返回答复。
+
+### 验证
+- 本轮新增 4 个测试类共 42 用例全部通过；加上轮 47 个 AI 用例，AI 模块累计 89 个单测。
+- content 模块 `mvn verify` 的 JaCoCo 覆盖率门禁（`jacoco.line.min=0.54`）通过。
+
+### 变更文件
+- 新增：`test/.../service/ai/impl/AiQuotaServiceImplTest.java`、`AiWalletServiceImplTest.java`、`PublishAssistantServiceImplTest.java`、`AiAskServiceImplTest.java`
+- 修改：`docs/CHANGELOG.md`
+
+## 2026-09-13 — AI 模块单测补强：AIGC 检测 / 语义记忆 / 混合召回 / 语义缓存 / 忠实度校验
+
+### 背景
+上轮 CHANGELOG「遗留」中列出的未配测试 AI 模块统一补齐单测：`AigcDetectServiceImpl`（AIGC 水文检测）、`HybridRecallServiceImpl`（混合召回）、`AiSemanticCacheService*`（语义缓存）、`UserMemoryService*`（语义记忆），外加 `AnswerFaithfulnessServiceImpl`（忠实度校验）。目标是把 AI 增强批次的覆盖率缺口补回，支撑后续上调 `jacoco.line.min` 门禁。
+
+### 变更
+- **新增 `AigcDetectServiceImplTest`（9 用例）**：L1 快检入口（文章/沸点/章节）的入参短路、空白内容跳过、记录落库、高分打标；异步复核（L2 作者画像偏离高分 → L3 LLM 判 normal → 纠偏清标）；LLM 不可用维持 L2 决断（fail-open）。同步执行器会使 deepReview 先于入口打标执行，断言改为核对更新序列中「存在」纠偏更新而非末条。
+- **新增 `UserMemoryServiceImplTest`（10 用例）**：`remember` 入参短路（userId 空/空白内容/空向量/PG 未配置）、幂等建表（DDL 仅首调）、同内容覆盖删除、容量裁剪（100 条）；`recall` 入参短路、余弦检索结果映射、topK 钳制（min(topK,5)）、PG 未配置降级、检索异常 fail-open。JdbcTemplate/ResultSet 全程 mock。
+- **新增 `HybridRecallServiceImplTest`（9 用例）**：混合关闭退化纯向量（顺序+相似度映射）、search 服务未注入降级、向量路异常降级纯 BM25、BM25 异常/空结果降级纯向量、两路 RRF 名次融合（双路命中者靠前）、limit 截断、两路皆空兜底。覆盖 `Number` 与 `String` 两种 BM25 id 反序列化形态。
+- **新增 `AiSemanticCacheServiceImplTest`（10 用例）**：开关/userId 短路、不可缓存问题（过短 <8 字、含指代词）、命中链路（向量查询 → 来源存活校验 → touch 计数 → `ai_semcache_hit` 指标）、答案/来源为空或来源被判 AIGC → evict 后走正常链路、落缓存（插入 + 单用户 50 条容量裁剪 + `ai_semcache_store` 指标）、答案过短/来源为空不落缓存。
+- **新增 `AnswerFaithfulnessServiceImplTest`（9 用例）**：空答案短路、引用序号越界（[9] 对 2 篇来源）入 invalid、无引用实质句仅登记、句子与来源高相似（cos=1）放行不触发 LLM、低相似（cos=0）进可疑、LLM 复核确认不支撑 / 判全部支撑 / 不可用按向量预筛兜底 / 复核关闭直接用向量结论、来源正文缺失跳过预筛（fail-open）。
+
+### 验证
+- 5 个新增测试类共 47 用例全部通过（`-Dtest` 定向运行 + content 全量回归）。
+- content 模块 `mvn verify` 的 JaCoCo 覆盖率门禁（`jacoco.line.min=0.54`）通过，AI 模块覆盖率缺口回补。
+
+### 变更文件
+- 新增：`test/.../service/aigc/impl/AigcDetectServiceImplTest.java`、`test/.../service/ai/memory/impl/UserMemoryServiceImplTest.java`、`test/.../service/ai/impl/HybridRecallServiceImplTest.java`、`test/.../service/ai/impl/AiSemanticCacheServiceImplTest.java`、`test/.../service/ai/impl/AnswerFaithfulnessServiceImplTest.java`
+- 修改：`docs/CHANGELOG.md`
+
 ## 2026-09-13 — CI 修复：AIGC 检测单测 mock 补齐 + 覆盖率门禁随功能批次校准
 
 ### 背景

@@ -14,11 +14,11 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <!-- JaCoCo 门禁：总行覆盖率最低值（0.54=54%，当前约 54.89%，留余量防抖动）。
-             2026-09-13 AI 增强批次新增 outbox/AIGC 检测/语义记忆/混合检索等大量生产代码，
-             覆盖阶段性回落（此前 65%）；未配测试的新功能模块（AigcDetect/HybridRecall/记忆层等）
-             需补齐单测后再逐步上调。 -->
-        <jacoco.line.min>0.54</jacoco.line.min>
+        <!-- JaCoCo 门禁：总行覆盖率最低值（0.56=56%，当前约 61.8%，留余量防抖动）。
+             2026-09-13 AI 增强批次新增 outbox/AIGC 检测/语义记忆/混合检索/语义缓存/忠实度校验/
+             配额钱包/发布助手/RAG 问答等模块，经两轮单测补齐（858 用例）后覆盖由 54.89% 回升至约 61.8%，
+             门禁从 0.54 上调至 0.56，后续随剩余模块补测继续上调。 -->
+        <jacoco.line.min>0.56</jacoco.line.min>
     </properties>
 
     <dependencies>
