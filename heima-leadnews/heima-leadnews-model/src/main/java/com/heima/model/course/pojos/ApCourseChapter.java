@@ -42,6 +42,13 @@ public class ApCourseChapter implements Serializable {
 
     @TableField("status")
     private Integer status;
+    /** 内容诚信治理：1-疑似AI水文(禁止售卖) */
+    @TableField("is_aigc")
+    private Integer isAigc;
+
+    /** 内容诚信治理：AI水文疑似分 0-100 */
+    @TableField("aigc_score")
+    private Integer aigcScore;
 
     @TableField("estimated_minutes")
     private Integer estimatedMinutes;

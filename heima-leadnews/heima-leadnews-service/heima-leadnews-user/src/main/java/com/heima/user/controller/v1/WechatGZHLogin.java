@@ -1,7 +1,9 @@
 package com.heima.user.controller.v1;
 
 import cn.hutool.core.util.RandomUtil;
+import cn.hutool.core.util.StrUtil;
 import com.heima.common.redis.CacheService;
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,6 +16,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,77 +28,97 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 public class WechatGZHLogin {
 
-    private static final String TOKEN = "huhudong";
+    /**
+     * 公开的兜底 Token 字符串（=改前硬编码值）。保留它是为了：
+     * <ul>
+     *   <li>可追溯：万一回滚或追查时仍能直接看到原值</li>
+     *   <li>可联调：application.yml 未配置时仍可跑通本地用例</li>
+     * </ul>
+     * <b>生产环境必须通过 WECHAT_GZH_TOKEN 环境变量覆盖，{@link #warnIfTokenMissing()} 会在启动期 WARN 提醒</b>。
+     */
+    public static final String DEFAULT_TOKEN = "huhudong";
+
+    /**
+     * 微信公众号服务器配置中的 Token（需与公众号后台填写的值一致）。
+     * 兜底默认值为 {@link #DEFAULT_TOKEN}（与原硬编码一致），生产必须经 WECHAT_GZH_TOKEN 环境变量覆盖。
+     */
+    @Value("${wechat.gzh.token:" + DEFAULT_TOKEN + "}")
+    private String gzhToken;
+
     @Autowired
     private CacheService cacheService;
 
+    /**
+     * 启动期自检：未配置 Token 时按 fail-closed 拒绝所有回调；
+     * 若仍为公开兜底值 {@link #DEFAULT_TOKEN}，WARN 提示生产必须经 WECHAT_GZH_TOKEN 环境变量覆盖。
+     */
+    @PostConstruct
+    public void warnIfTokenMissing() {
+        if (StrUtil.isBlank(gzhToken)) {
+            log.error("wechat.gzh.token 未配置：微信公众平台回调将以 fail-closed 拒绝所有请求。"
+                + "请从公众号后台获取 Token 并通过 WECHAT_GZH_TOKEN 环境变量注入。");
+            return;
+        }
+        if (DEFAULT_TOKEN.equals(gzhToken)) {
+            log.warn("wechat.gzh.token 仍为公开兜底值 {}：仅本地/演示环境可用，生产环境请通过 WECHAT_GZH_TOKEN 环境变量注入真实 Token。",
+                DEFAULT_TOKEN);
+        }
+    }
 
     @GetMapping
     public String auth(@RequestParam("signature") String signature, @RequestParam("timestamp") String timestamp,
         @RequestParam("nonce") String nonce, @RequestParam("echostr") String echostr) {
         log.info("========== 收到微信公众号GET验证请求 ==========");
-        log.info("signature: {}, timestamp: {}, nonce: {}, echostr: {}", signature, timestamp, nonce, echostr);
-        boolean auth = preAuth(signature, timestamp, nonce, echostr);
-        if (!auth) {
+        if (StrUtil.isBlank(echostr) || !checkSignature(signature, timestamp, nonce)) {
             log.warn("微信公众号验证失败，拒绝访问");
             return ""; // 验证失败时返回空字符串
         }
         return echostr;
     }
 
-    // 当普通微信用户向公众账号发消息时，微信服务器将POST消息的XML数据包到开发者填写的URL上。
+    /**
+     * 当普通微信用户向公众账号发消息时，微信服务器将POST消息的XML数据包到开发者填写的URL上。
+     * <p>
+     * 微信会在回调 URL 上附带 signature/timestamp/nonce，<b>必须校验通过后才能信任请求体</b>：
+     * 否则任何人都可以伪造 XML、把 FromUserName 设成受害者 openid，从而换取该账号的登录 token。
+     */
     @PostMapping
-    public String using(HttpServletRequest request) {
-        String xmlData = readXmlFromRequest(request);
+    public String using(HttpServletRequest request,
+        @RequestParam(value = "signature", required = false) String signature,
+        @RequestParam(value = "timestamp", required = false) String timestamp,
+        @RequestParam(value = "nonce", required = false) String nonce) {
         log.info("========== 收到微信公众号POST请求 ==========");
-        log.info("请求内容: {}", xmlData);
-        if (xmlData == null || xmlData.trim().isEmpty()) {
+        if (!checkSignature(signature, timestamp, nonce)) {
+            // 返回 success 让微信不再重试，同时不向伪造方透露任何信息
+            log.warn("微信公众号消息签名校验失败，已忽略该请求（疑似伪造回调）");
+            return "success";
+        }
+        String xmlData = readXmlFromRequest(request);
+        if (StrUtil.isBlank(xmlData)) {
             log.warn("收到空的微信消息");
             return "success";// 代表接收到消息，但不回复
         }
         WechatMessageDto message = parseXmlToMessage(xmlData);
-        if (message != null && "text".equals(message.getMsgType())) {
-            String content = message.getContent().trim();
-            if ("登录".equals(content) || "登陆".equals(content)) {
-                try {
-                    // 6位随机数字
-                    String token = RandomUtil.randomNumbers(6);
-                    String redisKey = "wechat:token:" + message.getFromUserName();
-                    cacheService.setEx(redisKey, token, 5, TimeUnit.MINUTES);
-                    log.info("用户 {} 在公众号，生成token: {}", message.getFromUserName(), token);
-                    String backXml = buildTextMessage(message.getFromUserName(), message.getToUserName(),
-                        "您的token为: " + token + "\n有效期: 5分钟");
-                    // GET https://api.weixin.qq.com/cgi-bin/user/info?access_token=ACCESS_TOKEN&openid=xxx&lang=zh_CN
-                    // 生成token返回给用户，与此同时，请求获取用户信息
-                    // response
-                    // {
-                    //    "subscribe": 1,
-                    //    "openid": "xxxxx",
-                    //    "nickname": "",
-                    //    "sex": 0,
-                    //    "language": "zh_CN",
-                    //    "city": "",
-                    //    "province": "",
-                    //    "country": "",
-                    //    "headimgurl": "",
-                    //    "subscribe_time": 1780754379,
-                    //    "remark": "",
-                    //    "groupid": 0,
-                    //    "tagid_list": [],
-                    //    "subscribe_scene": "ADD_SCENE_QR_CODE",
-                    //    "qr_scene": 0,
-                    //    "qr_scene_str": ""
-                    //}
-                    log.info("返回给用户: {}", backXml);
-                    return backXml;
-                } catch (Exception e) {
-                    log.error("处理微信消息失败", e);
-                    return "success";
-                }
+        if (message == null || !"text".equals(message.getMsgType()) || StrUtil.isBlank(message.getContent())) {
+            return "success";
+        }
+        String content = message.getContent().trim();
+        if ("登录".equals(content) || "登陆".equals(content)) {
+            try {
+                // 6位随机数字，5 分钟内有效，用于换取双 Token
+                String token = RandomUtil.randomNumbers(6);
+                String redisKey = "wechat:token:" + message.getFromUserName();
+                cacheService.setEx(redisKey, token, 5, TimeUnit.MINUTES);
+                // 注意：token 与 openid 均属敏感信息，不写入日志
+                log.info("已处理公众号登录指令，生成一次性登录 token");
+                return buildTextMessage(message.getFromUserName(), message.getToUserName(),
+                    "您的token为: " + token + "\n有效期: 5分钟");
+            } catch (Exception e) {
+                log.error("处理微信消息失败", e);
+                return "success";
             }
         }
         return "success";
-
     }
 
     private WechatMessageDto parseXmlToMessage(String xmlData) {
@@ -147,29 +170,27 @@ public class WechatGZHLogin {
     }
 
 
-    private static boolean preAuth(String signature, String timestamp, String nonce, String echostr) {
-        // 微信公众号服务器配置验证：先进行参数校验
-        if (signature == null || timestamp == null || nonce == null || echostr == null) {
-            log.warn("微信公众号验证失败：参数不能为空");
+    /**
+     * 校验微信服务器签名（GET 接入验证与 POST 消息推送共用）。
+     * <p>
+     * 算法按微信官方文档：将 Token、timestamp、nonce 三者字典序排序后拼接，取 SHA1 与 signature 比对。
+     * <b>fail-closed</b>：Token 未配置或参数缺失时一律返回 false，避免"漏配即放行"。
+     */
+    private boolean checkSignature(String signature, String timestamp, String nonce) {
+        if (StrUtil.isBlank(gzhToken)) {
+            log.warn("微信公众号签名校验失败：wechat.gzh.token 未配置");
             return false;
         }
-        log.info("开始公众号登录验证");
-        // 按照微信官方文档：将token、timestamp、nonce三个参数进行字典序排序后拼接成一个字符串
-        String[] params = {TOKEN, timestamp, nonce};
+        if (StrUtil.isBlank(signature) || StrUtil.isBlank(timestamp) || StrUtil.isBlank(nonce)) {
+            log.warn("微信公众号签名校验失败：signature/timestamp/nonce 不能为空");
+            return false;
+        }
+        String[] params = {gzhToken, timestamp, nonce};
         Arrays.sort(params);
-        StringBuilder sb = new StringBuilder();
-        for (String param : params) {
-            sb.append(param);
-        }
-        // 对拼接后的字符串进行sha1加密
-        String hash = DigestUtils.sha1Hex(sb.toString());
+        String hash = DigestUtils.sha1Hex(String.join("", params));
         // 使用恒定时间比较，防止时序攻击
-        if (!MessageDigest.isEqual(hash.getBytes(StandardCharsets.UTF_8), signature.getBytes(StandardCharsets.UTF_8))) {
-            log.warn("微信公众号验证失败：签名不匹配");
-            return false;
-        }
-        log.info("微信公众号验证成功");
-        return true;
+        return MessageDigest.isEqual(
+            hash.getBytes(StandardCharsets.UTF_8), signature.getBytes(StandardCharsets.UTF_8));
     }
 
     /**

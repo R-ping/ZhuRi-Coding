@@ -1,6 +1,8 @@
 package com.heima.content.service.article.impl;
 
 import com.heima.content.service.article.ArticleSimilarityService;
+import com.heima.content.utils.MarkdownUtils;
+import com.heima.content.utils.TextChunker;
 import com.heima.model.article.pojos.ApArticle;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,8 +57,18 @@ public class ArticleSimilarityServiceImpl implements ArticleSimilarityService {
                 }
             }
 
-            // 3. 保存当前文章的向量嵌入（无论是否相似）
+            // 3. Step4 内容诚信：疑似 AI 水文不入向量库（防污染 RAG 检索）
+            if (article.getIsAigc() != null && article.getIsAigc() == 1) {
+                log.info("[Aigc] 跳过 AI 水文入向量库, articleId={}", article.getId());
+                return result;
+            }
+            // 保存当前文章的向量嵌入（无论是否相似）
             embeddingService.saveEmbedding(article.getId(), embedding);
+            // 父子分块：同步写子块向量，供 RAG 子块级召回（内部 fail-open，不阻断发布）
+            embeddingService.saveChunks(article.getId(), TextChunker.split(
+                MarkdownUtils.normalizeContent(content),
+                TextChunker.DEFAULT_TARGET, TextChunker.DEFAULT_OVERLAP,
+                embeddingService.getChunkMaxPerArticle()));
 
         } catch (Exception e) {
             log.error("Error checking similarity for articleId={}: {}", article.getId(), e.getMessage());

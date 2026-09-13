@@ -15,11 +15,26 @@ import java.net.URLDecoder;
 @Slf4j
 public class UserTokenInterceptor implements HandlerInterceptor {
 
-    /** 网关与下游共享的内部身份签名密钥（未配置则跳过校验，兼容本地直连） */
+    /** 网关与下游共享的内部身份签名密钥（未配置则拒绝信任身份头，fail-closed） */
     private final String internalAuthSecret;
 
     public UserTokenInterceptor(String internalAuthSecret) {
         this.internalAuthSecret = internalAuthSecret;
+        warnIfInsecure();
+    }
+
+    /**
+     * 启动期自检：密钥缺失或仍为公开的开发默认值时给出告警。
+     * 让"内部身份签名形同虚设"这类配置问题在启动阶段暴露，而不是等到被冒充后才发现。
+     */
+    private void warnIfInsecure() {
+        if (!InternalAuthSigner.isConfigured(internalAuthSecret)) {
+            log.error("app.internal-auth.secret 未配置，内部身份校验将以 fail-closed 运行："
+                + "所有携带身份头的请求都会被判为不可信并按匿名处理。请设置 INTERNAL_AUTH_SECRET 环境变量。");
+        } else if (InternalAuthSigner.DEFAULT_DEV_SECRET.equals(internalAuthSecret)) {
+            log.warn("app.internal-auth.secret 仍为公开的开发默认值，生产环境务必用 "
+                + "INTERNAL_AUTH_SECRET 覆盖，否则签名可被伪造。");
+        }
     }
 
     /**
@@ -44,10 +59,13 @@ public class UserTokenInterceptor implements HandlerInterceptor {
         return true;
     }
 
-    /** 密钥未配置时降级信任（本地直连）；配置后必须通过 HMAC 验签（与网关签名参数一致：userId/nickName/image） */
+    /**
+     * 仅当密钥已配置且 HMAC 验签通过时才信任身份头（fail-closed），
+     * 签名参数与网关保持一致：userId / nickName（解码后）/ image。
+     */
     private boolean isTrusted(HttpServletRequest request, String userId, String nickName, String image) {
-        if (internalAuthSecret == null || internalAuthSecret.isEmpty()) {
-            return true;
+        if (!InternalAuthSigner.isConfigured(internalAuthSecret)) {
+            return false;
         }
         String sign = request.getHeader(InternalAuthSigner.HEADER_SIGN);
         return InternalAuthSigner.verify(internalAuthSecret, sign, userId, decodeNickName(nickName), image != null ? image : "");

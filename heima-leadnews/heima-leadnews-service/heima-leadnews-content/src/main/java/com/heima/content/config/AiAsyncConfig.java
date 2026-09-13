@@ -29,4 +29,24 @@ public class AiAsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * Agent 并行工具执行池（多智能体编排专用）。
+     *
+     * <p>背景：主编 Agent 在单个 ReAct 轮次内可能同时发起多个专家 Worker 调用（如安全/质量/SEO 并行），
+     * 各 Worker 内部是一次 LLM 调用（秒级阻塞）。若用 {@link java.util.concurrent.CompletableFuture} 默认
+     * ForkJoinPool，会与 SSE 等其它共享任务相互干扰。此处提供独立有界池，实现 Workflow 模式中的 Parallelization。
+     */
+    @Bean("aiAgentToolExecutor")
+    public Executor aiAgentToolExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(6);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("ai-agent-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

@@ -24,6 +24,10 @@ public class UserSearchDto {
     * 最小时间
     */
     Date minBehotTime;
+    /**
+    * 语义搜索开关（向量化增强）：true/缺省-关键词命中不足时向量召回兜底；false-纯关键词
+    */
+    Boolean semantic;
 
     public int getFromIndex(){
         if(this.pageNum<1)return 0;

@@ -24,8 +24,10 @@ CREATE TABLE `ap_user` (
   `status` tinyint unsigned DEFAULT NULL COMMENT '1正常\n            0锁定',
   `flag` tinyint unsigned DEFAULT NULL COMMENT '0 普通用户\r\n            1 自媒体人\r\n            2 大V',
   `created_time` datetime DEFAULT NULL COMMENT '注册时间',
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=1889522386 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='APP用户信息表';
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_phone` (`phone`),
+  UNIQUE KEY `uk_email` (`email`)
+) ENGINE=InnoDB AUTO_INCREMENT=1889522430 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='APP用户信息表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -104,3 +106,4 @@ CREATE TABLE `user_tag_relation` (
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+

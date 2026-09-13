@@ -32,9 +32,21 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
     /** 与下游服务一致的签名固定前缀 */
     private static final String INTERNAL_SIGN_PREFIX = "heima-leadnews-internal-v1";
 
-    /** 网关与下游共享的内部身份签名密钥（未配置则不写签名，下游跳过校验） */
+    /** 网关与下游共享的内部身份签名密钥（未配置则不写签名，下游按 fail-closed 拒绝信任身份头） */
     @Value("${app.internal-auth.secret:}")
     private String internalAuthSecret;
+
+    /**
+     * 启动期自检：密钥缺失时网关不写签名、下游 fail-closed 拒绝信任身份头，
+     * 表现为"所有需登录接口都返回未登录"。这里必须告警，避免被误判为业务缺陷。
+     */
+    @jakarta.annotation.PostConstruct
+    public void warnIfSecretMissing() {
+        if (StringUtils.isBlank(internalAuthSecret)) {
+            log.error("app.internal-auth.secret 未配置：网关不会写入内部签名，下游将拒绝信任身份头，"
+                + "所有需登录接口都会返回未登录。请设置 INTERNAL_AUTH_SECRET（网关与各服务必须一致）。");
+        }
+    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -130,7 +142,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
      * 为下游信任的身份头写入 HMAC 签名（X-Internal-Sign）。
      * 签名基于【原始值】userId/nickName/image；下游用解码后的昵称验签。
      * 算法与 common 模块 InternalAuthSigner 保持一致（HMAC-SHA256，payload 固定前缀 + | 分隔原始值）。
-     * 未配置内部签名密钥时不写签名（下游同时跳过校验，兼容本地直连）。
+     * 未配置内部签名密钥时不写签名（下游同时以 fail-closed 拒绝信任身份头，不会退化为可伪造）。
      */
     private void addInternalSign(org.springframework.http.HttpHeaders httpHeaders,
                                  String userId, String nickName, String image) {

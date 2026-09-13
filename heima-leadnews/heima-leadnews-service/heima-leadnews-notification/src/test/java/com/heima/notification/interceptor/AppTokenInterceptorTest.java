@@ -77,6 +77,21 @@ class AppTokenInterceptorTest {
     }
 
     @Test
+    @DisplayName("密钥未配置 → fail-closed，拒绝信任身份头（防绕过网关伪造 userId）")
+    void testPreHandleWithoutSecret() throws Exception {
+        interceptor = new AppTokenInterceptor(null);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("userId")).thenReturn("100");
+        when(request.getHeader("nickName")).thenReturn("张三");
+        when(request.getHeader("image")).thenReturn("");
+
+        boolean ok = interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
+
+        assertTrue(ok);
+        assertNull(AppThreadLocalUtil.getUser());
+    }
+
+    @Test
     @DisplayName("无 userId → 放行且不写入登录态")
     void testPreHandleWithoutUser() throws Exception {
         HttpServletRequest request = mock(HttpServletRequest.class);

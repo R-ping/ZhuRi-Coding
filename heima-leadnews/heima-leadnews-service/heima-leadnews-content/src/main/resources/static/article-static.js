@@ -774,6 +774,16 @@
         var userName = userInfo.userName || '匿名用户';
         var avatarUrl = userInfo.avatarLarge || '';
 
+        // AI 折叠评论（仅作者本人可见折叠条）：不渲染正文/点赞/回复/子树，提供"申诉"纠错入口
+        if (comment.hidden) {
+            li.className = 'comment-item comment-hidden';
+            li.innerHTML = '<div class="comment-hidden-bar">该评论已被折叠，仅自己可见</div>' +
+                '<div class="comment-hidden-actions">' +
+                '<button type="button" class="comment-hidden-appeal" data-comment-id="' + comment.commentId + '">申诉</button>' +
+                '</div>';
+            return li;
+        }
+
         var html = '<div class="comment-user">';
         html += '<div class="comment-user-avatar"><img src="' + avatarUrl + '" alt="avatar"></div>';
         html += '<span class="comment-user-name">' + escapeHtml(userName) + '</span>';
@@ -813,6 +823,11 @@
 
     // 渲染单条二级/更深回复（含回复附带图片，继续回复仍可嵌套）
     function renderReplyItem(reply, rootCommentId) {
+        // AI 折叠回复（仅作者本人可见折叠条）：不渲染正文与"回复"按钮
+        if (reply.hidden) {
+            return '<div class="reply-item reply-hidden" data-comment-id="' + reply.commentId + '">' +
+                '<span class="reply-hidden-bar">该回复已被折叠，仅自己可见</span></div>';
+        }
         var replyUser = reply.userInfo || {};
         var html = '<div class="reply-item" data-comment-id="' + reply.commentId + '">';
         html += '<div class="reply-body">';
@@ -872,6 +887,11 @@
         document.querySelectorAll('.comment-reply-btn').forEach(function(btn) {
             btn.removeEventListener('click', handleCommentReply);
             btn.addEventListener('click', handleCommentReply);
+        });
+        // 评论折叠申诉按钮（仅折叠评论作者本人可见）
+        document.querySelectorAll('.comment-hidden-appeal').forEach(function(btn) {
+            btn.removeEventListener('click', handleCommentAppeal);
+            btn.addEventListener('click', handleCommentAppeal);
         });
         // 查看更多回复
         document.querySelectorAll('.reply-more-btn').forEach(function(btn) {
@@ -1634,7 +1654,7 @@
             if (res && res.code === 200 && res.data) {
                 var list = res.data.list || [];
                 if (list.length === 0) {
-                    container.innerHTML = '<li class="sidebar-recommend-empty">暂无精选内容</li>';
+                    container.innerHTML = '<li class="sidebar-recommend-empty">暂无相似文章</li>';
                     return;
                 }
                 container.innerHTML = '';
@@ -1648,7 +1668,7 @@
                     container.appendChild(li);
                 });
             } else {
-                container.innerHTML = '<li class="sidebar-recommend-empty">暂无精选内容</li>';
+                container.innerHTML = '<li class="sidebar-recommend-empty">暂无相似文章</li>';
             }
         }).catch(function(err) {
             console.error('加载精选内容失败:', err);
@@ -2254,4 +2274,319 @@
     if (sideImmersiveBtn) sideImmersiveBtn.addEventListener('click', toggleImmersiveMode);
     var immersiveExitBtn = document.getElementById('immersiveExitBtn');
     if (immersiveExitBtn) immersiveExitBtn.addEventListener('click', toggleImmersiveMode);
+
+    // ========== Step3·① AI 摘要 + 单篇问答 ==========
+    // AI 摘要：加载失败/不可用时隐藏卡片，不影响正文阅读
+    function loadAiSummary() {
+        if (!articleId || articleId === '0') return;
+        var card = document.getElementById('aiSummaryCard');
+        var bodyEl = document.getElementById('aiSummaryBody');
+        if (!card || !bodyEl) return;
+        card.style.display = 'block';
+        bodyEl.classList.add('ai-summary-loading');
+        bodyEl.textContent = '正在生成摘要…';
+        apiGet('/content/api/v1/ai/summary/' + encodeURIComponent(articleId)).then(function(res) {
+            if (res && res.code === 200 && res.data) {
+                bodyEl.textContent = String(res.data);
+                bodyEl.classList.remove('ai-summary-loading');
+            } else {
+                card.style.display = 'none';
+            }
+        }).catch(function() {
+            card.style.display = 'none';
+        });
+    }
+
+    // ---- 单篇问答浮层（答案只来自本文，逐字流式，协议与 AiAskFloating 一致） ----
+    var aiAskOpen = false;
+    var aiAskStreaming = false;
+    var aiAskMsgs = []; // {role: 'user'|'assistant', content}，用于多轮 history
+    var aiLastQuestion = ''; // 最近一次提问（供回答反馈条使用）
+    var aiAskFab = document.getElementById('aiAskFab');
+    var aiAskMask = document.getElementById('aiAskMask');
+    var aiAskPanel = document.getElementById('aiAskPanel');
+    var aiAskCloseBtn = document.getElementById('aiAskClose');
+    var aiAskBodyEl = document.getElementById('aiAskBody');
+    var aiAskEmptyEl = document.getElementById('aiAskEmpty');
+    var aiAskInput = document.getElementById('aiAskInput');
+    var aiAskSendBtn = document.getElementById('aiAskSend');
+
+    function openAiAsk() {
+        if (!aiAskPanel) return;
+        if (!isLoggedIn()) { openLoginModal(); return; }
+        aiAskOpen = true;
+        aiAskPanel.classList.add('open');
+        aiAskPanel.setAttribute('aria-hidden', 'false');
+        if (aiAskMask) aiAskMask.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        if (aiAskInput) setTimeout(function() { aiAskInput.focus(); }, 240);
+    }
+    function closeAiAsk() {
+        if (!aiAskOpen) return;
+        aiAskOpen = false;
+        aiAskPanel.classList.remove('open');
+        aiAskPanel.setAttribute('aria-hidden', 'true');
+        if (aiAskMask) aiAskMask.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+    if (aiAskFab) aiAskFab.addEventListener('click', openAiAsk);
+    if (aiAskCloseBtn) aiAskCloseBtn.addEventListener('click', closeAiAsk);
+    if (aiAskMask) aiAskMask.addEventListener('click', closeAiAsk);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && aiAskOpen) closeAiAsk();
+    });
+
+    function aiAskScrollBottom() {
+        if (aiAskBodyEl) aiAskBodyEl.scrollTop = aiAskBodyEl.scrollHeight;
+    }
+    function aiAskAppend(msg) {
+        if (!aiAskBodyEl) return;
+        if (aiAskEmptyEl) aiAskEmptyEl.style.display = 'none';
+        var wrap = document.createElement('div');
+        wrap.className = 'ai-msg';
+        var node;
+        if (msg.role === 'user') {
+            node = document.createElement('div');
+            node.className = 'ai-msg-user';
+            node.textContent = msg.content;
+        } else {
+            node = document.createElement('div');
+            node.className = 'ai-msg-answer';
+            node.textContent = msg.content || '…';
+            node.setAttribute('data-answer', '1');
+            if (msg.error) {
+                node.className = 'ai-msg-error';
+                node.textContent = msg.content;
+            }
+        }
+        wrap.appendChild(node);
+        aiAskBodyEl.appendChild(wrap);
+        aiAskScrollBottom();
+        return node;
+    }
+    function aiAskHistory() {
+        var hist = [];
+        var recent = aiAskMsgs.slice(-6);
+        for (var i = 0; i < recent.length; i++) {
+            var m = recent[i];
+            if (!m) continue;
+            if (m.role === 'user') hist.push({ role: 'user', content: String(m.content || '').slice(0, 200) });
+            else hist.push({ role: 'assistant', content: String(m.content || '').slice(0, 300) });
+        }
+        return hist;
+    }
+    function aiAskSend() {
+        if (aiAskStreaming || !aiAskInput) return;
+        var q = aiAskInput.value.trim();
+        if (!q) return;
+        if (!isLoggedIn()) { openLoginModal(); return; }
+        aiAskInput.value = '';
+        aiAskInput.style.height = '';
+        aiAskMsgs.push({ role: 'user', content: q });
+        aiAskAppend({ role: 'user', content: q });
+        var lastEl = aiAskAppend({ role: 'assistant', content: '' });
+        aiAskStreaming = true;
+        aiAskSendBtn.disabled = true;
+        var acc = '';
+        aiLastQuestion = q;
+        var body = JSON.stringify({ articleId: articleId, question: q, history: aiAskHistory() });
+        fetch('/content/api/v1/ai/ask-article', {
+            method: 'POST',
+            headers: getHeaders(),
+            body: body
+        }).then(function(resp) {
+            if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
+            var reader = resp.body.getReader();
+            var decoder = new TextDecoder('utf-8');
+            var buffer = '';
+            var eventName = '';
+            var pump = function() {
+                return reader.read().then(function(r) {
+                    if (r.done) return aiAskFinish(acc, lastEl);
+                    buffer += decoder.decode(r.value, { stream: true });
+                    var lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (var i = 0; i < lines.length; i++) {
+                        var t = lines[i].trim();
+                        if (t.indexOf('event:') === 0) { eventName = t.slice(6).trim(); continue; }
+                        if (t.indexOf('data:') === 0) {
+                            var data = t.slice(5).trim();
+                            if (eventName === 'delta') {
+                                acc += data;
+                                lastEl.textContent = acc;
+                                aiAskScrollBottom();
+                            } else if (eventName === 'done') {
+                                try {
+                                    var vo = JSON.parse(data);
+                                    if (vo && vo.answer) { acc = vo.answer; lastEl.textContent = acc; }
+                                } catch (e) { /* ignore */ }
+                            } else if (eventName === 'error') {
+                                aiAskFail(lastEl, data || 'AI 服务暂不可用');
+                                return;
+                            }
+                            eventName = '';
+                        }
+                    }
+                    return pump();
+                }).catch(function() { aiAskFail(lastEl, '流式响应中断，请重试'); });
+            };
+            return pump();
+        }).catch(function(err) {
+            aiAskFail(lastEl, 'AI 服务暂不可用（' + (err.message || '网络错误') + '）');
+        });
+    }
+    function aiAskFinish(acc, lastEl) {
+        aiAskStreaming = false;
+        if (aiAskSendBtn) aiAskSendBtn.disabled = false;
+        var text = acc || '';
+        lastEl.textContent = text || '未获得回答，请重试';
+        if (text) aiAskMsgs.push({ role: 'assistant', content: text });
+        if (text) appendFeedbackBar(lastEl, aiLastQuestion || '', String(articleId), 'aiask_article');
+        aiAskScrollBottom();
+    }
+    // 回答反馈条（👍/👎 反馈闭环）
+    function appendFeedbackBar(answerEl, q, sceneId, feature) {
+        var wrap = document.createElement('div');
+        wrap.className = 'ai-feedback-bar';
+        wrap.innerHTML =
+            '<button type="button" class="ai-feedback-btn up" title="有帮助">有帮助</button>' +
+            '<button type="button" class="ai-feedback-btn down" title="没帮助/有误">没帮助</button>';
+        answerEl.parentNode.appendChild(wrap);
+        wrap.querySelector('.up').addEventListener('click', function() {
+            sendAiFeedback(feature, sceneId, q, answerEl.textContent, 1, wrap);
+        });
+        wrap.querySelector('.down').addEventListener('click', function() {
+            sendAiFeedback(feature, sceneId, q, answerEl.textContent, -1, wrap);
+        });
+    }
+    function sendAiFeedback(feature, sceneId, q, answer, feedback, wrap) {
+        if (!isLoggedIn()) { openLoginModal(); return; }
+        apiPost('/content/api/v1/ai/feedback', {
+            feature: feature, sceneId: sceneId,
+            question: String(q).slice(0, 200),
+            answer: String(answer || '').slice(0, 500),
+            feedback: feedback
+        }).then(function(res) {
+            if (res && res.code === 200) {
+                wrap.innerHTML = '<span class="ai-feedback-done">感谢反馈</span>';
+            }
+        }).catch(function() { /* 静默失败，不打扰问答主流程 */ });
+    }
+    function aiAskFail(lastEl, msg) {
+        aiAskStreaming = false;
+        if (aiAskSendBtn) aiAskSendBtn.disabled = false;
+        lastEl.className = 'ai-msg-error';
+        lastEl.textContent = msg;
+        aiAskScrollBottom();
+    }
+    if (aiAskSendBtn) aiAskSendBtn.addEventListener('click', aiAskSend);
+    if (aiAskInput) {
+        aiAskInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                aiAskSend();
+            }
+        });
+        aiAskInput.addEventListener('input', function() {
+            aiAskInput.style.height = 'auto';
+            aiAskInput.style.height = Math.min(120, aiAskInput.scrollHeight) + 'px';
+        });
+    }
+
+    // ---- 评论折叠申诉（AI 预审 + 人工终审，让误伤可纠正） ----
+    function handleCommentAppeal(e) {
+        e.stopPropagation();
+        var btn = e.currentTarget;
+        var commentId = btn.getAttribute('data-comment-id');
+        if (!commentId) return;
+        if (!isLoggedIn()) { openLoginModal(); return; }
+        var li = btn.closest('.comment-item');
+        if (!li) return;
+        li.innerHTML =
+            '<div class="comment-hidden-bar">该评论已被折叠，仅自己可见</div>' +
+            '<textarea class="appeal-reason-input" rows="2" maxlength="200" placeholder="说明这条是正常表达/被误判…（不超过200字）"></textarea>' +
+            '<div class="appeal-actions">' +
+            '<button type="button" class="comment-hidden-appeal appeal-submit" data-comment-id="' + commentId + '">提交申诉</button>' +
+            '<button type="button" class="comment-hidden-appeal appeal-cancel">取消</button>' +
+            '</div>';
+        var submitBtn = li.querySelector('.appeal-submit');
+        var cancelBtn = li.querySelector('.appeal-cancel');
+        var input = li.querySelector('.appeal-reason-input');
+        if (input) input.focus();
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                li.innerHTML = '<div class="comment-hidden-bar">该评论已被折叠，仅自己可见</div>' +
+                    '<div class="comment-hidden-actions">' +
+                    '<button type="button" class="comment-hidden-appeal" data-comment-id="' + commentId + '">申诉</button>' +
+                    '</div>';
+                bindCommentEvents();
+            });
+        }
+        if (submitBtn) {
+            submitBtn.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                var reason = input ? input.value.trim() : '';
+                if (!reason) { alert('请填写申诉理由'); return; }
+                submitBtn.disabled = true;
+                submitBtn.textContent = '提交中…';
+                apiPost('/content/api/v1/audit/appeal/submit', {
+                    appealType: 1,
+                    contentId: commentId,
+                    reason: reason
+                }).then(function(res) {
+                    if (res && res.code === 200) {
+                        li.innerHTML = '<div class="comment-hidden-bar">该评论已被折叠，仅自己可见</div>' +
+                            '<div class="comment-hidden-appeal-note">申诉已提交，等待平台复核</div>';
+                    } else {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = '提交申诉';
+                        alert((res && res.message) || '提交失败，请稍后重试');
+                    }
+                }).catch(function() {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '提交申诉';
+                    alert('提交失败，请稍后重试');
+                });
+            });
+        }
+    }
+
+    // ---- 相关问答：读完想问（点击问题 → 进"问这篇文章"浮层自动提问） ----
+    function loadRelatedQuestions() {
+        if (!articleId || articleId === '0') return;
+        var wrap = document.getElementById('aiRelatedQuestions');
+        var listEl = document.getElementById('aiRqList');
+        if (!wrap || !listEl) return;
+        listEl.innerHTML = '<div class="ai-rq-loading">生成中…</div>';
+        apiGet('/content/api/v1/ai/related-questions?articleId=' + encodeURIComponent(articleId)).then(function(res) {
+            var qs = res && res.code === 200 && res.data ? res.data : null;
+            if (!qs || !qs.length) { wrap.style.display = 'none'; return; }
+            listEl.innerHTML = '';
+            for (var i = 0; i < qs.length; i++) {
+                (function(q) {
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'ai-rq-item';
+                    btn.textContent = q;
+                    btn.addEventListener('click', function() { askRelatedQuestion(q); });
+                    listEl.appendChild(btn);
+                })(qs[i]);
+            }
+            wrap.style.display = 'block';
+        }).catch(function() { wrap.style.display = 'none'; });
+    }
+    function askRelatedQuestion(q) {
+        if (!isLoggedIn()) { openLoginModal(); return; }
+        if (!aiAskOpen) openAiAsk();
+        if (aiAskInput) {
+            aiAskInput.value = q;
+            aiAskInput.style.height = '';
+        }
+        aiAskSend();
+    }
+
+    // 页面就绪后加载摘要 + 读完想问
+    loadAiSummary();
+    loadRelatedQuestions();
 })();

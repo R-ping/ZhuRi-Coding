@@ -5,6 +5,7 @@ import co.elastic.clients.json.JsonData;
 import com.heima.apis.article.IArticleClient;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.heima.model.search.dtos.Bm25RecallDto;
 import com.heima.model.search.dtos.UserSearchDto;
 import com.heima.model.search.vos.SearchArticleVo;
 import com.heima.model.user.pojos.ApUser;
@@ -46,6 +47,12 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
     private ApUserSearchService apUserSearchService;
     @Autowired
     private IArticleClient articleClient;
+
+    @Autowired(required = false)
+    private com.heima.apis.article.ISemanticSearchClient semanticSearchClient;
+
+    /** 语义召回兜底：每页最多补充条数 */
+    private static final int SEMANTIC_FILL_MAX = 10;
 
     @Value("${elasticsearch.article.index:app_info_article}")
     private String articleIndexName;
@@ -129,7 +136,95 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
             return map;
         }).collect(Collectors.toList());
 
+        // 7. 语义兜底召回（向量化增强）：关键词 BM25 命中不足且开启 semantic 时，
+        // 调 content 向量库补召回（同义/口语改写场景"换词搜不到"），去重后补足一页
+        boolean semanticEnabled = dto.getSemantic() == null || Boolean.TRUE.equals(dto.getSemantic());
+        int pageNum = dto.getPageNum() > 0 ? dto.getPageNum() : 1;
+        int pageSize = dto.getPageSize() > 0 ? dto.getPageSize() : 10;
+        if (semanticEnabled && pageNum == 1 && list.size() < pageSize
+            && semanticSearchClient != null) {
+            try {
+                com.heima.model.search.dtos.SemanticSearchDto sdto =
+                    new com.heima.model.search.dtos.SemanticSearchDto();
+                sdto.setSearchWords(dto.getSearchWords());
+                sdto.setTopK(Math.min(pageSize + SEMANTIC_FILL_MAX, 20));
+                ResponseResult sr = semanticSearchClient.semanticSearch(sdto);
+                if (sr != null && sr.getData() instanceof List) {
+                    java.util.Set<String> existIds = list.stream()
+                        .map(m -> String.valueOf(m.get("id"))).collect(Collectors.toSet());
+                    int filled = 0;
+                    for (Object obj : (List<?>) sr.getData()) {
+                        if (!(obj instanceof Map)) {
+                            continue;
+                        }
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> item = (Map<String, Object>) obj;
+                        String id = String.valueOf(item.get("id"));
+                        if (id == null || "null".equals(id) || existIds.contains(id)) {
+                            continue;
+                        }
+                        list.add(item);
+                        existIds.add(id);
+                        filled++;
+                        if (list.size() >= pageSize) {
+                            break;
+                        }
+                    }
+                    log.info("[SemanticSearch] 语义兜底补充 {} 条, words={}", filled, dto.getSearchWords());
+                }
+            } catch (Exception e) {
+                log.warn("[SemanticSearch] 语义兜底失败，仅返回关键词结果, words={}",
+                    dto.getSearchWords(), e);
+            }
+        }
+
         return ResponseResult.okResult(list);
+    }
+
+    /** BM25 召回候选上限（内部接口，防调用方传入过大 topK 拖垮 ES） */
+    private static final int BM25_RECALL_MAX = 50;
+
+    /**
+     * BM25 关键词召回（内部接口，供 RAG 混合检索做 RRF 融合）。
+     *
+     * <p>刻意与面向用户的 search 区分：不加发布时间窗过滤（RAG 要的是最相关，不是最新）、
+     * 不记搜索历史、不做语义兜底（否则 content → search → content 形成回环），
+     * 且不指定 sort —— 保留 ES 默认的 _score 降序，因为 RRF 融合需要的是「相关度排名」。
+     */
+    @Override
+    public ResponseResult bm25Recall(Bm25RecallDto dto) {
+        if (dto == null || StringUtils.isBlank(dto.getQuery())) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "query 不能为空");
+        }
+        int topK = dto.getTopK() == null || dto.getTopK() <= 0
+            ? 15 : Math.min(dto.getTopK(), BM25_RECALL_MAX);
+        try {
+            NativeQuery nativeQuery = NativeQuery.builder()
+                .withQuery(q -> q.bool(b -> b.must(m -> m.queryString(qs -> qs
+                    .fields("title", "content")
+                    .query(dto.getQuery())
+                    .defaultOperator(Operator.Or)
+                ))))
+                .withPageable(PageRequest.of(0, topK))
+                .build();
+            SearchHits<SearchArticle> searchHits = elasticsearchOperations.search(nativeQuery, SearchArticle.class);
+            List<Map<String, Object>> list = new ArrayList<>();
+            for (SearchHit<SearchArticle> hit : searchHits.getSearchHits()) {
+                SearchArticle a = hit.getContent();
+                if (a == null || a.getId() == null) {
+                    continue;
+                }
+                Map<String, Object> map = new HashMap<>();
+                map.put("id", String.valueOf(a.getId()));
+                map.put("score", hit.getScore());
+                list.add(map);
+            }
+            log.info("[Bm25Recall] query={}, topK={}, hits={}", dto.getQuery(), topK, list.size());
+            return ResponseResult.okResult(list);
+        } catch (Exception e) {
+            log.warn("[Bm25Recall] 关键词召回失败, query={}", dto.getQuery(), e);
+            return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, "BM25 召回失败");
+        }
     }
 
     /**

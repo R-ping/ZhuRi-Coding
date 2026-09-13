@@ -1,5 +1,7 @@
 package com.heima.content.service.pins.impl;
 
+import com.heima.content.service.aigc.AigcDetectService;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.apis.notification.INotificationClient;
 import com.heima.common.com.ImageHandle;
@@ -38,6 +40,9 @@ public class PinsPublishService {
 
     @Autowired
     private PinsReviewService pinsReviewService;
+
+    @Autowired
+    private AigcDetectService aigcDetectService;
 
     @Autowired(required = false)
     private INotificationClient notificationClient;
@@ -80,6 +85,9 @@ public class PinsPublishService {
 
         // 异步审核（使用独立 Bean 确保 @Async 被 AOP 代理正确拦截）
         pinsReviewService.asyncReviewPins(pins, user);
+
+        // Step4 内容诚信：AIGC 水文检测（同步 L1 快检打标）
+        aigcDetectService.detectAndFlagPins(pins.getId());
 
         return ResponseResult.okResult(pins);
     }

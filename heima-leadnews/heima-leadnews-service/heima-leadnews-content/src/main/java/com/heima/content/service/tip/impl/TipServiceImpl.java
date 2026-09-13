@@ -80,6 +80,10 @@ public class TipServiceImpl implements TipService {
         if (article == null || article.isDeletedArticle()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
         }
+        // Step4 内容诚信：疑似 AI 水文关闭打赏（防"AI 文骗打赏"欺诈）
+        if (article.getIsAigc() != null && article.getIsAigc() == 1) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "该内容疑似 AI 生成，暂不支持打赏");
+        }
         if (article.getAuthorId() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章作者不存在");
         }

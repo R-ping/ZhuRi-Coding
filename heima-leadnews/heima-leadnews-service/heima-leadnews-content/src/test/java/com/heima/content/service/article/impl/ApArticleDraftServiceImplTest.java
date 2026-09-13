@@ -10,6 +10,7 @@ import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleDraftMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ArticleAutoScanService;
+import com.heima.content.service.aigc.AigcDetectService;
 import com.heima.content.service.level.LevelPermissionService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
@@ -69,6 +70,8 @@ class ApArticleDraftServiceImplTest {
     @Mock private ArticleAutoScanService articleAutoScanService;
     // 发布权限校验：生产 publishFromDraft 在发布前会校验用户是否拥有发布文章权限
     @Mock private LevelPermissionService levelPermissionService;
+    // AIGC 水文检测（发布成功后 L1 快检打标，测试 no-op）
+    @Mock private AigcDetectService aigcDetectService;
 
     @InjectMocks
     private ApArticleDraftServiceImpl draftService;

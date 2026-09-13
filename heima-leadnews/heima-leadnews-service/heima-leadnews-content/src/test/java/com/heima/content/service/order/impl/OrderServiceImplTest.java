@@ -9,7 +9,9 @@ import com.heima.content.mapper.course.ApCourseOrderMapper;
 import com.heima.content.mapper.course.ApUserCourseMapper;
 import com.heima.apis.reward.IRewardClient;
 import com.heima.content.service.order.DiscountService;
-import com.heima.content.service.payment.PaymentRewardService;
+import com.heima.content.service.order.OrderService;
+import com.heima.content.service.outbox.OutboxService;
+import com.heima.content.service.outbox.handler.PayRewardOutboxHandler;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.course.pojos.ApCourse;
@@ -36,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,7 +46,7 @@ import static org.mockito.Mockito.when;
 /**
  * OrderServiceImpl 单元测试（课程订单核心流程）
  *
- * @Service 依赖多个 mapper 与 DiscountService、PaymentRewardService，均 @Mock 注入。
+ * @Service 依赖多个 mapper 与 DiscountService、OutboxService，均 @Mock 注入。
  * 覆盖：
  * - createOrder 参数校验 / 课程不存在 / 折扣码无效 / FIXED 与 PERCENTAGE 折扣计算 / 金额下溢归零 / 默认支付方式；
  * - getOrderStatus 归属校验（防越权）/ 不存在 / 成功；
@@ -58,11 +61,13 @@ class OrderServiceImplTest {
     @Mock
     private ApCourseMapper courseMapper;
     @Mock
+    private com.heima.content.mapper.course.ApCourseChapterMapper courseChapterMapper;
+    @Mock
     private ApUserCourseMapper userCourseMapper;
     @Mock
     private DiscountService discountService;
     @Mock
-    private PaymentRewardService paymentRewardService;
+    private OutboxService outboxService;
     @Mock
     private IRewardClient rewardClient;
     @Mock
@@ -84,6 +89,9 @@ class OrderServiceImplTest {
                 new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApCourse.class);
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApUserCourse.class);
+        // 默认无 AIGC 章节（与 P0 之前 OrderServiceImpl 行 78-83 的「含 AIGC 章节禁止售卖」检查对应；
+        // 不桩会因 courseChapterMapper 为 null 抛 NPE）
+        lenient().when(courseChapterMapper.selectCount(any())).thenReturn(0L);
     }
 
     private ApCourse course(BigDecimal price, Integer isDeleted) {
@@ -303,7 +311,16 @@ class OrderServiceImplTest {
         verify(discountService).consumeDiscountCode("CODE");
         verify(courseMapper).updateById(any(ApCourse.class));
         verify(userCourseMapper).insert(any(ApUserCourse.class));
-        verify(paymentRewardService).onCoursePurchaseSuccess(userId, courseId, new BigDecimal("100"), orderNo);
+        // 方案 B：联动改为 Outbox 事件（同事务写入），不再同步调 PaymentRewardService
+        org.mockito.ArgumentCaptor<String> payload =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(outboxService).record(
+                org.mockito.ArgumentMatchers.eq(PayRewardOutboxHandler.EVENT_TYPE + ":" + orderNo),
+                org.mockito.ArgumentMatchers.eq(PayRewardOutboxHandler.EVENT_TYPE),
+                payload.capture());
+        // payload JSON 含关键业务字段（反序列化失败会由 handler 判死信，这里防呆）
+        assertTrue(payload.getValue().contains("\"orderNo\":\"" + orderNo + "\""));
+        assertTrue(payload.getValue().contains("\"userId\":" + userId));
     }
 
     @Test
@@ -326,18 +343,22 @@ class OrderServiceImplTest {
     }
 
     @Test
-    @DisplayName("handlePaySuccess 联动异常隔离不影响支付主流程")
-    void handlePaySuccessRewardDown() {
+    @DisplayName("handlePaySuccess 联动走 Outbox：只写事件不同步调联动，主流程返回 true")
+    void handlePaySuccessRewardViaOutbox() {
         when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
         when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
         when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
         when(userCourseMapper.selectOne(any())).thenReturn(null);
-        org.mockito.Mockito.doThrow(new RuntimeException("reward down"))
-                .when(paymentRewardService).onCoursePurchaseSuccess(any(), any(), any(), any());
+        when(outboxService.record(any(), any(), any())).thenReturn(true);
 
-        orderService.handlePaySuccess(orderNo, "TN1");
+        boolean ok = orderService.handlePaySuccess(orderNo, "TN1");
 
-        verify(orderMapper).update(any(), any()); // 主流程仍完成
+        assertTrue(ok); // 主流程仍完成
+        // 事件以 orderNo 为幂等键写入（PAY_REWARD:{orderNo}），联动改由 Dispatcher 异步执行
+        verify(outboxService).record(
+                org.mockito.ArgumentMatchers.eq(PayRewardOutboxHandler.EVENT_TYPE + ":" + orderNo),
+                org.mockito.ArgumentMatchers.eq(PayRewardOutboxHandler.EVENT_TYPE),
+                any());
     }
 
     @Test
@@ -586,5 +607,88 @@ class OrderServiceImplTest {
     void getByOrderNoNotFound() {
         when(orderMapper.selectOne(any())).thenReturn(null);
         assertNull(orderService.getByOrderNo(orderNo));
+    }
+
+    // ---------- P0-5 修复：券核销失败 → 退款兜底（P0-5）----------
+
+    /**
+     * P0-5 关键安全断言：折扣码核销失败（已用完/无效）时，订单不能被静默放过。
+     * <p>原代码只 log.warn，订单 PAID + 课程权限已开通，但券没扣 → 同一张券可反复使用（资损）。
+     * 修复后必须：1) 返回 false 供 AlipayServiceImpl 触发退款；2) 调 markRefundPending 写 refund_pending=1；
+     * 3) 不放权（userCourseMapper.insert 永远不被调）。</p>
+     */
+    @Test
+    @DisplayName("handlePaySuccess 折扣码核销失败 → 置为退款待重试且不放权（防重复使用折扣码）")
+    void handlePaySuccessDiscountCodeExhausted() {
+        ApCourseOrder o = order(ApCourseOrder.Status.PENDING.getCode(), "COURSE123");
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占 PAID 成功
+        when(discountService.consumeDiscountCode("COURSE123")).thenReturn(false); // 核销失败
+
+        boolean applied = orderService.handlePaySuccess(orderNo, "TN1");
+
+        // 必须返回 false 供上游 AlipayServiceImpl 触发退款
+        assertFalse(applied);
+        // 必须调 markRefundPending 把订单置为 refund_pending=1（行 343 后的 markRefundPending → 调 mapper.update 至少 2 次：1=PAID 抢占、2=markRefundPending）
+        verify(orderMapper, org.mockito.Mockito.atLeast(2)).update(any(), any());
+        // 关键：失败分支不能放权
+        verify(userCourseMapper, never()).insert(any(ApUserCourse.class));
+        verify(userCourseMapper, never()).updateById(any(ApUserCourse.class));
+    }
+
+    /**
+     * P0-5 关键安全断言：5 折券远程核销返回非 200（reward 不可用 / 数量不足）→ 同样走退款兜底。
+     */
+    @Test
+    @DisplayName("handlePaySuccess 5折券核销返回非 200 → 置为退款待重试且不放权")
+    void handlePaySuccessCouponConsumeFailed() {
+        ApCourseOrder o = order(ApCourseOrder.Status.PENDING.getCode(), "");
+        o.setCouponItemCode("course50");
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        // 模拟 reward 服务降级：返回 errorResult(500, ...)
+        when(rewardClient.consumeVirtualAsset(userId, "course50", 1))
+                .thenReturn(ResponseResult.errorResult(500, "奖励服务不可用，虚拟道具核销失败"));
+
+        boolean applied = orderService.handlePaySuccess(orderNo, "TN1");
+
+        assertFalse(applied);
+        verify(orderMapper, org.mockito.Mockito.atLeast(2)).update(any(), any());
+        verify(userCourseMapper, never()).insert(any(ApUserCourse.class));
+    }
+
+    /**
+     * P0-5 关键安全断言：5 折券远程核销抛异常（Feign 超时/熔断）→ 走退款兜底而非 catch 吞掉。
+     */
+    @Test
+    @DisplayName("handlePaySuccess 5折券核销抛异常 → 置为退款待重试且不放权")
+    void handlePaySuccessCouponConsumeException() {
+        ApCourseOrder o = order(ApCourseOrder.Status.PENDING.getCode(), "");
+        o.setCouponItemCode("course50");
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(rewardClient.consumeVirtualAsset(userId, "course50", 1))
+                .thenThrow(new RuntimeException("feign timeout"));
+
+        boolean applied = orderService.handlePaySuccess(orderNo, "TN1");
+
+        assertFalse(applied);
+        verify(orderMapper, org.mockito.Mockito.atLeast(2)).update(any(), any());
+        verify(userCourseMapper, never()).insert(any(ApUserCourse.class));
+    }
+
+    /**
+     * P0-5 关键安全断言：markRefundPending(orderNo, reason) 接受 reason 入参并写入 refund_pending_reason 字段。
+     * <p>这是从 markRefundPending(orderNo) 重载出来的接口，主要给 AlipayServiceImpl 在
+     * 「已 PAID + 券核销失败」分支传 reason=discount_code_exhausted / coupon_consume_failed 用，
+     * 便于运维直接 SQL SELECT 排查「为什么这笔订单被置为退款」。</p>
+     */
+    @Test
+    @DisplayName("markRefundPending(orderNo, reason) 把 reason 写到 refund_pending_reason 字段")
+    void markRefundPendingWithReason() {
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        orderService.markRefundPending(orderNo, OrderService.REFUND_REASON_DISCOUNT_EXHAUSTED);
+        // 至少调一次 mapper.update 写入 refund_pending=1 + reason
+        verify(orderMapper, org.mockito.Mockito.atLeast(1)).update(any(), any());
     }
 }

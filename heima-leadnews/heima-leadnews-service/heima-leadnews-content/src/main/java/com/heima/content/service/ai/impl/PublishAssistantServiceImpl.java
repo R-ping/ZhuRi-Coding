@@ -7,7 +7,10 @@ import com.heima.content.service.ai.PublishAssistantService;
 import com.heima.content.service.ai.agent.AgentResult;
 import com.heima.content.service.ai.agent.AgentRunner;
 import com.heima.content.service.ai.agent.tools.SimilaritySearchTool;
-import com.heima.content.service.ai.spring.AiSafetyTools;
+import com.heima.content.service.ai.agent.workers.CriticExpertWorker;
+import com.heima.content.service.ai.agent.workers.QualityExpertWorker;
+import com.heima.content.service.ai.agent.workers.SafetyExpertWorker;
+import com.heima.content.service.ai.agent.workers.SeoExpertWorker;
 import com.heima.content.service.ai.spring.AiSimilarityTools;
 import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
 import com.heima.content.service.ai.spring.SafetyGuardException;
@@ -19,10 +22,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * AI 发布助手实现（v2：Agent 工具调用版）
+ * AI 发布助手实现（v3：多智能体编排版 — Orchestrator-Workers + Evaluator-Optimizer）
  *
- * <p>主路径：{@link AgentRunner} ReAct 循环——模型自主决定先调 content_safety_check /
- * search_similar_article 等工具，再综合产出质量分/建议/标签/摘要（FINAL JSON）。
+ * <p>主路径：{@link AgentRunner} 主编（Supervisor）ReAct 循环——拆解任务后并行调度
+ * 安全/质量/SEO 三位专家 Worker（{@link com.heima.content.service.ai.agent.workers}）与
+ * 相似度查重工具，汇总草稿后可调用终审专家（Critic）复审修正，最终输出 FINAL JSON。
  * 兜底路径：循环异常/超步/解析失败时降级为一次性结构化调用（保证接口始终可用）。
  */
 @Slf4j
@@ -35,27 +39,38 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     private static final int LLM_CONTENT_CHARS = 8000;
     /** 相似度预警阈值（低于该值不算"疑似重复"） */
     private static final double SIMILAR_ALERT = 0.72;
-    private static final int AGENT_MAX_STEPS = 4;
+    private static final int AGENT_MAX_STEPS = 6;
 
+    /**
+     * 主编（Supervisor）系统提示词：多智能体编排（Orchestrator-Workers + Evaluator-Optimizer）。
+     *
+     * <p>主编持有 AgentRunner ReAct 循环，把文章拆解为安全/质量/SEO 三个专家 Worker 任务（可并行），
+     * 汇总草稿后可选调终审 Critic（review-optimize）再输出 FINAL JSON。
+     */
     private static final String AGENT_SYSTEM_PROMPT =
-        "你是内容社区《逐日 Coding》的资深编辑助手 Agent，可以调用工具获取事实，再为作者输出发布前预检报告。\n\n" +
-        "可用工具：\n" +
-        "- content_safety_check：参数 {\"title\":\"标题\",\"content\":\"正文\"}，返回违规检测结果。\n" +
-        "- search_similar_article：参数 {\"content\":\"正文\"}，检索最相似的已发布文章。\n\n" +
-        "执行方式：你拥有 content_safety_check / search_similar_article 两个工具，需要时请直接调用（框架会自动执行并把结果给你）；\n" +
-        "拿到所有工具结果后，输出最终报告（仅输出这一行）：\n" +
+        "你是内容社区《逐日 Coding》的主编 Agent（多智能体编排）。作者提交文章，你负责拆解任务、调度专家团队协作评审，" +
+        "再汇总输出一份发布前预检报告。\n\n" +
+        "专家团队（工具，同一轮可并行调用多个）：\n" +
+        "- expert_safety(title, content)：安全审查专家 → {\"is_violation\":true/false,\"violation_type\":\"\",\"violation_reason\":\"\"}\n" +
+        "- expert_quality(title, content)：质量评审专家 → {\"quality_score\":0,\"is_tech\":true,\"suggestions\":[\"建议1\"]}\n" +
+        "- expert_seo(title, content)：SEO/运营专家 → {\"tags\":[\"标签1\"],\"summary\":\"120字内摘要\"}\n" +
+        "- expert_critic(draftJson)：总编终审，检查一致性/完整性并输出修正后的同结构 JSON\n" +
+        "- search_similar_article(content)：检索社区最相似的已发布文章（articleId/title/similarity）\n\n" +
+        "执行方式：你拥有以上全部工具，需要时直接调用（框架自动执行并回传结果）。\n" +
+        "工作流：\n" +
+        "1. 第一轮尽量在同一回复内并行调用 expert_safety、expert_quality、expert_seo，并调用 search_similar_article 查重；\n" +
+        "2. 汇总各专家输出形成预检草稿；如发现矛盾或字段缺失，可调用 expert_critic 做一次终审修正；\n" +
+        "3. 输出最终报告（仅输出这一行）：\n" +
         "FINAL: {JSON}\n\n" +
-        "FINAL 的 JSON 结构（严格遵守）：\n" +
+        "FINAL 的 JSON 结构（严格遵守，字段不能缺失）：\n" +
         "{\"is_violation\":false,\"violation_type\":\"\",\"violation_reason\":\"\",\"quality_score\":0,\"is_tech\":true," +
         "\"suggestions\":[\"建议1\"],\"tags\":[\"标签1\"],\"summary\":\"120字内摘要\"," +
         "\"similar_article_id\":null,\"similar_title\":\"\",\"similarity\":null}\n\n" +
         "规则：\n" +
-        "1. 先调用 content_safety_check；再调用 search_similar_article 判断是否与他人重复。\n" +
-        "2. is_violation 以工具结果为准；客观技术讨论（安全研究/科普/新闻）不算违规。\n" +
-        "3. quality_score 从原创性、逻辑性、表达清晰度综合评分 0-100；suggestions 给 2~4 条可执行建议（禁止空话）。\n" +
-        "4. tags 给 3~5 个社区常用标签（如“MySQL”“性能优化”）；summary 为 120 字内一句话摘要。\n" +
-        "5. similar_article_id/similar_title/similarity 仅在相似文章相似度 ≥ 0.7 时填写，否则为 null/空。\n" +
-        "6. 禁止编造工具结果，未调用工具不得声称已查重。";
+        "1. is_violation 以 expert_safety 裁定为准；客观技术讨论（安全研究/科普/新闻）不算违规。\n" +
+        "2. quality_score/suggestions/tags/summary 以对应专家输出为准，仅做格式整理，不得自行改写结论。\n" +
+        "3. similar_article_id/similar_title/similarity 仅在相似文章相似度 ≥ 0.7 时填写，否则为 null/空。\n" +
+        "4. 禁止编造工具结果，未调用工具不得声称已评审；某专家异常返回 error 时据其余信息合理降级，仍输出完整 FINAL。";
 
     private static final String DIRECT_SYSTEM_PROMPT =
         "你是内容社区《逐日 Coding》的资深编辑助手。请审阅作者文章，仅输出一个 JSON 对象（不要任何额外文字、不要 markdown 代码块），字段：\n" +
@@ -88,7 +103,16 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     private AgentRunner agentRunner;
 
     @Autowired
-    private AiSafetyTools aiSafetyTools;
+    private SafetyExpertWorker safetyExpertWorker;
+
+    @Autowired
+    private QualityExpertWorker qualityExpertWorker;
+
+    @Autowired
+    private SeoExpertWorker seoExpertWorker;
+
+    @Autowired
+    private CriticExpertWorker criticExpertWorker;
 
     @Autowired
     private AiSimilarityTools aiSimilarityTools;
@@ -121,8 +145,9 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         // 提示词安全（净化 user + system 加固 + 输出护栏）由 PromptSafetyAdvisor 声明式处理；
         // Agent 主路径走 AgentRunner 内嵌的 Advisor，兜底路径在下方 ChatClient 上注册同一 Advisor。
         try {
-            // 主路径：Agent 工具调用（模型自主决定查重/安全再作答）
-            List<Object> tools = java.util.Arrays.asList(aiSafetyTools, aiSimilarityTools);
+            // 主路径：主编 Agent 调度专家团队（安全/质量/SEO 并行 + 查重 + 可选终审 Critic）
+            List<Object> tools = java.util.Arrays.asList(safetyExpertWorker, qualityExpertWorker,
+                seoExpertWorker, criticExpertWorker, aiSimilarityTools);
             AgentResult result = agentRunner.run(AGENT_SYSTEM_PROMPT, user, tools, AGENT_MAX_STEPS);
             if (result.isCompleted() && result.getFinalAnswer() != null) {
                 JsonNode root = parseJson(result.getFinalAnswer());

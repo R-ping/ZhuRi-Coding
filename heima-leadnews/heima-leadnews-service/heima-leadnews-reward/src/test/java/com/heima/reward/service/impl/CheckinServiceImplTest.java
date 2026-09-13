@@ -3,9 +3,6 @@ package com.heima.reward.service.impl;
 import com.heima.apis.article.ILevelClient;
 import com.heima.apis.user.IUserClient;
 import com.heima.model.common.dtos.ResponseResult;
-import com.heima.reward.entity.SignRecord;
-import com.heima.reward.entity.UserAssets;
-import com.heima.reward.entity.UserCheckinState;
 import com.heima.reward.mapper.SignRecordMapper;
 import com.heima.reward.mapper.UserAssetsMapper;
 import com.heima.reward.mapper.UserCheckinStateMapper;
@@ -15,34 +12,34 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import org.mockito.stubbing.Answer;
-
 /**
- * CheckinServiceImpl 单元测试
+ * CheckinServiceImpl（外层锁编排）单元测试 —— P0-6 事务边界修复。
  *
- * 覆盖签到核心链路的安全与幂等诉求：
- * 1. Redis 分布式锁竞争(429)与正常获取/释放（finally 内 unlock）；
- * 2. 重复签到阻止(400)与 DuplicateKeyException 兜底；
- * 3. 首次签到（state/assets 为空则 insert）与已存在（则 updateById）；
- * 4. 补签卡不足(400)、补签成功重算奖励。
+ * <p>拆分后本类只负责「抢锁 → 委托 {@link CheckinTxService}（事务体内核）→ finally 解锁」，
+ * 因此本测试只断言<b>编排语义</b>（原业务断言已迁至 CheckinTxServiceTest）：
+ * <ol>
+ *   <li>抢锁失败 → 429 且<b>绝不进入</b>事务体、绝不 unlock（未持有锁）；</li>
+ *   <li>抢锁成功 → 委托事务体、结果透传、最后 unlock（unlock 发生在内层事务边界之后）；</li>
+ *   <li>事务体抛异常 → unlock 仍执行（finally），异常上抛给调用方；</li>
+ *   <li>只读路径（getStatus / getTodayStatus / getContinuousCheckinDays）不受拆分影响。</li>
+ * </ol>
  */
 class CheckinServiceImplTest {
 
@@ -60,166 +57,105 @@ class CheckinServiceImplTest {
     private StringRedisTemplate redisTemplate;
     @Mock
     private ValueOperations<String, String> valueOperations;
+    @Mock
+    private CheckinTxService checkinTxService;
 
     @InjectMocks
     private CheckinServiceImpl checkinService;
 
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private final Long userId = 100L;
+    private static final String LOCK_KEY = "sign:lock:100";
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 
-    // ==================== doCheckin - 分布式锁 ====================
+    // ==================== doCheckin - 锁编排（P0-6） ====================
 
     @Test
-    @DisplayName("doCheckin - 锁竞争返回429且不释放锁")
+    @DisplayName("doCheckin - 锁竞争返回429且不进入事务体、不释放锁")
     void testDoCheckinLockBusy() {
         when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(false);
 
         ResponseResult result = checkinService.doCheckin(userId);
 
         assertEquals(429, result.getCode());
+        verify(checkinTxService, never()).doCheckinTx(any());
         verify(redisTemplate, never()).delete(anyString());
     }
 
-    // ==================== doCheckin - 重复签到 ====================
-
     @Test
-    @DisplayName("doCheckin - 今日已签到返回400并释放锁")
-    void testDoCheckinAlreadySignedToday() {
+    @DisplayName("doCheckin - 抢锁成功委托事务体，结果透传并释放锁")
+    void testDoCheckinDelegatesAndUnlocks() {
         when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        when(signRecordMapper.selectCount(any())).thenReturn(1L);
+        ResponseResult txResult = ResponseResult.okResult("ok");
+        when(checkinTxService.doCheckinTx(userId)).thenReturn(txResult);
 
         ResponseResult result = checkinService.doCheckin(userId);
 
-        assertEquals(400, result.getCode());
-        verify(redisTemplate).delete("sign:lock:100");
-    }
-
-    // ==================== doCheckin - 首次签到成功 ====================
-
-    @Test
-    @DisplayName("doCheckin - 首次签到(state/assets为空)插入记录并返回奖励")
-    void testDoCheckinFirstTime() {
-        when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        when(signRecordMapper.selectCount(any())).thenReturn(0L);
-        when(signRecordMapper.selectOne(any())).thenReturn(null);
-        when(userCheckinStateMapper.selectById(userId)).thenReturn(null);
-        when(userAssetsMapper.selectById(userId)).thenReturn(null);
-
-        ResponseResult result = checkinService.doCheckin(userId);
-
-        assertEquals(200, result.getCode());
-        Map<String, Object> data = (Map<String, Object>) result.getData();
-        assertEquals(100, data.get("awardOre"));
-        assertEquals(1, data.get("continuousDays"));
-        verify(signRecordMapper).insert(any(SignRecord.class));
-        verify(userCheckinStateMapper).insert(any(UserCheckinState.class));
-        verify(userAssetsMapper).insert(any(UserAssets.class));
-        verify(redisTemplate).delete("sign:lock:100");
+        assertSame(txResult, result);
+        verify(checkinTxService).doCheckinTx(userId);
+        verify(redisTemplate).delete(LOCK_KEY);
     }
 
     @Test
-    @DisplayName("doCheckin - 已有state/assets时更新而非插入")
-    void testDoCheckinExistingStateAndAssets() {
+    @DisplayName("doCheckin - 事务体抛异常 → unlock 仍执行（锁释放在事务边界之后），异常上抛")
+    void testDoCheckinTxThrowsStillUnlocks() {
         when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        when(signRecordMapper.selectCount(any())).thenReturn(0L);
-        when(signRecordMapper.selectOne(any())).thenReturn(null);
+        doThrow(new IllegalStateException("db down")).when(checkinTxService).doCheckinTx(userId);
 
-        UserCheckinState state = new UserCheckinState();
-        state.setTotalCheckinDays(5);
-        state.setContinuousDays(3);
-        when(userCheckinStateMapper.selectById(userId)).thenReturn(state);
+        assertThrows(IllegalStateException.class, () -> checkinService.doCheckin(userId));
 
-        UserAssets assets = new UserAssets();
-        assets.setOreBalance(2000);
-        when(userAssetsMapper.selectById(userId)).thenReturn(assets);
-        // 已存在资产时走原子累加；模拟真实 addOreBalance 在内存对象上的累加效果
-        doAnswer((Answer<Void>) inv -> {
-            assets.setOreBalance(assets.getOreBalance() + (Integer) inv.getArgument(1));
-            return null;
-        }).when(userAssetsMapper).addOreBalance(anyLong(), anyInt());
+        verify(redisTemplate).delete(LOCK_KEY);
+    }
 
-        ResponseResult result = checkinService.doCheckin(userId);
+    // ==================== doExtra - 锁编排（P0-6） ====================
 
-        assertEquals(200, result.getCode());
-        Map<String, Object> data = (Map<String, Object>) result.getData();
-        // 连续天数由数据库回溯得到(selectOne返回null) -> 第1天奖励100
-        assertEquals(100, data.get("awardOre"));
-        assertEquals(6, data.get("totalSignDays"));
-        assertEquals(2100, data.get("totalOre"));
-        verify(userCheckinStateMapper).updateById(state);
-        // 已存在资产时走原子累加（不再读改写 updateById），并累加到内存对象使返回余矿正确
-        verify(userAssetsMapper).addOreBalance(userId, 100);
-        verify(userCheckinStateMapper, never()).insert(any(UserCheckinState.class));
+    @Test
+    @DisplayName("doExtra - 锁竞争返回429且不进入事务体")
+    void testDoExtraLockBusy() {
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(false);
+
+        ResponseResult result = checkinService.doExtra(userId, "2026-09-10");
+
+        assertEquals(429, result.getCode());
+        verify(checkinTxService, never()).doExtraTx(any(), anyString());
+        verify(redisTemplate, never()).delete(anyString());
     }
 
     @Test
-    @DisplayName("doCheckin - 插入记录抛DuplicateKeyException返回400")
-    void testDoCheckinDuplicateKeyInsert() {
+    @DisplayName("doExtra - 抢锁成功委托事务体并透传目标日期，最后释放锁")
+    void testDoExtraDelegatesAndUnlocks() {
         when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        when(signRecordMapper.selectCount(any())).thenReturn(0L);
-        when(signRecordMapper.selectOne(any())).thenReturn(null);
-        when(userCheckinStateMapper.selectById(userId)).thenReturn(null);
-        when(signRecordMapper.insert(any(SignRecord.class)))
-                .thenThrow(new DuplicateKeyException("duplicate"));
+        ResponseResult txResult = ResponseResult.okResult("ok");
+        when(checkinTxService.doExtraTx(userId, "2026-09-10")).thenReturn(txResult);
 
-        ResponseResult result = checkinService.doCheckin(userId);
+        ResponseResult result = checkinService.doExtra(userId, "2026-09-10");
 
-        assertEquals(400, result.getCode());
-        verify(redisTemplate).delete("sign:lock:100");
-    }
-
-    // ==================== doExtra - 补签 ====================
-
-    @Test
-    @DisplayName("doExtra - 补签卡不足返回400")
-    void testDoExtraNotEnoughPatchCard() {
-        when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        LocalDate target = LocalDate.now(ZONE).minusDays(5);
-        // 过去5天，已有记录为空 -> 进入补签卡校验
-        when(signRecordMapper.selectOne(any())).thenReturn(null);
-        when(userCheckinStateMapper.selectById(userId)).thenReturn(null);
-
-        ResponseResult result = checkinService.doExtra(userId, target.toString());
-
-        assertEquals(400, result.getCode());
-        verify(redisTemplate).delete("sign:lock:100");
+        assertSame(txResult, result);
+        verify(checkinTxService).doExtraTx(userId, "2026-09-10");
+        verify(redisTemplate).delete(LOCK_KEY);
     }
 
     @Test
-    @DisplayName("doExtra - 补签未来日期返回400")
-    void testDoExtraFutureDate() {
+    @DisplayName("doExtra - 事务体抛异常 → unlock 仍执行，异常上抛")
+    void testDoExtraTxThrowsStillUnlocks() {
         when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        LocalDate future = LocalDate.now(ZONE).plusDays(1);
+        doThrow(new IllegalStateException("db down")).when(checkinTxService).doExtraTx(eq(userId), anyString());
 
-        ResponseResult result = checkinService.doExtra(userId, future.toString());
+        assertThrows(IllegalStateException.class, () -> checkinService.doExtra(userId, "2026-09-10"));
 
-        assertEquals(400, result.getCode());
+        verify(redisTemplate).delete(LOCK_KEY);
     }
 
-    @Test
-    @DisplayName("doExtra - 超出30天返回400")
-    void testDoExtraTooOld() {
-        when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
-        LocalDate tooOld = LocalDate.now(ZONE).minusDays(31);
-
-        ResponseResult result = checkinService.doExtra(userId, tooOld.toString());
-
-        assertEquals(400, result.getCode());
-    }
-
-    // ==================== getStatus ====================
+    // ==================== getStatus / getTodayStatus / getContinuousCheckinDays（只读，不受拆分影响） ====================
 
     @Test
     @DisplayName("getStatus - 今日未签到且无资产无用户信息时返回默认值")
     void testGetStatusDefault() {
         when(signRecordMapper.selectCount(any())).thenReturn(0L);
-        when(signRecordMapper.selectOne(any())).thenReturn(null);
         when(userAssetsMapper.selectById(userId)).thenReturn(null);
         when(userCheckinStateMapper.selectById(userId)).thenReturn(null);
         when(userClient.getBasicInfo(userId)).thenReturn(null);
@@ -228,42 +164,39 @@ class CheckinServiceImplTest {
         ResponseResult result = checkinService.getStatus(userId);
 
         assertEquals(200, result.getCode());
+        @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertEquals(false, data.get("todaySigned"));
         assertEquals(0, data.get("continuousDays"));
         assertEquals(0, data.get("totalOre"));
     }
 
-    // ==================== getTodayStatus ====================
-
     @Test
     @DisplayName("getTodayStatus - 今日未签到返回未签到状态")
     void testGetTodayStatusNotSigned() {
         when(signRecordMapper.selectCount(any())).thenReturn(0L);
-        when(signRecordMapper.selectOne(any())).thenReturn(null);
         when(userAssetsMapper.selectById(userId)).thenReturn(null);
         when(userCheckinStateMapper.selectById(userId)).thenReturn(null);
 
         ResponseResult result = checkinService.getTodayStatus(userId);
 
         assertEquals(200, result.getCode());
+        @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertEquals(false, data.get("isSignedIn"));
         assertEquals(0, data.get("consecutiveDays"));
         assertEquals(0, data.get("patchCardCount"));
     }
 
-    // ==================== getContinuousCheckinDays ====================
-
     @Test
     @DisplayName("getContinuousCheckinDays - 今日未签到返回连续天数")
     void testGetContinuousCheckinDaysNotSigned() {
         when(signRecordMapper.selectCount(any())).thenReturn(0L);
-        when(signRecordMapper.selectOne(any())).thenReturn(null);
 
         ResponseResult result = checkinService.getContinuousCheckinDays(userId);
 
         assertEquals(200, result.getCode());
+        @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertEquals(0, data.get("continuousDays"));
     }
@@ -272,11 +205,11 @@ class CheckinServiceImplTest {
     @DisplayName("getContinuousCheckinDays - 今日已签到连续天数+1")
     void testGetContinuousCheckinDaysSigned() {
         when(signRecordMapper.selectCount(any())).thenReturn(1L);
-        when(signRecordMapper.selectOne(any())).thenReturn(null);
 
         ResponseResult result = checkinService.getContinuousCheckinDays(userId);
 
         assertEquals(200, result.getCode());
+        @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertEquals(1, data.get("continuousDays"));
     }

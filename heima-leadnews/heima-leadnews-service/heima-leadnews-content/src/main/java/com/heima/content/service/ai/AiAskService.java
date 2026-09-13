@@ -23,8 +23,9 @@ public interface AiAskService {
      * fast 流式问答：向量召回 -> 组装上下文 -> SSE 逐段回调生成文本；返回完整结果（含 sources）。
      *
      * @param onDelta 增量文本回调（服务线程内同步调用，调用方勿阻塞）
+     * @param userId  当前登录用户 id（用于会话/语义记忆持久化；SSE 异步线程 ThreadLocal 不可见，须由调用方显式传入）
      */
     AiAnswerVo streamFastAsk(String question, Integer topK,
                              java.util.List<java.util.Map<String, String>> history,
-                             java.util.function.Consumer<String> onDelta);
+                             java.util.function.Consumer<String> onDelta, Integer userId);
 }

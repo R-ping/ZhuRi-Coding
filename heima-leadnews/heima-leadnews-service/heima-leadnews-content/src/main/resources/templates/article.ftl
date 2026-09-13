@@ -815,6 +815,57 @@
         .comment-item:last-child {
             border-bottom: none;
         }
+        .comment-hidden-bar {
+            padding: 10px 12px;
+            background: #f5f6f7;
+            border-radius: 6px;
+            color: #8a919f;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .reply-hidden {
+            color: #8a919f;
+        }
+        .reply-hidden-bar {
+            font-size: 12px;
+        }
+        .comment-hidden-actions { margin-top: 6px; }
+        .comment-hidden-appeal {
+            padding: 2px 12px;
+            font-size: 12px;
+            color: #1e80ff;
+            background: none;
+            border: 1px solid #1e80ff;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .comment-hidden-appeal:disabled { color: #8a919f; border-color: #d4d9e0; cursor: default; }
+        .comment-hidden-appeal-note { margin-top: 6px; font-size: 12px; color: #8a919f; }
+        .appeal-reason-input {
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 8px;
+            padding: 6px 8px;
+            border: 1px solid #e4e6eb;
+            border-radius: 4px;
+            font-size: 13px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        .appeal-actions { margin-top: 6px; display: flex; gap: 8px; }
+        .ai-feedback-bar { margin-top: 4px; display: flex; gap: 8px; align-self: flex-start; }
+        .ai-feedback-btn {
+            padding: 1px 10px;
+            font-size: 12px;
+            color: #8a919f;
+            background: none;
+            border: 1px solid #e4e6eb;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        .ai-feedback-btn:hover { color: #1e80ff; border-color: #1e80ff; }
+        .ai-feedback-done { font-size: 12px; color: #8a919f; }
+        body.dark .ai-feedback-btn { border-color: #2d333b; }
         .comment-user {
             display: flex;
             align-items: center;
@@ -2592,6 +2643,221 @@
         .immersive-exit-btn:hover { color: #1e80ff; border-color: #1e80ff; }
         body.immersive-mode .immersive-exit-btn { display: block; }
         body.dark .immersive-exit-btn { background: #1e1e1e; color: #8a919f; border-color: #2d333b; }
+        .ai-summary-card {
+            margin-bottom: 20px;
+            border: 1px solid #e5e6eb;
+            border-left: 3px solid #1e80ff;
+            border-radius: 8px;
+            padding: 12px 16px;
+            background: #f7f9fc;
+            font-size: 14px;
+            color: #252933;
+            line-height: 1.75;
+        }
+        .ai-summary-head {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #1e80ff;
+            margin-bottom: 6px;
+        }
+        .ai-summary-body { white-space: pre-wrap; word-break: break-word; }
+        .ai-summary-body.ai-summary-loading { color: #8a919f; }
+        body.dark .ai-summary-card { background: #1c1e22; border-color: #2d333b; color: #e6e8eb; }
+        body.dark .ai-summary-body.ai-summary-loading { color: #6b7280; }
+        .ai-summary-note { margin-top: 6px; font-size: 12px; color: #8a919f; }
+        .aigc-badge {
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 10px;
+            font-size: 12px;
+            font-weight: 400;
+            color: #8a919f;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 1px 8px;
+        }
+        .ai-ask-fab {
+            position: fixed;
+            right: 22px;
+            bottom: 96px;
+            z-index: 1200;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 24px;
+            background: #1e80ff;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(30, 128, 255, 0.35);
+            transition: transform 0.15s ease;
+        }
+        .ai-ask-fab:hover { transform: translateY(-1px); }
+        .ai-ask-mask {
+            position: fixed;
+            inset: 0;
+            z-index: 2099;
+            background: rgba(0, 0, 0, 0.35);
+            display: none;
+        }
+        .ai-ask-mask.open { display: block; }
+        .ai-ask-panel {
+            position: fixed;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 400px;
+            max-width: 92vw;
+            z-index: 2100;
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+            box-shadow: -6px 0 24px rgba(0, 0, 0, 0.12);
+            transform: translateX(100%);
+            transition: transform 0.22s ease;
+        }
+        .ai-ask-panel.open { transform: translateX(0); }
+        body.dark .ai-ask-panel { background: #1c1e22; }
+        .ai-ask-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            border-bottom: 1px solid #f0f2f5;
+            font-size: 15px;
+            font-weight: 500;
+            color: #252933;
+        }
+        body.dark .ai-ask-header { border-bottom-color: #2d333b; color: #e6e8eb; }
+        .ai-ask-close {
+            border: none;
+            background: none;
+            font-size: 18px;
+            color: #8a919f;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+        .ai-ask-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .ai-ask-empty {
+            color: #8a919f;
+            font-size: 13px;
+            text-align: center;
+            padding: 28px 0;
+        }
+        .ai-msg { display: flex; flex-direction: column; gap: 4px; }
+        .ai-msg-user {
+            align-self: flex-end;
+            max-width: 86%;
+            background: #1e80ff;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 10px 10px 2px 10px;
+            font-size: 14px;
+            line-height: 1.6;
+            word-break: break-word;
+        }
+        .ai-msg-answer {
+            align-self: flex-start;
+            max-width: 96%;
+            background: #f2f4f7;
+            color: #252933;
+            padding: 10px 12px;
+            border-radius: 2px 10px 10px 10px;
+            font-size: 14px;
+            line-height: 1.75;
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+        body.dark .ai-msg-answer { background: #26292e; color: #e6e8eb; }
+        .ai-msg-error { color: #f04134; font-size: 13px; }
+        .ai-ask-footer {
+            border-top: 1px solid #f0f2f5;
+            padding: 12px 16px;
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        body.dark .ai-ask-footer { border-top-color: #2d333b; }
+        .ai-ask-input {
+            flex: 1;
+            border: 1px solid #e4e6eb;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            min-height: 40px;
+            max-height: 120px;
+            background: #fff;
+            color: #252933;
+            font-family: inherit;
+        }
+        .ai-ask-input:focus { border-color: #1e80ff; }
+        body.dark .ai-ask-input { background: #26292e; border-color: #2d333b; color: #e6e8eb; }
+        .ai-ask-send {
+            border: none;
+            border-radius: 8px;
+            padding: 9px 18px;
+            background: #1e80ff;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .ai-ask-send:disabled { background: #a0c4ff; cursor: not-allowed; }
+        .ai-ask-login {
+            color: #1e80ff;
+            font-size: 14px;
+            padding: 6px 0;
+            cursor: pointer;
+            text-align: center;
+            border: none;
+            background: none;
+            width: 100%;
+        }
+        .ai-related-questions {
+            margin: 20px 0;
+            border: 1px solid #e5e6eb;
+            border-radius: 8px;
+            padding: 14px 16px;
+            background: #fff;
+        }
+        .ai-rq-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: #1e80ff;
+            margin-bottom: 10px;
+        }
+        .ai-rq-item {
+            display: block;
+            width: 100%;
+            text-align: left;
+            border: none;
+            background: none;
+            padding: 8px 4px;
+            font-size: 14px;
+            color: #252933;
+            line-height: 1.6;
+            cursor: pointer;
+            border-top: 1px solid #f2f3f5;
+        }
+        .ai-rq-item:first-child { border-top: none; }
+        .ai-rq-item:hover { color: #1e80ff; }
+        .ai-rq-loading { color: #8a919f; font-size: 13px; padding: 4px 0; }
+        body.dark .ai-related-questions { background: #1c1e22; border-color: #2d333b; }
+        body.dark .ai-rq-item { color: #e6e8eb; border-top-color: #2d333b; }
     </style>
 </head>
 <body>
@@ -2703,7 +2969,7 @@
     <div class="main-wrapper">
         <article class="content-area">
             <div class="content-card">
-                <h1 class="article-title">${title!''}</h1>
+                <h1 class="article-title">${title!''}<#if isAigc?? && isAigc == 1><span class="aigc-badge" title="该内容经 AI 生成检测标记（深度合成内容标识）">疑似 AI 生成</span></#if></h1>
 
                 <div class="author-header">
                     <a class="author-avatar" href="/user/${(authorId!0)?c}" title="查看作者主页">
@@ -2747,12 +3013,28 @@
                     </button>
                 </div>
 
+                <!-- AI 摘要卡（Step3·①：加载失败/不可用时由 JS 隐藏） -->
+                <div class="ai-summary-card" id="aiSummaryCard" style="display:none;">
+                    <div class="ai-summary-head">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9.25 3h5.5a6.75 6.75 0 0 1 0 13.5H9.25V21H6.75V3h2.5zm0 2.5v8.5h5.5a4.25 4.25 0 0 0 0-8.5h-5.5z"/></svg>
+                        AI 摘要
+                    </div>
+                    <div class="ai-summary-body" id="aiSummaryBody">生成中…</div>
+                    <div class="ai-summary-note">AI 生成内容，仅供参考，请以正文为准</div>
+                </div>
+
                 <div class="article-body" id="articleContent">
                     ${articleContentHtml}
                 </div>
 
                 <!-- 读完提示 -->
                 <div class="read-end-hint" id="readEndHint">— 已读完，感谢阅读 —</div>
+
+                <!-- 相关问答：读完想问（Step3·①；LLM 生成本文可答问题，点击进"问这篇文章"浮层） -->
+                <div class="ai-related-questions" id="aiRelatedQuestions" style="display:none;">
+                    <div class="ai-rq-title">读完想问</div>
+                    <div class="ai-rq-list" id="aiRqList"></div>
+                </div>
 
                 <!-- 正文尾部作者卡片 -->
                 <div class="end-author-card" id="endAuthorCard">
@@ -2930,9 +3212,9 @@
                     <li class="sidebar-recommend-empty">加载中...</li>
                 </ul>
             </div>
-            <!-- 精选内容 -->
+            <!-- 相似文章（向量化增强：替代原"精选内容"，优先语义最近邻文章） -->
             <div class="sidebar-recommend-card stage-featured" id="featuredCard">
-                <div class="sidebar-recommend-title">精选内容</div>
+                <div class="sidebar-recommend-title">相似文章</div>
                 <ul class="sidebar-recommend-list" id="featuredList">
                     <li class="sidebar-recommend-empty">加载中...</li>
                 </ul>
@@ -3214,6 +3496,26 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- 单篇 AI 问答浮层（Step3·①：答案只来自本文，逐字流式） -->
+    <button class="ai-ask-fab" id="aiAskFab" type="button">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c.92 0 1.83-.12 2.7-.36L22 22l-.76-5.02C22.4 15.15 23 13.63 23 12c0-5.52-4.48-10-10-10zm3.2 13.6-1.6-.8-1.6.8.4-1.8-1.4-1.3 1.9-.2.7-1.7.7 1.7 1.9.2-1.4 1.3.4 1.8z"/></svg>
+        问这篇文章
+    </button>
+    <div class="ai-ask-mask" id="aiAskMask"></div>
+    <div class="ai-ask-panel" id="aiAskPanel" aria-hidden="true">
+        <div class="ai-ask-header">
+            <span>问这篇文章</span>
+            <button class="ai-ask-close" id="aiAskClose" type="button">×</button>
+        </div>
+        <div class="ai-ask-body" id="aiAskBody">
+            <div class="ai-ask-empty" id="aiAskEmpty">基于本文回答你的问题 · AI 生成内容仅供参考，请以原文为准</div>
+        </div>
+        <div class="ai-ask-footer" id="aiAskFooter">
+            <textarea class="ai-ask-input" id="aiAskInput" rows="1" placeholder="针对这篇文章提问…（Enter 发送）" maxlength="200"></textarea>
+            <button class="ai-ask-send" id="aiAskSend" type="button">发送</button>
         </div>
     </div>
 

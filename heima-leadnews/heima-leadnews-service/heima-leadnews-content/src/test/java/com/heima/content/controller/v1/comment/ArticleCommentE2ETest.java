@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.heima.common.auth.InternalAuthSigner;
 import com.heima.content.mapper.comment.ApCommentLikeMapper;
 import com.heima.content.mapper.comment.ApCommentMapper;
 import com.heima.content.service.comment.impl.CommentAuditService;
@@ -38,13 +39,13 @@ import org.springframework.test.web.servlet.MvcResult;
  * Controller → Service → Mapper → MySQL 全链路，并校验数据库真实落库结果。
  *
  * 隔离策略：
- * - 覆盖 app.internal-auth.secret 为空，使 ContentTokenInterceptor 按"本地直连"降级信任
- *   请求头 userId / nickName（不携带则视为匿名）。生产环境该密钥已配置，请求必须带 HMAC 签名头，
- *   测试环境置空可避免伪造签名头即可模拟登录态。
+ * - 配置固定的测试用 app.internal-auth.secret，并按与网关相同的算法为 userId / nickName 生成
+ *   X-Internal-Sign 签名头（见 TEST_SIGN）。测试因此走的是与生产一致的「签名校验通过才信任身份头」
+ *   链路；ContentTokenInterceptor 已改为 fail-closed，密钥置空不再被降级信任。
  * - @MockBean 屏蔽 CommentAuditService 异步审核，避免触发 AI 审核、行为上报、站内信等外部副作用，聚焦评论主链路
  * - 使用独立测试文章ID与用户ID，@AfterEach 清理 ap_comment / ap_comment_like 测试数据，不污染线上数据
  */
-@SpringBootTest(properties = "app.internal-auth.secret=")
+@SpringBootTest(properties = "app.internal-auth.secret=" + ArticleCommentE2ETest.TEST_SECRET)
 @AutoConfigureMockMvc
 class ArticleCommentE2ETest {
 
@@ -85,6 +86,11 @@ class ArticleCommentE2ETest {
     /** 独立测试用户ID */
     private static final String TEST_USER_ID = "7000001";
     private static final String TEST_NICKNAME = "端到端测试用户";
+    /** 测试用内部身份签名密钥（须与 @SpringBootTest properties 注入值一致；包级可见以便注解以限定名引用） */
+    static final String TEST_SECRET = "e2e-test-internal-secret";
+    /** 与网关一致的签名：HMAC(secret, userId|原始nickName|image)，image 缺省为空串 */
+    private static final String TEST_SIGN =
+        InternalAuthSigner.sign(TEST_SECRET, TEST_USER_ID, TEST_NICKNAME, "");
 
     @Test
     @DisplayName("端到端：发表评论→回复→点赞→查询列表→取消点赞 全链路")
@@ -112,7 +118,8 @@ class ArticleCommentE2ETest {
 
         // 3. 点赞一级评论
         mockMvc.perform(post("/api/v1/comment/comment/{commentId}/like", topId)
-                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME))
+                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.liked").value(true))
@@ -124,7 +131,8 @@ class ArticleCommentE2ETest {
 
         // 4. 查询评论列表：应包含一级评论及其回复，且 isDigg=true
         MvcResult listResult = mockMvc.perform(get("/api/v1/comment/article/{id}/comments", TEST_ARTICLE_ID)
-                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME))
+                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.list[0].commentId").value(topId))
@@ -135,7 +143,8 @@ class ArticleCommentE2ETest {
 
         // 5. 取消点赞
         mockMvc.perform(post("/api/v1/comment/comment/{commentId}/like", topId)
-                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME))
+                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.liked").value(false))
                 .andExpect(jsonPath("$.data.likeCount").value(0));
@@ -146,7 +155,8 @@ class ArticleCommentE2ETest {
 
         // 取消后再查列表 isDigg=false
         mockMvc.perform(get("/api/v1/comment/article/{id}/comments", TEST_ARTICLE_ID)
-                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME))
+                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.list[0].isDigg").value(false));
     }
@@ -177,6 +187,7 @@ class ArticleCommentE2ETest {
     void testAddCommentEmptyContent() throws Exception {
         mockMvc.perform(post("/api/v1/comment/article/{id}/comment", TEST_ARTICLE_ID)
                         .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"\"}"))
                 .andExpect(status().isOk())
@@ -188,6 +199,7 @@ class ArticleCommentE2ETest {
     void testReplyToMissingComment() throws Exception {
         mockMvc.perform(post("/api/v1/comment/comment/{commentId}/reply", 999999999L)
                         .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"回复不存在的评论\"}"))
                 .andExpect(status().isOk())
@@ -198,7 +210,8 @@ class ArticleCommentE2ETest {
     @DisplayName("端到端：点赞不存在的评论返回数据不存在")
     void testLikeMissingComment() throws Exception {
         mockMvc.perform(post("/api/v1/comment/comment/{commentId}/like", 999999999L)
-                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME))
+                        .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(AppHttpCodeEnum.DATA_NOT_EXIST.getCode()));
     }
@@ -209,6 +222,7 @@ class ArticleCommentE2ETest {
     private Long addComment(String content) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/comment/article/{id}/comment", TEST_ARTICLE_ID)
                         .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"" + content + "\"}"))
                 .andExpect(status().isOk())
@@ -222,6 +236,7 @@ class ArticleCommentE2ETest {
         Map<String, Object> body = Map.of("content", content, "rootId", rootId);
         MvcResult result = mockMvc.perform(post("/api/v1/comment/comment/{commentId}/reply", commentId)
                         .header("userId", TEST_USER_ID).header("nickName", TEST_NICKNAME)
+                        .header(InternalAuthSigner.HEADER_SIGN, TEST_SIGN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())

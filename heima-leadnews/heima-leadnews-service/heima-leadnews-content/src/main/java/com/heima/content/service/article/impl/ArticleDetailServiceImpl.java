@@ -69,6 +69,9 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     @Autowired
     private ApCommentService apCommentService;
 
+    @Autowired(required = false)
+    private ArticleEmbeddingServiceImpl embeddingService;
+
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     @Override
@@ -371,6 +374,20 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
         }
 
+        // 相似文章推荐（向量化增强）：优先返回该文向量在 pgvector 中的最近邻
+        //（语义相关，排除自身、仅已发布且非 AIGC 水文）；无向量/无候选时回退同标签精选
+        if (cursor == null || cursor <= 0) {
+            List<ApArticle> similar = findSemanticSimilarArticles(id, size);
+            if (!similar.isEmpty()) {
+                List<ArticleRecommendVO> list = buildRecommendVOList(similar);
+                Map<String, Object> result = new HashMap<>();
+                result.put("list", list);
+                result.put("cursor", similar.get(similar.size() - 1).getId());
+                result.put("has_more", false);
+                return ResponseResult.okResult(result);
+            }
+        }
+
         // 查询有相同标签的文章
         List<String> tags = currentArticle.getTags();
         LambdaQueryWrapper<ApArticle> wrapper = new LambdaQueryWrapper<>();
@@ -430,6 +447,48 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
     }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 向量相似文章：本文向量在 pgvector 中的最近邻。
+     * 排除自身、仅已发布且非 AIGC 水文（内容诚信治理联动）；异常/无向量返回空表（调用方回退标签精选）。
+     */
+    private List<ApArticle> findSemanticSimilarArticles(Long articleId, int size) {
+        try {
+            if (embeddingService == null) {
+                return Collections.emptyList();
+            }
+            com.heima.model.article.pojos.ApArticleEmbedding self =
+                embeddingService.getEmbedding(articleId);
+            if (self == null || self.getEmbedding() == null || self.getEmbedding().length == 0) {
+                return Collections.emptyList();
+            }
+            List<Object[]> hits = embeddingService.findSimilarArticles(self.getEmbedding(), size * 2, 0d);
+            if (hits == null || hits.isEmpty()) {
+                return Collections.emptyList();
+            }
+            Map<Long, Double> sim = new LinkedHashMap<>();
+            for (Object[] h : hits) {
+                Long aid = h[0] instanceof Number ? ((Number) h[0]).longValue() : null;
+                double s = h.length > 1 && h[1] != null ? ((Number) h[1]).doubleValue() : 0d;
+                if (aid != null && !aid.equals(articleId)) {
+                    sim.put(aid, s);
+                }
+            }
+            if (sim.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return apArticleMapper.selectBatchIds(sim.keySet()).stream()
+                .filter(a -> a.getStatus() != null && a.getStatus() == ApArticle.Status.PUBLISHED.getCode())
+                .filter(a -> a.getIsAigc() == null || a.getIsAigc() != 1)
+                .sorted((a1, a2) -> Double.compare(
+                    sim.getOrDefault(a2.getId(), 0d), sim.getOrDefault(a1.getId(), 0d)))
+                .limit(size)
+                .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.warn("相似文章推荐失败, articleId={}, 回退同标签精选", articleId, e);
+            return Collections.emptyList();
+        }
+    }
 
     /**
      * 解析标签列表

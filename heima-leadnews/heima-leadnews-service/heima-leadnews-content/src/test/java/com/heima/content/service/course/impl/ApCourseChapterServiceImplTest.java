@@ -3,6 +3,7 @@ package com.heima.content.service.course.impl;
 import com.heima.content.mapper.course.ApCourseChapterMapper;
 import com.heima.content.mapper.course.ApCourseMapper;
 import com.heima.content.mapper.course.ApUserCourseMapper;
+import com.heima.content.service.aigc.AigcDetectService;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import com.heima.model.course.dtos.ChapterDto;
@@ -50,6 +51,9 @@ class ApCourseChapterServiceImplTest {
     private ApCourseMapper courseMapper;
     @Mock
     private ApUserCourseMapper userCourseMapper;
+    // AIGC 水文检测（建章/改章后 L1 快检打标，测试 no-op）
+    @Mock
+    private AigcDetectService aigcDetectService;
 
     @InjectMocks
     private ApCourseChapterServiceImpl chapterService;

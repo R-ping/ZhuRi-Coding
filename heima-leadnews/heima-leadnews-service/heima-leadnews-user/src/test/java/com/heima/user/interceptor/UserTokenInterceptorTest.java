@@ -73,7 +73,7 @@ class UserTokenInterceptorTest {
     }
 
     @Test
-    @DisplayName("密钥未配置 → 降级信任（本地直连）")
+    @DisplayName("密钥未配置 → fail-closed，拒绝信任身份头（防绕过网关伪造 userId）")
     void testPreHandleWithoutSecret() throws Exception {
         interceptor = new UserTokenInterceptor(null);
         HttpServletRequest request = mock(HttpServletRequest.class);
@@ -83,7 +83,7 @@ class UserTokenInterceptorTest {
         boolean ok = interceptor.preHandle(request, mock(HttpServletResponse.class), new Object());
 
         assertTrue(ok);
-        assertNotNull(AppThreadLocalUtil.getUser());
+        assertNull(AppThreadLocalUtil.getUser());
     }
 
     @Test

@@ -5,20 +5,31 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.ai.AiAskService;
+import com.heima.content.service.ai.AiSemanticCacheService;
+import com.heima.content.service.ai.AnswerFaithfulnessService;
+import com.heima.content.service.ai.HybridRecallService;
+import com.heima.content.service.ai.memory.AiConversationMemoryService;
+import com.heima.content.service.ai.memory.UserMemoryService;
 import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
 import com.heima.content.service.ai.spring.SafetyGuardException;
 import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.heima.content.utils.MarkdownUtils;
+import com.heima.content.utils.TextChunker;
 import com.heima.model.article.dtos.AiAnswerVo;
 import com.heima.model.article.dtos.AiSourceVo;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticle.Status;
 import com.heima.model.article.pojos.ApArticleContent;
+import com.heima.model.user.pojos.ApUser;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -28,6 +39,8 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -78,6 +91,33 @@ public class AiAskServiceImpl implements AiAskService {
     private ArticleEmbeddingServiceImpl embeddingService;
 
     @Autowired
+    private AiSemanticCacheService semanticCacheService;
+
+    @Autowired
+    private HybridRecallService hybridRecallService;
+
+    @Autowired
+    private AnswerFaithfulnessService faithfulnessService;
+
+    /** 忠实度校验模式：off 关闭 / async 异步只记录（默认，不影响响应延迟）/ sync 同步并把简报塞进响应 */
+    @Value("${ai.faithfulness.mode:async}")
+    private String faithfulnessMode;
+
+    /** 异步校验复用 SSE 线程池（与 AIGC 预审/复核同一套） */
+    @Autowired
+    @Qualifier("aiSseExecutor")
+    private Executor aiSseExecutor;
+
+    @Autowired
+    private com.heima.content.service.ai.UserInterestService userInterestService;
+
+    @Autowired
+    private AiConversationMemoryService conversationMemoryService;
+
+    @Autowired
+    private UserMemoryService userMemoryService;
+
+    @Autowired
     private ApArticleMapper apArticleMapper;
 
     @Autowired
@@ -100,6 +140,14 @@ public class AiAskServiceImpl implements AiAskService {
             return null;
         }
         int k = topK == null ? DEFAULT_TOP_K : Math.max(1, Math.min(topK, MAX_TOP_K));
+
+        // 0. 语义缓存：相似问题直返（命中即省掉 rewrite + rerank + 生成 三次模型调用）
+        AiAnswerVo cached = semanticCacheService.lookup(q, currentUserId());
+        if (cached != null) {
+            cached.setLatencyMs(System.currentTimeMillis() - start);
+            log.info("[AiAsk] 语义缓存命中, q={}, latency={}ms", truncate(q, 40), cached.getLatencyMs());
+            return cached;
+        }
 
         // fast 模式：单次向量召回 + 一次生成（跳过 rewrite/rerank，省 2/3 模型调用）
         if (Boolean.TRUE.equals(fast)) {
@@ -126,11 +174,11 @@ public class AiAskServiceImpl implements AiAskService {
             return emptyAnswer(start);
         }
 
-        // 3. 生成回答（安全三层防御由 PromptSafetyAdvisor 横切处理）
-        String userPrompt = buildUser(r.docsText, q);
+        // 3. 生成回答（安全三层防御由 PromptSafetyAdvisor 横切处理；长期记忆/兴趣画像注入见 buildUser）
+        String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, currentUserId());
         String answer;
         try {
-            answer = genText(SYSTEM_PROMPT, userPrompt, history);
+            answer = genText(SYSTEM_PROMPT, userPrompt, history, currentUserId());
         } catch (Exception e) {
             log.error("[AiAsk] 大模型生成失败, question={}", truncate(q, 50), e);
             return null;
@@ -144,6 +192,10 @@ public class AiAskServiceImpl implements AiAskService {
         vo.setAnswer(answer.trim());
         vo.setSources(r.sources);
         vo.setLatencyMs(System.currentTimeMillis() - start);
+        // 回答成功：持久化会话记忆 + 沉淀语义记忆（Redis/PGVector，全部 fail-open 异步无关紧要）
+        persistMemory(currentUserId(), q, answer.trim(), r.queryEmbedding);
+        semanticCacheService.store(q, currentUserId(), vo.getAnswer(), r.sources);
+        checkFaithfulness(vo, r);
         log.info("[AiAsk] question={}, hits={}, sources={}, latency={}ms",
             truncate(q, 50), r.hits, r.sources.size(), vo.getLatencyMs());
         return vo;
@@ -152,13 +204,27 @@ public class AiAskServiceImpl implements AiAskService {
     @Override
     public AiAnswerVo streamFastAsk(String question, Integer topK,
                                     java.util.List<java.util.Map<String, String>> history,
-                                    java.util.function.Consumer<String> onDelta) {
+                                    java.util.function.Consumer<String> onDelta, Integer userId) {
         long start = System.currentTimeMillis();
         String q = question == null ? "" : question.trim();
         if (q.isEmpty() || q.length() > MAX_QUESTION_LEN) {
             return null;
         }
         int k = topK == null ? DEFAULT_TOP_K : Math.max(1, Math.min(topK, MAX_TOP_K));
+        // 0. 语义缓存：命中则按 chunk 回放（前端 delta 协议不变），跳过检索与生成
+        AiAnswerVo cachedStream = semanticCacheService.lookup(q, userId);
+        if (cachedStream != null) {
+            replayDelta(cachedStream.getAnswer(), onDelta);
+            // 命中路径不重复 embedding 沉淀，仅补记会话记忆，保持多轮上下文连续
+            try {
+                conversationMemoryService.appendTurn(userId, q, cachedStream.getAnswer());
+            } catch (Exception e) {
+                log.debug("[AiAsk-stream] 命中路径会话记忆写入失败, userId={}", userId, e);
+            }
+            cachedStream.setLatencyMs(System.currentTimeMillis() - start);
+            log.info("[AiAsk-stream] 语义缓存命中, q={}, latency={}ms", truncate(q, 40), cachedStream.getLatencyMs());
+            return cachedStream;
+        }
         // 统一检索管线：向量化 -> 召回(k) -> 过滤已发布 -> 组装文档与来源（无 rewrite/rerank，低延迟）
         Retrieval r = retrieveAndAssemble(q, q, k, false);
         if (r == null) {
@@ -167,11 +233,11 @@ public class AiAskServiceImpl implements AiAskService {
         if (r.hits == 0) {
             return emptyAnswer(start);
         }
-        String userPrompt = buildUser(r.docsText, q);
+        String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, userId);
         StringBuilder acc = new StringBuilder();
         boolean ok = false;
         try {
-            genStream(SYSTEM_PROMPT, userPrompt, history,
+            genStream(SYSTEM_PROMPT, userPrompt, history, userId,
                 delta -> {
                     acc.append(delta);
                     onDelta.accept(delta);
@@ -195,6 +261,10 @@ public class AiAskServiceImpl implements AiAskService {
         vo.setAnswer(acc.toString().trim());
         vo.setSources(r.sources);
         vo.setLatencyMs(System.currentTimeMillis() - start);
+        // 回答成功：持久化会话记忆 + 沉淀语义记忆
+        persistMemory(userId, q, vo.getAnswer(), r.queryEmbedding);
+        semanticCacheService.store(q, userId, vo.getAnswer(), r.sources);
+        checkFaithfulness(vo, r);
         log.info("[AiAsk-stream] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
         return vo;
     }
@@ -210,10 +280,10 @@ public class AiAskServiceImpl implements AiAskService {
         if (r.hits == 0) {
             return emptyAnswer(start);
         }
-        String userPrompt = buildUser(r.docsText, q);
+        String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, currentUserId());
         String answer;
         try {
-            answer = genText(SYSTEM_PROMPT, userPrompt, history);
+            answer = genText(SYSTEM_PROMPT, userPrompt, history, currentUserId());
         } catch (Exception e) {
             log.error("[AiAsk-fast] 大模型生成失败, question={}", truncate(q, 50), e);
             return null;
@@ -225,6 +295,10 @@ public class AiAskServiceImpl implements AiAskService {
         vo.setAnswer(answer.trim());
         vo.setSources(r.sources);
         vo.setLatencyMs(System.currentTimeMillis() - start);
+        // 回答成功：持久化会话记忆 + 沉淀语义记忆
+        persistMemory(currentUserId(), q, answer.trim(), r.queryEmbedding);
+        semanticCacheService.store(q, currentUserId(), vo.getAnswer(), r.sources);
+        checkFaithfulness(vo, r);
         log.info("[AiAsk-fast] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
         return vo;
     }
@@ -239,6 +313,7 @@ public class AiAskServiceImpl implements AiAskService {
         long lastId = 0L;
         int scanned = 0;
         int filled = 0;
+        int chunked = 0;
         try {
             // 游标分页扫全量已发布文章（修复原先只扫前 200 条导致永远填不完的问题）
             for (int page = 0; page < 1000; page++) {
@@ -255,8 +330,10 @@ public class AiAskServiceImpl implements AiAskService {
                     scanned++;
                     lastId = a.getId();
                     try {
-                        if (embeddingService.getEmbedding(a.getId()) != null) {
-                            continue; // 已有向量
+                        boolean needArticleVec = embeddingService.getEmbedding(a.getId()) == null;
+                        boolean needChunks = !embeddingService.hasChunks(a.getId());
+                        if (!needArticleVec && !needChunks) {
+                            continue; // 文章向量与分块均已就绪
                         }
                         ApArticleContent c = contentMapper.selectOne(
                             new LambdaQueryWrapper<ApArticleContent>()
@@ -265,10 +342,20 @@ public class AiAskServiceImpl implements AiAskService {
                         if (c == null || c.getContent() == null || c.getContent().isBlank()) {
                             continue;
                         }
-                        double[] emb = embeddingService.generateEmbedding(truncate(c.getContent(), 2000));
-                        if (emb != null) {
-                            embeddingService.saveEmbedding(a.getId(), emb);
-                            filled++;
+                        if (needArticleVec) {
+                            double[] emb = embeddingService.generateEmbedding(truncate(c.getContent(), 2000));
+                            if (emb != null) {
+                                embeddingService.saveEmbedding(a.getId(), emb);
+                                filled++;
+                            }
+                        }
+                        // 老语料补齐子块（分块检索上线后必须回填，否则只能走文章级回退）
+                        if (needChunks) {
+                            embeddingService.saveChunks(a.getId(), TextChunker.split(
+                                MarkdownUtils.normalizeContent(c.getContent()),
+                                TextChunker.DEFAULT_TARGET, TextChunker.DEFAULT_OVERLAP,
+                                embeddingService.getChunkMaxPerArticle()));
+                            chunked++;
                         }
                     } catch (Exception e) {
                         log.warn("[AiAsk] 回填向量失败 articleId={}", a.getId(), e);
@@ -278,19 +365,19 @@ public class AiAskServiceImpl implements AiAskService {
                     break;
                 }
             }
-            log.info("[AiAsk] 向量回填完成: 扫描={}, 新增={}", scanned, filled);
+            log.info("[AiAsk] 向量回填完成: 扫描={}, 新增文章向量={}, 补分块={}", scanned, filled, chunked);
         } catch (Exception e) {
             log.error("[AiAsk] 向量回填异常", e);
         }
     }
 
-    /** Spring AI 同步文本生成：安全三层防御由 PromptSafetyAdvisor 横切；会话历史经 MessageChatMemoryAdvisor 注入 */
+    /** Spring AI 同步文本生成：安全三层防御由 PromptSafetyAdvisor 横切；会话历史经 MessageChatMemoryAdvisor 注入（userId null=内部调用，不触碰持久化） */
     private String genText(String systemPrompt, String user,
-                           java.util.List<java.util.Map<String, String>> history) {
+                           java.util.List<java.util.Map<String, String>> history, Integer userId) {
         try {
             return org.springframework.ai.chat.client.ChatClient.builder(chatModel)
                 .defaultAdvisors(promptSafetyAdvisor,
-                    MessageChatMemoryAdvisor.builder(buildConversationMemory(history)).build())
+                    MessageChatMemoryAdvisor.builder(buildConversationMemory(userId, history)).build())
                 .build()
                 .prompt().system(systemPrompt).user(user == null ? "" : user)
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, MEMORY_CONVERSATION_ID))
@@ -306,12 +393,12 @@ public class AiAskServiceImpl implements AiAskService {
 
     /** Spring AI 流式生成（逐段回调增量文本；返回完整文本；安全 + 会话记忆由 Advisor 处理） */
     private String genStream(String systemPrompt, String user,
-                             java.util.List<java.util.Map<String, String>> history,
+                             java.util.List<java.util.Map<String, String>> history, Integer userId,
                              java.util.function.Consumer<String> onDelta) {
         reactor.core.publisher.Flux<String> flux =
             org.springframework.ai.chat.client.ChatClient.builder(chatModel)
                 .defaultAdvisors(promptSafetyAdvisor,
-                    MessageChatMemoryAdvisor.builder(buildConversationMemory(history)).build())
+                    MessageChatMemoryAdvisor.builder(buildConversationMemory(userId, history)).build())
                 .build()
                 .prompt().system(systemPrompt).user(user == null ? "" : user)
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, MEMORY_CONVERSATION_ID))
@@ -324,16 +411,19 @@ public class AiAskServiceImpl implements AiAskService {
         return acc.toString();
     }
 
-    /** 统一检索管线产物：参考资料文本 + 来源列表 + 命中数 */
+    /** 统一检索管线产物：参考资料文本 + 来源列表 + 命中数 + 查询向量（供语义记忆复用） */
     private static final class Retrieval {
         final String docsText;
         final List<AiSourceVo> sources;
         final int hits;
+        /** 本次查询的向量（改写后），供长期记忆沉淀/召回复用，避免重复 embedding 调用 */
+        final double[] queryEmbedding;
 
-        Retrieval(String docsText, List<AiSourceVo> sources, int hits) {
+        Retrieval(String docsText, List<AiSourceVo> sources, int hits, double[] queryEmbedding) {
             this.docsText = docsText;
             this.sources = sources;
             this.hits = hits;
+            this.queryEmbedding = queryEmbedding;
         }
     }
 
@@ -354,26 +444,31 @@ public class AiAskServiceImpl implements AiAskService {
         if (queryEmb == null || queryEmb.length == 0) {
             return null;
         }
-        List<Object[]> hits = embeddingService.findSimilarArticles(queryEmb, recall, 0);
-        Map<Long, Double> simMap = new LinkedHashMap<>();
-        if (hits != null) {
-            for (Object[] hit : hits) {
-                Long articleId = (Long) hit[0];
-                double similarity = hit.length > 1 && hit[1] != null ? (Double) hit[1] : 0d;
-                simMap.put(articleId, similarity);
+        // 混合召回：向量（父子分块，粒度细、长文后半段可召回）＋ BM25（术语/代码类查询强）→ RRF 融合排名；
+        // 任一路失败自动退化为单路，上下游流程不变
+        HybridRecallService.Recall hybrid = hybridRecallService.recall(searchQuery, queryEmb, recall);
+        List<Long> candidates = hybrid.getIds();
+        Map<Long, Double> simMap = new LinkedHashMap<>(hybrid.getVectorSims());
+        if (candidates == null || candidates.isEmpty()) {
+            return new Retrieval("", new ArrayList<>(), 0, queryEmb);
+        }
+        // 相似度补全：BM25 独有命中用已存文章向量本地算余弦（零模型调用），保证来源卡片口径统一
+        Map<Long, Integer> fusedOrder = new HashMap<>();
+        for (int i = 0; i < candidates.size(); i++) {
+            Long id = candidates.get(i);
+            fusedOrder.put(id, i);
+            if (!simMap.containsKey(id)) {
+                simMap.put(id, localCosine(queryEmb, id));
             }
         }
-        if (simMap.isEmpty()) {
-            return new Retrieval("", new ArrayList<>(), 0);
-        }
-        // 过滤仅已发布，按相似度降序
-        List<ApArticle> published = apArticleMapper.selectBatchIds(simMap.keySet()).stream()
-            .filter(a -> a.getStatus() != null && a.getStatus() == Status.PUBLISHED.getCode())
-            .sorted((a1, a2) -> Double.compare(
-                simMap.getOrDefault(a2.getId(), 0d), simMap.getOrDefault(a1.getId(), 0d)))
+        // 过滤仅已发布；候选顺序即 RRF 融合顺序（不再按向量相似度重排，否则融合排名白做）
+        List<ApArticle> published = apArticleMapper.selectBatchIds(candidates).stream()
+            .filter(a -> a.getStatus() != null && a.getStatus() == Status.PUBLISHED.getCode()
+                && (a.getIsAigc() == null || a.getIsAigc() != 1))
+            .sorted(Comparator.comparingInt(a -> fusedOrder.getOrDefault(a.getId(), Integer.MAX_VALUE)))
             .collect(Collectors.toList());
         if (published.isEmpty()) {
-            return new Retrieval("", new ArrayList<>(), 0);
+            return new Retrieval("", new ArrayList<>(), 0, queryEmb);
         }
         List<ApArticle> articles = published;
         // LLM Rerank：候选达到阈值时让模型挑选最相关至多 topK 篇（失败/关闭则取向量 TopK）
@@ -425,45 +520,240 @@ public class AiAskServiceImpl implements AiAskService {
             sources.add(src);
             idx++;
         }
-        return new Retrieval(docs.toString(), sources, simMap.size());
+        return new Retrieval(docs.toString(), sources, candidates.size(), queryEmb);
     }
 
-    /** 组装 user 输入：参考资料 + 问题（对话历史改由 MessageChatMemoryAdvisor 以真实消息结构注入） */
-    private String buildUser(String docsText, String q) {
-        return "【参考资料】\n" + docsText + "\n【问题】" + q;
+    /** BM25 独有命中的相似度补全：用已存文章向量本地算余弦（不调模型、不引入新依赖） */
+    private double localCosine(double[] queryEmb, Long articleId) {
+        try {
+            com.heima.model.article.pojos.ApArticleEmbedding emb = embeddingService.getEmbedding(articleId);
+            if (emb == null || emb.getEmbedding() == null || queryEmb == null) {
+                return 0d;
+            }
+            double[] v = emb.getEmbedding();
+            int n = Math.min(queryEmb.length, v.length);
+            double dot = 0;
+            double na = 0;
+            double nb = 0;
+            for (int i = 0; i < n; i++) {
+                dot += queryEmb[i] * v[i];
+                na += queryEmb[i] * queryEmb[i];
+                nb += v[i] * v[i];
+            }
+            if (na <= 0 || nb <= 0) {
+                return 0d;
+            }
+            return dot / (Math.sqrt(na) * Math.sqrt(nb));
+        } catch (Exception e) {
+            return 0d;
+        }
     }
 
-    /** 把前端会话历史预载到请求级记忆窗口（滑动窗口 MEMORY_MAX_MESSAGES 条，实例随请求销毁） */
-    private static MessageWindowChatMemory buildConversationMemory(
-            java.util.List<java.util.Map<String, String>> history) {
+    /**
+     * 组装 user 输入：长期语义记忆 + 用户兴趣参考 + 参考资料 + 问题。
+     * 对话历史改由 MessageChatMemoryAdvisor 以真实消息结构注入（见 buildConversationMemory）。
+     */
+    private String buildUser(String docsText, String q, double[] queryEmbedding, Integer userId) {
+        StringBuilder sb = new StringBuilder();
+        // 长期语义记忆：向量召回用户历史相似提问（PGVector, ap_user_memory），仅作个性化参考，全失败静默跳过
+        try {
+            if (userId != null && queryEmbedding != null && queryEmbedding.length > 0) {
+                java.util.List<String> memories =
+                    userMemoryService.recall(userId, queryEmbedding, UserMemoryService.DEFAULT_TOP_K, 0d);
+                if (memories != null && !memories.isEmpty()) {
+                    sb.append("【长期记忆】该用户近来关注过：").append(String.join("；", memories))
+                        .append("。仅在问题与之相关时辅助理解，不相关请忽略；回答依据仍只来自【参考资料】。\n");
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[AiAsk] 长期记忆召回失败，跳过个性化, q={}", truncate(q, 20));
+        }
+        // 个性化：注入用户近期阅读兴趣（收藏聚合标签），仅在相关时辅助理解；画像失败/无数据跳过
+        try {
+            ApUser u = com.heima.utils.thread.AppThreadLocalUtil.getUser();
+            if (u != null && u.getId() != null) {
+                java.util.List<String> tags = userInterestService.buildInterestTags(u.getId());
+                if (tags != null && !tags.isEmpty()) {
+                    sb.append("【用户兴趣参考】该用户近期常读方向：").append(String.join("、", tags))
+                        .append("。仅在问题与之相关时辅助理解，不相关请忽略；回答依据仍只来自【参考资料】。\n");
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[AiAsk] 兴趣画像注入失败，跳过个性化, q={}", truncate(q, 20));
+        }
+        sb.append("【参考资料】\n").append(docsText).append("\n【问题】").append(q);
+        return sb.toString();
+    }
+
+    /**
+     * 构建请求级会话记忆窗口（MessageChatMemoryAdvisor 注入用）。
+     *
+     * <p>记忆来源 = 服务端持久化（Redis，按用户）+ 前端携带的最近会话合并（尾部重叠去重），
+     * 再按 MEMORY_MAX_MESSAGES 滑窗预载；实例随请求销毁互不污染。
+     * userId 为 null（内部调用：Query Rewrite / Rerank）时跳过 Redis，杜绝内部 prompt 污染用户话题记忆。
+     */
+    private ChatMemory buildConversationMemory(Integer userId,
+                                               java.util.List<java.util.Map<String, String>> history) {
         MessageWindowChatMemory memory = MessageWindowChatMemory.builder()
             .maxMessages(MEMORY_MAX_MESSAGES)
             .build();
-        List<Message> turns = new ArrayList<>();
-        if (history != null && !history.isEmpty()) {
-            int from = Math.max(0, history.size() - MEMORY_MAX_MESSAGES);
-            for (int i = from; i < history.size(); i++) {
-                java.util.Map<String, String> turn = history.get(i);
-                String role = turn == null ? null : turn.get("role");
-                String content = turn == null ? null : turn.get("content");
-                if (content == null || content.isBlank()) {
-                    continue;
-                }
-                if ("user".equalsIgnoreCase(role)) {
-                    turns.add(new UserMessage(truncate(content, 300)));
-                } else {
-                    turns.add(new AssistantMessage(truncate(content, 300)));
-                }
+        java.util.List<java.util.Map<String, String>> persisted = new ArrayList<>();
+        if (userId != null) {
+            try {
+                persisted = conversationMemoryService.load(userId);
+            } catch (Exception e) {
+                log.debug("[AiAsk] 持久化会话加载失败，退化为仅前端 history, userId={}", userId);
             }
         }
-        memory.add(MEMORY_CONVERSATION_ID, turns);
+        java.util.List<java.util.Map<String, String>> merged =
+            mergeTurns(persisted, normalizeHistory(history));
+        memory.add(MEMORY_CONVERSATION_ID, toMessages(merged));
         return memory;
     }
 
-    /** Query Rewrite：一次小模型调用（失败返回 null -> 调用方回退原文） */
+    /** 回答成功后的记忆写回：会话记忆（Redis）+ 语义记忆（PGVector），全部 fail-open 不影响主链路 */
+    private void persistMemory(Integer userId, String question, String answer, double[] queryEmbedding) {
+        if (userId == null || answer == null || answer.isBlank()) {
+            return;
+        }
+        try {
+            conversationMemoryService.appendTurn(userId, question, answer);
+        } catch (Exception e) {
+            log.debug("[AiAsk] 会话记忆持久化失败, userId={}", userId, e);
+        }
+        try {
+            userMemoryService.remember(userId, question, queryEmbedding);
+        } catch (Exception e) {
+            log.debug("[AiAsk] 语义记忆沉淀失败, userId={}", userId, e);
+        }
+    }
+
+    private Integer currentUserId() {
+        ApUser u = com.heima.utils.thread.AppThreadLocalUtil.getUser();
+        return u == null ? null : u.getId();
+    }
+
+    /**
+     * 答案忠实度校验（幻觉兜底）：检查答案里的引用是否真的被资料支撑。
+     *
+     * <p>三种模式：off 跳过；async（默认）走线程池异步校验，只写日志与指标、不影响响应；sync 同步校验并把
+     * 简报放进响应（评测/调试用）。任何异常都只记 debug 日志——**校验失败不影响回答**。
+     * 缓存命中路径不重复校验（入库时已校验过）。
+     */
+    private void checkFaithfulness(AiAnswerVo vo, Retrieval r) {
+        if (vo == null || r == null || "off".equalsIgnoreCase(faithfulnessMode)) {
+            return;
+        }
+        try {
+            if ("sync".equalsIgnoreCase(faithfulnessMode)) {
+                AnswerFaithfulnessService.Report report =
+                    faithfulnessService.check(vo.getAnswer(), r.sources, r.docsText);
+                vo.setFaithfulness(report.toBrief());
+                return;
+            }
+            final String answer = vo.getAnswer();
+            final java.util.List<com.heima.model.article.dtos.AiSourceVo> sources = r.sources;
+            final String docs = r.docsText;
+            CompletableFuture.runAsync(() -> {
+                try {
+                    faithfulnessService.check(answer, sources, docs);
+                } catch (Exception e) {
+                    log.debug("[AiAsk] 异步忠实度校验失败", e);
+                }
+            }, aiSseExecutor);
+        } catch (Exception e) {
+            log.debug("[AiAsk] 忠实度校验调度失败（忽略）", e);
+        }
+    }
+
+    /**
+     * 缓存命中回放：把整段答案切片走同一条 delta 回调通道，
+     * 前端看到的仍是「delta... + done」协议，无需感知命中与否。
+     */
+    private static void replayDelta(String answer, java.util.function.Consumer<String> onDelta) {
+        if (answer == null || answer.isEmpty() || onDelta == null) {
+            return;
+        }
+        int step = 40;
+        for (int i = 0; i < answer.length(); i += step) {
+            onDelta.accept(answer.substring(i, Math.min(answer.length(), i + step)));
+        }
+    }
+
+    /** 归一化前端 history：仅保留 role/content 且内容非空、按序输出 */
+    private static java.util.List<java.util.Map<String, String>> normalizeHistory(
+            java.util.List<java.util.Map<String, String>> history) {
+        java.util.List<java.util.Map<String, String>> out = new ArrayList<>();
+        if (history == null) {
+            return out;
+        }
+        for (java.util.Map<String, String> t : history) {
+            if (t == null) {
+                continue;
+            }
+            String content = t.get("content");
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+            java.util.Map<String, String> turn = new LinkedHashMap<>();
+            turn.put("role", "user".equalsIgnoreCase(t.get("role")) ? "user" : "assistant");
+            turn.put("content", content);
+            out.add(turn);
+        }
+        return out;
+    }
+
+    /**
+     * 合并持久化会话与前端会话：前端尾部与持久化尾部重叠部分去重（同端增量场景），
+     * 其余前端口径追加；返回最近 MEMORY_MAX_MESSAGES 条作为注入窗口。
+     */
+    private static java.util.List<java.util.Map<String, String>> mergeTurns(
+            java.util.List<java.util.Map<String, String>> persisted,
+            java.util.List<java.util.Map<String, String>> front) {
+        java.util.List<java.util.Map<String, String>> merged = new ArrayList<>(persisted);
+        int overlap = 0;
+        int max = Math.min(front.size(), persisted.size());
+        for (int i = 1; i <= max; i++) {
+            java.util.Map<String, String> f = front.get(front.size() - i);
+            java.util.Map<String, String> p = persisted.get(persisted.size() - i);
+            if (f != null && p != null
+                    && java.util.Objects.equals(f.get("role"), p.get("role"))
+                    && java.util.Objects.equals(f.get("content"), p.get("content"))) {
+                overlap++;
+            } else {
+                break;
+            }
+        }
+        if (overlap < front.size()) {
+            merged.addAll(front.subList(0, front.size() - overlap));
+        }
+        int from = Math.max(0, merged.size() - MEMORY_MAX_MESSAGES);
+        return merged.subList(from, merged.size());
+    }
+
+    /** {role, content} 列表 -> Spring AI 消息列表（user 前 assistant 后，统一截断防上下文膨胀） */
+    private static java.util.List<Message> toMessages(
+            java.util.List<java.util.Map<String, String>> turns) {
+        java.util.List<Message> msgs = new ArrayList<>();
+        for (java.util.Map<String, String> turn : turns) {
+            String role = turn.get("role");
+            String content = turn.get("content");
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+            if ("user".equalsIgnoreCase(role)) {
+                msgs.add(new UserMessage(truncate(content, 300)));
+            } else {
+                msgs.add(new AssistantMessage(truncate(content, 300)));
+            }
+        }
+        return msgs;
+    }
+
+    /** Query Rewrite：一次小模型调用（失败返回 null -> 调用方回退原文）；内部调用不触碰会话持久化 */
     private String queryRewrite(String question) {
         try {
-            String raw = genText(REWRITE_PROMPT, question, null);
+            String raw = genText(REWRITE_PROMPT, question, null, null);
             if (raw == null) {
                 return null;
             }
@@ -490,7 +780,7 @@ public class AiAskServiceImpl implements AiAskService {
             + "\n\n【问题】" + question + "\n【候选】\n" + sb;
         try {
             String raw = genText(
-                "你是信息检索重排器，严格按要求输出 JSON。", prompt, null);
+                "你是信息检索重排器，严格按要求输出 JSON。", prompt, null, null);
             if (raw == null) {
                 return null;
             }

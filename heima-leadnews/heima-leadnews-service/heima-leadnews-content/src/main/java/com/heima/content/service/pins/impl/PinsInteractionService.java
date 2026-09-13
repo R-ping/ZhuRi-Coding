@@ -7,6 +7,8 @@ import com.heima.content.mapper.pins.ApPinsCommentMapper;
 import com.heima.content.mapper.pins.ApPinsLikeMapper;
 import com.heima.content.mapper.pins.ApPinsMapper;
 import com.heima.content.utils.NotificationHelper;
+import com.heima.model.audit.AuditContext;
+import com.heima.model.audit.AuditEntityType;
 import com.heima.model.behavior.BehaviorContext;
 import com.heima.model.behavior.BehaviorType;
 import com.heima.model.pins.dtos.PinsCommentDTO;
@@ -44,6 +46,9 @@ public class PinsInteractionService {
 
     @Autowired(required = false)
     private INotificationClient notificationClient;
+
+    @Autowired(required = false)
+    private PinsCommentAuditService pinsCommentAuditService;
 
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult like(Long pinsId) {
@@ -170,6 +175,10 @@ public class PinsInteractionService {
         // 如果是回复，更新父评论的回复数
         if (dto.getParentId() != null) {
             ApPinsComment parentComment = apPinsCommentMapper.selectById(dto.getParentId());
+            if (parentComment != null && parentComment.getIsHidden() != null && parentComment.getIsHidden() == 1) {
+                // 折叠评论已全局隐藏，禁止在其下继续回复（防争议在已折叠评论上生长）
+                return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "该评论已被折叠，无法回复");
+            }
             if (parentComment != null) {
                 parentComment.setReplyCount((parentComment.getReplyCount() != null ? parentComment.getReplyCount() : 0) + 1);
                 apPinsCommentMapper.updateById(parentComment);
@@ -179,8 +188,8 @@ public class PinsInteractionService {
         // 跨用户评论时：向沸点作者发送评论通知，并触发行为事件（等级分）
         if (pins != null && pins.getAuthorId() != null
                 && !pins.getAuthorId().equals(user.getId().longValue())) {
-            // 沸点评论无独立审核，创建成功即可见即过审；与文章评论保持一致，
-            // 评论通知由业务链路在"可见"后显式发送（不依赖行为总线的通用通知处理器）。
+            // 沸点评论通知：创建即通知（先展示后审核），审核回调不再补发；
+            // 治理后置：红线删除 / 温和折叠由 PinsCommentAuditService 异步执行（见方法末尾入队）。
             NotificationHelper.sendCommentNotification(
                     notificationClient,
                     pins.getAuthorId().intValue(),
@@ -203,6 +212,25 @@ public class PinsInteractionService {
                 } catch (Exception e) {
                     log.error("沸点评论行为事件处理失败, pinsId={}", dto.getPinsId(), e);
                 }
+            }
+        }
+
+        // 异步审核沸点评论（先展示后审核，延迟 5-10 秒）：
+        // 红线违规 → 物理删除并通知评论者；温和违规（引战/阴阳/软广）→ is_hidden=1 折叠（全局隐藏，数据保留）。
+        // 作者"新评论"通知为创建即发（上方 sendCommentNotification），治理后置，审核回调不再补发通知。
+        if (comment.getId() != null && pinsCommentAuditService != null) {
+            try {
+                AuditContext auditContext = new AuditContext(AuditEntityType.COMMENT, comment.getId(), user.getId().longValue());
+                auditContext.withTitle("")
+                    .withContent(comment.getContent())
+                    .withAuthorName(comment.getUserName())
+                    .withUserId(user.getId())
+                    .withTargetType(2)
+                    .withTargetId(dto.getPinsId());
+                pinsCommentAuditService.asyncAuditComment(auditContext);
+                log.info("沸点评论已加入异步审核队列, commentId={}, pinsId={}", comment.getId(), dto.getPinsId());
+            } catch (Exception e) {
+                log.error("触发沸点评论异步审核异常, commentId={}", comment.getId(), e);
             }
         }
 
