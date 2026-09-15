@@ -818,6 +818,26 @@
       goDraftBox() {
         this.$router.push({ path: '/creator/article/list' })
       },
+      /** AI 预检结果自动回填发布表单（仅当字段为空，可再手动修改；标签按 maxTags 与 labels≤20 字符预算收敛） */
+      applyAiReportToForm(report) {
+        let filled = false
+        if ((!this.FormData.summary || !this.FormData.summary.trim()) && report.summary) {
+          const s = String(report.summary)
+          this.FormData.summary = s.length > 100 ? s.slice(0, 100) : s
+          filled = true
+        }
+        if (this.selectedTags.length === 0 && Array.isArray(report.tags)) {
+          for (const t of report.tags) {
+            if (this.selectedTags.length >= this.maxTags) break
+            const joined = this.selectedTags.concat(t).join(',')
+            if (joined.length > 20) break // 对齐发布校验（labels ≤ 20 字符）
+            this.selectedTags.push(t)
+          }
+          if (this.selectedTags.length) filled = true
+        }
+        if (filled && this.$message) this.$message.success('AI 已自动填入推荐标签与摘要，可在表单中修改')
+        return filled
+      },
       runAiPrecheck() {
         if (this.aiChecking) return
         if (!this.FormData.title || !this.FormData.content) {
@@ -833,6 +853,7 @@
         }).then(res => {
           if (res && res.code === 200 && res.data) {
             this.aiReport = res.data
+            this.applyAiReportToForm(res.data) // 自动回填（仅空字段，可再手动修改）
             this.aiReportVisible = true
           } else {
             this.$message && this.$message.warning((res && res.message) || 'AI 服务暂不可用')
