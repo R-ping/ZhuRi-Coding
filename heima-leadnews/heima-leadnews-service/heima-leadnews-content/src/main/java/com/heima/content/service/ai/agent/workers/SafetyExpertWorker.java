@@ -47,6 +47,6 @@ public class SafetyExpertWorker extends ExpertWorkerBase {
         String user = "标题：" + title + "\n\n正文：\n" + content
             + "\n\n机器检测结果：\n" + machineResult
             + "\n\n请基于机器结果与全文做出最终裁定，仅输出 JSON。";
-        return askExpert(SYSTEM_PROMPT, user);
+        return askExpert(prompt("expert_safety", SYSTEM_PROMPT).content, user);
     }
 }
