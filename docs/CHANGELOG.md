@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 2026-09-16 — AI 消费漏斗埋点（ask/stream 全链路 stage 计数 + /metrics/funnel 观测）
+
+### 背景
+既有指标体系只统计「模型调用量（token）与👍/👎 反馈量」，缺一条从「发起提问 → 语义缓存 → 召回 → 生成 → 反馈」的漏斗，无法量化各环节损耗（如：发起后有多少走到生成？生成后有多少给反馈？缓存命中率多少？）。且 `AiFeedback` 侧的 feature 常量（`aiask_global/aiask_article`）与 `AiFeatures`（`ask/ask_article`）命名不一致，直接按原值打点会让 generatedToFeedback 恒为 0。
+
+### 变更
+- **新增独立计件 `service/ai/AiFunnelMeter`（接口）+ `impl/AiFunnelMeterImpl`**：复刻 AiTokenMeter 的 Redis 日 Hash 骨架（key=`ai:funnel:{yyyy-MM-dd}`，field=`{feature}:{stage}`，TTL 40 天）；`incr(feature, stage)` 内存计数 + Redis `HashOperations.increment`，全部异常 fail-open（只 warn 不阻断主流程）；`snapshot()` 取当前日内存累计，`summary(days)` 按 date/feature/stage 三级聚合并算 `askToGenerated` / `generatedToFeedback` / `cacheHitRate`（分母为 0 归 0，保留 4 位小数的 rate）。不泛化 AiTokenMeter（token 口径与漏斗口径强绑定不同语义）。
+- **打点接入**：
+  - `controller/v1/ai/AiAskController`：参数校验通过后记 `{started}`（ask 按 `dto.getFast()` 区分 `ask_fast/ask`，askStream → `ask_stream`）；
+  - `service/ai/impl/AiAskServiceImpl`：三条路径（ask / askFast / streamFastAsk）缓存命中记 `{cache_hit}`、召回成功记 `{recall_done}`、返回应答前记 `{generated}`；
+  - `service/ai/impl/AiFeedbackServiceImpl`：落库成功后记 `{feedback_up}` / `{feedback_down}`，新增 `mapFunnelFeature` 将 `aiask_global→ask`、`aiask_article→ask_article`、未知→`other`。
+- **观测端点** `controller/v1/ai/AiMetricsController#GET /metrics/funnel?days=7`（IP 限频 10/min）返回 `summary`。
+- **测试**：新增 `AiFunnelMeterImplTest`（9 例：incr 写库+expire / 空白 feature 降级 other / snapshot 累计 / summary 三级聚合+rate / 除零归零 / days 收敛 / 非法 field 跳过 / Redis 读写失败 fail-open / redisTemplate 为 null 降级）；`AiAskServiceImplTest` +3（ask 全链路 started→cache/recall→generated / 缓存命中即短路 / fast feature 口径）；`AiFeedbackServiceImplTest` +2（👍 aiask_global→ask/feedback_up；👎 aiask_article→ask_article/feedback_down + 未知→other）。
+
+### 验证
+- content 模块 `mvn verify`（`jacoco.line.min=0.56`）全量通过；新增用例 14/14 通过。
+
+### 变更文件
+- 新增：`service/ai/AiFunnelMeter.java`、`service/ai/impl/AiFunnelMeterImpl.java`、`test/.../service/ai/impl/AiFunnelMeterImplTest.java`
+- 修改：`controller/v1/ai/AiAskController.java`、`service/ai/impl/AiAskServiceImpl.java`、`service/ai/impl/AiFeedbackServiceImpl.java`、`controller/v1/ai/AiMetricsController.java`、`test/.../service/ai/impl/AiAskServiceImplTest.java`、`test/.../service/ai/impl/AiFeedbackServiceImplTest.java`、`docs/CHANGELOG.md`
+
 ## 2026-09-15 — 网关统一改造补两项：探针端点收口 + 多模型路由按成本调优
 
 ### 背景

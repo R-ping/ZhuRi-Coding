@@ -45,6 +45,8 @@ class AiFeedbackServiceImplTest {
     private AiFeedbackMapper feedbackMapper;
     @Mock
     private AiMetricsCollector metrics;
+    @Mock
+    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
 
     private AiFeedbackServiceImpl service;
 
@@ -54,6 +56,7 @@ class AiFeedbackServiceImplTest {
         service = new AiFeedbackServiceImpl();
         ReflectionTestUtils.setField(service, "feedbackMapper", feedbackMapper);
         ReflectionTestUtils.setField(service, "metrics", metrics);
+        ReflectionTestUtils.setField(service, "funnelMeter", funnelMeter);
         ReflectionTestUtils.setField(service, "alertDownRate", 0.2);
     }
 
@@ -94,6 +97,38 @@ class AiFeedbackServiceImplTest {
         verify(feedbackMapper).insert(captor.capture());
         assertEquals("问题", captor.getValue().getQuestion());
         assertEquals(1, captor.getValue().getFeedback());
+    }
+
+    @Test
+    @DisplayName("record：👍 反馈打点漏斗（aiask_global → ask/feedback_up）")
+    void testRecordFunnelUp() {
+        when(feedbackMapper.selectOne(any())).thenReturn(null);
+
+        ResponseResult r = service.record(userId, com.heima.model.ai.pojos.AiFeedback.FEATURE_AIASK_GLOBAL,
+                "", "问题", "回答", com.heima.model.ai.pojos.AiFeedback.FEEDBACK_UP);
+
+        assertEquals(200, r.getCode());
+        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP);
+    }
+
+    @Test
+    @DisplayName("record：👎/文章问答 feature 映射（aiask_article → ask_article/feedback_down，未知 → other/feedback_up）")
+    void testRecordFunnelDownAndOtherMapping() {
+        when(feedbackMapper.selectOne(any())).thenReturn(null);
+
+        ResponseResult r = service.record(userId, com.heima.model.ai.pojos.AiFeedback.FEATURE_AIASK_ARTICLE,
+                "", "问题", "回答", com.heima.model.ai.pojos.AiFeedback.FEEDBACK_DOWN);
+        assertEquals(200, r.getCode());
+        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK_ARTICLE,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_DOWN);
+
+        // 未识别的 feature 兜底至 other，且 👍 映射 feedback_up
+        r = service.record(userId, "unknown_feature", "", "问题", "回答",
+                com.heima.model.ai.pojos.AiFeedback.FEEDBACK_UP);
+        assertEquals(200, r.getCode());
+        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.OTHER,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP);
     }
 
     // ==================== badCases ====================

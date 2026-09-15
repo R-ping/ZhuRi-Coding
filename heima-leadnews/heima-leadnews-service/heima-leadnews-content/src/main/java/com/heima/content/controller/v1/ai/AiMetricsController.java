@@ -32,6 +32,10 @@ public class AiMetricsController {
     @Autowired(required = false)
     private com.heima.content.service.ai.AiCircuitBreaker circuitBreaker;
 
+    /** 消费漏斗计（发起/缓存命中/检索/生成/反馈 按天聚合 + 转化率） */
+    @Autowired
+    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+
     @Autowired
     private AiFeedbackMapper aiFeedbackMapper;
 
@@ -63,6 +67,23 @@ public class AiMetricsController {
     public ResponseResult circuit() {
         Map<String, Object> data = new HashMap<>();
         data.put("circuit", circuitBreaker == null ? "unavailable" : circuitBreaker.snapshot());
+        return ResponseResult.okResult(data);
+    }
+
+    /**
+     * 消费漏斗：发起 → 检索 → 生成 → 反馈 各阶段按天聚合 + 转化率。
+     *
+     * <p>用于回答"AI 问答一路走到被用户认可的转化率"——多少提问真的生成了回答
+     * （{@code askToGenerated}）、缓存命中省了多少模型调用（{@code cacheHitRate}）、
+     * 生成后有多少用户给了反馈（{@code generatedToFeedback}）。
+     * days 越界由 {@code AiFunnelMeter.summary} 内部收敛到 1~30。
+     */
+    @GetMapping("/metrics/funnel")
+    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    public ResponseResult funnel(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "7") int days) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("funnel", funnelMeter.summary(days));
         return ResponseResult.okResult(data);
     }
 

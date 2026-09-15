@@ -79,6 +79,8 @@ class AiAskServiceImplTest {
 
     @Mock private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
 
+    @Mock private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+
     @InjectMocks
     private AiAskServiceImpl service;
 
@@ -193,6 +195,63 @@ class AiAskServiceImplTest {
         when(embeddingService.generateEmbedding(anyString())).thenReturn(null);
 
         assertNull(service.ask("问题", null, false, null));
+    }
+
+    // ==================== 消费漏斗（AI 问答链路阶段埋点） ====================
+
+    @Test
+    @DisplayName("完整链路：ask 依次计数 recall_done → generated（feature=ask）")
+    void askFunnelFullPipeline() {
+        when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
+        stubRetrieval(true);
+        stubChatModelBySystem();
+
+        AiAnswerVo vo = service.ask("Redis 分布式锁怎么实现", null, false, null);
+
+        assertNotNull(vo);
+        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        verify(funnelMeter, never()).incr(com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
+    }
+
+    @Test
+    @DisplayName("缓存命中：只计数 cache_hit，不产生 recall_done / generated")
+    void askFunnelCacheHitOnly() {
+        AiAnswerVo cached = new AiAnswerVo();
+        cached.setAnswer("缓存答案");
+        cached.setSources(List.of());
+        when(semanticCacheService.lookup("缓存命中问题", null)).thenReturn(cached);
+
+        AiAnswerVo vo = service.ask("缓存命中问题", null, null, null);
+
+        assertNotNull(vo);
+        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
+        verify(funnelMeter, never()).incr(com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        verify(funnelMeter, never()).incr(com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+    }
+
+    @Test
+    @DisplayName("fast 模式：检索与生成按 ask_fast 计数（与完整问答区分成本档位）")
+    void askFunnelFastFeature() {
+        when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
+        stubRetrieval(true);
+        stubChatModelBySystem();
+
+        AiAnswerVo vo = service.ask("Redis 锁怎么实现", null, true, null);
+
+        assertNotNull(vo);
+        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK_FAST,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK_FAST,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        verify(funnelMeter, never()).incr(com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
     }
 
     // ==================== streamFastAsk ====================
