@@ -145,6 +145,10 @@ public class AiAskServiceImpl implements AiAskService {
     @Autowired
     private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
 
+    /** 消费漏斗计（缓存命中/检索/生成 阶段打点） */
+    @Autowired
+    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+
     /** Redis（向量轮转同步游标） */
     @Autowired
     private com.heima.common.redis.CacheService cacheService;
@@ -164,6 +168,9 @@ public class AiAskServiceImpl implements AiAskService {
         // 0. 语义缓存：相似问题直返（命中即省掉 rewrite + rerank + 生成 三次模型调用）
         AiAnswerVo cached = semanticCacheService.lookup(q, currentUserId());
         if (cached != null) {
+            // 消费漏斗：缓存命中（省掉检索与生成）
+            funnelMeter.incr(Boolean.TRUE.equals(fast) ? AiFeatures.ASK_FAST : AiFeatures.ASK,
+                    com.heima.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
             cached.setLatencyMs(System.currentTimeMillis() - start);
             log.info("[AiAsk] 语义缓存命中, q={}, latency={}ms", truncate(q, 40), cached.getLatencyMs());
             return cached;
@@ -190,6 +197,8 @@ public class AiAskServiceImpl implements AiAskService {
             log.warn("[AiAsk] 问题向量化失败，question={}", truncate(q, 50));
             return null;
         }
+        // 消费漏斗：检索管线执行完毕（含 hits==0）
+        funnelMeter.incr(AiFeatures.ASK, com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
         if (r.hits == 0) {
             return emptyAnswer(start);
         }
@@ -226,6 +235,8 @@ public class AiAskServiceImpl implements AiAskService {
         checkFaithfulness(vo, r);
         log.info("[AiAsk] question={}, hits={}, sources={}, latency={}ms, promptVersions={}",
             truncate(q, 50), r.hits, r.sources.size(), vo.getLatencyMs(), pv);
+        // 消费漏斗：生成成功（vo 返回给用户）
+        funnelMeter.incr(AiFeatures.ASK, com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
         return vo;
     }
 
@@ -242,6 +253,8 @@ public class AiAskServiceImpl implements AiAskService {
         // 0. 语义缓存：命中则按 chunk 回放（前端 delta 协议不变），跳过检索与生成
         AiAnswerVo cachedStream = semanticCacheService.lookup(q, userId);
         if (cachedStream != null) {
+            // 消费漏斗：缓存命中（省掉检索与生成）
+            funnelMeter.incr(AiFeatures.ASK_STREAM, com.heima.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
             replayDelta(cachedStream.getAnswer(), onDelta);
             // 命中路径不重复 embedding 沉淀，仅补记会话记忆，保持多轮上下文连续
             try {
@@ -258,6 +271,8 @@ public class AiAskServiceImpl implements AiAskService {
         if (r == null) {
             return null;
         }
+        // 消费漏斗：检索管线执行完毕（含 hits==0）
+        funnelMeter.incr(AiFeatures.ASK_STREAM, com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
         if (r.hits == 0) {
             return emptyAnswer(start);
         }
@@ -310,6 +325,8 @@ public class AiAskServiceImpl implements AiAskService {
         semanticCacheService.store(q, userId, vo.getAnswer(), r.sources);
         checkFaithfulness(vo, r);
         log.info("[AiAsk-stream] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
+        // 消费漏斗：生成成功（vo 返回给用户）
+        funnelMeter.incr(AiFeatures.ASK_STREAM, com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
         return vo;
     }
 
@@ -321,6 +338,8 @@ public class AiAskServiceImpl implements AiAskService {
             log.warn("[AiAsk-fast] 问题向量化失败，question={}", truncate(q, 50));
             return null;
         }
+        // 消费漏斗：检索管线执行完毕（含 hits==0）
+        funnelMeter.incr(AiFeatures.ASK_FAST, com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
         if (r.hits == 0) {
             return emptyAnswer(start);
         }
@@ -348,6 +367,8 @@ public class AiAskServiceImpl implements AiAskService {
         semanticCacheService.store(q, currentUserId(), vo.getAnswer(), r.sources);
         checkFaithfulness(vo, r);
         log.info("[AiAsk-fast] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
+        // 消费漏斗：生成成功（vo 返回给用户）
+        funnelMeter.incr(AiFeatures.ASK_FAST, com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
         return vo;
     }
 

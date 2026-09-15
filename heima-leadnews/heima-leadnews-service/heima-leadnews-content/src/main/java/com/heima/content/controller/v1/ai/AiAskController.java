@@ -40,6 +40,10 @@ public class AiAskController {
     @Autowired
     private com.heima.content.service.ai.AiLlmGateway llmGateway;
 
+    /** 消费漏斗计（发起/缓存命中/检索/生成/反馈 按天聚合） */
+    @Autowired
+    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+
     @Autowired
     private com.heima.content.service.ai.spring.AiSafetyTools aiSafetyTools;
 
@@ -125,6 +129,9 @@ public class AiAskController {
             emitter.complete();
             return emitter;
         }
+        // 消费漏斗：入口打点（配额通过 = 真正开始消耗；SSE 也不记 precheck）
+        funnelMeter.incr(com.heima.content.service.ai.AiFeatures.ASK_STREAM,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_STARTED);
         // 异步执行：立即返回 emitter，流式事件在工作线程逐步发送
         String question = dto.getQuestion();
         Integer topK = dto.getTopK();
@@ -257,6 +264,11 @@ public class AiAskController {
         if (dto == null || dto.getQuestion() == null || dto.getQuestion().trim().isEmpty()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "问题不能为空");
         }
+        // 消费漏斗：入口打点（配额通过且参数合法 = 真正开始消耗；fast 模式记 ask_fast 便于区分成本档位）
+        funnelMeter.incr(Boolean.TRUE.equals(dto.getFast())
+                        ? com.heima.content.service.ai.AiFeatures.ASK_FAST
+                        : com.heima.content.service.ai.AiFeatures.ASK,
+                com.heima.content.service.ai.AiFunnelMeter.STAGE_STARTED);
         try {
             AiAnswerVo vo = aiAskService.ask(dto.getQuestion(), dto.getTopK(), dto.getFast(), dto.getHistory());
             if (vo == null) {
