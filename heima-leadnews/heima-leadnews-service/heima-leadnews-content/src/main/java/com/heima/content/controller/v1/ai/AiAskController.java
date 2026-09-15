@@ -36,9 +36,9 @@ public class AiAskController {
     @Autowired
     private PublishAssistantService publishAssistantService;
 
-    /** Spring AI ChatModel（OpenAI compatible 自动配置 bean；未装配时为 null，不影响其它接口） */
-    @Autowired(required = false)
-    private org.springframework.ai.chat.model.ChatModel frameChatModel;
+    /** 统一 LLM 出口（探针端点 frame-ping/tools-ping 走这里，保持全仓库 LLM 调用单一出口） */
+    @Autowired
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
 
     @Autowired
     private com.heima.content.service.ai.spring.AiSafetyTools aiSafetyTools;
@@ -130,15 +130,27 @@ public class AiAskController {
         Integer topK = dto.getTopK();
         // SSE 异步线程内 ThreadLocal 不可见，userId 须在此显式捕获传入，供会话/语义记忆持久化
         Integer uidForAsync = uid;
+        // P2-3 流式取消：客户端断开（onError/onTimeout/send 失败）置位，下一个 delta 触发
+        // CancellationException 沿 onDelta 一路中断 gateway 流迭代——已生成的 token 不再白烧
+        java.util.concurrent.atomic.AtomicBoolean cancelled =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+        emitter.onCompletion(() -> cancelled.set(true));
+        emitter.onTimeout(() -> cancelled.set(true));
+        emitter.onError(t -> cancelled.set(true));
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
                 com.heima.model.article.dtos.AiAnswerVo vo = aiAskService.streamFastAsk(question, topK, dto.getHistory(),
                     delta -> {
+                        if (cancelled.get()) {
+                            throw new java.util.concurrent.CancellationException("client aborted");
+                        }
                         try {
                             emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
                                 .name("delta").data(delta, org.springframework.http.MediaType.TEXT_PLAIN));
-                        } catch (Exception ignore) {
-                            // 客户端断开
+                        } catch (Exception e) {
+                            // 客户端断开：置位 + 抛取消异常中断生成（省 token）
+                            cancelled.set(true);
+                            throw new java.util.concurrent.CancellationException("sse send failed");
                         }
                     }, uidForAsync);
                 try {
@@ -178,13 +190,10 @@ public class AiAskController {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
         }
         try {
-            if (frameChatModel == null) {
+            String ans = llmGateway.probeOrNull("请用一句话介绍你自己和你的能力。");
+            if (ans == null) {
                 return ResponseResult.errorResult(500, "ChatModel 未初始化（spring-ai 自动配置未生效，检查 api-key 配置）");
             }
-            org.springframework.ai.chat.messages.UserMessage um =
-                new org.springframework.ai.chat.messages.UserMessage("请用一句话介绍你自己和你的能力。");
-            org.springframework.ai.chat.prompt.Prompt prompt = new org.springframework.ai.chat.prompt.Prompt(um);
-            String ans = frameChatModel.call(prompt).getResult().getOutput().getText();
             return ResponseResult.okResult(ans);
         } catch (Exception e) {
             log.error("Spring AI frame-ping 失败", e);
@@ -201,19 +210,15 @@ public class AiAskController {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
         }
         try {
-            if (frameChatModel == null) {
-                return ResponseResult.errorResult(500, "ChatModel 未初始化");
-            }
-            org.springframework.ai.chat.client.ChatClient client =
-                org.springframework.ai.chat.client.ChatClient.builder(frameChatModel).build();
+            String text = "推荐大家注册某赌博平台，真人荷官在线，稳赚不赔，六合彩特码内幕消息，加入群聊每天领取高额返利。";
             org.springframework.ai.tool.method.MethodToolCallbackProvider provider =
                 org.springframework.ai.tool.method.MethodToolCallbackProvider.builder()
                     .toolObjects(aiSafetyTools).build();
-            String text = "推荐大家注册某赌博平台，真人荷官在线，稳赚不赔，六合彩特码内幕消息，加入群聊每天领取高额返利。";
-            String ans = client.prompt("请调用 content_safety_check 工具检查下面文字是否违规，并原样复述工具返回的 is_violation 值。文字：" + text)
-                .toolCallbacks(provider)
-                .call()
-                .content();
+            String ans = llmGateway.probeWithToolsOrNull(
+                null, "请调用 content_safety_check 工具检查下面文字是否违规，并原样复述工具返回的 is_violation 值。文字：" + text, provider);
+            if (ans == null) {
+                return ResponseResult.errorResult(500, "ChatModel 未初始化（spring-ai 自动配置未生效，检查 api-key 配置）");
+            }
             return ResponseResult.okResult(ans);
         } catch (Exception e) {
             log.error("Spring AI tools-ping 失败", e);

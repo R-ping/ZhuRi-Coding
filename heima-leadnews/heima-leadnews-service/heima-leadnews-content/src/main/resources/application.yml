@@ -101,6 +101,53 @@ bailian:
       max-attempts: 3
       backoff-delay: 1000
 
+# AI 模型路由与成本（token 计量 → 金额折算）
+#
+# 定价 key = 计量上报的模型名（取自 ChatResponse.metadata.model），单位：元 / 千 token。
+# 数据来源（2026-09-14 查证，官方公示价，中国内地/华北2-北京部署范围）：
+#   - qwen3.8-27b  输入 3 元/百万、输出 12 元/百万（help.aliyun.com/zh/model-studio/qwen3-8-27b）
+#   - qwen3.7-max  输入 12 元/百万、输出 36 元/百万（help.aliyun.com/zh/model-studio/model-pricing，2026-06-15）
+#   - qwen-plus    输入 0.8 元/百万、输出 2 元/百万（aliyun.com/product/bailian/pricing）
+#   - qwen-turbo   输入 0.3 元/百万、输出 0.6 元/百万（同上）
+#   - qwen-max     输入 2.4 元/百万、输出 9.6 元/百万（model-pricing 文档）
+#   - qwen3.8-flash 输入 0.8 元/百万、输出 2.7 元/百万（开发者社区对比文，2026）
+# 注意：以上为"无阶梯/最低档"单价，实际存在阶梯计费、Batch 半价、上下文缓存折扣与限时活动，
+# 请以百炼控制台账单为准；未配价的模型会在成本报表里列入 unpricedModels（不静默当免费）。
+ai:
+  model-router:
+    default: openAiChatModel      # 默认模型 key（spring-ai 自动配置主模型 bean 名；原 "primary" 指向不存在的名称）
+    flash-model: ${AI_FLASH_MODEL:qwen3.8-flash}  # 低成本模型名（配 AiModelConfig 的 qwenFlashChatModel）
+    # 功能 → 模型 Bean 名（低成本高频功能走 flash 便宜约 15 倍，高价值问答/预检/复盘/Agent 不映射走默认强模型）
+    features:
+      rewrite: qwenFlashChatModel
+      rerank: qwenFlashChatModel
+      faithfulness: qwenFlashChatModel
+      comment_audit: qwenFlashChatModel
+      pins_comment_audit: qwenFlashChatModel
+      aigc_detect: qwenFlashChatModel
+      memory_compress: qwenFlashChatModel
+      appeal_audit: qwenFlashChatModel
+    pricing-prompt:
+      qwen3.7-max: 0.012          # 当前主模型（DASH_SCOPE_MODEL 默认值）
+      qwen3.8-27b: 0.003          # 视觉/长文场景
+      qwen3.8-flash: 0.0008       # 轻量场景（便宜 15 倍，适合审核/精排/改写）
+      qwen-plus: 0.0008
+      qwen-turbo: 0.0003
+      qwen-max: 0.0024
+    pricing-completion:
+      qwen3.7-max: 0.036
+      qwen3.8-27b: 0.012
+      qwen3.8-flash: 0.0027
+      qwen-plus: 0.002
+      qwen-turbo: 0.0006
+      qwen-max: 0.0096
+
+# AI 每日免费 tokens 额度（成本止血闸门；按主模型 qwen3.7-max 折算 ≈ 0.02 元/千）
+# 20000 tokens ≈ 0.4 元/用户/天 —— 免费层本质是获客成本，按预算调整
+ai-quota:
+  daily-tokens: ${AI_DAILY_FREE_TOKENS:20000}
+  daily-requests: ${AI_DAILY_FREE_REQUESTS:20}
+
 # PostgreSQL pgvector 向量库（文章向量/相似度检索；配合 PgVectorConfig，enabled=true 才装配）
 pgvector:
   enabled: true

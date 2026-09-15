@@ -15,8 +15,6 @@ import com.heima.model.audit.AuditResult;
 import com.heima.model.audit.pojos.ApCommentAuditTask;
 import com.heima.model.behavior.pojos.UserBehaviorRecord;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -58,11 +56,12 @@ public class CommentAuditService extends AbstractAuditService {
     private UserBehaviorRecordMapper behaviorRecordMapper;
 
     /**
-     * Spring AI ChatModel（OpenAI compatible 自动配置）。折叠判定是"尽力而为"的温和治理：
-     * 未装配（如未配置模型的环境/单测上下文）或调用异常时一律放行，不影响审核主链路。
+     * 统一 LLM 出口（安全横切 + token 计量）。折叠判定是"尽力而为"的温和治理：
+     * 模型未装配（如未配置 Key 的环境/单测上下文）或调用异常时一律放行，不影响审核主链路。
+     * 模型选择交由网关内的 AiModelRouter 按 feature 路由（comment_audit → 低成本模型）。
      */
-    @Autowired(required = false)
-    private ChatModel commentChatModel;
+    @Autowired
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
 
     /**
      * 评论入队并触发异步审核（延迟约 5-10 秒）
@@ -294,16 +293,17 @@ public class CommentAuditService extends AbstractAuditService {
 
     /** 评论温和治理判定：引战/人身攻击/阴阳怪气/软广/刷屏 → true(折叠隐藏)。正常批评与讨论不折叠。 */
     private boolean judgeCommentHidden(Long commentId, String content) {
-        if (commentChatModel == null || content == null || content.isBlank()) {
+        if (content == null || content.isBlank()) {
             return false;
         }
         try {
             String sys = "你是社区评论治理助手。判断评论是否属于需要折叠的破坏性内容："
                 + "人身攻击/辱骂、明显引战/挑衅、阴阳怪气、广告或引流(软广)、重复刷屏。"
                 + "正常的不同意见、批评、调侃、表情/梗不算。仅输出 JSON：{\"action\":\"pass\"|\"hide\"}";
-            String ans = ChatClient.builder(commentChatModel).build()
-                .prompt().system(sys).user("评论内容：" + (content.length() > 500 ? content.substring(0, 500) : content))
-                .call().content();
+            // 模型按 feature(comment_audit) 经 AiModelRouter 路由：未装配时网关返回 null → 走下方"判定失败默认放行"
+            String ans = llmGateway.generateOrNull(
+                com.heima.content.service.ai.AiFeatures.COMMENT_AUDIT,
+                sys, "评论内容：" + (content.length() > 500 ? content.substring(0, 500) : content), null, null);
             return ans != null && ans.contains("\"hide\"");
         } catch (Exception e) {
             log.warn("评论AI治理判定失败, commentId={}", commentId, e);

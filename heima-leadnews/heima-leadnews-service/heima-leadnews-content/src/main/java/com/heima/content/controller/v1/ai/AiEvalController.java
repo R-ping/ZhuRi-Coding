@@ -64,4 +64,24 @@ public class AiEvalController {
         log.info("AI 答案级评测触发, userId={}, limit={}", user.getId(), n);
         return ResponseResult.okResult(aiEvalService.runAnswerEval(n));
     }
+
+    /**
+     * 评测门禁：检索 + 答案级组合评测，按 ai.eval.gate.* 阈值判定 pass/fail（含逐项 checks）。
+     *
+     * <p>成本最高（全量向量化 + 最多 12 次生成），限流最严；建议改 prompt / 调召回阈值 / 换模型后跑，
+     * 作为 RAG 质量回归门禁（gate.pass=false 即回退）。
+     */
+    @PostMapping("/gate")
+    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.USER,
+        count = 1, interval = 5, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
+        count = 2, interval = 10, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    public ResponseResult runGate() {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null || user.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        log.info("AI 评测门禁触发, userId={}", user.getId());
+        return ResponseResult.okResult(aiEvalService.runGate());
+    }
 }

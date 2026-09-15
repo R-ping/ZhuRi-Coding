@@ -17,12 +17,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 文章本地消息表补偿扫描（单 status 状态机）
+ * 文章发布执行 + 本地消息表补偿扫描（单 status 状态机）
  *
- * <p>主流程（延迟任务消费线程）只负责一次执行：落消息(INIT) → 置 DB 发布态 → 同步 ES → 置 DONE；
- * 本类兜底"主流程执行中断/失败"的收敛：每 20s 扫描未完成事件：
+ * <p>发布主流程与补偿扫描共用同一套幂等执行体 {@link #publishFromInit}：
+ * 置 DB 发布态（SUBMIT→PUBLISHED 条件更新）→ 同步 ES → 收敛状态机。
+ * 主路径：延迟任务落锚后发布 ArticlePublishEvent，由 @Async 监听器调用 {@link #executePublish}；
+ * 兜底路径：每 20s 扫描未完成事件——
  * <ul>
- *   <li>status=INIT 且滞留超 60s：消费线程崩溃，重放「置位 + ES 同步」</li>
+ *   <li>status=INIT 且滞留超 60s：异步监听器崩溃/重启，重放整段流程</li>
  *   <li>status=DB_SET_FAIL：DB 置位失败，重试置位（幂等自愈，不计重试次数、不进死信）</li>
  *   <li>status=ES_SYNC_FAIL：ES 同步失败，重试 syncArticle，累计重试次数，超限进死信清理</li>
  * </ul>
@@ -44,6 +46,26 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
     @Override
     public void updateEvent(ArticleEvent event) {
         apArticleEventMapper.updateArticleEvent(event);
+    }
+
+    @Override
+    public void executePublish(Long articleId) {
+        if (articleId == null) {
+            log.warn("文章发布执行事件缺少 articleId，跳过");
+            return;
+        }
+        // 内存构造事件对象：updateArticleEvent 按 article_id 定位，无需回查锚点行，
+        // 也避免了「锚点事务未提交 + @Async 抢跑」的可见性竞争；
+        // 同步失败落 ES_SYNC_FAIL 后，重试所需计数由扫描从库中加载完整行继续累计。
+        ArticleEvent event = new ArticleEvent();
+        event.setArticleId(articleId);
+        event.setStatus(ArticleConstants.EVENT_STATUS_INIT);
+        event.setRetryCount((byte) 0);
+        event.setMaxRetryCount(ArticleConstants.EVENT_ES_MAX_RETRY);
+        SearchArticleVo vo = new SearchArticleVo();
+        vo.setId(articleId);
+        event.setParameter(JSONUtil.toJsonStr(vo));
+        publishFromInit(event);
     }
 
     @Scheduled(fixedRate = 20000)
@@ -71,8 +93,8 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
                 retryDbSet(event);
                 break;
             default:
-                // INIT 滞留：消费线程可能已崩溃，重放「置位 + 同步」
-                replayFromInit(event);
+                // INIT 滞留：异步监听器可能已崩溃，重放「置位 + 同步」
+                publishFromInit(event);
         }
     }
 
@@ -97,8 +119,8 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
         }
     }
 
-    /** INIT 滞留重放：先置位再同步（与主流程一致，幂等） */
-    private void replayFromInit(ArticleEvent event) {
+    /** 从 INIT 推进发布：先置位再同步（幂等）。异步监听器主路径与扫描 INIT 滞留重放共用 */
+    private void publishFromInit(ArticleEvent event) {
         if (apArticleMapper.markPublishedIfPending(event.getArticleId()) == 1) {
             esSyncOrMarkFail(event);
             return;

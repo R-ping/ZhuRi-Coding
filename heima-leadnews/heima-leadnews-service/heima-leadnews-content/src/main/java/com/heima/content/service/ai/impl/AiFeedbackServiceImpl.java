@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -92,5 +93,99 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
         } catch (Exception e) {
             return String.valueOf(s.hashCode());
         }
+    }
+
+    // ==================== 反馈回灌（P1-2：闭环的后半段） ====================
+
+    /** 差评率告警阈值：超过即告警（可配置 ai.feedback.alert-down-rate） */
+    @org.springframework.beans.factory.annotation.Value("${ai.feedback.alert-down-rate:0.2}")
+    private double alertDownRate;
+
+    /** 统计的最小样本量：样本不足时不告警（1 条 👎 就告警会永远在响） */
+    private static final int ALERT_MIN_SAMPLES = 5;
+
+    @Autowired
+    private com.heima.content.service.ai.AiMetricsCollector metrics;
+
+    @Override
+    public List<AiFeedback> badCases(String feature, int limit) {
+        int max = Math.max(1, Math.min(limit, 200));
+        LambdaQueryWrapper<AiFeedback> query = new LambdaQueryWrapper<AiFeedback>()
+            .eq(AiFeedback::getFeedback, AiFeedback.FEEDBACK_DOWN)
+            .orderByDesc(AiFeedback::getUpdateTime)
+            .last("LIMIT " + max);
+        if (feature != null && !feature.isBlank()) {
+            query.eq(AiFeedback::getFeature, feature);
+        }
+        List<AiFeedback> list = feedbackMapper.selectList(query);
+        return list == null ? java.util.Collections.emptyList() : list;
+    }
+
+    @Override
+    public List<Map<String, Object>> exportEvalCandidates(String feature, int limit) {
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        for (AiFeedback f : badCases(feature, limit)) {
+            Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("question", f.getQuestion());
+            // goldenArticleIds 留空：机器不知道"正确的答案"，人工补上期望召回的文章后即可并入评测集
+            item.put("goldenArticleIds", new java.util.ArrayList<>());
+            item.put("note", "来自用户差评 feature=" + f.getFeature()
+                + " scene=" + (f.getSceneId() == null ? "" : f.getSceneId())
+                + " time=" + (f.getUpdateTime() == null ? "" : cn.hutool.core.date.DateUtil.formatDateTime(f.getUpdateTime())));
+            out.add(item);
+        }
+        return out;
+    }
+
+    @Override
+    public Map<String, Object> statsByFeature(int days) {
+        int span = Math.max(1, Math.min(days, 30));
+        java.util.Date since = new java.util.Date(System.currentTimeMillis() - span * 86_400_000L);
+        List<AiFeedback> all = feedbackMapper.selectList(new LambdaQueryWrapper<AiFeedback>()
+            .ge(AiFeedback::getUpdateTime, since));
+
+        // 按 feature 聚合 up/down
+        Map<String, long[]> byFeature = new java.util.TreeMap<>();
+        for (AiFeedback f : all) {
+            if (f.getFeature() == null) {
+                continue;
+            }
+            long[] pair = byFeature.computeIfAbsent(f.getFeature(), k -> new long[2]);
+            if (Integer.valueOf(AiFeedback.FEEDBACK_UP).equals(f.getFeedback())) {
+                pair[0]++;
+            } else if (Integer.valueOf(AiFeedback.FEEDBACK_DOWN).equals(f.getFeedback())) {
+                pair[1]++;
+            }
+        }
+
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("days", span);
+        out.put("alertDownRate", alertDownRate);
+        out.put("alertMinSamples", ALERT_MIN_SAMPLES);
+        java.util.List<String> alerted = new java.util.ArrayList<>();
+        Map<String, Object> byFeatureOut = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, long[]> e : byFeature.entrySet()) {
+            long up = e.getValue()[0];
+            long down = e.getValue()[1];
+            long total = up + down;
+            double downRate = total == 0 ? 0d : (double) down / total;
+            boolean alert = total >= ALERT_MIN_SAMPLES && downRate >= alertDownRate;
+            if (alert) {
+                alerted.add(e.getKey());
+                metrics.incr("ai_feedback_alert_" + e.getKey());
+                log.warn("[AiFeedback] 差评率超阈值，建议复盘/补评测集: feature={}, 👎率={}%, 样本={}",
+                        e.getKey(), Math.round(downRate * 100), total);
+            }
+            Map<String, Object> s = new java.util.LinkedHashMap<>();
+            s.put("up", up);
+            s.put("down", down);
+            s.put("total", total);
+            s.put("downRate", Math.round(downRate * 1000) / 10.0);
+            s.put("alert", alert);
+            byFeatureOut.put(e.getKey(), s);
+        }
+        out.put("byFeature", byFeatureOut);
+        out.put("alerted", alerted);
+        return out;
     }
 }

@@ -8,6 +8,7 @@ import com.heima.model.user.pojos.ApUser;
 import com.heima.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -44,5 +45,38 @@ public class AiFeedbackController {
         Integer feedback = body.get("feedback") instanceof Number
             ? ((Number) body.get("feedback")).intValue() : null;
         return aiFeedbackService.record(user.getId(), feature, sceneId, question, answer, feedback);
+    }
+
+    /**
+     * 导出坏例（👎 样本，含可直接并入评测集的候选条目）。
+     *
+     * <p>P1-2 反馈回灌：👎 数据如果不能被复盘、不能变成评测样本，就只是死数据。
+     * 流程：导出 → 人工补「期望召回文章」→ 并入 {@code ai-eval/eval-questions.json} → 下次评测覆盖。
+     *
+     * <p>要求登录（question/answer 含用户输入内容），IP 限频。
+     */
+    @GetMapping("/feedback/badcases")
+    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    public ResponseResult badCases(
+        @org.springframework.web.bind.annotation.RequestParam(required = false) String feature,
+        @org.springframework.web.bind.annotation.RequestParam(defaultValue = "50") int limit) {
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("badcases", aiFeedbackService.badCases(feature, limit));
+        data.put("evalCandidates", aiFeedbackService.exportEvalCandidates(feature, limit));
+        data.put("usage", "把 evalCandidates 里的条目补上 goldenArticleIds 后并入 ai-eval/eval-questions.json");
+        return ResponseResult.okResult(data);
+    }
+
+    /**
+     * 反馈质量统计：按 feature 的 👍/👎 与差评率；超阈值（默认 20%，样本 ≥5）的 feature 会被列入
+     * {@code alerted} 并打指标 —— 让"哪个 AI 功能变差了"有主动信号，而不是靠用户投诉发现。
+     */
+    @GetMapping("/feedback/stats")
+    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    public ResponseResult feedbackStats(
+        @org.springframework.web.bind.annotation.RequestParam(defaultValue = "7") int days) {
+        return ResponseResult.okResult(aiFeedbackService.statsByFeature(days));
     }
 }

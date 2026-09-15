@@ -48,6 +48,10 @@ public class CreatorReportServiceImpl implements CreatorReportService {
     @Autowired
     private com.heima.content.service.ai.router.AiModelRouter aiModelRouter;
 
+    /** 统一 LLM 出口（安全横切 + token 计量；模型仍由内部按 feature 路由） */
+    @Autowired
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+
     @Override
     public ResponseResult buildReport(Integer userId, int days) {
         if (userId == null) {
@@ -232,9 +236,9 @@ public class CreatorReportServiceImpl implements CreatorReportService {
                 + "4. 下周方向：结合高频标签与亮点主题给 1 个选题建议。\n"
                 + "语气务实不吹捧，全文 250 字内，用短句与列表。";
             String user = "【创作数据】\n" + json;
-            String raw = org.springframework.ai.chat.client.ChatClient.builder(
-                aiModelRouter.resolve("creator_report")).build()
-                .prompt().system(sys).user(user).call().content();
+            // 模型仍由路由层按 feature=creator_report 解析（gateway 内部 resolve，语义不变）
+            String raw = llmGateway.generateOrNull(
+                com.heima.content.service.ai.AiFeatures.CREATOR_REPORT, sys, user, null, null);
             return raw == null || raw.isBlank() ? null : raw.trim();
         } catch (Exception e) {
             log.error("[CreatorReport] 报告生成异常", e);

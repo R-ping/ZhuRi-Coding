@@ -27,7 +27,44 @@ public class AiMetricsController {
     private AiMetricsCollector aiMetricsCollector;
 
     @Autowired
+    private com.heima.content.service.ai.AiTokenMeter aiTokenMeter;
+
+    @Autowired(required = false)
+    private com.heima.content.service.ai.AiCircuitBreaker circuitBreaker;
+
+    @Autowired
     private AiFeedbackMapper aiFeedbackMapper;
+
+    /**
+     * token 用量成本面板：按 feature / 按天聚合（最近 N 天）。
+     *
+     * <p>用于回答"哪个 AI 功能最烧钱"——rerank 是短 prompt、创作复盘是长输出，
+     * 只有按 token 维度拆开看才能做成本决策（模型路由选型、额度包定价）。
+     */
+    @GetMapping("/metrics/tokens")
+    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    public ResponseResult tokens(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "7") int days) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("processSnapshot", aiTokenMeter.snapshot());
+        data.put("summary", aiTokenMeter.summary(days));
+        return ResponseResult.okResult(data);
+    }
+
+    /**
+     * 熔断状态：llm / embedding 各自是否打开、窗口内失败数。
+     *
+     * <p>排障口径：{@code open=true} 表示"AI 依赖故障中，服务正在快速失败并降级" ——
+     * 此时 RAG 会退化为无 AI 能力的路径，与"业务代码 bug"区分开。
+     */
+    @GetMapping("/metrics/circuit")
+    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    public ResponseResult circuit() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("circuit", circuitBreaker == null ? "unavailable" : circuitBreaker.snapshot());
+        return ResponseResult.okResult(data);
+    }
 
     @GetMapping("/metrics")
     @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
@@ -35,6 +72,9 @@ public class AiMetricsController {
     public ResponseResult metrics() {
         Map<String, Object> data = new HashMap<>();
         data.put("counters", aiMetricsCollector.snapshot());
+        if (circuitBreaker != null) {
+            data.put("circuit", circuitBreaker.snapshot());
+        }
         try {
             long up = aiFeedbackMapper.selectCount(new LambdaQueryWrapper<AiFeedback>()
                 .eq(AiFeedback::getFeedback, AiFeedback.FEEDBACK_UP));

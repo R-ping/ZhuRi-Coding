@@ -147,14 +147,4 @@ public class TaskServiceImpl implements TaskService {
         }
     }
 
-    @Override
-    public void failTask(Long taskId) {
-        try {
-            updateDb(taskId, ScheduleConstants.FAILED);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-
 }

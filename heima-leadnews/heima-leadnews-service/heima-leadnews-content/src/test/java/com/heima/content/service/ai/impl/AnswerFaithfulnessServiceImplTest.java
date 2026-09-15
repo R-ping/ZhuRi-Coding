@@ -49,7 +49,7 @@ class AnswerFaithfulnessServiceImplTest {
     private ArticleEmbeddingServiceImpl embeddingService;
 
     @Mock
-    private ChatModel chatModel;
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
 
     @Mock
     private AiMetricsCollector metrics;
@@ -77,8 +77,9 @@ class AnswerFaithfulnessServiceImplTest {
     }
 
     private void stubLlm(String json) {
-        when(chatModel.call(any(Prompt.class))).thenReturn(new ChatResponse(List.of(
-            new Generation(new AssistantMessage(json)))));
+        // P0-2：忠实度复核已改为走统一 LLM 出口（feature=faithfulness）
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(json);
     }
 
     // ==================== 确定性检查 ====================
@@ -129,7 +130,7 @@ class AnswerFaithfulnessServiceImplTest {
         assertTrue(report.getUnsupported().isEmpty());
         assertFalse(report.isLlmReviewed());
         assertFalse(report.hasIssue());
-        verify(chatModel, never()).call(any(Prompt.class));
+        verify(llmGateway, never()).generateOrNull(anyString(), anyString(), anyString(), any(), any());
         verify(metrics).incr("ai_faithfulness_checked");
     }
 
@@ -164,7 +165,8 @@ class AnswerFaithfulnessServiceImplTest {
     @DisplayName("LLM 不可用时按向量预筛结论兜底（宁可多提示不漏报）")
     void llmUnavailableFallsBack() {
         stubVec(new double[]{0, 1, 0});
-        when(chatModel.call(any(Prompt.class))).thenReturn(null);
+        // 模型不可用：gateway 返回 null（网关异常/未装配时的统一降级语义）
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any())).thenReturn(null);
 
         Report report = service.check(SUPPORTED_SENT, List.of(source(1L)), DOCS_TEXT);
 
@@ -184,7 +186,7 @@ class AnswerFaithfulnessServiceImplTest {
 
         assertFalse(report.isLlmReviewed());
         assertEquals(1, report.getUnsupported().size());
-        verify(chatModel, never()).call(any(Prompt.class));
+        verify(llmGateway, never()).generateOrNull(anyString(), anyString(), anyString(), any(), any());
     }
 
     @Test

@@ -21,10 +21,10 @@
                     </div>
                 </div>
 
-                <!-- 额度条：今日免费剩余 + 钱包额度 + 充值入口 -->
+                <!-- 额度条：今日免费剩余 tokens + 已购 tokens + 充值入口（按 token 计费） -->
                 <div class="ai-quota-bar" v-if="quotaLoaded">
-                    <span class="qb-item">今日免费 <b>{{ freeQuota.remainToday }}/{{ freeQuota.dailyLimit }}</b></span>
-                    <span class="qb-item">钱包 <b>{{ wallet }} 次</b></span>
+                    <span class="qb-item">今日免费 <b>{{ formatTokens(freeTokens.remainToday) }}</b> tokens</span>
+                    <span class="qb-item">已购 <b>{{ formatTokens(walletTokens) }}</b> tokens</span>
                     <span class="qb-link" @click.stop="goRecharge">去充值 ›</span>
                 </div>
 
@@ -121,23 +121,40 @@
                 activeMsg: -1,
                 activeSource: -1,
                 fastMode: true,
-                // 商业化额度状态（阶段3）：面板内展示 + 用尽引导
+                // 商业化额度状态（阶段3）：面板内展示 + 用尽引导（按 token 计费口径）
                 quotaLoaded: false,
-                freeQuota: { dailyLimit: 0, usedToday: 0, remainToday: 0 },
-                wallet: 0,
+                freeTokens: { dailyLimit: 0, usedToday: 0, remainToday: 0 },
+                walletTokens: 0,
                 quotaExhausted: false
             }
         },
         methods: {
-            /** 拉取额度总览：今日免费剩余 + 钱包次数；未登录静默忽略 */
+            /** token 数格式化：0.5万 / 12万 / 300万（大数用万，避免面板里出现一长串数字） */
+            formatTokens(n) {
+                const v = Number(n) || 0
+                if (v >= 10000) {
+                    const w = v / 10000
+                    return (w >= 100 ? Math.round(w) : w.toFixed(1).replace(/\.0$/, '')) + '万'
+                }
+                return String(v)
+            },
+            /** 拉取额度总览：今日免费 tokens + 已购 tokens；未登录静默忽略 */
             loadQuota() {
                 getAiQuotaStatus().then(res => {
                     if (res && res.code === 200 && res.data) {
                         this.quotaLoaded = true
-                        this.freeQuota = Object.assign({ dailyLimit: 0, usedToday: 0, remainToday: 0 }, res.data.freeQuota || {})
-                        this.wallet = Number(res.data.walletBalance) || 0
-                        // 免费与钱包双双用尽才在面板提示充值（每日免费额度未满时不做干扰）
-                        this.quotaExhausted = (this.freeQuota.remainToday <= 0) && this.wallet <= 0
+                        const ft = res.data.freeTokens
+                        // 兼容：老后端只返回 freeQuota（次数）时降级展示次数口径
+                        if (ft) {
+                            this.freeTokens = Object.assign({ dailyLimit: 0, usedToday: 0, remainToday: 0 }, ft)
+                            this.walletTokens = Number(res.data.walletTokenBalance) || 0
+                        } else if (res.data.freeQuota) {
+                            const fq = res.data.freeQuota
+                            this.freeTokens = { dailyLimit: fq.dailyLimit, usedToday: fq.usedToday, remainToday: fq.remainToday }
+                            this.walletTokens = Number(res.data.walletBalance) || 0
+                        }
+                        // 免费与已购双双用尽才在面板提示充值（免费额度未满时不做干扰）
+                        this.quotaExhausted = (this.freeTokens.remainToday <= 0) && this.walletTokens <= 0
                     }
                 }).catch(() => {
                     // 未登录 / 服务异常：保持无额度条，不影响问答主流程

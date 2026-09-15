@@ -19,17 +19,39 @@ public class AiMetricsCollector {
 
     private final ConcurrentHashMap<String, AtomicLong> counters = new ConcurrentHashMap<>();
 
+    /** 计时类指标：次数（P2-3 TTFT 等延迟观测） */
+    private final ConcurrentHashMap<String, AtomicLong> timerCounts = new ConcurrentHashMap<>();
+    /** 计时类指标：累计毫秒（与 timerCounts 配对求均值） */
+    private final ConcurrentHashMap<String, AtomicLong> timerTotalMs = new ConcurrentHashMap<>();
+
     /** 功能调用次数 +1 */
     public void incr(String feature) {
         counters.computeIfAbsent(feature, k -> new AtomicLong()).incrementAndGet();
     }
 
-    /** 快照（有序输出，便于排障） */
+    /** 记录一次耗时（毫秒）：按 feature 聚合次数与总量，snapshot 输出均值 */
+    public void record(String feature, long ms) {
+        if (ms < 0) {
+            return;
+        }
+        timerCounts.computeIfAbsent(feature, k -> new AtomicLong()).incrementAndGet();
+        timerTotalMs.computeIfAbsent(feature, k -> new AtomicLong()).addAndGet(ms);
+    }
+
+    /** 快照（有序输出，便于排障）：计数器 + 计时器（含 avg_ms） */
     public Map<String, Long> snapshot() {
         Map<String, Long> out = new LinkedHashMap<>();
         counters.entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(e -> out.put(e.getKey(), e.getValue().get()));
+        timerCounts.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> {
+                long count = e.getValue().get();
+                long total = timerTotalMs.getOrDefault(e.getKey(), new AtomicLong()).get();
+                out.put(e.getKey() + "_count", count);
+                out.put(e.getKey() + "_avg_ms", count == 0 ? 0L : total / count);
+            });
         return out;
     }
 }

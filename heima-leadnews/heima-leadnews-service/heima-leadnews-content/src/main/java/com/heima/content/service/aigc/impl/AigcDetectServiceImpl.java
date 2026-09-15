@@ -18,7 +18,6 @@ import com.heima.model.article.pojos.ApArticleEmbedding;
 import com.heima.model.course.pojos.ApCourseChapter;
 import com.heima.model.pins.pojos.ApPins;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DuplicateKeyException;
@@ -89,8 +88,10 @@ public class AigcDetectServiceImpl implements AigcDetectService {
     private ApCourseChapterMapper courseChapterMapper;
     @Autowired
     private ArticleEmbeddingServiceImpl embeddingService;
+
+    /** 统一 LLM 出口（安全横切 + token 计量） */
     @Autowired
-    private ChatModel chatModel;
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
     @Autowired
     @Qualifier("aiSseExecutor")
     private Executor aiSseExecutor;
@@ -274,8 +275,8 @@ public class AigcDetectServiceImpl implements AigcDetectService {
                 + "{\"verdict\":\"normal\"|\"suspicious\",\"score\":0-100,\"reason\":\"不超过40字理由\"}";
             String user = (title == null || title.isBlank() ? "" : "标题：" + title + "\n")
                 + (text.length() > REVIEW_CHARS ? text.substring(0, REVIEW_CHARS) : text);
-            String raw = org.springframework.ai.chat.client.ChatClient.builder(chatModel).build()
-                .prompt().system(sys).user(user).call().content();
+            String raw = llmGateway.generateOrNull(com.heima.content.service.ai.AiFeatures.AIGC_DETECT,
+                sys, user, null, null);
             if (raw == null || raw.isBlank()) {
                 return null;
             }

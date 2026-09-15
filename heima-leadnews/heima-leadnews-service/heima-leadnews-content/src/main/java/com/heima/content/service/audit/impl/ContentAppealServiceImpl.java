@@ -16,7 +16,6 @@ import com.heima.model.comment.pojos.ApComment;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -52,8 +51,9 @@ public class ContentAppealServiceImpl implements ContentAppealService {
     @Autowired
     private ApArticleContentMapper contentMapper;
 
+    /** 统一 LLM 出口（安全横切 + token 计量） */
     @Autowired
-    private ChatModel chatModel;
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
 
     @Autowired
     @Qualifier("aiSseExecutor")
@@ -223,8 +223,8 @@ public class ContentAppealServiceImpl implements ContentAppealService {
                     + "{\"suggest\":\"allow\"|\"uphold\",\"score\":0-100,\"reason\":\"不超过40字\"}（allow=建议解除误标，uphold=维持标注）";
                 user = "申诉理由：" + reason + "\n\n文章原文：\n" + source;
             }
-            String raw = org.springframework.ai.chat.client.ChatClient.builder(chatModel).build()
-                .prompt().system(sys).user(user).call().content();
+            String raw = llmGateway.generateOrNull(com.heima.content.service.ai.AiFeatures.APPEAL_AUDIT,
+                sys, user, null, null);
             String verdict = normalizeVerdict(raw);
             if (verdict != null) {
                 appeal.setAiVerdict(verdict);

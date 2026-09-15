@@ -49,4 +49,21 @@ public class AiAsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 会话记忆摘要压缩专用池（P2-3b）：单线程低频后台任务，串行化避免并发压缩同一用户会话。
+     * 超载丢弃（DiscardPolicy）——压缩是可延迟的优化任务，丢弃后下次 appendTurn 会再次触发，fail-open。
+     */
+    @Bean("aiMemoryCompressExecutor")
+    public Executor aiMemoryCompressExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(20);
+        executor.setThreadNamePrefix("ai-mem-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

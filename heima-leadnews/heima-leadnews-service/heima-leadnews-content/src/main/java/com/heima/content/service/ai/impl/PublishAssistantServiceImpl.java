@@ -96,8 +96,9 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     @Autowired
     private DashScopeClient dashScopeClient; // 仅多模态封面审核(callVision)使用
 
+    /** 统一 LLM 出口（安全横切 + token 计量） */
     @Autowired
-    private org.springframework.ai.chat.model.ChatModel chatModel;
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
 
     @Autowired
     private AgentRunner agentRunner;
@@ -165,11 +166,8 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         if (vo == null) {
             // 兜底：一次性结构化调用（安全三层防御由 Advisor 横切处理）
             try {
-                String raw = org.springframework.ai.chat.client.ChatClient.builder(chatModel)
-                    .defaultAdvisors(promptSafetyAdvisor)
-                    .build()
-                    .prompt().system(DIRECT_SYSTEM_PROMPT).user(user)
-                    .call().content();
+                String raw = llmGateway.generateOrNull(
+                    com.heima.content.service.ai.AiFeatures.PRECHECK, DIRECT_SYSTEM_PROMPT, user, null, null);
                 JsonNode root = parseJson(raw);
                 if (root != null) {
                     vo = fromJson(root);

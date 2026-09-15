@@ -24,4 +24,11 @@ public class AiAnswerVo {
      * {checked, suspect, invalidCitations, unsupported, method, llmReviewed}
      */
     private Map<String, Object> faithfulness;
+
+    /**
+     * 本次回答使用的 prompt 版本归因（P2-1，可选；前端不读也不影响）：
+     * key = 注册表 prompt_key，value = 命中版本号（0 = 代码内置兜底版）。
+     * 用于灰度对比与质量问题归因（"这个答案用了 v2 的 rerank prompt"）。
+     */
+    private Map<String, Integer> promptVersions;
 }

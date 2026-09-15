@@ -58,5 +58,65 @@
     "question": "多人共用开发环境时记忆隔离怎么避免串号？",
     "goldenArticleIds": [2091867593875820904],
     "note": "记忆隔离方案"
+  },
+  {
+    "question": "iOS 里 WKWebView 的 JS 和原生是怎么互相通信的？",
+    "goldenArticleIds": [2091867593875820938],
+    "note": "2026-09-14 扩样本：事实问答（iOS 混合开发）"
+  },
+  {
+    "question": "Android 为什么不用接口来做 Activity 之间的通信？",
+    "goldenArticleIds": [2091867593875820932],
+    "note": "2026-09-14 扩样本：事实问答（Android 架构）"
+  },
+  {
+    "question": "Python 脚本明明文件就在旁边却找不到，绝对路径和相对路径该怎么选？",
+    "goldenArticleIds": [2091867593875820908],
+    "note": "2026-09-14 扩样本：事实问答（新手避坑）"
+  },
+  {
+    "question": "Kotlin 协程的 launch 为什么不适合直接用来切 Dispatchers.IO？",
+    "goldenArticleIds": [2091867593875820935],
+    "note": "2026-09-14 扩样本：事实问答（Kotlin 并发）"
+  },
+  {
+    "question": "App 掉帧卡顿了，怎么定位到底是哪一步慢？",
+    "goldenArticleIds": [2091867593875820939],
+    "note": "2026-09-14 扩样本：事实问答（性能排查）"
+  },
+  {
+    "question": "Claude Code 的 Skill 装得太多会有什么问题？",
+    "goldenArticleIds": [2091867593875820947],
+    "note": "2026-09-14 扩样本：事实问答（Skill 治理）"
+  },
+  {
+    "question": "RHCE 备考有什么通用策略和评分要点？",
+    "goldenArticleIds": [2091867593875820915],
+    "note": "2026-09-14 扩样本：事实问答（运维认证）"
+  },
+  {
+    "question": "Phosphor Icons 官网为什么能用 URL 直接存储图标？",
+    "goldenArticleIds": [2091867593875820903],
+    "note": "2026-09-14 扩样本：事实问答（前端图标库源码）"
+  },
+  {
+    "question": "滴滴面试官为什么嫌弃把 SKILL.md 全塞进 context？Claude Code 的 Skill 装多了该怎么治理？",
+    "goldenArticleIds": [2091867593875820940, 2091867593875820947],
+    "note": "2026-09-14 扩样本：多跳（context 卫生 + Skill 治理，两篇互补）"
+  },
+  {
+    "question": "公司 AI 烧 token 比招人还贵，有哪些降本方案？本地化部署划算吗？",
+    "goldenArticleIds": [2091867593875820952, 2091867593875820942],
+    "note": "2026-09-14 扩样本：多跳（成本工程 + 本地化部署测算，两篇互补）"
+  },
+  {
+    "question": "Rust 的所有权和借用检查到底是怎么回事？",
+    "expectNoAnswer": true,
+    "note": "2026-09-14 扩样本：无答案拒绝（语料库无 Rust 文章，期望引用为空不硬编）"
+  },
+  {
+    "question": "怎么买飞天茅台最划算？",
+    "expectNoAnswer": true,
+    "note": "2026-09-14 扩样本：越界拒答（与技术语料完全无关，期望不强行作答）"
   }
 ]
