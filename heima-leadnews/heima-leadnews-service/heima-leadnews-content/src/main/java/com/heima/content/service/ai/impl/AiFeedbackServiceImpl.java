@@ -28,6 +28,10 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
     @Autowired
     private AiFeedbackMapper feedbackMapper;
 
+    /** 消费漏斗计（反馈阶段打点：feedback_up / feedback_down） */
+    @Autowired
+    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+
     @Override
     public ResponseResult record(Integer userId, String feature, String sceneId,
                                  String question, String answer, Integer feedback) {
@@ -72,6 +76,11 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
                 feedbackMapper.insert(fb);
             }
             log.info("AI 反馈已记录, userId={}, feature={}, scene={}, feedback={}", userId, feature, scene, feedback);
+            // 消费漏斗：反馈阶段（feature 映射到 AiFeatures 口径，未识别归 OTHER）
+            funnelMeter.incr(mapFunnelFeature(feature),
+                feedback == AiFeedback.FEEDBACK_UP
+                        ? com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP
+                        : com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_DOWN);
             Map<String, Object> data = new HashMap<>();
             data.put("feedback", feedback);
             return ResponseResult.okResult(data);
@@ -79,6 +88,20 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
             log.warn("AI 反馈记录异常, userId={}", userId, e);
             return ResponseResult.errorResult(503, "反馈记录失败");
         }
+    }
+
+    /**
+     * 反馈 feature（AiFeedback.FEATURE_*）→ 漏斗口径（AiFeatures）映射。
+     * 反馈侧与漏斗侧的常量名不一致（aiask_global vs ask），不映射则 generatedToFeedback 恒为 0。
+     */
+    private static String mapFunnelFeature(String feature) {
+        if (AiFeedback.FEATURE_AIASK_GLOBAL.equals(feature)) {
+            return com.heima.content.service.ai.AiFeatures.ASK;
+        }
+        if (AiFeedback.FEATURE_AIASK_ARTICLE.equals(feature)) {
+            return com.heima.content.service.ai.AiFeatures.ASK_ARTICLE;
+        }
+        return com.heima.content.service.ai.AiFeatures.OTHER;
     }
 
     private static String md5(String s) {
