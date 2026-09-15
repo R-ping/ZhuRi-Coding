@@ -5,14 +5,10 @@ import com.heima.common.redis.CacheService;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.ai.ArticleQaService;
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
-import com.heima.content.service.ai.spring.SafetyGuardException;
 import com.heima.model.article.pojos.ApArticle;
 import com.heima.model.article.pojos.ApArticle.Status;
 import com.heima.model.article.pojos.ApArticleContent;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -77,10 +73,24 @@ public class ArticleQaServiceImpl implements ArticleQaService {
     private CacheService cacheService;
 
     @Autowired
-    private ChatModel chatModel;
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
 
-    @Autowired
-    private PromptSafetyAdvisor promptSafetyAdvisor;
+    /** Prompt 注册表（P2-1）：单篇问答 prompt 版本化 + 兜底；单测未注入时走代码常量 */
+    @Autowired(required = false)
+    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+
+    /** 注册表解析（带 null 兜底） */
+    private com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
+        String key, String fallback) {
+        if (promptRegistry == null) {
+            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+        }
+        try {
+            return promptRegistry.resolve(key, fallback, null);
+        } catch (Exception e) {
+            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+        }
+    }
 
     @Override
     public java.util.List<String> genRelatedQuestions(Long articleId) {
@@ -102,7 +112,7 @@ public class ArticleQaServiceImpl implements ArticleQaService {
             return null;
         }
         try {
-            String raw = genText(QUESTIONS_SYSTEM, "【文章正文】\n" + bodyText, null);
+            String raw = genText(prompt("qa_questions", QUESTIONS_SYSTEM).content, "【文章正文】\n" + bodyText, null);
             java.util.List<String> qs = parseQuestionList(raw);
             if (qs == null || qs.isEmpty()) {
                 return null;
@@ -171,7 +181,7 @@ public class ArticleQaServiceImpl implements ArticleQaService {
         }
         try {
             String user = "【文章正文】\n" + bodyText;
-            String summary = genText(SUMMARY_SYSTEM, user, null);
+            String summary = genText(prompt("qa_summary", SUMMARY_SYSTEM).content, user, null);
             if (summary == null || summary.isBlank()) {
                 return null;
             }
@@ -233,44 +243,19 @@ public class ArticleQaServiceImpl implements ArticleQaService {
         return truncate(content.getContent(), CONTENT_MAX_CHARS);
     }
 
-    /** Spring AI 同步生成（安全 + 会话记忆由 Advisor 处理；失败返回 null） */
+    /** 同步生成统一入口（P0-2）：委托 gateway（安全 advisor + token 计量），本方法只构建记忆窗口 */
     private String genText(String systemPrompt, String user,
                            List<Map<String, String>> history) {
-        try {
-            return org.springframework.ai.chat.client.ChatClient.builder(chatModel)
-                .defaultAdvisors(promptSafetyAdvisor,
-                    MessageChatMemoryAdvisor.builder(buildConversationMemory(history)).build())
-                .build()
-                .prompt().system(systemPrompt).user(user == null ? "" : user)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, MEMORY_CONVERSATION_ID))
-                .call().content();
-        } catch (SafetyGuardException e) {
-            log.warn("[ArticleQa] 输出护栏命中（顺从短语），丢弃该回答并降级: {}", e.getMessage());
-            return null;
-        } catch (Exception e) {
-            log.error("[ArticleQa] Spring AI 生成失败", e);
-            return null;
-        }
+        return llmGateway.generateOrNull(com.heima.content.service.ai.AiFeatures.ASK_ARTICLE,
+            systemPrompt, user, buildConversationMemory(history), MEMORY_CONVERSATION_ID);
     }
 
-    /** Spring AI 流式生成（逐段回调增量文本；返回完整文本） */
+    /** 流式生成统一入口（P0-2）：委托 gateway（含流式 token 计量） */
     private String genStream(String systemPrompt, String user,
                              List<Map<String, String>> history,
                              Consumer<String> onDelta) {
-        reactor.core.publisher.Flux<String> flux =
-            org.springframework.ai.chat.client.ChatClient.builder(chatModel)
-                .defaultAdvisors(promptSafetyAdvisor,
-                    MessageChatMemoryAdvisor.builder(buildConversationMemory(history)).build())
-                .build()
-                .prompt().system(systemPrompt).user(user == null ? "" : user)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, MEMORY_CONVERSATION_ID))
-                .stream().content();
-        StringBuilder acc = new StringBuilder();
-        flux.doOnNext(t -> {
-            acc.append(t);
-            onDelta.accept(t);
-        }).blockLast();
-        return acc.toString();
+        return llmGateway.generateStreamOrNull(com.heima.content.service.ai.AiFeatures.ASK_ARTICLE,
+            systemPrompt, user, buildConversationMemory(history), MEMORY_CONVERSATION_ID, onDelta);
     }
 
     /** 把前端会话历史预载到请求级记忆窗口（滑动窗口 MEMORY_MAX_MESSAGES 条，实例随请求销毁） */

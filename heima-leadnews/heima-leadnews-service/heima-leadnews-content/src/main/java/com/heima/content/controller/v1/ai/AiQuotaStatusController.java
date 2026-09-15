@@ -36,17 +36,28 @@ public class AiQuotaStatusController {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
         }
         Map<String, Object> data = new HashMap<>();
+        // 次数维度（历史口径，保留兼容老前端）
         Map<String, Object> free = new HashMap<>();
-        free.put("dailyLimit", AiQuotaService.DAILY_QUOTA);
+        free.put("dailyLimit", aiQuotaService.dailyRequestLimit());
         free.put("usedToday", aiQuotaService.usedToday(user.getId()));
         free.put("remainToday", aiQuotaService.remainToday(user.getId()));
         data.put("freeQuota", free);
         data.put("walletBalance", walletService.balanceOf(user.getId()));
+
+        // token 维度（新计费口径）：用量与余额均按 token，前端可据此展示"今日免费 tokens / 已购 tokens"
+        Map<String, Object> freeTokens = new HashMap<>();
+        freeTokens.put("dailyLimit", aiQuotaService.dailyTokenLimit());
+        freeTokens.put("usedToday", aiQuotaService.tokensUsedToday(user.getId()));
+        freeTokens.put("remainToday", aiQuotaService.tokensRemainToday(user.getId()));
+        data.put("freeTokens", freeTokens);
+        data.put("walletTokenBalance", walletService.tokenBalanceOf(user.getId()));
+
         Map<String, Object> packages = new LinkedHashMap<>();
         AiQuotaPackages.CATALOG.forEach((code, v) -> {
             Map<String, Object> p = new HashMap<>();
-            p.put("quota", v[0]);
-            p.put("priceFen", v[1]);
+            p.put("quota", (int) v[0]);        // 次数（历史口径，类型保持 int 不变）
+            p.put("priceFen", (int) v[1]);
+            p.put("tokenQuota", v[2]);         // 新增：套餐到账 tokens（老前端忽略该字段即可）
             packages.put(code, p);
         });
         data.put("packages", packages);

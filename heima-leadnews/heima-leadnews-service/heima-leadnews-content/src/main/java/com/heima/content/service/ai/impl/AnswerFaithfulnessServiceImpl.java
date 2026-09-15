@@ -12,7 +12,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -53,8 +52,13 @@ public class AnswerFaithfulnessServiceImpl implements AnswerFaithfulnessService 
     @Autowired
     private ArticleEmbeddingServiceImpl embeddingService;
 
+    /** 统一 LLM 出口（安全横切 + token 计量） */
     @Autowired
-    private ChatModel chatModel;
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+
+    /** Prompt 注册表（P2-1）：复核 prompt 版本化 + 兜底；单测未注入时走代码常量 */
+    @Autowired(required = false)
+    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
 
     @Autowired
     private AiMetricsCollector metrics;
@@ -184,8 +188,14 @@ public class AnswerFaithfulnessServiceImpl implements AnswerFaithfulnessService 
                     .append("引用资料[").append(srcNo).append("]片段：")
                     .append(truncate(snippet, SNIPPET_CHARS)).append("\n\n");
             }
-            String raw = org.springframework.ai.chat.client.ChatClient.builder(chatModel).build()
-                .prompt().system(REVIEW_PROMPT).user(user.toString()).call().content();
+            com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt sys =
+                promptRegistry == null
+                    ? new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+                        "faithfulness_review", REVIEW_PROMPT, 0)
+                    : promptRegistry.resolve("faithfulness_review", REVIEW_PROMPT, null);
+            String raw = llmGateway.generateOrNull(
+                com.heima.content.service.ai.AiFeatures.FAITHFULNESS,
+                sys.content, user.toString(), null, null);
             if (raw == null || raw.isBlank()) {
                 return null;
             }

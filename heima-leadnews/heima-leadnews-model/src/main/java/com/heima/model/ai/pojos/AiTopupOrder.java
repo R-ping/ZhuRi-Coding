@@ -43,6 +43,10 @@ public class AiTopupOrder implements Serializable {
     @TableField("quota_added")
     private Integer quotaAdded;
 
+    /** 本单到账 token 额度（新计费口径；与 quota_added 双轨并存） */
+    @TableField("token_added")
+    private Long tokenAdded;
+
     @TableField("status")
     private Integer status;
 

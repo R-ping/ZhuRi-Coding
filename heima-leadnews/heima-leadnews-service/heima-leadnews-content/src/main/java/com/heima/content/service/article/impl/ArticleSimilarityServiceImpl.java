@@ -63,12 +63,14 @@ public class ArticleSimilarityServiceImpl implements ArticleSimilarityService {
                 return result;
             }
             // 保存当前文章的向量嵌入（无论是否相似）
-            embeddingService.saveEmbedding(article.getId(), embedding);
+            // P0-1：同时记录来源内容指纹与版本时间 —— 内容后续被编辑时，回填/增量任务据此判定向量过期并重算
+            String contentHash = ArticleEmbeddingServiceImpl.contentHash(content);
+            embeddingService.saveEmbedding(article.getId(), embedding, contentHash, article.getPublishTime());
             // 父子分块：同步写子块向量，供 RAG 子块级召回（内部 fail-open，不阻断发布）
             embeddingService.saveChunks(article.getId(), TextChunker.split(
                 MarkdownUtils.normalizeContent(content),
                 TextChunker.DEFAULT_TARGET, TextChunker.DEFAULT_OVERLAP,
-                embeddingService.getChunkMaxPerArticle()));
+                embeddingService.getChunkMaxPerArticle()), contentHash, article.getPublishTime());
 
         } catch (Exception e) {
             log.error("Error checking similarity for articleId={}: {}", article.getId(), e.getMessage());

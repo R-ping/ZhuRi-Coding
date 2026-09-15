@@ -48,7 +48,9 @@ class AgentRunnerTest {
         // 空组件 Advisor（sanitizer/guard 均 null）：ChatClient Advisor 链为 no-op，不篡改 prompt/response
         PromptSafetyAdvisor noop = new PromptSafetyAdvisor(null, null);
         Executor sync = Runnable::run;
-        return new AgentRunner(chatModel, noop, sync);
+        // tokenMeter 用 mock：逐轮计量是旁路能力，不影响 Agent 收敛语义的断言
+        return new AgentRunner(chatModel, noop, sync, org.mockito.Mockito.mock(
+                com.heima.content.service.ai.AiTokenMeter.class));
     }
 
     private static AssistantMessage toolCallMsg(String callId, String name, String args) {

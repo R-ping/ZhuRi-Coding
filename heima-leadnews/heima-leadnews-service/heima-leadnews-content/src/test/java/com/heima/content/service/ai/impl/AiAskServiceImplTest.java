@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -73,7 +74,10 @@ class AiAskServiceImplTest {
     @Mock private UserMemoryService userMemoryService;
     @Mock private ApArticleMapper apArticleMapper;
     @Mock private ApArticleContentMapper contentMapper;
-    @Mock private ChatModel chatModel;
+    /** 统一 LLM 出口（P0-2）：AiAsk 已改为委托 gateway，模型调用桩打在这里 */
+    @Mock private com.heima.content.service.ai.AiLlmGateway llmGateway;
+
+    @Mock private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
 
     @InjectMocks
     private AiAskServiceImpl service;
@@ -85,17 +89,13 @@ class AiAskServiceImplTest {
         ReflectionTestUtils.setField(service, "faithfulnessMode", "async");
     }
 
-    /** 按 system 提示词路由 ChatClient 非流式调用：改写 / 生成 两条路径稳定响应 */
+    /** 按 system 提示词路由 gateway 非流式调用：改写 / 生成 两条路径稳定响应 */
     private void stubChatModelBySystem() {
-        when(chatModel.call(any(Prompt.class))).thenAnswer(inv -> {
-            Prompt p = inv.getArgument(0);
-            String sys = p.getInstructions().stream()
-                .filter(m -> m.getMessageType() == MessageType.SYSTEM)
-                .map(Message::getText)
-                .collect(Collectors.joining());
-            String text = sys.contains("搜索查询改写器") ? "Redis 锁原理与实现" : ANSWER;
-            return new ChatResponse(List.of(new Generation(new AssistantMessage(text))));
-        });
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenAnswer(inv -> {
+                String sys = inv.getArgument(1);
+                return sys != null && sys.contains("搜索查询改写器") ? "Redis 锁原理与实现" : ANSWER;
+            });
     }
 
     private void stubRetrieval(boolean published) {
@@ -148,7 +148,7 @@ class AiAskServiceImplTest {
         assertNotNull(vo);
         assertEquals("缓存答案", vo.getAnswer());
         verify(embeddingService, never()).generateEmbedding(anyString());
-        verify(chatModel, never()).call(any(Prompt.class));
+        verify(llmGateway, never()).generateOrNull(anyString(), anyString(), anyString(), any(), any());
     }
 
     // ==================== ask：完整 RAG 链路 ====================
@@ -219,9 +219,16 @@ class AiAskServiceImplTest {
     void streamFastAskFullPath() {
         when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
         stubRetrieval(true);
-        // 流式生成：mock chatModel.stream 返回两段 chunk
-        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
-            new ChatResponse(List.of(new Generation(new AssistantMessage("第一段回答。"))))));
+        // 流式生成：gateway 逐段回调增量文本并返回完整文本
+        when(llmGateway.generateStreamOrNull(anyString(), anyString(), anyString(), any(), any(), any()))
+            .thenAnswer(inv -> {
+                java.util.function.Consumer<String> cb = inv.getArgument(5);
+                String text = "第一段回答。";
+                if (cb != null) {
+                    cb.accept(text);
+                }
+                return text;
+            });
         when(conversationMemoryService.load(7)).thenReturn(List.of());
 
         AtomicBoolean deltaReceived = new AtomicBoolean(false);
@@ -246,8 +253,9 @@ class AiAskServiceImplTest {
         when(apArticleMapper.selectList(any()))
             .thenReturn(List.of(a1))
             .thenReturn(List.of());
-        when(embeddingService.getEmbedding(5L)).thenReturn(null);      // 缺文章向量
-        when(embeddingService.hasChunks(5L)).thenReturn(false);        // 缺子块
+        // P0-1：缺向量/缺分块 → 元信息为 null（改造前是 getEmbedding()==null / hasChunks()==false）
+        when(embeddingService.getEmbeddingMeta(5L)).thenReturn(null);
+        when(embeddingService.getChunksMeta(5L)).thenReturn(null);
         when(contentMapper.selectOne(any())).thenReturn(contentOf("老文章正文内容，用于向量化。"));
         when(embeddingService.generateEmbedding(anyString())).thenReturn(VEC);
         when(embeddingService.getChunkMaxPerArticle()).thenReturn(20);
@@ -255,28 +263,61 @@ class AiAskServiceImplTest {
 
         service.backfillEmbeddings();
 
-        verify(embeddingService).saveEmbedding(5L, VEC);
-        verify(embeddingService).saveChunks(any(), any(List.class));
+        // 写入时一并落下内容指纹（P0-1：向量与内容版本绑定）
+        verify(embeddingService).saveEmbedding(eq(5L), eq(VEC), anyString(), any());
+        verify(embeddingService).saveChunks(eq(5L), any(List.class), anyString(), any());
         // 游标推进：第二页返回空 → 结束
         verify(apArticleMapper).selectList(any());
     }
 
     @Test
-    @DisplayName("向量回填：向量与分块均已就绪则跳过（幂等）")
+    @DisplayName("向量回填：内容已变更（指纹不一致）→ 重算向量（P0-1 核心场景）")
+    void backfillEmbeddingsRefreshesStaleArticle() {
+        ApArticle a1 = article(5L, "被编辑过的文章");
+        when(apArticleMapper.selectList(any()))
+            .thenReturn(List.of(a1))
+            .thenReturn(List.of());
+        String bodyNow = "编辑后的正文内容，与向量里的版本不同。";
+        when(contentMapper.selectOne(any())).thenReturn(contentOf(bodyNow));
+        // 向量记录里存的是"编辑前"的指纹 → 判定过期，应重算
+        String outdatedHash = com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl
+                .contentHash("编辑前的正文内容。");
+        java.util.Date srcTime = new java.util.Date();
+        when(embeddingService.getEmbeddingMeta(5L)).thenReturn(
+            new com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(outdatedHash, srcTime));
+        when(embeddingService.getChunksMeta(5L)).thenReturn(
+            new com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(outdatedHash, srcTime));
+        when(embeddingService.generateEmbedding(anyString())).thenReturn(VEC);
+        when(embeddingService.getChunkMaxPerArticle()).thenReturn(20);
+
+        service.backfillEmbeddings();
+
+        // 重算并以"当前正文指纹"覆盖写入
+        String expectedHash = com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.contentHash(bodyNow);
+        verify(embeddingService).saveEmbedding(eq(5L), eq(VEC), eq(expectedHash), any());
+        verify(embeddingService).saveChunks(eq(5L), any(List.class), eq(expectedHash), any());
+    }
+
+    @Test
+    @DisplayName("向量回填：指纹一致则跳过（不做无谓 embedding 调用，省成本）")
     void backfillEmbeddingsSkipsReady() {
         ApArticle a1 = article(5L, "新文章");
         when(apArticleMapper.selectList(any()))
             .thenReturn(List.of(a1))
             .thenReturn(List.of());
-        com.heima.model.article.pojos.ApArticleEmbedding emb = new com.heima.model.article.pojos.ApArticleEmbedding();
-        emb.setEmbedding(VEC);
-        when(embeddingService.getEmbedding(5L)).thenReturn(emb);  // 文章向量已就绪
-        when(embeddingService.hasChunks(5L)).thenReturn(true);    // 分块已就绪
+        String body = "新文章正文内容，用于向量化。";
+        when(contentMapper.selectOne(any())).thenReturn(contentOf(body));
+        // 向量记录里的指纹与当前正文一致 → 版本新鲜，跳过
+        String freshHash = com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.contentHash(body);
+        when(embeddingService.getEmbeddingMeta(5L)).thenReturn(
+            new com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(freshHash, new java.util.Date()));
+        when(embeddingService.getChunksMeta(5L)).thenReturn(
+            new com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(freshHash, new java.util.Date()));
 
         service.backfillEmbeddings();
 
-        verify(embeddingService, never()).saveEmbedding(5L, VEC);
-        verify(embeddingService, never()).saveChunks(any(), any(List.class));
+        verify(embeddingService, never()).saveEmbedding(any(), any(), anyString(), any());
+        verify(embeddingService, never()).saveChunks(any(), any(List.class), anyString(), any());
     }
 
     private ApArticleContent contentOf(String text) {

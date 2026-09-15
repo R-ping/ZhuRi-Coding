@@ -3,17 +3,15 @@ package com.heima.content.service.article.impl;
 import cn.hutool.json.JSONUtil;
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.heima.common.constants.ArticleConstants;
+import com.heima.content.event.ArticlePublishEvent;
 import com.heima.content.mapper.article.ApArticleEventMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ApArticleService;
-import com.heima.content.service.article.ArticleFreemarkerService;
 import com.heima.model.article.dtos.ArticleDto;
 import com.heima.model.article.dtos.ArticleHomeDto;
 import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
 import com.heima.model.article.pojos.ArticleEvent;
 import com.heima.model.common.dtos.ResponseResult;
 import com.heima.model.mess.UpdateArticleMess;
@@ -25,6 +23,7 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,9 +37,9 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
 
     private final static short MAX_PAGE_SIZE = 50;
     @Autowired
-    private ArticleFreemarkerService articleFreemarkerService;
-    @Autowired
     private ApArticleEventMapper apArticleEventMapper;
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
 
     /**
      * 加载文章列表
@@ -81,12 +80,13 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     }
 
     /**
-     * 根据文章id生成文章事件
-     * <p>单延迟方案：任务到点消费一次，本地消息表入库后异步同步 ES 并发布事件，
-     * 由监听器统一置 DB/ES 发布态并消费任务（不再二次延迟）。
+     * 创建文章发布事件（延迟任务消费的同步部分，仅落锚）
+     * <p>单延迟方案 · 异步解耦版：本方法只负责「校验 + 本地消息表落锚(INIT) + 发布执行事件」，
+     * 置 DB 发布态与 ES 同步由 {@link com.heima.content.event.ArticlePublishEventListener} 异步执行，
+     * 未完成事件由 20s 扫描补偿收敛。落锚失败返回 false 由调用方记日志（任务仍会消费完成，不回滚重投）。
      */
     @Override
-    public boolean generateArticleEvent(ApArticle article, Long taskId) {
+    public boolean createArticleEvent(ApArticle article) {
         //1.检查参数
         if (article == null) {
             log.error("文章保存失败，参数为空");
@@ -97,8 +97,8 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
             log.error("文章不存在，可能有由于审核逻辑出问题，导致文章回滚掉了，文章id：{}", articleId);
             return false;
         }
-        // ① 先落本地消息表（status=INIT）。顺序保证：即使后续置位/同步失败，记录一定存在可被补偿；
-        //    event 落库失败属本地异常，直接返回 false 交由调度标记失败（重试/人工）。
+        // ① 落本地消息表锚点（status=INIT）。顺序保证：锚点先落定，异步置位/同步失败均可被 20s 扫描补偿；
+        //    event 落库失败属本地异常，直接返回 false（文章滞留 SUBMIT，error 日志供人工排查）。
         try {
             ArticleEvent event = buildArticleEvent();
             event.setArticleId(articleId);
@@ -111,64 +111,10 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
             log.error("文章本地消息表保存失败", e);
             return false;
         }
-        // ② 置 DB 可见态 PUBLISHED：幂等条件更新（仅 SUBMIT→PUBLISHED）
-        boolean dbOk = apArticleMapper.markPublishedIfPending(articleId) == 1;
-        if (!dbOk) {
-            ApArticle latest = getById(articleId);
-            byte status = latest == null || latest.getStatus() == null ? -1 : latest.getStatus().byteValue();
-            if (status == Status.PUBLISHED.getCode()) {
-                dbOk = true; // 已是发布态：并发/重放场景，幂等继续
-            } else if (status == Status.SUBMIT.getCode()) {
-                // ③ 瞬时抖动本地重试 1 次
-                sleepQuietly(500L);
-                if (apArticleMapper.markPublishedIfPending(articleId) == 1) {
-                    dbOk = true;
-                } else {
-                    // 仍失败：落 DB_SET_FAIL，由 20s 扫描持续重试置位（幂等自愈，不进死信）
-                    updateEventStatus(articleId, ArticleConstants.EVENT_STATUS_DB_SET_FAIL, null);
-                    log.warn("文章置发布态失败(本地重试 1 次后仍失败)，落 DB_SET_FAIL 待扫描补偿, articleId={}", articleId);
-                }
-            } else {
-                // 文章处于 FAIL 等不可发布终态：删除事件防滞留，返回 false 由调度标记失败
-                log.error("文章状态非可发布态，终止发布流程, articleId={}, status={}", articleId, status);
-                apArticleEventMapper.deleteByArticleId(articleId);
-                return false;
-            }
-        }
-        // ④ 置位成功 → 同步 ES（内部成功置 DONE / 失败置 ES_SYNC_FAIL，由扫描补偿）
-        if (dbOk) {
-            articleFreemarkerService.buildHTMLAndSend(article, taskId);
-        }
+        // ② 发布异步执行事件：置位 + ES 同步交由 @Async 监听器（内存构造事件，不依赖本事务提交后的可见性）
+        eventPublisher.publishEvent(new ArticlePublishEvent(articleId));
         return true;
     }
-
-    /** 状态机内短暂退避（重试 1 次前的瞬时抖动窗口），不入调用方请求线程 */
-    private void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    /** 更新本地消息表 status（单状态机），retryTime 为 null 表示不修改 */
-    private void updateEventStatus(Long articleId, byte status, Date retryTime) {
-        try {
-            ArticleEvent event = apArticleEventMapper.selectOne(
-                Wrappers.<ArticleEvent>lambdaQuery().eq(ArticleEvent::getArticleId, articleId));
-            if (event != null) {
-                event.setStatus(status);
-                if (retryTime != null) {
-                    event.setRetryTime(retryTime);
-                }
-                event.setUpdateTime(new Date());
-                apArticleEventMapper.updateArticleEvent(event);
-            }
-        } catch (Exception e) {
-            log.error("更新本地消息表状态失败, articleId={}", articleId, e);
-        }
-    }
-
 
     /**
      * 构建文章事件

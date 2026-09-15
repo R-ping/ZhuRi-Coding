@@ -69,6 +69,8 @@ class PublishAssistantServiceImplTest {
 
     @Mock private DashScopeClient dashScopeClient;
     @Mock private ChatModel chatModel;
+    /** 统一 LLM 出口（P0-2）：兜底直答已改为委托 gateway */
+    @Mock private com.heima.content.service.ai.AiLlmGateway llmGateway;
     @Mock private AgentRunner agentRunner;
     @Mock private SafetyExpertWorker safetyExpertWorker;
     @Mock private QualityExpertWorker qualityExpertWorker;
@@ -126,8 +128,8 @@ class PublishAssistantServiceImplTest {
     void agentNotCompletedFallsBackToDirect() {
         when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
             .thenReturn(new AgentResult(null, 6, false));
-        when(chatModel.call(any(Prompt.class))).thenReturn(new ChatResponse(List.of(
-            new Generation(new AssistantMessage(FINAL_JSON)))));
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(FINAL_JSON);
 
         AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
 
@@ -140,8 +142,8 @@ class PublishAssistantServiceImplTest {
     void agentJsonUnparsableFallsBack() {
         when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
             .thenReturn(new AgentResult("FINAL: 这不是 JSON", 2, true));
-        when(chatModel.call(any(Prompt.class))).thenReturn(new ChatResponse(List.of(
-            new Generation(new AssistantMessage(FINAL_JSON)))));
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(FINAL_JSON);
 
         AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
 
@@ -154,8 +156,8 @@ class PublishAssistantServiceImplTest {
     void agentThrowsFallsBack() {
         when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
             .thenThrow(new RuntimeException("loop exploded"));
-        when(chatModel.call(any(Prompt.class))).thenReturn(new ChatResponse(List.of(
-            new Generation(new AssistantMessage(FINAL_JSON)))));
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(FINAL_JSON);
 
         AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
 
@@ -166,11 +168,12 @@ class PublishAssistantServiceImplTest {
     // ==================== 兜底直答失败路径 ====================
 
     @Test
-    @DisplayName("兜底输出护栏命中（安全约束）→ 丢弃结果返回 null")
+    @DisplayName("兜底输出护栏命中 → gateway 降级返回 null → 结果丢弃返回 null")
     void fallbackSafetyGuardHitReturnsNull() {
         when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
             .thenReturn(new AgentResult(null, 3, false));
-        when(chatModel.call(any(Prompt.class))).thenThrow(new SafetyGuardException("LLM 输出疑似受注入影响，已阻断"));
+        // 护栏命中由 AiLlmGateway 内部捕获 SafetyGuardException 并返回 null（P0-2 统一出口语义）
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any())).thenReturn(null);
 
         assertNull(service.precheck(TITLE, CONTENT, 1L, null));
     }
@@ -180,7 +183,8 @@ class PublishAssistantServiceImplTest {
     void fallbackExceptionReturnsNull() {
         when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
             .thenReturn(new AgentResult(null, 3, false));
-        when(chatModel.call(any(Prompt.class))).thenThrow(new RuntimeException("model down"));
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenThrow(new RuntimeException("model down"));
 
         assertNull(service.precheck(TITLE, CONTENT, 1L, null));
     }

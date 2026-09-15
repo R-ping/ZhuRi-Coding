@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
@@ -97,7 +98,7 @@ class AiSemanticCacheServiceImplTest {
         service.store("嗯", 7, "这是一段足够长的答案，字数不少于二十个字，用于验证过滤逻辑。",
             List.of(source(1L)));
         verify(pgVectorJdbcTemplate, never()).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
-            any(), any(), any(), any(), any());
+            any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -119,7 +120,7 @@ class AiSemanticCacheServiceImplTest {
     }
 
     @Test
-    @DisplayName("命中：向量查询 + 来源存活校验通过 → 返回答案并 touch、计指标")
+    @DisplayName("命中：存活 + 语料指纹一致 → 返回答案并 touch、计指标")
     void lookupHit() throws Exception {
         ResultSet rs = mock(ResultSet.class);
         when(rs.next()).thenReturn(true);
@@ -127,10 +128,12 @@ class AiSemanticCacheServiceImplTest {
         when(rs.getString("answer")).thenReturn("这是缓存的答案内容，足够长。");
         when(rs.getString("sources_json"))
             .thenReturn("[{\"articleId\":1,\"title\":\"分布式锁实战\",\"author\":\"张三\",\"likes\":10,\"similarity\":0.96}]");
+        when(rs.getString("sources_hash_json")).thenReturn("{\"1\":\"hash-a\"}");
         when(rs.getDouble("similarity")).thenReturn(0.96);
         stubLookupQuery(rs);
         when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
         when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
+        when(embeddingService.getEmbeddingMeta(1L)).thenReturn(meta("hash-a"));
 
         AiAnswerVo vo = service.lookup(DECENT_QUESTION, 7);
 
@@ -140,6 +143,93 @@ class AiSemanticCacheServiceImplTest {
         // 命中计数 touch + 指标
         verify(pgVectorJdbcTemplate).update(startsWith("UPDATE ap_ai_semantic_cache SET hit_count"), eq(1L));
         verify(metrics).incr("ai_semcache_hit");
+        verify(metrics, never()).incr("ai_semcache_evict_stale");
+    }
+
+    @Test
+    @DisplayName("命中但语料指纹不一致（文章已编辑）→ evict 且标记 stale 指标")
+    void lookupStaleCorpusEvicts() throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.next()).thenReturn(true);
+        when(rs.getLong("id")).thenReturn(1L);
+        when(rs.getString("answer")).thenReturn("这是缓存的答案内容，足够长。");
+        when(rs.getString("sources_json"))
+            .thenReturn("[{\"articleId\":1,\"title\":\"t\",\"author\":\"a\",\"likes\":1,\"similarity\":0.9}]");
+        when(rs.getString("sources_hash_json")).thenReturn("{\"1\":\"hash-old\"}");
+        when(rs.getDouble("similarity")).thenReturn(0.9);
+        stubLookupQuery(rs);
+        when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
+        when(embeddingService.getEmbeddingMeta(1L)).thenReturn(meta("hash-new"));
+
+        assertNull(service.lookup(DECENT_QUESTION, 7));
+
+        verify(pgVectorJdbcTemplate).update(startsWith("DELETE FROM ap_ai_semantic_cache WHERE id"), eq(1L));
+        verify(metrics).incr("ai_semcache_evict_stale");
+        verify(metrics, never()).incr("ai_semcache_hit");
+    }
+
+    @Test
+    @DisplayName("命中但引用文章向量已缺失（指纹不可比）→ evict")
+    void lookupCorpusEmbeddingMissingEvicts() throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.next()).thenReturn(true);
+        when(rs.getLong("id")).thenReturn(1L);
+        when(rs.getString("answer")).thenReturn("这是缓存的答案内容，足够长。");
+        when(rs.getString("sources_json"))
+            .thenReturn("[{\"articleId\":1,\"title\":\"t\",\"author\":\"a\",\"likes\":1,\"similarity\":0.9}]");
+        when(rs.getString("sources_hash_json")).thenReturn("{\"1\":\"hash-a\"}");
+        when(rs.getDouble("similarity")).thenReturn(0.9);
+        stubLookupQuery(rs);
+        when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
+        when(embeddingService.getEmbeddingMeta(1L)).thenReturn(null);
+
+        assertNull(service.lookup(DECENT_QUESTION, 7));
+
+        verify(metrics).incr("ai_semcache_evict_stale");
+    }
+
+    @Test
+    @DisplayName("快照缺 key（落缓存时该文无向量）→ 引用不来自可检索语料，evict")
+    void lookupSnapshotMissingKeyEvicts() throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.next()).thenReturn(true);
+        when(rs.getLong("id")).thenReturn(1L);
+        when(rs.getString("answer")).thenReturn("这是缓存的答案内容，足够长。");
+        when(rs.getString("sources_json"))
+            .thenReturn("[{\"articleId\":1,\"title\":\"t\",\"author\":\"a\",\"likes\":1,\"similarity\":0.9}]");
+        // 快照里只有文章 2，缺文章 1
+        when(rs.getString("sources_hash_json")).thenReturn("{\"2\":\"hash-b\"}");
+        when(rs.getDouble("similarity")).thenReturn(0.9);
+        stubLookupQuery(rs);
+        when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
+
+        assertNull(service.lookup(DECENT_QUESTION, 7));
+
+        verify(metrics).incr("ai_semcache_evict_stale");
+    }
+
+    @Test
+    @DisplayName("存量行无指纹快照（NULL）→ 退化为仅存活校验，照常命中")
+    void lookupLegacyRowWithoutSnapshotHits() throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.next()).thenReturn(true);
+        when(rs.getLong("id")).thenReturn(1L);
+        when(rs.getString("answer")).thenReturn("这是缓存的答案内容，足够长。");
+        when(rs.getString("sources_json"))
+            .thenReturn("[{\"articleId\":1,\"title\":\"t\",\"author\":\"a\",\"likes\":1,\"similarity\":0.9}]");
+        when(rs.getDouble("similarity")).thenReturn(0.9);
+        stubLookupQuery(rs);
+        when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
+
+        AiAnswerVo vo = service.lookup(DECENT_QUESTION, 7);
+
+        assertNotNull(vo);
+        verify(metrics).incr("ai_semcache_hit");
+        verify(embeddingService, never()).getEmbeddingMeta(1L);
     }
 
     @Test
@@ -196,19 +286,36 @@ class AiSemanticCacheServiceImplTest {
     // ==================== store：落缓存 ====================
 
     @Test
-    @DisplayName("落缓存：嵌入问题向量 + 插入 + 单用户容量裁剪 + 指标")
+    @DisplayName("落缓存：嵌入问题向量 + 指纹快照 + 插入 + 单用户容量裁剪 + 指标")
     void storeInsertsAndCaps() {
         when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(embeddingService.getEmbeddingMeta(1L)).thenReturn(meta("hash-a"));
+        when(embeddingService.getEmbeddingMeta(2L)).thenReturn(meta("hash-b"));
         List<AiSourceVo> sources = List.of(source(1L), source(2L));
 
         service.store(DECENT_QUESTION, 7, "这是一段足够长的问答答案，字数满足最小长度要求，用于验证缓存写入。", sources);
 
+        // 第 6 参为语料指纹快照 JSON（articleId -> contentHash）
         verify(pgVectorJdbcTemplate).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
-            eq(7), eq(DECENT_QUESTION), any(), any(), any());
+            eq(7), eq(DECENT_QUESTION), any(), any(), any(),
+            contains("\"1\":\"hash-a\""));
         // 单用户条数上限裁剪（maxPerUser=50）
         verify(pgVectorJdbcTemplate).update(
             startsWith("DELETE FROM ap_ai_semantic_cache WHERE user_id = ? AND id NOT IN"), eq(7), eq(7), eq(50));
         verify(metrics).incr("ai_semcache_store");
+    }
+
+    @Test
+    @DisplayName("落缓存时引用文章无向量 → 快照留空（该缓存命中后必被指纹校验淘汰）")
+    void storeWithoutEmbeddingWritesEmptySnapshot() {
+        when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(embeddingService.getEmbeddingMeta(1L)).thenReturn(null);
+
+        service.store(DECENT_QUESTION, 7, "这是一段足够长的问答答案，字数满足最小长度要求，用于验证缓存写入。",
+            List.of(source(1L)));
+
+        verify(pgVectorJdbcTemplate).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
+            eq(7), eq(DECENT_QUESTION), any(), any(), any(), eq("{}"));
     }
 
     @Test
@@ -231,6 +338,10 @@ class AiSemanticCacheServiceImplTest {
         AiSourceVo s = new AiSourceVo();
         s.setArticleId(id);
         return s;
+    }
+
+    private ArticleEmbeddingServiceImpl.EmbeddingMeta meta(String hash) {
+        return new ArticleEmbeddingServiceImpl.EmbeddingMeta(hash, null);
     }
 
     private ApArticle published(Long id) {

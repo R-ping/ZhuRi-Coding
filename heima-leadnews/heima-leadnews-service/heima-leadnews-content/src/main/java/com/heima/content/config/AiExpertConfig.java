@@ -3,6 +3,7 @@ package com.heima.content.config;
 import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -16,9 +17,10 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class AiExpertConfig {
 
-    /** 专家 Worker 共享 ChatClient（含 PromptSafetyAdvisor 安全横切） */
+    /** 专家 Worker 共享 ChatClient（含 PromptSafetyAdvisor 安全横切）；固定用默认主模型（agent 为高价值路径） */
     @Bean("aiExpertChatClient")
-    public ChatClient aiExpertChatClient(ChatModel chatModel, PromptSafetyAdvisor promptSafetyAdvisor) {
+    public ChatClient aiExpertChatClient(@Qualifier("openAiChatModel") ChatModel chatModel,
+                                         PromptSafetyAdvisor promptSafetyAdvisor) {
         return ChatClient.builder(chatModel)
             .defaultAdvisors(promptSafetyAdvisor)
             .build();

@@ -58,6 +58,7 @@ public class AiTopupServiceImpl implements AiTopupService {
         order.setPackageCode(packageCode);
         order.setAmountFen(AiQuotaPackages.priceFenOf(packageCode));
         order.setQuotaAdded(AiQuotaPackages.quotaOf(packageCode));
+        order.setTokenAdded(AiQuotaPackages.tokenQuotaOf(packageCode));
         order.setStatus(AiTopupOrder.STATUS_PENDING);
         order.setPayTradeNo("");
         order.setCreateTime(new Date());
@@ -138,8 +139,12 @@ public class AiTopupServiceImpl implements AiTopupService {
         topupOrderMapper.updateById(order);
         // 入账钱包（支付成功后才给额度）
         walletService.grant(order.getUserId(), order.getQuotaAdded());
-        log.info("[AiTopup] 额度包支付成功并入账, orderNo={}, userId={}, +{} 次",
-            orderNo, order.getUserId(), order.getQuotaAdded());
+        // token 额度双写（新计费口径）：用量按 token 结算，次数仅作兼容展示
+        if (order.getTokenAdded() != null && order.getTokenAdded() > 0) {
+            walletService.grantTokens(order.getUserId(), order.getTokenAdded());
+        }
+        log.info("[AiTopup] 额度包支付成功并入账, orderNo={}, userId={}, +{} 次, +{} tokens",
+            orderNo, order.getUserId(), order.getQuotaAdded(), order.getTokenAdded());
         return true;
     }
 

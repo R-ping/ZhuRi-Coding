@@ -81,6 +81,7 @@ CREATE TABLE `ap_ai_topup_order` (
   `pay_time` datetime DEFAULT NULL COMMENT '鏀?粯鏃堕棿',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `token_added` bigint NOT NULL DEFAULT '0' COMMENT '本单到账 token 额度',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order_no` (`order_no`),
   KEY `idx_user` (`user_id`)
@@ -92,6 +93,7 @@ CREATE TABLE `ap_ai_wallet` (
   `user_id` int NOT NULL COMMENT '用户ID',
   `balance` int NOT NULL DEFAULT '0' COMMENT 'AI 浣欓?锛堟?锛夛紝璐熷?绂佹?',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `token_balance` bigint NOT NULL DEFAULT '0' COMMENT '已购 AI token 余额（用量按 token 结算）',
   PRIMARY KEY (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI 额度钱包';
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -540,7 +542,7 @@ CREATE TABLE `ap_comment` (
   KEY `idx_parent_id` (`parent_id`),
   KEY `idx_created_time` (`created_time`),
   KEY `idx_article_parent_created` (`article_id`,`parent_id`,`created_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=1674 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章评论表';
+) ENGINE=InnoDB AUTO_INCREMENT=1712 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章评论表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -573,7 +575,7 @@ CREATE TABLE `ap_comment_like` (
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_comment_user` (`comment_id`,`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=145 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='评论点赞记录表';
+) ENGINE=InnoDB AUTO_INCREMENT=164 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='评论点赞记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;

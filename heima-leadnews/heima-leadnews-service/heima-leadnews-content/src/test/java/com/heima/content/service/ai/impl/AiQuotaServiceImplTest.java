@@ -157,9 +157,17 @@ class AiQuotaServiceImplTest {
     @DisplayName("remainToday：剩余次数不为负")
     void remainTodayClampsAtZero() {
         when(valueOps.get(anyString())).thenReturn("5");
-        assertEquals(AiQuotaService.DAILY_QUOTA - 5, service.remainToday(UID));
+        // 生效额度取配置（默认 20 次），不再依赖接口常量
+        assertEquals(service.dailyRequestLimit() - 5, service.remainToday(UID));
 
         when(valueOps.get(anyString())).thenReturn("99");
         assertEquals(0, service.remainToday(UID));
+    }
+
+    @Test
+    @DisplayName("每日额度可配置：默认值与 tokens 上限均从配置读取")
+    void dailyLimitsFromConfig() {
+        assertEquals(AiQuotaService.DEFAULT_DAILY_QUOTA, service.dailyRequestLimit());
+        assertEquals(AiQuotaService.DEFAULT_DAILY_TOKEN_QUOTA, service.dailyTokenLimit());
     }
 }

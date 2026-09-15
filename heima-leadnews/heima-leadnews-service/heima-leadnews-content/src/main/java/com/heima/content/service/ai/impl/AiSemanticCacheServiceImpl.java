@@ -15,7 +15,9 @@ import com.heima.model.article.pojos.ApArticle.Status;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -32,9 +34,12 @@ import org.springframework.stereotype.Service;
  * <p>设计取舍：
  * <ul>
  *   <li><b>按用户隔离</b>：答案 prompt 注入了长期记忆与兴趣画像，跨用户复用会泄露画像；</li>
- *   <li><b>双失效</b>：TTL（默认 6h）兜底 + 命中时校验引用文章仍「已发布且非 AIGC」；</li>
+ *   <li><b>三重失效</b>：TTL（默认 6h）兜底 + 命中时校验引用文章仍「已发布且非 AIGC」
+ *       + <b>语料指纹比对</b>（store 时快照每篇引用文章的 content_hash，命中时与
+ *       ap_article_embedding.content_hash 逐篇比对，内容变了即失效——防止返回旧答案 + 失效引用）；
+ *       存量行无指纹快照（NULL）退化为仅存活校验，随 TTL 自然淘汰；</li>
  *   <li><b>不缓存上下文依赖问题</b>：含「它/上面/刚才」等指代或过短问题，语义相似 ≠ 意图相同；</li>
- *   <li><b>代价</b>：命中省 3 次 chat 调用，代价是 1 次 embedding 调用；未命中多 1 次 embedding，可接受。</li>
+ *   <li><b>代价</b>：命中省 3 次 chat 调用，代价是 1 次 embedding 调用 + 至多 N 次指纹主键查询（轻量）；</li>
  * </ul>
  * 所有异常 fail-open 返回未命中，绝不阻断问答。
  */
@@ -96,7 +101,8 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
             String vecLiteral = PgVectorUtil.toLiteral(qEmb);
             Timestamp cutoff = new Timestamp(System.currentTimeMillis() - ttlHours * 3600_000L);
             Object[] row = pgVectorJdbcTemplate.query(
-                "SELECT id, answer, sources_json, 1 - (question_vec <=> CAST(? AS vector)) AS similarity "
+                "SELECT id, answer, sources_json, sources_hash_json, "
+                    + "1 - (question_vec <=> CAST(? AS vector)) AS similarity "
                     + "FROM ap_ai_semantic_cache "
                     + "WHERE user_id = ? AND created_time > ? "
                     + "AND 1 - (question_vec <=> CAST(? AS vector)) >= ? "
@@ -106,7 +112,8 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
                         return null;
                     }
                     return new Object[]{rs.getLong("id"), rs.getString("answer"),
-                        rs.getString("sources_json"), rs.getDouble("similarity")};
+                        rs.getString("sources_json"), rs.getString("sources_hash_json"),
+                        rs.getDouble("similarity")};
                 },
                 vecLiteral, userId, cutoff, vecLiteral, threshold);
             if (row == null) {
@@ -124,13 +131,19 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
                 evict(id, "引用文章已失效");
                 return null;
             }
+            // 语料指纹校验：任一引用文章内容已更新 / 向量缺失 → 答案基于旧语料，不可信
+            if (!corpusConsistent((String) row[3], sources)) {
+                evict(id, "语料已更新");
+                metrics.incr("ai_semcache_evict_stale");
+                return null;
+            }
             touch(id);
             AiAnswerVo vo = new AiAnswerVo();
             vo.setAnswer(answer);
             vo.setSources(sources);
             metrics.incr("ai_semcache_hit");
             log.info("[AiSemCache] 命中, userId={}, sim={}, id={}, q={}",
-                userId, String.format("%.4f", (Double) row[3]), id, brief(question));
+                userId, String.format("%.4f", (Double) row[4]), id, brief(question));
             return vo;
         } catch (Exception e) {
             log.warn("[AiSemCache] 查询异常，回退正常链路, userId={}", userId, e);
@@ -154,11 +167,12 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
                 return;
             }
             String sourcesJson = objectMapper.writeValueAsString(sources);
+            String sourcesHashJson = buildSourcesHashSnapshot(sources);
             pgVectorJdbcTemplate.update(
                 "INSERT INTO ap_ai_semantic_cache "
-                    + "(user_id, question, question_vec, answer, sources_json, created_time) "
-                    + "VALUES (?, ?, CAST(? AS vector), ?, ?, now())",
-                userId, brief(question), PgVectorUtil.toLiteral(qEmb), answer.trim(), sourcesJson);
+                    + "(user_id, question, question_vec, answer, sources_json, sources_hash_json, created_time) "
+                    + "VALUES (?, ?, CAST(? AS vector), ?, ?, ?, now())",
+                userId, brief(question), PgVectorUtil.toLiteral(qEmb), answer.trim(), sourcesJson, sourcesHashJson);
             // 单用户条数上限：超出则淘汰最旧（缓存是收益项，不做事务/重试）
             pgVectorJdbcTemplate.update(
                 "DELETE FROM ap_ai_semantic_cache WHERE user_id = ? AND id NOT IN "
@@ -188,6 +202,68 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
             log.info("[AiSemCache] 缓存失效已删除, id={}, reason={}", id, reason);
         } catch (Exception e) {
             log.debug("[AiSemCache] 删除失效缓存失败, id={}", id);
+        }
+    }
+
+    /**
+     * 语料指纹校验（P2-2）：store 时快照的 {articleId: contentHash} 与当前
+     * ap_article_embedding.content_hash 逐篇比对，任一不一致 / 向量缺失 → 缓存不可信。
+     *
+     * <p>兼容语义：快照为 NULL（存量旧行）→ 退化为仅存活校验，随 TTL 自然淘汰；
+     * 快照缺 key（落缓存时该文无向量）→ 视为失效——缓存的引用必须来自当前可检索语料，
+     * 否则与正常 RAG 链路（检索不到该文）口径不一致。
+     */
+    private boolean corpusConsistent(String hashJson, List<AiSourceVo> sources) {
+        if (hashJson == null || hashJson.isBlank()) {
+            return true;
+        }
+        Map<String, String> snapshot;
+        try {
+            snapshot = objectMapper.readValue(hashJson, new TypeReference<Map<String, String>>() {
+            });
+        } catch (Exception e) {
+            log.debug("[AiSemCache] 指纹快照解析失败，视为不一致");
+            return false;
+        }
+        if (snapshot.isEmpty()) {
+            return false;
+        }
+        for (AiSourceVo s : sources) {
+            Long aid = s == null ? null : s.getArticleId();
+            if (aid == null) {
+                continue;
+            }
+            String storedHash = snapshot.get(String.valueOf(aid));
+            if (storedHash == null || storedHash.isEmpty()) {
+                return false;
+            }
+            ArticleEmbeddingServiceImpl.EmbeddingMeta meta = embeddingService.getEmbeddingMeta(aid);
+            if (meta == null || ArticleEmbeddingServiceImpl.isStale(storedHash, meta.contentHash)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** store 时构建引用文章指纹快照（无向量/无指纹的引用不进快照 → lookup 时驱动淘汰）；序列化失败返回 null 退化为旧行为 */
+    private String buildSourcesHashSnapshot(List<AiSourceVo> sources) {
+        Map<String, String> snapshot = new LinkedHashMap<>();
+        if (sources != null) {
+            for (AiSourceVo s : sources) {
+                if (s == null || s.getArticleId() == null || snapshot.containsKey(String.valueOf(s.getArticleId()))) {
+                    continue;
+                }
+                ArticleEmbeddingServiceImpl.EmbeddingMeta meta = embeddingService.getEmbeddingMeta(s.getArticleId());
+                if (meta != null && meta.contentHash != null && !meta.contentHash.isEmpty()) {
+                    snapshot.put(String.valueOf(s.getArticleId()), meta.contentHash);
+                }
+            }
+        }
+        try {
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (Exception e) {
+            log.debug("[AiSemCache] 指纹快照序列化失败，本次落缓存不带快照");
+            return null;
         }
     }
 

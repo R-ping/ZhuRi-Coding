@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,8 +46,26 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
     @Qualifier("pgVectorJdbcTemplate")
     private JdbcTemplate pgVectorJdbcTemplate;
 
+    /** 熔断器（P1-1：向量服务故障时快速失败；可空注入，单测上下文为 null） */
+    @Autowired(required = false)
+    private com.heima.content.service.ai.AiCircuitBreaker circuitBreaker;
+
+    /** 指标（熔断拒绝计数） */
+    @Autowired(required = false)
+    private com.heima.content.service.ai.AiMetricsCollector metrics;
+
     @Override
     public void saveEmbedding(Long articleId, double[] embedding) {
+        saveEmbedding(articleId, embedding, null, null);
+    }
+
+    /**
+     * 保存文章级向量，并记录来源内容指纹（P0-1 数据新鲜度）。
+     *
+     * @param contentHash    来源正文 SHA-256（null=无从判断版本，回填任务会视为需补写）
+     * @param srcUpdatedTime 来源文章 updated_time（便于排查"向量对应哪一版内容"）
+     */
+    public void saveEmbedding(Long articleId, double[] embedding, String contentHash, Date srcUpdatedTime) {
         if (embedding == null || embedding.length == 0) {
             log.warn("Empty embedding for articleId={}, skipping save", articleId);
             return;
@@ -63,7 +82,8 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
             // 使用JDBC直接操作pgvector数组
             pgVectorJdbcTemplate.update((Connection conn) -> {
                 PreparedStatement ps = conn.prepareStatement(
-                        "INSERT INTO ap_article_embedding (article_id, embedding, created_time) VALUES (?, ?, ?)"
+                        "INSERT INTO ap_article_embedding (article_id, embedding, content_hash, src_updated_time, created_time) "
+                                + "VALUES (?, ?, ?, ?, ?)"
                 );
                 ps.setLong(1, articleId);
 
@@ -71,13 +91,129 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
                 Array vectorArray = conn.createArrayOf("float8",
                         java.util.Arrays.stream(embedding).boxed().toArray(Double[]::new));
                 ps.setArray(2, vectorArray);
-                ps.setTimestamp(3, new java.sql.Timestamp(System.currentTimeMillis()));
+                ps.setString(3, contentHash);
+                ps.setTimestamp(4, srcUpdatedTime == null ? null : new java.sql.Timestamp(srcUpdatedTime.getTime()));
+                ps.setTimestamp(5, new java.sql.Timestamp(System.currentTimeMillis()));
                 return ps;
             });
 
-            log.info("Saved embedding for articleId={}, dimension={}", articleId, embedding.length);
+            log.info("Saved embedding for articleId={}, dimension={}, hash={}",
+                    articleId, embedding.length, contentHash == null ? "-" : contentHash.substring(0, 8));
         } catch (Exception e) {
             log.error("Failed to save embedding for articleId={}: {}", articleId, e.getMessage());
+        }
+    }
+
+    /** 内容指纹（SHA-256 十六进制）。null/空返回 null，供回填任务判断"算不出当前版本" */
+    public static String contentHash(String content) {
+        if (content == null || content.isEmpty()) {
+            return null;
+        }
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+                sb.append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("计算内容指纹失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 向量是否过期（P0-1 核心判定，纯函数便于单测）：
+     * <ul>
+     *   <li>当前正文算不出 hash（无正文）→ 不动（避免把历史数据全清空）；</li>
+     *   <li>存量向量无 hash（改造前写入）→ 视为过期，补写一次；</li>
+     *   <li>hash 不同 → 内容确实变了，过期。</li>
+     * </ul>
+     */
+    public static boolean isStale(String storedHash, String currentHash) {
+        if (currentHash == null) {
+            return false;
+        }
+        if (storedHash == null || storedHash.isEmpty()) {
+            return true;
+        }
+        return !storedHash.equals(currentHash);
+    }
+
+    /** 向量元信息（不取向量本身，避免回填比对时白读 1024 维数据） */
+    public static final class EmbeddingMeta {
+        public final String contentHash;
+        public final Date srcUpdatedTime;
+
+        public EmbeddingMeta(String contentHash, Date srcUpdatedTime) {
+            this.contentHash = contentHash;
+            this.srcUpdatedTime = srcUpdatedTime;
+        }
+    }
+
+    /** 读取文章级向量的版本元信息；不存在返回 null */
+    public EmbeddingMeta getEmbeddingMeta(Long articleId) {
+        if (articleId == null || pgVectorJdbcTemplate == null) {
+            return null;
+        }
+        try {
+            return pgVectorJdbcTemplate.query(
+                    "SELECT content_hash, src_updated_time FROM ap_article_embedding WHERE article_id = ?",
+                    (ResultSet rs) -> rs.next()
+                            ? new EmbeddingMeta(rs.getString("content_hash"), rs.getTimestamp("src_updated_time"))
+                            : null,
+                    articleId);
+        } catch (Exception e) {
+            log.warn("读取向量元信息失败 articleId={}: {}", articleId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** 删除文章级向量（文章下架/删除后清理残留，避免被检索到过期内容） */
+    public void deleteEmbedding(Long articleId) {
+        if (articleId == null || pgVectorJdbcTemplate == null) {
+            return;
+        }
+        try {
+            pgVectorJdbcTemplate.update("DELETE FROM ap_article_embedding WHERE article_id = ?", articleId);
+        } catch (Exception e) {
+            log.warn("删除文章向量失败 articleId={}: {}", articleId, e.getMessage());
+        }
+    }
+
+    /** 删除文章分块向量 */
+    public void deleteChunks(Long articleId) {
+        if (articleId == null || pgVectorJdbcTemplate == null) {
+            return;
+        }
+        try {
+            pgVectorJdbcTemplate.update("DELETE FROM ap_article_chunk WHERE article_id = ?", articleId);
+        } catch (Exception e) {
+            log.warn("删除分块向量失败 articleId={}: {}", articleId, e.getMessage());
+        }
+    }
+
+    /**
+     * 游标分页列出「已有向量的文章 ID」（残留清理用）。
+     *
+     * <p>刻意用 {@code article_id > lastId} 而非 OFFSET：调用方会边扫边删，
+     * OFFSET 分页在删除后会发生偏移跳记录，游标分页天然免疫。
+     *
+     * @param lastArticleId 上次返回的最大 article_id（首次传 0）
+     */
+    public List<Long> listEmbeddedArticleIds(long lastArticleId, int limit) {
+        if (pgVectorJdbcTemplate == null) {
+            return java.util.Collections.emptyList();
+        }
+        try {
+            return pgVectorJdbcTemplate.queryForList(
+                "SELECT article_id FROM ap_article_embedding WHERE article_id > ? ORDER BY article_id LIMIT ?",
+                Long.class, lastArticleId, limit);
+        } catch (Exception e) {
+            log.warn("列出已向量化文章失败: {}", e.getMessage());
+            return java.util.Collections.emptyList();
         }
     }
 
@@ -161,14 +297,35 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
 
     /**
      * 生成文章向量嵌入
+     *
+     * <p>P1-1：向量服务故障时熔断快速失败（不再逐个请求等满超时），调用方按"向量化失败"降级。
      */
     public double[] generateEmbedding(String content) {
         if (content == null || content.isEmpty()) {
             return null;
         }
+        if (circuitBreaker != null && !circuitBreaker.allow(com.heima.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING)) {
+            if (metrics != null) {
+                metrics.incr("ai_circuit_rejected_embedding");
+            }
+            log.warn("向量服务熔断打开中，快速失败（跳过向量化）");
+            return null;
+        }
         // 截断过长内容（embedding模型有token限制）
         String truncated = content.length() > 2000 ? content.substring(0, 2000) : content;
-        float[] emb = embeddingModel.embed(truncated);
+        float[] emb;
+        try {
+            emb = embeddingModel.embed(truncated);
+        } catch (RuntimeException e) {
+            // 依赖不可用类失败才计入熔断（参数类错误不会走到这里）
+            if (circuitBreaker != null) {
+                circuitBreaker.onFailure(com.heima.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING);
+            }
+            throw e;
+        }
+        if (circuitBreaker != null) {
+            circuitBreaker.onSuccess(com.heima.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING);
+        }
         if (emb == null || emb.length == 0) {
             return null;
         }
@@ -186,6 +343,14 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
      * 分块文本长度可控（≤ 数百字），因此不再截断。
      */
     public void saveChunks(Long articleId, List<String> chunks) {
+        saveChunks(articleId, chunks, null, null);
+    }
+
+    /**
+     * 写入文章分块向量（子块），并记录来源内容指纹（与文章级向量同版本）。
+     * 先删旧块保证幂等；批量 embedding 失败自动降级逐条。
+     */
+    public void saveChunks(Long articleId, List<String> chunks, String contentHash, Date srcUpdatedTime) {
         if (articleId == null || chunks == null || chunks.isEmpty() || pgVectorJdbcTemplate == null) {
             return;
         }
@@ -205,15 +370,36 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
                 return;
             }
             pgVectorJdbcTemplate.update("DELETE FROM ap_article_chunk WHERE article_id = ?", articleId);
+            java.sql.Timestamp srcTs = srcUpdatedTime == null
+                    ? null : new java.sql.Timestamp(srcUpdatedTime.getTime());
             for (int i = 0; i < valid.size(); i++) {
                 pgVectorJdbcTemplate.update(
-                    "INSERT INTO ap_article_chunk (article_id, chunk_index, content, embedding, created_time) "
-                        + "VALUES (?, ?, ?, CAST(? AS vector), now())",
-                    articleId, i, valid.get(i), PgVectorUtil.toLiteral(embeddings.get(i)));
+                    "INSERT INTO ap_article_chunk (article_id, chunk_index, content, embedding, content_hash, src_updated_time, created_time) "
+                        + "VALUES (?, ?, ?, CAST(? AS vector), ?, ?, now())",
+                    articleId, i, valid.get(i), PgVectorUtil.toLiteral(embeddings.get(i)), contentHash, srcTs);
             }
-            log.info("Saved {} chunks for articleId={}", valid.size(), articleId);
+            log.info("Saved {} chunks for articleId={}, hash={}", valid.size(), articleId,
+                    contentHash == null ? "-" : contentHash.substring(0, 8));
         } catch (Exception e) {
             log.error("Failed to save chunks for articleId={}: {}", articleId, e.getMessage());
+        }
+    }
+
+    /** 读取分块的版本元信息（取任一块即可；无分块返回 null） */
+    public EmbeddingMeta getChunksMeta(Long articleId) {
+        if (articleId == null || pgVectorJdbcTemplate == null) {
+            return null;
+        }
+        try {
+            return pgVectorJdbcTemplate.query(
+                    "SELECT content_hash, src_updated_time FROM ap_article_chunk WHERE article_id = ? LIMIT 1",
+                    (ResultSet rs) -> rs.next()
+                            ? new EmbeddingMeta(rs.getString("content_hash"), rs.getTimestamp("src_updated_time"))
+                            : null,
+                    articleId);
+        } catch (Exception e) {
+            log.warn("读取分块元信息失败 articleId={}: {}", articleId, e.getMessage());
+            return null;
         }
     }
 

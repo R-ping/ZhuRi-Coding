@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heima.content.mapper.article.ApArticleContentMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.ai.AiAskService;
+import com.heima.content.service.ai.AiFeatures;
+import com.heima.content.service.ai.AiLlmGateway;
 import com.heima.content.service.ai.AiSemanticCacheService;
 import com.heima.content.service.ai.AnswerFaithfulnessService;
 import com.heima.content.service.ai.HybridRecallService;
@@ -32,7 +34,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -71,6 +72,11 @@ public class AiAskServiceImpl implements AiAskService {
     /** 每请求独立 memory 实例 + 固定会话 key（实例随请求销毁，天然隔离） */
     private static final String MEMORY_CONVERSATION_ID = "aiask-conversation";
 
+    /** 向量轮转同步游标（Redis）：记住上次扫到的 article_id，实现不依赖时间列的轮转比对 */
+    private static final String EMBED_SWEEP_CURSOR_KEY = "ai:embed:sweep:cursor";
+    /** 每批轮转的文章数（10 分钟一批；500 篇 ≈ 与"扫描+比对指纹"的 CPU/DB 开销平衡） */
+    private static final int SWEEP_BATCH = 500;
+
     private static final String REWRITE_PROMPT =
         "你是搜索查询改写器。把用户的口语化问题改写为一个更利于向量检索的简洁技术查询（保留关键实体与限定词，去掉客套语），"
         + "只输出改写后的查询文本本身（≤60 字），不要任何解释。若无需改写，原样输出问题。";
@@ -92,6 +98,10 @@ public class AiAskServiceImpl implements AiAskService {
 
     @Autowired
     private AiSemanticCacheService semanticCacheService;
+
+    /** Prompt 注册表（P2-1）：DB 版本化 + 灰度 + 代码兜底；单测未注入时走兜底 */
+    @Autowired(required = false)
+    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
 
     @Autowired
     private HybridRecallService hybridRecallService;
@@ -123,11 +133,21 @@ public class AiAskServiceImpl implements AiAskService {
     @Autowired
     private ApArticleContentMapper contentMapper;
 
-    @Autowired
-    private org.springframework.ai.chat.model.ChatModel chatModel;
-
+    /** 流式 Layer 3 输出护栏兜底（汇聚完整文本后判定）；非流式由 gateway 内 advisor 横切 */
     @Autowired
     private PromptSafetyAdvisor promptSafetyAdvisor;
+
+    /** 统一 LLM 出口：安全横切 + token 计量（P0-2 成本观测） */
+    @Autowired
+    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+
+    /** 业务指标（调用计数 + TTFT 等延迟观测） */
+    @Autowired
+    private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
+
+    /** Redis（向量轮转同步游标） */
+    @Autowired
+    private com.heima.common.redis.CacheService cacheService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -176,9 +196,11 @@ public class AiAskServiceImpl implements AiAskService {
 
         // 3. 生成回答（安全三层防御由 PromptSafetyAdvisor 横切处理；长期记忆/兴趣画像注入见 buildUser）
         String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, currentUserId());
+        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+            prompt("ai_ask_system", SYSTEM_PROMPT, currentUserId());
         String answer;
         try {
-            answer = genText(SYSTEM_PROMPT, userPrompt, history, currentUserId());
+            answer = genText(AiFeatures.ASK, sysPrompt.content, userPrompt, history, currentUserId());
         } catch (Exception e) {
             log.error("[AiAsk] 大模型生成失败, question={}", truncate(q, 50), e);
             return null;
@@ -192,12 +214,18 @@ public class AiAskServiceImpl implements AiAskService {
         vo.setAnswer(answer.trim());
         vo.setSources(r.sources);
         vo.setLatencyMs(System.currentTimeMillis() - start);
+        // P2-1 归因：记录本次使用的 prompt 版本（0 = 代码兜底版）
+        java.util.Map<String, Integer> pv = new java.util.LinkedHashMap<>();
+        pv.put("ai_ask_system", sysPrompt.version);
+        pv.put("ai_ask_rewrite", prompt("ai_ask_rewrite", REWRITE_PROMPT, null).version);
+        pv.put("ai_ask_rerank", prompt("ai_ask_rerank", RERANK_PROMPT, null).version);
+        vo.setPromptVersions(pv);
         // 回答成功：持久化会话记忆 + 沉淀语义记忆（Redis/PGVector，全部 fail-open 异步无关紧要）
-        persistMemory(currentUserId(), q, answer.trim(), r.queryEmbedding);
+        persistMemory(currentUserId(), q, answer.trim(), r);
         semanticCacheService.store(q, currentUserId(), vo.getAnswer(), r.sources);
         checkFaithfulness(vo, r);
-        log.info("[AiAsk] question={}, hits={}, sources={}, latency={}ms",
-            truncate(q, 50), r.hits, r.sources.size(), vo.getLatencyMs());
+        log.info("[AiAsk] question={}, hits={}, sources={}, latency={}ms, promptVersions={}",
+            truncate(q, 50), r.hits, r.sources.size(), vo.getLatencyMs(), pv);
         return vo;
     }
 
@@ -234,19 +262,33 @@ public class AiAskServiceImpl implements AiAskService {
             return emptyAnswer(start);
         }
         String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, userId);
+        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+            prompt("ai_ask_system", SYSTEM_PROMPT, userId);
         StringBuilder acc = new StringBuilder();
-        boolean ok = false;
+        boolean cancelled = false;
         try {
-            genStream(SYSTEM_PROMPT, userPrompt, history, userId,
+            genStream(AiFeatures.ASK_STREAM, sysPrompt.content, userPrompt, history, userId,
                 delta -> {
+                    if (acc.length() == 0) {
+                        // P2-3 TTFT：首 token 延迟（检索 + 模型首响应总耗时）
+                        aiMetricsCollector.record("aiask_stream_ttft", System.currentTimeMillis() - start);
+                    }
                     acc.append(delta);
                     onDelta.accept(delta);
                 });
-            ok = true;
+        } catch (java.util.concurrent.CancellationException e) {
+            // P2-3 流式取消：客户端断开，gateway 抛 CancellationException 传播至此。
+            // 丢弃已生成部分：不落语义缓存、不写记忆、不再做护栏/忠实度校验
+            cancelled = true;
         } catch (Exception e) {
             log.error("[AiAsk-stream] 生成失败, question={}", truncate(q, 40), e);
         }
-        if (!ok || acc.length() == 0) {
+        if (cancelled) {
+            aiMetricsCollector.incr("aiask_stream_cancelled");
+            log.info("[AiAsk-stream] 客户端取消，丢弃已生成 {} 字符, question={}", acc.length(), truncate(q, 40));
+            return null;
+        }
+        if (acc.length() == 0) {
             log.warn("[AiAsk-stream] 未获得流式输出，question={}", truncate(q, 40));
             return null;
         }
@@ -261,8 +303,10 @@ public class AiAskServiceImpl implements AiAskService {
         vo.setAnswer(acc.toString().trim());
         vo.setSources(r.sources);
         vo.setLatencyMs(System.currentTimeMillis() - start);
+        // P2-1 归因：流式路径仅 system prompt 参与
+        vo.setPromptVersions(java.util.Map.of("ai_ask_system", sysPrompt.version));
         // 回答成功：持久化会话记忆 + 沉淀语义记忆
-        persistMemory(userId, q, vo.getAnswer(), r.queryEmbedding);
+        persistMemory(userId, q, vo.getAnswer(), r);
         semanticCacheService.store(q, userId, vo.getAnswer(), r.sources);
         checkFaithfulness(vo, r);
         log.info("[AiAsk-stream] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
@@ -281,9 +325,11 @@ public class AiAskServiceImpl implements AiAskService {
             return emptyAnswer(start);
         }
         String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, currentUserId());
+        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+            prompt("ai_ask_system", SYSTEM_PROMPT, currentUserId());
         String answer;
         try {
-            answer = genText(SYSTEM_PROMPT, userPrompt, history, currentUserId());
+            answer = genText(AiFeatures.ASK_FAST, sysPrompt.content, userPrompt, history, currentUserId());
         } catch (Exception e) {
             log.error("[AiAsk-fast] 大模型生成失败, question={}", truncate(q, 50), e);
             return null;
@@ -295,8 +341,10 @@ public class AiAskServiceImpl implements AiAskService {
         vo.setAnswer(answer.trim());
         vo.setSources(r.sources);
         vo.setLatencyMs(System.currentTimeMillis() - start);
+        // P2-1 归因：fast 路径仅 system prompt 参与
+        vo.setPromptVersions(java.util.Map.of("ai_ask_system", sysPrompt.version));
         // 回答成功：持久化会话记忆 + 沉淀语义记忆
-        persistMemory(currentUserId(), q, answer.trim(), r.queryEmbedding);
+        persistMemory(currentUserId(), q, answer.trim(), r);
         semanticCacheService.store(q, currentUserId(), vo.getAnswer(), r.sources);
         checkFaithfulness(vo, r);
         log.info("[AiAsk-fast] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
@@ -304,8 +352,15 @@ public class AiAskServiceImpl implements AiAskService {
     }
 
     /**
-     * 存量已发布文章向量回填（幂等：已有向量的跳过）。每天凌晨执行，限量防压外部服务。
-     * 仅当 PgVector 已启用(pgvector.enabled=true)且有向量缺失时才真正写库。
+     * 存量文章向量回填/刷新（P0-1 数据新鲜度）。每天凌晨执行，限量防压外部服务。
+     *
+     * <p>与改造前的区别：不再只判断"向量是否存在"，而是<b>比对来源正文的内容指纹（SHA-256）</b>——
+     * <ul>
+     *   <li>缺向量/缺分块 → 补写；</li>
+     *   <li>有向量但指纹与当前正文不一致（文章被编辑过）→ <b>重算</b>（这是改造前完全漏掉的场景）；</li>
+     *   <li>指纹一致 → 跳过（不做无谓 embedding 调用）。</li>
+     * </ul>
+     * 顺带清理「非已发布文章的残留向量」（下架/删除后不再被检索到）。
      */
     @Scheduled(cron = "0 30 3 * * ?")
     public void backfillEmbeddings() {
@@ -313,6 +368,7 @@ public class AiAskServiceImpl implements AiAskService {
         long lastId = 0L;
         int scanned = 0;
         int filled = 0;
+        int refreshed = 0;
         int chunked = 0;
         try {
             // 游标分页扫全量已发布文章（修复原先只扫前 200 条导致永远填不完的问题）
@@ -329,86 +385,218 @@ public class AiAskServiceImpl implements AiAskService {
                 for (ApArticle a : articles) {
                     scanned++;
                     lastId = a.getId();
-                    try {
-                        boolean needArticleVec = embeddingService.getEmbedding(a.getId()) == null;
-                        boolean needChunks = !embeddingService.hasChunks(a.getId());
-                        if (!needArticleVec && !needChunks) {
-                            continue; // 文章向量与分块均已就绪
-                        }
-                        ApArticleContent c = contentMapper.selectOne(
-                            new LambdaQueryWrapper<ApArticleContent>()
-                                .eq(ApArticleContent::getArticleId, a.getId())
-                                .last("LIMIT 1"));
-                        if (c == null || c.getContent() == null || c.getContent().isBlank()) {
-                            continue;
-                        }
-                        if (needArticleVec) {
-                            double[] emb = embeddingService.generateEmbedding(truncate(c.getContent(), 2000));
-                            if (emb != null) {
-                                embeddingService.saveEmbedding(a.getId(), emb);
-                                filled++;
-                            }
-                        }
-                        // 老语料补齐子块（分块检索上线后必须回填，否则只能走文章级回退）
-                        if (needChunks) {
-                            embeddingService.saveChunks(a.getId(), TextChunker.split(
-                                MarkdownUtils.normalizeContent(c.getContent()),
-                                TextChunker.DEFAULT_TARGET, TextChunker.DEFAULT_OVERLAP,
-                                embeddingService.getChunkMaxPerArticle()));
-                            chunked++;
-                        }
-                    } catch (Exception e) {
-                        log.warn("[AiAsk] 回填向量失败 articleId={}", a.getId(), e);
-                    }
+                    RefreshResult r = refreshIfStale(a);
+                    filled += r.articleWritten;
+                    refreshed += r.articleRefreshed;
+                    chunked += r.chunkWritten;
                 }
                 if (articles.size() < batch) {
                     break;
                 }
             }
-            log.info("[AiAsk] 向量回填完成: 扫描={}, 新增文章向量={}, 补分块={}", scanned, filled, chunked);
+            log.info("[AiAsk] 向量回填完成: 扫描={}, 新增文章向量={}, 刷新过期向量={}, 补分块={}",
+                    scanned, filled, refreshed, chunked);
         } catch (Exception e) {
             log.error("[AiAsk] 向量回填异常", e);
         }
+        // 残留清理：非已发布（下架/删除/驳回）文章不再保留向量，避免 RAG 检索到过期内容
+        cleanupOrphanEmbeddings();
     }
 
-    /** Spring AI 同步文本生成：安全三层防御由 PromptSafetyAdvisor 横切；会话历史经 MessageChatMemoryAdvisor 注入（userId null=内部调用，不触碰持久化） */
-    private String genText(String systemPrompt, String user,
-                           java.util.List<java.util.Map<String, String>> history, Integer userId) {
+    /**
+     * 增量同步（P0-1）：每 10 分钟对已发布文章做一批「内容指纹比对」，变了就重算向量。
+     *
+     * <p><b>为什么是轮转而不是"扫最近更新"</b>：{@code ap_article} 表没有 updated_time 列
+     * （只有 created_time / publish_time），无法按"最近修改"筛选。因此改为
+     * <b>游标轮转扫描</b>：用 Redis 记住上次扫到的 article_id，每次取下一批（500 篇）比对，
+     * 扫到结尾回到 0 重新轮转 —— 全量 N 篇一轮耗时 ≈ N/500 × 10 分钟，
+     * 把"编辑 → 向量更新"的延迟从 24 小时（每日全量）压到小时级，且不依赖任何时间列。
+     *
+     * <p>编辑后需要立即生效的场景由发布链路保证（编辑重新发布时会走
+     * {@code SimilarityProcessor} → 直接重写向量与指纹），本任务是兜底。
+     */
+    @Scheduled(cron = "0 */10 * * * ?")
+    public void syncStaleEmbeddings() {
         try {
-            return org.springframework.ai.chat.client.ChatClient.builder(chatModel)
-                .defaultAdvisors(promptSafetyAdvisor,
-                    MessageChatMemoryAdvisor.builder(buildConversationMemory(userId, history)).build())
-                .build()
-                .prompt().system(systemPrompt).user(user == null ? "" : user)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, MEMORY_CONVERSATION_ID))
-                .call().content();
-        } catch (SafetyGuardException e) {
-            log.warn("[AiAsk] 输出护栏命中（顺从短语），丢弃该回答并降级: {}", e.getMessage());
-            return null;
+            long cursor = readSweepCursor();
+            List<ApArticle> batch = apArticleMapper.selectList(
+                new LambdaQueryWrapper<ApArticle>()
+                    .eq(ApArticle::getStatus, Status.PUBLISHED.getCode())
+                    .gt(ApArticle::getId, cursor)
+                    .orderByAsc(ApArticle::getId)
+                    .last("LIMIT " + SWEEP_BATCH));
+            if (batch.isEmpty()) {
+                // 一轮扫完 → 游标归零，下轮从头开始
+                writeSweepCursor(0L);
+                return;
+            }
+            int refreshed = 0;
+            for (ApArticle a : batch) {
+                RefreshResult r = refreshIfStale(a);
+                if (r.articleRefreshed > 0 || r.articleWritten > 0 || r.chunkWritten > 0) {
+                    refreshed++;
+                }
+            }
+            writeSweepCursor(batch.get(batch.size() - 1).getId());
+            if (refreshed > 0) {
+                log.info("[AiAsk] 向量轮转同步: 本批={}, 实际刷新={}, 游标={}-{}",
+                        batch.size(), refreshed, batch.get(0).getId(), batch.get(batch.size() - 1).getId());
+            }
         } catch (Exception e) {
-            log.error("[AiAsk] Spring AI 生成失败", e);
-            return null;
+            log.error("[AiAsk] 增量向量同步异常", e);
         }
     }
 
-    /** Spring AI 流式生成（逐段回调增量文本；返回完整文本；安全 + 会话记忆由 Advisor 处理） */
-    private String genStream(String systemPrompt, String user,
+    /** 读取轮转游标（Redis 不可用则返回 0，退化为每次从头扫，不影响正确性） */
+    private long readSweepCursor() {
+        try {
+            String v = cacheService.getstringRedisTemplate().opsForValue().get(EMBED_SWEEP_CURSOR_KEY);
+            return v == null ? 0L : Long.parseLong(v);
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private void writeSweepCursor(long cursor) {
+        try {
+            cacheService.getstringRedisTemplate().opsForValue().set(EMBED_SWEEP_CURSOR_KEY, String.valueOf(cursor));
+        } catch (Exception e) {
+            log.debug("[AiAsk] 写入轮转游标失败: {}", e.getMessage());
+        }
+    }
+
+    /** 单篇刷新结果（文章级写入/刷新、分块写入，用于汇总日志） */
+    private static final class RefreshResult {
+        int articleWritten;
+        int articleRefreshed;
+        int chunkWritten;
+    }
+
+    /**
+     * 单篇文章的向量新鲜度处理（全量回填与增量任务共用同一口径）。
+     *
+     * <p>判定：正文指纹与向量记录不一致（或缺失）→ 重算；一致 → 跳过。
+     */
+    private RefreshResult refreshIfStale(ApArticle article) {
+        RefreshResult r = new RefreshResult();
+        Long articleId = article.getId();
+        try {
+            ApArticleContent c = contentMapper.selectOne(
+                new LambdaQueryWrapper<ApArticleContent>()
+                    .eq(ApArticleContent::getArticleId, articleId)
+                    .last("LIMIT 1"));
+            if (c == null || c.getContent() == null || c.getContent().isBlank()) {
+                return r; // 无正文（数据异常）→ 不动，避免误删已有向量
+            }
+            String currentHash = ArticleEmbeddingServiceImpl.contentHash(c.getContent());
+            if (currentHash == null) {
+                return r;
+            }
+
+            ArticleEmbeddingServiceImpl.EmbeddingMeta vecMeta = embeddingService.getEmbeddingMeta(articleId);
+            ArticleEmbeddingServiceImpl.EmbeddingMeta chunkMeta = embeddingService.getChunksMeta(articleId);
+            boolean vecMissing = vecMeta == null;
+            boolean chunksMissing = chunkMeta == null;
+            boolean vecStale = vecMissing
+                || ArticleEmbeddingServiceImpl.isStale(vecMeta.contentHash, currentHash);
+            boolean chunksStale = chunksMissing
+                || ArticleEmbeddingServiceImpl.isStale(chunkMeta.contentHash, currentHash);
+            if (!vecStale && !chunksStale) {
+                return r; // 版本一致，跳过（不做无谓 embedding 调用）
+            }
+
+            if (vecStale) {
+                double[] emb = embeddingService.generateEmbedding(truncate(c.getContent(), 2000));
+                if (emb != null) {
+                    embeddingService.saveEmbedding(articleId, emb, currentHash, article.getPublishTime());
+                    if (vecMissing) {
+                        r.articleWritten = 1;
+                    } else {
+                        r.articleRefreshed = 1;
+                        log.info("[AiAsk] 内容已变更，重算文章向量: articleId={}, hash={}",
+                                articleId, currentHash.substring(0, 8));
+                    }
+                }
+            }
+            if (chunksStale) {
+                embeddingService.saveChunks(articleId, TextChunker.split(
+                    MarkdownUtils.normalizeContent(c.getContent()),
+                    TextChunker.DEFAULT_TARGET, TextChunker.DEFAULT_OVERLAP,
+                    embeddingService.getChunkMaxPerArticle()), currentHash, article.getPublishTime());
+                r.chunkWritten = 1;
+            }
+        } catch (Exception e) {
+            log.warn("[AiAsk] 刷新向量失败 articleId={}", articleId, e);
+        }
+        return r;
+    }
+
+    /**
+     * 清理「非已发布文章的残留向量」：把 PG 侧有向量的 article_id 分批拿到 MySQL 校验状态，
+     * 非 PUBLISHED（下架/删除/审核驳回）或文章已不存在 → 删除其向量与分块。
+     *
+     * <p>跨库无法 JOIN，故按 PG → MySQL 单向校验；每轮最多处理 20 批 × 200 条，避免长事务。
+     */
+    private void cleanupOrphanEmbeddings() {
+        int batch = 200;
+        long lastId = 0L;
+        int scanned = 0;
+        int removed = 0;
+        try {
+            for (int page = 0; page < 20; page++) {
+                List<Long> ids = embeddingService.listEmbeddedArticleIds(lastId, batch);
+                if (ids == null || ids.isEmpty()) {
+                    break;
+                }
+                scanned += ids.size();
+                lastId = ids.get(ids.size() - 1);
+                // 一次性查回这些 id 的发布状态（MySQL 侧；未查到 = 文章已删除）
+                List<ApArticle> existing = apArticleMapper.selectList(
+                    new LambdaQueryWrapper<ApArticle>()
+                        .in(ApArticle::getId, ids)
+                        .eq(ApArticle::getStatus, Status.PUBLISHED.getCode()));
+                java.util.Set<Long> publishedIds = new java.util.HashSet<>();
+                for (ApArticle a : existing) {
+                    publishedIds.add(a.getId());
+                }
+                for (Long id : ids) {
+                    if (!publishedIds.contains(id)) {
+                        embeddingService.deleteEmbedding(id);
+                        embeddingService.deleteChunks(id);
+                        removed++;
+                    }
+                }
+                if (ids.size() < batch) {
+                    break;
+                }
+            }
+            if (removed > 0) {
+                log.info("[AiAsk] 残留向量清理完成: 校验={}, 删除={}", scanned, removed);
+            }
+        } catch (Exception e) {
+            log.warn("[AiAsk] 残留向量清理异常: {}", e.getMessage());
+        }
+    }
+
+
+    /**
+     * 同步文本生成统一入口（P0-2 改造）：委托 {@link com.heima.content.service.ai.AiLlmGateway}，
+     * 由 gateway 装配安全三层防御 advisor + 自动计量 token；本方法只负责构建请求级会话记忆窗口。
+     *
+     * @param feature 功能标识（成本归因维度，见 {@link AiFeatures}）
+     */
+    private String genText(String feature, String systemPrompt, String user,
+                           java.util.List<java.util.Map<String, String>> history, Integer userId) {
+        return llmGateway.generateOrNull(feature, systemPrompt, user,
+                buildConversationMemory(userId, history), MEMORY_CONVERSATION_ID);
+    }
+
+    /** 流式生成统一入口（P0-2 改造）：委托 gateway（含流式 token 计量），记忆窗口语义不变 */
+    private String genStream(String feature, String systemPrompt, String user,
                              java.util.List<java.util.Map<String, String>> history, Integer userId,
                              java.util.function.Consumer<String> onDelta) {
-        reactor.core.publisher.Flux<String> flux =
-            org.springframework.ai.chat.client.ChatClient.builder(chatModel)
-                .defaultAdvisors(promptSafetyAdvisor,
-                    MessageChatMemoryAdvisor.builder(buildConversationMemory(userId, history)).build())
-                .build()
-                .prompt().system(systemPrompt).user(user == null ? "" : user)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, MEMORY_CONVERSATION_ID))
-                .stream().content();
-        StringBuilder acc = new StringBuilder();
-        flux.doOnNext(t -> {
-            acc.append(t);
-            onDelta.accept(t);
-        }).blockLast();
-        return acc.toString();
+        return llmGateway.generateStreamOrNull(feature, systemPrompt, user,
+                buildConversationMemory(userId, history), MEMORY_CONVERSATION_ID, onDelta);
     }
 
     /** 统一检索管线产物：参考资料文本 + 来源列表 + 命中数 + 查询向量（供语义记忆复用） */
@@ -418,12 +606,16 @@ public class AiAskServiceImpl implements AiAskService {
         final int hits;
         /** 本次查询的向量（改写后），供长期记忆沉淀/召回复用，避免重复 embedding 调用 */
         final double[] queryEmbedding;
+        /** 本次召回的文章实体（P2-3 冷启动：即时兴趣沉淀取标签用） */
+        final List<ApArticle> articles;
 
-        Retrieval(String docsText, List<AiSourceVo> sources, int hits, double[] queryEmbedding) {
+        Retrieval(String docsText, List<AiSourceVo> sources, int hits, double[] queryEmbedding,
+                  List<ApArticle> articles) {
             this.docsText = docsText;
             this.sources = sources;
             this.hits = hits;
             this.queryEmbedding = queryEmbedding;
+            this.articles = articles == null ? new ArrayList<>() : articles;
         }
     }
 
@@ -450,7 +642,7 @@ public class AiAskServiceImpl implements AiAskService {
         List<Long> candidates = hybrid.getIds();
         Map<Long, Double> simMap = new LinkedHashMap<>(hybrid.getVectorSims());
         if (candidates == null || candidates.isEmpty()) {
-            return new Retrieval("", new ArrayList<>(), 0, queryEmb);
+            return new Retrieval("", new ArrayList<>(), 0, queryEmb, new ArrayList<>());
         }
         // 相似度补全：BM25 独有命中用已存文章向量本地算余弦（零模型调用），保证来源卡片口径统一
         Map<Long, Integer> fusedOrder = new HashMap<>();
@@ -468,7 +660,7 @@ public class AiAskServiceImpl implements AiAskService {
             .sorted(Comparator.comparingInt(a -> fusedOrder.getOrDefault(a.getId(), Integer.MAX_VALUE)))
             .collect(Collectors.toList());
         if (published.isEmpty()) {
-            return new Retrieval("", new ArrayList<>(), 0, queryEmb);
+            return new Retrieval("", new ArrayList<>(), 0, queryEmb, new ArrayList<>());
         }
         List<ApArticle> articles = published;
         // LLM Rerank：候选达到阈值时让模型挑选最相关至多 topK 篇（失败/关闭则取向量 TopK）
@@ -520,7 +712,7 @@ public class AiAskServiceImpl implements AiAskService {
             sources.add(src);
             idx++;
         }
-        return new Retrieval(docs.toString(), sources, candidates.size(), queryEmb);
+        return new Retrieval(docs.toString(), sources, candidates.size(), queryEmb, articles);
     }
 
     /** BM25 独有命中的相似度补全：用已存文章向量本地算余弦（不调模型、不引入新依赖） */
@@ -611,8 +803,8 @@ public class AiAskServiceImpl implements AiAskService {
         return memory;
     }
 
-    /** 回答成功后的记忆写回：会话记忆（Redis）+ 语义记忆（PGVector），全部 fail-open 不影响主链路 */
-    private void persistMemory(Integer userId, String question, String answer, double[] queryEmbedding) {
+    /** 回答成功后的记忆写回：会话记忆（Redis）+ 语义记忆（PGVector）+ 即时兴趣（P2-3 冷启动），全部 fail-open 不影响主链路 */
+    private void persistMemory(Integer userId, String question, String answer, Retrieval r) {
         if (userId == null || answer == null || answer.isBlank()) {
             return;
         }
@@ -622,9 +814,21 @@ public class AiAskServiceImpl implements AiAskService {
             log.debug("[AiAsk] 会话记忆持久化失败, userId={}", userId, e);
         }
         try {
-            userMemoryService.remember(userId, question, queryEmbedding);
+            userMemoryService.remember(userId, question, r.queryEmbedding);
         } catch (Exception e) {
             log.debug("[AiAsk] 语义记忆沉淀失败, userId={}", userId, e);
+        }
+        // 冷启动即时兴趣：画像为空的用户从本次召回文章标签沉淀，第二问起即有个性化参考
+        try {
+            if (r.articles != null && !r.articles.isEmpty()) {
+                List<Long> ids = new ArrayList<>();
+                for (ApArticle a : r.articles) {
+                    ids.add(a.getId());
+                }
+                userInterestService.learnFromQuery(userId, ids);
+            }
+        } catch (Exception e) {
+            log.debug("[AiAsk] 即时兴趣沉淀失败, userId={}", userId, e);
         }
     }
 
@@ -750,10 +954,27 @@ public class AiAskServiceImpl implements AiAskService {
         return msgs;
     }
 
+    /**
+     * Prompt 注册表解析（P2-1）：注册表未注入（纯单测）或解析失败时退回代码常量（version=0）。
+     */
+    private com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
+        String key, String fallback, Integer userId) {
+        if (promptRegistry == null) {
+            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+        }
+        try {
+            return promptRegistry.resolve(key, fallback, userId);
+        } catch (Exception e) {
+            log.warn("[AiAsk] prompt 注册表解析异常，走代码兜底, key={}", key);
+            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+        }
+    }
+
     /** Query Rewrite：一次小模型调用（失败返回 null -> 调用方回退原文）；内部调用不触碰会话持久化 */
     private String queryRewrite(String question) {
         try {
-            String raw = genText(REWRITE_PROMPT, question, null, null);
+            String sys = prompt("ai_ask_rewrite", REWRITE_PROMPT, null).content;
+            String raw = genText(AiFeatures.REWRITE, sys, question, null, null);
             if (raw == null) {
                 return null;
             }
@@ -776,10 +997,11 @@ public class AiAskServiceImpl implements AiAskService {
             sb.append("[").append(i).append("] ").append(a.getTitle()).append("\n");
             i++;
         }
-        String prompt = RERANK_PROMPT.replace("{maxN}", String.valueOf(maxN))
+        String sys = prompt("ai_ask_rerank", RERANK_PROMPT, null).content;
+        String prompt = sys.replace("{maxN}", String.valueOf(maxN))
             + "\n\n【问题】" + question + "\n【候选】\n" + sb;
         try {
-            String raw = genText(
+            String raw = genText(AiFeatures.RERANK,
                 "你是信息检索重排器，严格按要求输出 JSON。", prompt, null, null);
             if (raw == null) {
                 return null;

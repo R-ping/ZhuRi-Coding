@@ -3,7 +3,7 @@
         <!-- 页头 -->
         <div class="page-header">
             <div class="header-title">AI 额度中心</div>
-            <div class="header-subtitle">充值 AI 问答额度，按次计费 · 与每日免费额度累加使用</div>
+            <div class="header-subtitle">充值 AI 额度，按 tokens 用量计费 · 与每日免费额度累加使用</div>
         </div>
 
         <div class="page-body">
@@ -12,23 +12,23 @@
                 <div class="card-title">我的额度</div>
                 <div class="overview-grid">
                     <div class="ov-item">
-                        <div class="ov-label">今日免费回答</div>
+                        <div class="ov-label">今日免费额度</div>
                         <div class="ov-value free">
-                            <span class="num">{{ free.remainToday }}</span>
-                            <span class="slash">/ {{ free.dailyLimit }} 次</span>
+                            <span class="num">{{ formatTokens(freeTokens.remainToday) }}</span>
+                            <span class="slash">/ {{ formatTokens(freeTokens.dailyLimit) }} tokens</span>
                         </div>
                         <div class="ov-bar">
                             <div class="ov-bar-inner" :style="{ width: freePercent }"></div>
                         </div>
-                        <div class="ov-tip">每日 {{ free.dailyLimit }} 次，次日 0 点重置</div>
+                        <div class="ov-tip">每日 {{ formatTokens(freeTokens.dailyLimit) }} tokens（≈ {{ free.dailyLimit }} 次问答），次日 0 点重置</div>
                     </div>
                     <div class="ov-item">
-                        <div class="ov-label">钱包额度包</div>
+                        <div class="ov-label">已购额度</div>
                         <div class="ov-value wallet">
-                            <span class="num">{{ walletBalance }}</span>
-                            <span class="slash">次</span>
+                            <span class="num">{{ formatTokens(walletTokens) }}</span>
+                            <span class="slash">tokens</span>
                         </div>
-                        <div class="ov-tip gap">购买额度包后按次抵扣，永不过期</div>
+                        <div class="ov-tip gap">购买额度包后按 token 实际用量抵扣，永不过期</div>
                     </div>
                 </div>
             </div>
@@ -39,14 +39,14 @@
                 <div class="pkg-grid">
                     <div class="pkg-item" v-for="pkg in packages" :key="pkg.code">
                         <div class="pkg-quota">
-                            <span class="pkg-num">{{ pkg.quota }}</span>
-                            <span class="pkg-unit">次</span>
+                            <span class="pkg-num">{{ formatTokens(pkg.tokenQuota) }}</span>
+                            <span class="pkg-unit">tokens</span>
                         </div>
                         <div class="pkg-price">
                             <span class="pkg-yen">¥</span>
                             <span class="pkg-num">{{ formatYuan(pkg.priceFen) }}</span>
                         </div>
-                        <div class="pkg-unit-price">折合 ¥{{ formatUnitPrice(pkg.priceFen, pkg.quota) }}/千次</div>
+                        <div class="pkg-unit-price">折合 ¥{{ formatPerMillion(pkg.priceFen, pkg.tokenQuota) }}/百万 tokens</div>
                         <button class="pkg-buy" :disabled="paying" @click="buy(pkg)">
                             {{ paying && currentPkg === pkg.code ? '下单中…' : '立即购买' }}
                         </button>
@@ -89,8 +89,11 @@ export default {
     name: 'AiQuotaCenter',
     data() {
         return {
+            // 次数维度（保留：每日免费次数闸门仍在生效，用于兜底提示）
             free: { dailyLimit: 0, usedToday: 0, remainToday: 0 },
-            walletBalance: 0,
+            // tokens 维度（主展示口径）：用量与余额均按 token 计费
+            freeTokens: { dailyLimit: 0, usedToday: 0, remainToday: 0 },
+            walletTokens: 0,
             packages: [],
             order: {},
             currentPkg: '',
@@ -100,8 +103,10 @@ export default {
     },
     computed: {
         freePercent() {
-            if (!this.free.dailyLimit) return '0%'
-            const pct = Math.round((this.free.remainToday / this.free.dailyLimit) * 100)
+            const limit = this.freeTokens.dailyLimit || this.free.dailyLimit
+            const remain = this.freeTokens.dailyLimit ? this.freeTokens.remainToday : this.free.remainToday
+            if (!limit) return '0%'
+            const pct = Math.round((remain / limit) * 100)
             return Math.max(0, Math.min(100, pct)) + '%'
         },
         orderStatusText() {
@@ -124,12 +129,20 @@ export default {
             getAiQuotaStatus().then(res => {
                 if (res && res.code === 200 && res.data) {
                     this.free = res.data.freeQuota || this.free
-                    this.walletBalance = res.data.walletBalance || 0
+                    // tokens 口径优先；老后端未返回时降级用次数展示（不报错）
+                    if (res.data.freeTokens) {
+                        this.freeTokens = res.data.freeTokens
+                        this.walletTokens = Number(res.data.walletTokenBalance) || 0
+                    } else {
+                        this.freeTokens = this.free
+                        this.walletTokens = Number(res.data.walletBalance) || 0
+                    }
                     const pkgs = res.data.packages || {}
                     this.packages = Object.keys(pkgs).map(code => ({
                         code,
                         quota: (pkgs[code] && pkgs[code].quota) || 0,
-                        priceFen: (pkgs[code] && pkgs[code].priceFen) || 0
+                        priceFen: (pkgs[code] && pkgs[code].priceFen) || 0,
+                        tokenQuota: (pkgs[code] && pkgs[code].tokenQuota) || 0
                     }))
                 }
             }).catch(err => {
@@ -144,11 +157,21 @@ export default {
             if (isNaN(v)) return '0.00'
             return (v / 100).toFixed(2)
         },
-        formatUnitPrice(fen, quota) {
+        /** token 数格式化：1.5万 / 50万 / 300万（避免页面出现 3000000 这种长数字） */
+        formatTokens(n) {
+            const v = Number(n) || 0
+            if (v >= 10000) {
+                const w = v / 10000
+                return (w >= 100 ? Math.round(w) : w.toFixed(1).replace(/\.0$/, '')) + '万'
+            }
+            return String(v)
+        },
+        /** 折合每百万 tokens 单价（元，两位小数） */
+        formatPerMillion(fen, tokens) {
             const v = parseInt(fen, 10)
-            const q = parseInt(quota, 10)
-            if (isNaN(v) || !q) return '0.00'
-            return (v / q * 1000 / 100).toFixed(2)
+            const t = Number(tokens) || 0
+            if (isNaN(v) || !t) return '0.00'
+            return (v / 100 / t * 1000000).toFixed(2)
         },
         /** 下单 → 打开支付宝收银台 → 轮询支付状态 */
         async buy(pkg) {

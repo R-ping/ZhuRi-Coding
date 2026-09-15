@@ -10,6 +10,7 @@ import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
 import com.heima.content.utils.CitationParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
@@ -52,6 +53,23 @@ public class AiEvalServiceImpl implements AiEvalService {
 
     /** 答案级评测取答案的 topK */
     private static final int ANSWER_TOP_K = 5;
+
+    // ===== 评测门禁阈值（百分数口径，与报告 avgRecall@5 等字段一致）=====
+    /** 召回均值下限：avgRecall@5 >= 阈值 */
+    @Value("${ai.eval.gate.min-avg-recall:60}")
+    private double gateMinAvgRecall;
+    /** 引用精确率下限：avgCitedPrecision >= 阈值 */
+    @Value("${ai.eval.gate.min-cited-precision:50}")
+    private double gateMinCitedPrecision;
+    /** 未溯源率上限：avgUnsupportedRate <= 阈值 */
+    @Value("${ai.eval.gate.max-unsupported-rate:30}")
+    private double gateMaxUnsupportedRate;
+    /** 无答案拒绝命中率下限：refusalRate >= 阈值；负值禁用该项检查 */
+    @Value("${ai.eval.gate.min-refusal-rate:50}")
+    private double gateMinRefusalRate;
+    /** 召回评测最少有效题数（防评测集被清空/加载失败后门禁静默通过） */
+    @Value("${ai.eval.gate.min-cases:10}")
+    private int gateMinCases;
 
     @Override
     public Map<String, Object> runEval() {
@@ -152,7 +170,10 @@ public class AiEvalServiceImpl implements AiEvalService {
                 return report;
             }
             int max = Math.max(1, Math.min(limit, MAX_ANSWER_CASES));
-            int valid = 0;
+            int valid = 0;      // 总参评数（含无答案拒绝题）
+            int scored = 0;     // 打分题数（有 golden，均值分母）
+            int refusalCases = 0;
+            int refusalHit = 0;
             double sumPrecision = 0d;
             double sumRecall = 0d;
             double sumSuspectRate = 0d;
@@ -162,13 +183,16 @@ public class AiEvalServiceImpl implements AiEvalService {
                     break;
                 }
                 String q = c.get("question") == null ? "" : String.valueOf(c.get("question"));
+                boolean expectNoAnswer = Boolean.TRUE.equals(c.get("expectNoAnswer"));
                 Set<Long> golden = toIdSet(c.get("goldenArticleIds"));
-                if (q.isBlank() || golden.isEmpty()) {
+                if (q.isBlank() || (golden.isEmpty() && !expectNoAnswer)) {
                     continue;
                 }
+
                 com.heima.model.article.dtos.AiAnswerVo vo =
                     aiAskService.ask(q, ANSWER_TOP_K, Boolean.FALSE, null);
                 if (vo == null || vo.getAnswer() == null || vo.getAnswer().isBlank()) {
+                    // expectNoAnswer 题的降级空答案也不计命中（偏严格：拒绝能力应来自模型而非故障）
                     continue;
                 }
                 valid++;
@@ -185,6 +209,23 @@ public class AiEvalServiceImpl implements AiEvalService {
                         }
                     }
                 }
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("question", truncate(q, 60));
+                if (expectNoAnswer) {
+                    // 无答案拒绝题：答案有内容但引用为空 = 未拿资料硬编 = 拒绝成功；不参与打分
+                    boolean refusal = citedIds.isEmpty();
+                    refusalCases++;
+                    if (refusal) {
+                        refusalHit++;
+                    }
+                    item.put("expectNoAnswer", true);
+                    item.put("cited", citedIds.size());
+                    item.put("refusal", refusal);
+                    perQuestion.add(item);
+                    continue;
+                }
+                scored++;
+
                 long hit = 0;
                 for (Long id : citedIds) {
                     if (golden.contains(id)) {
@@ -214,8 +255,6 @@ public class AiEvalServiceImpl implements AiEvalService {
                 sumRecall += recall;
                 sumSuspectRate += suspectRate;
 
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("question", truncate(q, 60));
                 item.put("golden", golden.size());
                 item.put("cited", citedIds.size());
                 item.put("citedPrecision", Math.round(precision * 1000) / 10.0);
@@ -227,11 +266,16 @@ public class AiEvalServiceImpl implements AiEvalService {
             }
 
             report.put("cases", valid);
+            report.put("scored", scored);
             report.put("topK", ANSWER_TOP_K);
             report.put("faithfulnessSource", faithfulnessSource);
-            report.put("avgCitedPrecision", valid == 0 ? 0d : Math.round(sumPrecision / valid * 1000) / 10.0);
-            report.put("avgCitedRecall", valid == 0 ? 0d : Math.round(sumRecall / valid * 1000) / 10.0);
-            report.put("avgUnsupportedRate", valid == 0 ? 0d : Math.round(sumSuspectRate / valid * 1000) / 10.0);
+            report.put("refusalCases", refusalCases);
+            report.put("refusalHit", refusalHit);
+            report.put("refusalRate", refusalCases == 0 ? 0d
+                : Math.round((double) refusalHit / refusalCases * 1000) / 10.0);
+            report.put("avgCitedPrecision", scored == 0 ? 0d : Math.round(sumPrecision / scored * 1000) / 10.0);
+            report.put("avgCitedRecall", scored == 0 ? 0d : Math.round(sumRecall / scored * 1000) / 10.0);
+            report.put("avgUnsupportedRate", scored == 0 ? 0d : Math.round(sumSuspectRate / scored * 1000) / 10.0);
             report.put("perQuestion", perQuestion);
             report.put("costMs", System.currentTimeMillis() - start);
             log.info("[AiEval] 答案级评测完成, cases={}, avgCitedPrecision={}, avgCitedRecall={}, avgUnsupportedRate={}, costMs={}",
@@ -242,6 +286,128 @@ public class AiEvalServiceImpl implements AiEvalService {
             report.put("error", "答案级评测异常: " + e.getMessage());
         }
         return report;
+    }
+
+    /** 门禁阈值集合（百分数口径；负的 minRefusalRate 表示禁用拒绝率检查） */
+    public static final class GateThresholds {
+        public final double minAvgRecall;
+        public final double minCitedPrecision;
+        public final double maxUnsupportedRate;
+        public final double minRefusalRate;
+        public final int minRecallCases;
+
+        public GateThresholds(double minAvgRecall, double minCitedPrecision, double maxUnsupportedRate,
+                              double minRefusalRate, int minRecallCases) {
+            this.minAvgRecall = minAvgRecall;
+            this.minCitedPrecision = minCitedPrecision;
+            this.maxUnsupportedRate = maxUnsupportedRate;
+            this.minRefusalRate = minRefusalRate;
+            this.minRecallCases = minRecallCases;
+        }
+    }
+
+    @Override
+    public Map<String, Object> runGate() {
+        long start = System.currentTimeMillis();
+        Map<String, Object> recall = runEval();
+        Map<String, Object> answer = runAnswerEval(MAX_ANSWER_CASES);
+        GateThresholds t = new GateThresholds(gateMinAvgRecall, gateMinCitedPrecision,
+            gateMaxUnsupportedRate, gateMinRefusalRate, gateMinCases);
+        Map<String, Object> gate = evaluateGate(t, recall, answer);
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("gate", gate);
+        report.put("recall", recall);
+        report.put("answer", answer);
+        report.put("costMs", System.currentTimeMillis() - start);
+        log.info("[AiEval] 评测门禁完成, pass={}, costMs={}", gate.get("pass"),
+            System.currentTimeMillis() - start);
+        return report;
+    }
+
+    /**
+     * 门禁判定（纯函数，便于单测）：逐项检查并聚合 pass。
+     * fail-closed：报告缺失/带 error/召回题数不足按 0 分判定，评测跑不出来 ≠ 通过。
+     */
+    public static Map<String, Object> evaluateGate(GateThresholds t,
+                                                   Map<String, Object> recall,
+                                                   Map<String, Object> answer) {
+        boolean recallOk = recall != null && !recall.containsKey("error");
+        int recallCases = recallOk ? numInt(recall.get("cases"), 0) : 0;
+        boolean recallEnough = recallOk && recallCases >= t.minRecallCases;
+        double avgRecall5 = recallOk ? numDouble(recall.get("avgRecall@5"), 0d) : 0d;
+
+        boolean answerOk = answer != null && !answer.containsKey("error");
+        double citedPrecision = answerOk ? numDouble(answer.get("avgCitedPrecision"), 0d) : 0d;
+        double unsupportedRate = answerOk ? numDouble(answer.get("avgUnsupportedRate"), 0d) : 0d;
+        int refusalCases = answerOk ? numInt(answer.get("refusalCases"), 0) : 0;
+        double refusalRate = answerOk ? numDouble(answer.get("refusalRate"), 0d) : 0d;
+
+        List<Map<String, Object>> checks = new ArrayList<>();
+        // 下限类 pass = value >= threshold，上限类 pass = value <= threshold；
+        // 报告无效（缺失/带 error/题数不足）时按 0 分并强制 fail（fail-closed）。
+        checks.add(check("avgRecall@5", avgRecall5, t.minAvgRecall, ">=",
+            recallEnough && avgRecall5 >= t.minAvgRecall,
+            recallEnough ? null : "recall 报告" + (recallOk ? "有效题数 " + recallCases + " < min-cases " + t.minRecallCases : "缺失或带 error") + "，按 0 分判定"));
+        checks.add(check("avgCitedPrecision", citedPrecision, t.minCitedPrecision, ">=",
+            answerOk && citedPrecision >= t.minCitedPrecision,
+            answerOk ? null : "answer 报告缺失或带 error，按 0 分判定"));
+        checks.add(check("avgUnsupportedRate", unsupportedRate, t.maxUnsupportedRate, "<=",
+            answerOk && unsupportedRate <= t.maxUnsupportedRate,
+            answerOk ? null : "answer 报告缺失或带 error，按 0 分判定"));
+        if (t.minRefusalRate >= 0) {
+            if (answerOk && refusalCases == 0) {
+                // 评测集没有 expectNoAnswer 条目：该项 skipped 视为通过（门禁只能约束存在的样本）
+                Map<String, Object> c = check("refusalRate", 0d, t.minRefusalRate, ">=", true, "skipped: 评测集无 expectNoAnswer 条目");
+                c.put("skipped", true);
+                checks.add(c);
+            } else {
+                checks.add(check("refusalRate", refusalRate, t.minRefusalRate, ">=",
+                    answerOk && refusalRate >= t.minRefusalRate,
+                    answerOk ? null : "answer 报告缺失或带 error，按 0 分判定"));
+            }
+        }
+
+        boolean pass = true;
+        for (Map<String, Object> c : checks) {
+            if (!Boolean.TRUE.equals(c.get("pass"))) {
+                pass = false;
+                break;
+            }
+        }
+        Map<String, Object> gate = new LinkedHashMap<>();
+        gate.put("pass", pass);
+        Map<String, Object> th = new LinkedHashMap<>();
+        th.put("minAvgRecall", t.minAvgRecall);
+        th.put("minCitedPrecision", t.minCitedPrecision);
+        th.put("maxUnsupportedRate", t.maxUnsupportedRate);
+        th.put("minRefusalRate", t.minRefusalRate);
+        th.put("minRecallCases", t.minRecallCases);
+        gate.put("thresholds", th);
+        gate.put("checks", checks);
+        return gate;
+    }
+
+    private static Map<String, Object> check(String metric, double value, double threshold,
+                                             String op, boolean pass, String detail) {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("metric", metric);
+        c.put("value", value);
+        c.put("threshold", threshold);
+        c.put("op", op);
+        c.put("pass", pass);
+        if (detail != null) {
+            c.put("detail", detail);
+        }
+        return c;
+    }
+
+    /** 报告数值防御性提取：报告字段可能是 Double/Integer/其他，取不到给默认 */
+    private static double numDouble(Object o, double def) {
+        return o instanceof Number ? ((Number) o).doubleValue() : def;
+    }
+
+    private static int numInt(Object o, int def) {
+        return o instanceof Number ? ((Number) o).intValue() : def;
     }
 
     private List<Map<String, Object>> loadCases() throws Exception {        ClassPathResource res = new ClassPathResource(EVAL_FILE);

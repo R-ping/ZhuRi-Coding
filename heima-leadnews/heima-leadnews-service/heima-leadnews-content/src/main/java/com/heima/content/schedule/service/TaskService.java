@@ -17,5 +17,4 @@ public interface TaskService {
      * 消费任务
      */
     void consumerTask(Long taskId);
-    void failTask(Long taskId);
 }

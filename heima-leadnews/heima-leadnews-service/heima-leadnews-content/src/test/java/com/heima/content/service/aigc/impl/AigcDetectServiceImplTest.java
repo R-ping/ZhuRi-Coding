@@ -74,6 +74,8 @@ class AigcDetectServiceImplTest {
     @Mock private ApCourseChapterMapper courseChapterMapper;
     @Mock private ArticleEmbeddingServiceImpl embeddingService;
     @Mock private ChatModel chatModel;
+    /** 统一 LLM 出口（P0-2）：L3 复核已改为委托 gateway */
+    @Mock private com.heima.content.service.ai.AiLlmGateway llmGateway;
     @Mock private Executor aiSseExecutor;
 
     @InjectMocks
@@ -236,10 +238,9 @@ class AigcDetectServiceImplTest {
         // 新文向量与历史均值方向相反 → cos~0 → 作者偏离分 100（L2 高分，failed-open 不阻止复核）
         when(embeddingService.generateEmbedding(anyString())).thenReturn(VEC);
         when(embeddingService.getEmbedding(anyLong())).thenReturn(emb(VEC_OPPOSITE));
-        // L3：模型判 normal(40) < 70 → 纠偏清标（防误伤）
-        when(chatModel.call(any(Prompt.class))).thenReturn(new ChatResponse(List.of(
-            new Generation(new AssistantMessage(
-                "{\"verdict\":\"normal\",\"score\":40,\"reason\":\"含具体实践案例\"}")))));
+        // L3：模型判 normal(40) < 70 → 纠偏清标（防误伤）；已改为走统一 LLM 出口（feature=aigc_detect）
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn("{\"verdict\":\"normal\",\"score\":40,\"reason\":\"含具体实践案例\"}");
 
         service.detectAndFlagArticle(1L);
 
@@ -266,8 +267,8 @@ class AigcDetectServiceImplTest {
             article(11L, "h1", 7L), article(12L, "h2", 7L), article(13L, "h3", 7L)));
         when(embeddingService.generateEmbedding(anyString())).thenReturn(VEC);
         when(embeddingService.getEmbedding(anyLong())).thenReturn(emb(VEC_OPPOSITE));
-        // ChatModel 未 stub → ChatClient 调用抛 NPE → llmReview fail-open 返回 null（维持 L1/L2 决断，不崩溃）
-        when(chatModel.call(any(Prompt.class))).thenReturn(null);
+        // gateway 返回 null（模型未装配/异常的统一降级语义）→ llmReview fail-open，维持 L1/L2 决断不崩溃
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any())).thenReturn(null);
 
         service.detectAndFlagArticle(1L);
 

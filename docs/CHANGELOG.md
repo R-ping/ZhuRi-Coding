@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 2026-09-15 — 网关统一改造补两项：探针端点收口 + 多模型路由按成本调优
+
+### 背景
+既有「AiLlmGateway 统一 LLM 出口」改造已收敛 9+ 处调用点（自动安全横切 / token 计量 / 熔断 / 配额结算），但遗留两项缺口：① `AiAskController` 的 frame-ping / tools-ping 探针端点仍**裸调 ChatModel**（全仓库唯一非网关的 LLM 调用路径，无计量/熔断）；② `AiModelRouter` 路由层虽就绪，但只有 1 个自动配置主模型、`default` key 指向不存在的 `primary`、`features` 映射未启用、评论治理仍显式传模型绕过路由 —— 低成本模型（qwen3.8-flash，便宜约 15 倍）无法生效。
+
+### 变更
+- **探针收口** `service/ai/AiLlmGateway.java`：新增 `probeOrNull(prompt)` 与 `probeWithToolsOrNull(system, user, ToolCallbackProvider)` 两个探针方法——不挂安全护栏/记忆 advisor（暴露原始链路行为）、不计 token、不结算配额（诊断端点语义），但仍走熔断放行与成功/失败计数；`AiAskController` 删除 `frameChatModel` 字段，frame-ping / tools-ping 全部改走网关（登录校验与限频保持不变）。
+- **多模型路由** 新增 `config/AiModelConfig.java`：注册 `qwenFlashChatModel` Bean（`OpenAiApi.builder()` + `OpenAiChatModel.builder()`，模型名 `ai.model-router.flash-model` 可配，默认 qwen3.8-flash；无 `spring.ai.openai.api-key` 时不装配，fail-open）；`application.yml` 启用 `features` 映射：`rewrite/rerank/faithfulness/comment_audit/pins_comment_audit/aigc_detect/memory_compress/appeal_audit` 走 flash，高价值 `ask/ask_stream/creator_report/agent_expert` 等走强模型；修正 `default: openAiChatModel`（自动配置主模型真实 bean 名）。
+- **评论治理路由化** `service/comment/impl/CommentAuditService.java` / `service/pins/impl/PinsCommentAuditService.java`：去掉显式 `commentChatModel` 传参，改由网关按 feature 路由（未装配仍返回 null → 判定失败默认放行，行为不变）。
+- **测试** `AiLlmGatewayTest` +3（探针不计 token/模型未装配返回 null/带工具探针）；`AiModelRouterTest` +3（多 feature 共用 flash / 未映射走默认强模型 / default 指向自动配置主模型 key）。
+
+### 验证
+- content 模块 `mvn verify`（`jacoco.line.min=0.56`）全量通过；新增用例 6/6 通过。
+- 运行期行为（本地已配 `DASH_SCOPE_API_KEY`）：`[AiModelRouter] feature=comment_audit → model=...` 按 feature 路由；`costReport` 的 `byFeature.models` 将主模型与 flash 拆分核算；frame-ping / tools-ping 收口后行为与改造前一致。
+
+### 变更文件
+- 新增：`config/AiModelConfig.java`
+- 修改：`service/ai/AiLlmGateway.java`、`controller/v1/ai/AiAskController.java`、`service/comment/impl/CommentAuditService.java`、`service/pins/impl/PinsCommentAuditService.java`、`resources/application.yml`、`docs/CHANGELOG.md`、`docs/ai-enhancement-backlog.md`
+- 测试：`test/.../service/ai/AiLlmGatewayTest.java`、`test/.../service/ai/router/AiModelRouterTest.java`
+
 ## 2026-09-13 — AgentRunner 单测补齐 + 修复「主编多智能体路径静默降级直答」Bug
 
 ### 背景

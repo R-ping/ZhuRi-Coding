@@ -13,6 +13,7 @@ import java.util.Date;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -176,5 +177,79 @@ class ApArticleEventServiceImplTest {
         service.processEvent();
 
         verify(apArticleEventMapper).deleteCompletedEvents();
+    }
+
+    // ==================== executePublish（异步监听器主路径） ====================
+
+    @Test
+    @DisplayName("executePublish - articleId 为空直接跳过，不触碰任何表")
+    void executePublishNullIdSkipped() {
+        service.executePublish(null);
+
+        verify(apArticleMapper, never()).markPublishedIfPending(anyLong());
+        verify(apArticleEventMapper, never()).updateArticleEvent(any());
+    }
+
+    @Test
+    @DisplayName("executePublish - 置位成功 → ES 同步 → DONE（内存构造事件，不回查锚点行）")
+    void executePublishHappyPath() {
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(1);
+
+        service.executePublish(1L);
+
+        verify(searchClient).syncArticle(any(SearchArticleVo.class));
+        ArgumentCaptor<ArticleEvent> captor = ArgumentCaptor.forClass(ArticleEvent.class);
+        verify(apArticleEventMapper).updateArticleEvent(captor.capture());
+        assertEquals(ArticleConstants.EVENT_STATUS_DONE, captor.getValue().getStatus().byteValue());
+        verify(apArticleEventMapper, never()).selectOne(any());
+    }
+
+    @Test
+    @DisplayName("executePublish - 置位 0 行且文章仍 SUBMIT → 落 DB_SET_FAIL 交扫描补偿")
+    void executePublishStillSubmitMarksDbSetFail() {
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
+        ApArticle submit = new ApArticle();
+        submit.setId(1L);
+        submit.setStatus((byte) ApArticle.Status.SUBMIT.getCode());
+        when(apArticleMapper.selectById(1L)).thenReturn(submit);
+
+        service.executePublish(1L);
+
+        ArgumentCaptor<ArticleEvent> captor = ArgumentCaptor.forClass(ArticleEvent.class);
+        verify(apArticleEventMapper).updateArticleEvent(captor.capture());
+        assertEquals(ArticleConstants.EVENT_STATUS_DB_SET_FAIL, captor.getValue().getStatus().byteValue());
+        verify(searchClient, never()).syncArticle(any());
+    }
+
+    @Test
+    @DisplayName("executePublish - 置位 0 行但文章已是发布态 → 幂等续跑 ES 同步")
+    void executePublishAlreadyPublishedContinues() {
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
+        ApArticle published = new ApArticle();
+        published.setId(1L);
+        published.setStatus((byte) ApArticle.Status.PUBLISHED.getCode());
+        when(apArticleMapper.selectById(1L)).thenReturn(published);
+
+        service.executePublish(1L);
+
+        verify(searchClient).syncArticle(any(SearchArticleVo.class));
+        ArgumentCaptor<ArticleEvent> captor = ArgumentCaptor.forClass(ArticleEvent.class);
+        verify(apArticleEventMapper).updateArticleEvent(captor.capture());
+        assertEquals(ArticleConstants.EVENT_STATUS_DONE, captor.getValue().getStatus().byteValue());
+    }
+
+    @Test
+    @DisplayName("executePublish - 置位 0 行且文章处于 FAIL 终态 → 删除事件防滞留")
+    void executePublishFailedArticleDeletesEvent() {
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
+        ApArticle failed = new ApArticle();
+        failed.setId(1L);
+        failed.setStatus((byte) ApArticle.Status.FAIL.getCode());
+        when(apArticleMapper.selectById(1L)).thenReturn(failed);
+
+        service.executePublish(1L);
+
+        verify(apArticleEventMapper).deleteByArticleId(1L);
+        verify(searchClient, never()).syncArticle(any());
     }
 }
