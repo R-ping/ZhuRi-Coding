@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-09-16 — MCP 工具并入主编 Agent（AgentRunner 支持合并多 ToolCallbackProvider）
+
+### 背景
+上批（P2-8）MCP 接入交付后留待下批的收口项：MCP 工具此前仅暴露给探测端点（`/mcp/tools`、`/mcp/ping`），主编 Agent（发布预检多智能体调度）仍只有进程内方法型工具，社区 server 的文档读写/时间查询等能力进不了真正的 Agent 编排循环，工具生态与业务价值未打通。
+
+### 变更
+- **AgentRunner**（`service/ai/agent/AgentRunner.java`）：
+  - 新增 5 参 `run(systemPrompt, userInput, toolBeans, extraProvider, maxSteps)` 重载：在方法型工具之外并入外部 `ToolCallbackProvider`（MCP）产出的 `ToolCallback[]`，拼接为同一回调集，「方法型在前、外部在后」（`findCallback` 按名称精确匹配，顺序不影响寻址）；原 4 参签名委托新重载，旧调用零感知。
+  - 合并逻辑 `buildCallbacks` 全 fail-open：`extraProvider` 为 null / `getToolCallbacks()` 抛异常 / 产出为空数组 → 自动退化为仅方法型工具，MCP 故障绝不阻塞主编 Agent 主链路。
+- **PublishAssistantServiceImpl**（主编 Agent 调度方）：
+  - 注入 `@Autowired(required=false) McpToolCatalog`（未启用时字段为 null）；主编 Agent 路径透传 `mcpToolCatalog.providerOrNull()` 作为第 4 参——MCP 工具（docs-fs 文档读写、clock 时间查询等）自此进入编排循环，模型可在 ReAct 中直接调用。
+- **测试**：`AgentRunnerTest` 新增 3 例（extraProvider 工具被合并执行后收敛 / provider 抛异常 fail-open 退化 / 空数组退化）；`PublishAssistantServiceImplTest` 全部 `agentRunner.run` 桩/verify 升级 5 参，并新增 2 例（provider 透传断言 / McpToolCatalog 未装配时透传 null）。
+
+### 验证
+- content 模块 `mvn verify`（`jacoco.line.min=0.56`）全量通过；新增用例 5/5 通过，既有用例适配 5 参后全绿。
+
+### 变更文件
+- 修改：`service/ai/agent/AgentRunner.java`、`service/ai/impl/PublishAssistantServiceImpl.java`、`test/.../agent/AgentRunnerTest.java`、`test/.../impl/PublishAssistantServiceImplTest.java`、`docs/CHANGELOG.md`
+
 ## 2026-09-16 — P2-8 MCP 客户端接入（stdio 社区 server）：工具目录 + 全链路探针
 
 ### 背景
