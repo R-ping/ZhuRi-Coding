@@ -20,6 +20,23 @@ spring:
         options:
           model: ${DASH_SCOPE_EMBEDDING_MODEL:qwen3.7-text-embedding}
           dimensions: 1024
+    # Spring AI MCP client：接入社区 stdio server
+    # initialized=false 关键：客户端创建时不 initialize()（不拉起 npx 进程），首次调用 MCP 工具才握手，
+    # 避免无 node/首次 npx 拉包慢把全量 context 启动拖挂（实测 JournalArticle 全量 context 20s 超时）。
+    # enabled=false 时整体降级：tools 目录返回空、ping 返回不可用，不影响其它接口
+    mcp:
+      client:
+        enabled: true
+        initialized: false
+        stdio:
+          connections:
+            docs-fs:
+              # Windows 下 Stdio 传输不做 .cmd/PATHEXT 解析，必须显式 npx.cmd；路径使用 /
+              command: npx.cmd
+              args: ["-y", "@modelcontextprotocol/server-filesystem", "E:/heima-leadnews-portal/heima-leadnews-app/docs"]
+            clock:
+              command: npx.cmd
+              args: ["-y", "mcp-server-time", "--local-timezone=Asia/Shanghai"]
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
