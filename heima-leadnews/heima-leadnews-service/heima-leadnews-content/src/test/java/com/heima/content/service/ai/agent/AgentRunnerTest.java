@@ -23,7 +23,10 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.definition.ToolDefinition;
 
 /**
  * Agent 编排器（有界 ReAct 循环）单测。
@@ -150,6 +153,74 @@ class AgentRunnerTest {
         assertTrue(result.isCompleted());
         assertEquals(2, result.getSteps());
         assertEquals(0, tools.calls.get(), "未注册工具不应调用真工具");
+    }
+
+    // ==================== 外部工具源（MCP provider）并入 ====================
+
+    @Test
+    @DisplayName("extraProvider 工具并入回调集：模型可调用并收敛")
+    void extraProviderToolIsMergedAndCallable() {
+        AtomicInteger extraCalls = new AtomicInteger();
+        ToolCallbackProvider fakeProvider = () -> new ToolCallback[] {
+            new ToolCallback() {
+                @Override
+                public String call(String toolInput) {
+                    extraCalls.incrementAndGet();
+                    return "{\"ok\":true}";
+                }
+
+                @Override
+                public ToolDefinition getToolDefinition() {
+                    return ToolDefinition.builder()
+                        .name("extra_tool")
+                        .description("外部工具：来自 MCP")
+                        .inputSchema("{}")
+                        .build();
+                }
+            }
+        };
+        when(chatModel.call(any(Prompt.class)))
+            .thenReturn(
+                new ChatResponse(List.of(new Generation(toolCallMsg("call-e1", "extra_tool", "{}")))),
+                textResponse("FINAL: {\"ok\":true}"));
+
+        AgentResult result = runner().run("system", "user input", List.of(tools), fakeProvider, 3);
+
+        assertTrue(result.isCompleted());
+        assertEquals(2, result.getSteps());
+        assertEquals("FINAL: {\"ok\":true}", result.getFinalAnswer());
+        assertEquals(1, extraCalls.get(), "extraProvider 提供的工具应被精确执行一次");
+        assertEquals(0, tools.calls.get(), "方法型工具不应被调用");
+    }
+
+    @Test
+    @DisplayName("extraProvider.getToolCallbacks 抛异常 → fail-open 退化，仅方法型工具仍可收敛")
+    void extraProviderFailsOpenToBaseTools() {
+        ToolCallbackProvider brokenProvider = () -> {
+            throw new IllegalStateException("mcp server down");
+        };
+        when(chatModel.call(any(Prompt.class)))
+            .thenReturn(textResponseWithToolCall(), textResponse("FINAL: {\"ok\":true}"));
+
+        AgentResult result = runner().run("system", "user input", List.of(tools), brokenProvider, 3);
+
+        assertTrue(result.isCompleted());
+        assertEquals(2, result.getSteps());
+        assertEquals(1, tools.calls.get(), "退化后仍可调用方法型工具");
+    }
+
+    @Test
+    @DisplayName("extraProvider 产出空数组 → 退化为仅方法型工具，行为不中断")
+    void extraProviderEmptyFallsBackToBaseTools() {
+        ToolCallbackProvider emptyProvider = () -> new ToolCallback[0];
+        when(chatModel.call(any(Prompt.class)))
+            .thenReturn(textResponseWithToolCall(), textResponse("FINAL: {\"ok\":true}"));
+
+        AgentResult result = runner().run("system", "user input", List.of(tools), emptyProvider, 3);
+
+        assertTrue(result.isCompleted());
+        assertEquals(2, result.getSteps());
+        assertEquals(1, tools.calls.get(), "空 provider 不影响方法型工具执行");
     }
 
     // ==================== 步数上限 / 异常降级 ====================

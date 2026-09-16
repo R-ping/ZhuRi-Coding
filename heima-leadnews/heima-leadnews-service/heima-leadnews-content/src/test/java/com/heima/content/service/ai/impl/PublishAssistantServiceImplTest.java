@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -43,6 +44,8 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -86,6 +89,9 @@ class PublishAssistantServiceImplTest {
     /** 结构化输出 Skill（P2）：兜底直答 Bean 化优先（parsePrecheckBeanOrNull） */
     @Mock private com.heima.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
 
+    /** MCP 工具目录（P2-8）：主编 Agent 透传其 provider；默认 mock 返回 null（fail-open 路径） */
+    @Mock private com.heima.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
+
     @InjectMocks
     private PublishAssistantServiceImpl service;
 
@@ -107,7 +113,7 @@ class PublishAssistantServiceImplTest {
     void blankInputReturnsNull() {
         assertNull(service.precheck("  ", CONTENT, 1L, null));
         assertNull(service.precheck(TITLE, " ", 1L, null));
-        verify(agentRunner, never()).run(anyString(), anyString(), anyList(), anyInt());
+        verify(agentRunner, never()).run(anyString(), anyString(), anyList(), any(), anyInt());
     }
 
     // ==================== 主编 Agent 主路径 ====================
@@ -115,7 +121,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("主编 Agent 收敛：FINAL JSON 映射为 VO")
     void agentPathMapsFinalJson() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
         // 相似度兜底无命中
         when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
@@ -137,7 +143,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("Agent 未收敛时降级为一次性直答")
     void agentNotCompletedFallsBackToDirect() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(null, 6, false));
         when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
             .thenReturn(FINAL_JSON);
@@ -151,7 +157,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("Agent 返回 JSON 无法解析时降级直答")
     void agentJsonUnparsableFallsBack() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult("FINAL: 这不是 JSON", 2, true));
         when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
             .thenReturn(FINAL_JSON);
@@ -165,7 +171,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("Agent 循环异常时降级直答")
     void agentThrowsFallsBack() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenThrow(new RuntimeException("loop exploded"));
         when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
             .thenReturn(FINAL_JSON);
@@ -184,7 +190,7 @@ class PublishAssistantServiceImplTest {
         when(promptRegistry.resolve(eq("publish_precheck_agent"), anyString(), any()))
             .thenReturn(new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
                 "publish_precheck_agent", "已解析主编prompt", 2));
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
         when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
 
@@ -192,8 +198,38 @@ class PublishAssistantServiceImplTest {
 
         assertNotNull(vo);
         assertEquals(88, vo.getQualityScore());
-        verify(agentRunner).run(eq("已解析主编prompt"), anyString(), anyList(), anyInt());
+        verify(agentRunner).run(eq("已解析主编prompt"), anyString(), anyList(), any(), anyInt());
         verify(promptRegistry).resolve(eq("publish_precheck_agent"), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("MCP 工具 provider 透传主编 Agent：第 4 参即 McpToolCatalog 产出的 provider")
+    void mcpProviderIsPassedToAgentRunner() {
+        ToolCallbackProvider fakeProvider = () -> new ToolCallback[0];
+        when(mcpToolCatalog.providerOrNull()).thenReturn(fakeProvider);
+        when(agentRunner.run(anyString(), anyString(), anyList(), eq(fakeProvider), anyInt()))
+            .thenReturn(new AgentResult(FINAL_JSON, 1, true));
+        when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
+
+        AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
+
+        assertNotNull(vo);
+        verify(mcpToolCatalog).providerOrNull();
+        verify(agentRunner).run(anyString(), anyString(), anyList(), eq(fakeProvider), anyInt());
+    }
+
+    @Test
+    @DisplayName("MCP 未装配(null)：透传必然为 null，主编 Agent 退化为仅方法型工具")
+    void mcpNullFallsBackToNoExtraProvider() {
+        ReflectionTestUtils.setField(service, "mcpToolCatalog", null);
+        when(agentRunner.run(anyString(), anyString(), anyList(), isNull(), anyInt()))
+            .thenReturn(new AgentResult(FINAL_JSON, 1, true));
+        when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
+
+        AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
+
+        assertNotNull(vo);
+        verify(agentRunner).run(anyString(), anyString(), anyList(), isNull(), anyInt());
     }
 
     @Test
@@ -202,7 +238,7 @@ class PublishAssistantServiceImplTest {
         when(promptRegistry.resolve(eq("publish_precheck_direct"), anyString(), any()))
             .thenReturn(new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
                 "publish_precheck_direct", "已解析直答prompt", 3));
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(null, 6, false)); // Agent 未收敛 → 降级直答
         when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
             .thenReturn(FINAL_JSON);
@@ -220,7 +256,7 @@ class PublishAssistantServiceImplTest {
     @DisplayName("注册表未装配(null)：回落代码常量，行为不变")
     void registryNullFallsBackToConstants() {
         ReflectionTestUtils.setField(service, "promptRegistry", null);
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
         when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
 
@@ -230,7 +266,7 @@ class PublishAssistantServiceImplTest {
         assertEquals(88, vo.getQualityScore());
         verify(promptRegistry, never()).resolve(anyString(), anyString(), any());
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(agentRunner).run(captor.capture(), anyString(), anyList(), anyInt());
+        verify(agentRunner).run(captor.capture(), anyString(), anyList(), any(), anyInt());
         assertTrue(captor.getValue().startsWith("你是内容社区《逐日 Coding》的主编 Agent"));
     }
 
@@ -239,7 +275,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("兜底 Bean 化优先：JsonOutputSkill 解析成功即采用（不回落旧 JSON 映射）")
     void fallbackPrefersBeanParsing() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(null, 3, false));
         when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
             .thenReturn(FINAL_JSON);
@@ -259,7 +295,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("兜底输出护栏命中 → gateway 降级返回 null → 结果丢弃返回 null")
     void fallbackSafetyGuardHitReturnsNull() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(null, 3, false));
         // 护栏命中由 AiLlmGateway 内部捕获 SafetyGuardException 并返回 null（P0-2 统一出口语义）
         when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any())).thenReturn(null);
@@ -270,7 +306,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("兜底调用异常返回 null（接口不抛错）")
     void fallbackExceptionReturnsNull() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(null, 3, false));
         when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
             .thenThrow(new RuntimeException("model down"));
@@ -283,7 +319,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("相似兜底：命中高相似文章并四舍五入到 4 位小数")
     void fillSimilarityHit() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
         ApArticle old = article(100L, "旧文：Redis 分布式锁");
         when(similaritySearchTool.searchSimilar(anyString()))
@@ -300,7 +336,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("相似兜底：低于预警阈值不提示")
     void fillSimilarityBelowThreshold() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
         when(similaritySearchTool.searchSimilar(anyString()))
             .thenReturn(List.of(new SimilarArticle(article(100L, "旧文"), 0.5)));
@@ -314,7 +350,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("相似兜底：最相似文章为自身时排除")
     void fillSimilaritySelfExcluded() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
         when(similaritySearchTool.searchSimilar(anyString()))
             .thenReturn(List.of(new SimilarArticle(article(10L, "本文"), 0.95)));
@@ -329,7 +365,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("封面图审核：图片被判违规时回填 imageViolation")
     void coverImageFlagged() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
         when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
         when(dashScopeClient.callVision(anyString(), eq("https://img/x.png"), anyString()))
@@ -346,7 +382,7 @@ class PublishAssistantServiceImplTest {
     @Test
     @DisplayName("封面图审核异常 fail-open：不影响预检主结果")
     void coverImageFailureFailsOpen() {
-        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
         when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
         when(dashScopeClient.callVision(anyString(), anyString(), anyString()))

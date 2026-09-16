@@ -17,6 +17,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -70,14 +71,32 @@ public class AgentRunner {
      * @return 结果；异常/护栏命中/超步时 completed=false（调用方降级直答），steps 为实际轮次
      */
     public AgentResult run(String systemPrompt, String userInput, List<Object> toolBeans, int maxSteps) {
+        // 未显式携带额外工具源（如 MCP provider），保持与旧调用兼容
+        return run(systemPrompt, userInput, toolBeans, null, maxSteps);
+    }
+
+    /**
+     * 运行 Agent：有界 ReAct 循环，并在方法型工具之外并入外部 {@link ToolCallbackProvider} 提供的工具
+     * （P2-8 延伸：主编 Agent 直接使用 MCP 工具生态，如 docs-fs 文档读写、clock 时间查询等社区 server）。
+     *
+     * <p>合并语义：{@code toolBeans} 与 {@code extraProvider} 各产出一组 {@link ToolCallback}，
+     * 两组以「方法型工具在前、外部工具在后」的顺序拼接为同一回调数组（重名/数组序不影响
+     * {@code findCallback} 的名称查找，模型按名称精确匹配工具）。
+     *
+     * @param systemPrompt  system（应说明可用工具与"最终仅输出 FINAL: {json}"约束）
+     * @param userInput     任务输入（由 PromptSafetyAdvisor 净化后包裹）
+     * @param toolBeans     @Tool 标注的工具对象集合
+     * @param extraProvider 外部工具源（MCP 等）；null 或产出为空时退化为仅方法型工具
+     * @param maxSteps      工具调用轮次硬上限（&gt;0），超限返回 completed=false
+     * @return 结果；异常/护栏命中/超步时 completed=false（调用方降级直答），steps 为实际轮次
+     */
+    public AgentResult run(String systemPrompt, String userInput, List<Object> toolBeans,
+                           ToolCallbackProvider extraProvider, int maxSteps) {
         int limit = Math.max(1, maxSteps);
         // 注意：Spring AI 1.1.8 的 ToolCallbacks.from(Object...) 会把传入对象当作工具 Bean 重新扫描，
         // 把已构建的 ToolCallbackProvider 作为参数传入会因扫描不到 @Tool 方法而抛异常（主编路径将静默降级直答）。
-        // 正确用法：由 Provider 直接产出 ToolCallback[]。
-        ToolCallback[] callbacks = MethodToolCallbackProvider.builder()
-            .toolObjects(toolBeans.toArray())
-            .build()
-            .getToolCallbacks();
+        // 正确用法：由 Provider 直接产出 ToolCallback[]（本方法内各源自行产出后再拼接）。
+        ToolCallback[] callbacks = buildCallbacks(toolBeans, extraProvider);
         List<Message> history = new ArrayList<>();
         history.add(new SystemMessage(systemPrompt));
         history.add(new UserMessage(userInput == null ? "" : userInput));
@@ -134,6 +153,34 @@ public class AgentRunner {
             log.error("[AgentRunner] ReAct 循环异常", e);
             return new AgentResult(null, -1, false);
         }
+    }
+
+    /**
+     * 组装工具回调集：方法型工具 {@code toolBeans} 在前，外部 {@code extraProvider}（MCP 等）工具在后。
+     * 任何来源缺失或产出为空都自动退化，不抛异常（MCP 故障绝不阻断主编 Agent 主链路）。
+     */
+    private static ToolCallback[] buildCallbacks(List<Object> toolBeans, ToolCallbackProvider extraProvider) {
+        ToolCallback[] base = MethodToolCallbackProvider.builder()
+            .toolObjects(toolBeans.toArray())
+            .build()
+            .getToolCallbacks();
+        if (extraProvider == null) {
+            return base;
+        }
+        ToolCallback[] extra;
+        try {
+            extra = extraProvider.getToolCallbacks();
+        } catch (Exception e) {
+            log.warn("[AgentRunner] 外部工具源（MCP）读取失败，仅使用方法型工具: {}", e.getMessage());
+            return base;
+        }
+        if (extra == null || extra.length == 0) {
+            return base;
+        }
+        ToolCallback[] merged = new ToolCallback[base.length + extra.length];
+        System.arraycopy(base, 0, merged, 0, base.length);
+        System.arraycopy(extra, 0, merged, base.length, extra.length);
+        return merged;
     }
 
     private static ToolCallback findCallback(ToolCallback[] callbacks, String name) {

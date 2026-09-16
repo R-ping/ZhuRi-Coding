@@ -132,6 +132,10 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     @Autowired(required = false)
     private com.heima.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
 
+    /** MCP 工具目录（P2-8）：README/文档读写、时间查询等社区 server 工具并入主编 Agent；未启用时 fail-open 为 null */
+    @Autowired(required = false)
+    private com.heima.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** 注册表解析（带 null 兜底）：DB 不可用/未装配时返回代码常量（version=0） */
@@ -186,7 +190,10 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
             // 主路径：主编 Agent 调度专家团队（安全/质量/SEO 并行 + 查重 + 可选终审 Critic）
             List<Object> tools = java.util.Arrays.asList(safetyExpertWorker, qualityExpertWorker,
                 seoExpertWorker, criticExpertWorker, aiSimilarityTools);
-            AgentResult result = agentRunner.run(agentP.content, user, tools, AGENT_MAX_STEPS);
+            // 透传 MCP provider：MCP 工具（文档读写等）并入工具回调集；未启用时 providerOrNull() 返回 null，
+            // AgentRunner 内部退化为仅方法型工具，行为与未接入 MCP 时一致（fail-open）
+            AgentResult result = agentRunner.run(agentP.content, user, tools,
+                mcpToolCatalog == null ? null : mcpToolCatalog.providerOrNull(), AGENT_MAX_STEPS);
             if (result.isCompleted() && result.getFinalAnswer() != null) {
                 JsonNode root = parseJson(result.getFinalAnswer());
                 if (root != null) {
