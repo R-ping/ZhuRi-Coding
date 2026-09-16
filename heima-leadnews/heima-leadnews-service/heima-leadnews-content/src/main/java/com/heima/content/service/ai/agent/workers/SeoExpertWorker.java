@@ -34,6 +34,6 @@ public class SeoExpertWorker extends ExpertWorkerBase {
             @ToolParam(description = "文章标题") String title,
             @ToolParam(description = "文章正文内容") String content) {
         String user = "标题：" + title + "\n\n正文：\n" + content + "\n\n请提炼标签与摘要，仅输出 JSON。";
-        return askExpert(SYSTEM_PROMPT, user);
+        return askExpert(prompt("expert_seo", SYSTEM_PROMPT).content, user);
     }
 }

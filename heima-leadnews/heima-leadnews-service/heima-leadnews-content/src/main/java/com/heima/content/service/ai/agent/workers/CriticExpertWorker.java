@@ -39,6 +39,6 @@ public class CriticExpertWorker extends ExpertWorkerBase {
           description = "终审专家：复查并修正确认预检草稿的一致性与完整性，输出同结构的完整 JSON")
     public String review(@ToolParam(description = "待终审的预检草稿 JSON") String reviewDraft) {
         String user = "请终审以下预检草稿，输出修正后的完整 JSON：\n" + reviewDraft;
-        return askExpert(SYSTEM_PROMPT, user);
+        return askExpert(prompt("expert_critic", SYSTEM_PROMPT).content, user);
     }
 }

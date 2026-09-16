@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 2026-09-16 — Agent 提示词版本化补齐（发布预检主编 + 4 专家接入 ap_ai_prompt 注册表）
+
+### 背景
+P2-1「Prompt 版本注册表」已落地（6 个消费点接入），但**发布预检主编 Agent 侧 6 个 SYSTEM_PROMPT 仍是 static final 硬编码**（P2-1 划界留白）——调 prompt 要改代码重新部署，无法回滚/灰度/归因。本次把主编主 prompt、主编兜底直答 prompt、4 个专家 worker prompt 全部收口到注册表。
+
+### 变更
+- **新迁移** `resources/db/migrations/ai_prompt_registry_add_precheck_prompts.sql`：`ap_ai_prompt` 新增 6 条 v1 种子（`publish_precheck_agent` / `publish_precheck_direct` / `expert_safety` / `expert_quality` / `expert_seo` / `expert_critic`），content 与代码常量逐字一致（INSERT IGNORE 幂等，已在本库执行）。
+- **主编侧** `PublishAssistantServiceImpl`：新增 `@Autowired(required=false) AiPromptRegistry` + `prompt(key, fallback, userId)` 辅助（null/异常回落 version=0）；主编主 prompt 与兜底直答 prompt 运行时走注册表解析（userId 取自 `AppThreadLocalUtil`，支持登录用户灰度）；成功日志归因 `agentPrompt=v{}/directPrompt=v{}`（顺带修正原日志占位符与实参不齐的问题）。
+- **专家侧** `ExpertWorkerBase` 新增注册表注入 + `prompt(key, fallback)` 辅助（userId 传 null → 走正式版，专家无用户上下文），4 个 worker 的 `@Tool review()` 改为 `askExpert(prompt("expert_xxx", SYSTEM_PROMPT).content, user)`；代码常量全部保留作兜底。
+- **测试**：`PublishAssistantServiceImplTest` +3（主编 resolve 内容传 AgentRunner / 直答 resolve 内容传 LlmGateway / 注册表 null 回落常量且不调 resolve），setUp 加 lenient 默认「回显 fallback」保证既有用例不改期望；新增 `SeoExpertWorkerTest`（3 例：注册表命中传已解析 prompt / null 回落常量 / 抛异常 fail-open 回落常量）。
+
+### 验证
+- content 模块 `mvn verify`（jacoco.line.min=0.56）全量通过。
+- 迁移已在本地 MySQL 执行：6 行 v1 种子落库，换行正确转义、`FINAL: {JSON}` 标记位完好。
+- 行为零变化：DB 无行/未装配/异常均回落代码常量（version=0）；运行期插 `version=2, rollout_percent=100` 后 60s 快照可灰度，日志可见生效版本。
+
+### 变更文件
+- 新增：`resources/db/migrations/ai_prompt_registry_add_precheck_prompts.sql`、`test/.../service/ai/agent/workers/SeoExpertWorkerTest.java`
+- 修改：`service/ai/impl/PublishAssistantServiceImpl.java`、`service/ai/agent/workers/ExpertWorkerBase.java`、`SafetyExpertWorker.java`、`QualityExpertWorker.java`、`SeoExpertWorker.java`、`CriticExpertWorker.java`、`test/.../service/ai/impl/PublishAssistantServiceImplTest.java`、`docs/CHANGELOG.md`
+
 ## 2026-09-16 — AI 发布预检结果自动回填（作者零手抄，主编 Agent 闭环送达表单）
 
 ### 背景

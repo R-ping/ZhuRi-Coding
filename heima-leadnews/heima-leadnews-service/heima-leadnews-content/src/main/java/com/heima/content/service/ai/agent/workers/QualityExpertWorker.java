@@ -37,6 +37,6 @@ public class QualityExpertWorker extends ExpertWorkerBase {
             @ToolParam(description = "文章标题") String title,
             @ToolParam(description = "文章正文内容") String content) {
         String user = "标题：" + title + "\n\n正文：\n" + content + "\n\n请完成质量评审，仅输出 JSON。";
-        return askExpert(SYSTEM_PROMPT, user);
+        return askExpert(prompt("expert_quality", SYSTEM_PROMPT).content, user);
     }
 }

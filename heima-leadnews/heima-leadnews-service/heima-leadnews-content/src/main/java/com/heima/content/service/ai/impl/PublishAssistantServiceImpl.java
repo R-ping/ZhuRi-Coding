@@ -124,7 +124,34 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     @Autowired
     private SimilaritySearchTool similaritySearchTool;
 
+    /** Prompt 注册表（P2-1 补齐）：主编主 prompt / 兜底直答 prompt 版本化 + 灰度 + 代码兜底；未装配时走代码常量 */
+    @Autowired(required = false)
+    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** 注册表解析（带 null 兜底）：DB 不可用/未装配时返回代码常量（version=0） */
+    private com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
+        String key, String fallback, Integer userId) {
+        if (promptRegistry == null) {
+            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+        }
+        try {
+            return promptRegistry.resolve(key, fallback, userId);
+        } catch (Exception e) {
+            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+        }
+    }
+
+    /** 当前登录用户 id（未登录/系统内部调用为 null → 灰度分流不生效，走正式版） */
+    private Integer currentUserId() {
+        try {
+            com.heima.model.user.pojos.ApUser u = com.heima.utils.thread.AppThreadLocalUtil.getUser();
+            return u == null ? null : u.getId().intValue();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     @Override
     public AiPrecheckVo precheck(String title, String content, Long articleId, String coverImageUrl) {
@@ -143,13 +170,19 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
 
         AiPrecheckVo vo = null;
         String user = String.format(USER_PROMPT, t, truncate(c, LLM_CONTENT_CHARS));
+        // 提示词版本化（P2-1 补齐）：主编主 prompt / 兜底直答 prompt 接入注册表（可灰度 userId、可回滚）；
+        // DB 无行/异常/未装配时回落代码常量（version=0），行为零变化
+        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt agentP =
+            prompt("publish_precheck_agent", AGENT_SYSTEM_PROMPT, currentUserId());
+        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt directP =
+            prompt("publish_precheck_direct", DIRECT_SYSTEM_PROMPT, currentUserId());
         // 提示词安全（净化 user + system 加固 + 输出护栏）由 PromptSafetyAdvisor 声明式处理；
         // Agent 主路径走 AgentRunner 内嵌的 Advisor，兜底路径在下方 ChatClient 上注册同一 Advisor。
         try {
             // 主路径：主编 Agent 调度专家团队（安全/质量/SEO 并行 + 查重 + 可选终审 Critic）
             List<Object> tools = java.util.Arrays.asList(safetyExpertWorker, qualityExpertWorker,
                 seoExpertWorker, criticExpertWorker, aiSimilarityTools);
-            AgentResult result = agentRunner.run(AGENT_SYSTEM_PROMPT, user, tools, AGENT_MAX_STEPS);
+            AgentResult result = agentRunner.run(agentP.content, user, tools, AGENT_MAX_STEPS);
             if (result.isCompleted() && result.getFinalAnswer() != null) {
                 JsonNode root = parseJson(result.getFinalAnswer());
                 if (root != null) {
@@ -167,7 +200,7 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
             // 兜底：一次性结构化调用（安全三层防御由 Advisor 横切处理）
             try {
                 String raw = llmGateway.generateOrNull(
-                    com.heima.content.service.ai.AiFeatures.PRECHECK, DIRECT_SYSTEM_PROMPT, user, null, null);
+                    com.heima.content.service.ai.AiFeatures.PRECHECK, directP.content, user, null, null);
                 JsonNode root = parseJson(raw);
                 if (root != null) {
                     vo = fromJson(root);
@@ -195,9 +228,11 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         }
 
         vo.setLatencyMs(System.currentTimeMillis() - start);
-        log.info("[AiPrecheck] title={}, quality={}, violation={}, tags={}, viaAgent={}, latency={}ms",
+        // 归因：记录两处注册表 prompt 实际生效版本（workers 在各自 review() 内自行解析，未含于此）
+        log.info("[AiPrecheck] title={}, quality={}, violation={}, tags={}, agentPrompt=v{}, directPrompt=v{}, latency={}ms",
             truncate(t, 30), vo.getQualityScore(), vo.getViolation(),
-            vo.getTags() == null ? 0 : vo.getTags().size(), vo.getLatencyMs());
+            vo.getTags() == null ? 0 : vo.getTags().size(),
+            agentP.version, directP.version, vo.getLatencyMs());
         return vo;
     }
 

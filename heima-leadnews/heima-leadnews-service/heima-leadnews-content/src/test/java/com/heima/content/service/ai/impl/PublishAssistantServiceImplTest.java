@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -78,6 +80,8 @@ class PublishAssistantServiceImplTest {
     @Mock private CriticExpertWorker criticExpertWorker;
     @Mock private AiSimilarityTools aiSimilarityTools;
     @Mock private SimilaritySearchTool similaritySearchTool;
+    /** Prompt 注册表（P2-1 补齐）：默认回显 fallback（version=0），特定用例按 key 重打桩 */
+    @Mock private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
 
     @InjectMocks
     private PublishAssistantServiceImpl service;
@@ -87,6 +91,10 @@ class PublishAssistantServiceImplTest {
         // 兜底路径走 ChatClient.defaultAdvisors(promptSafetyAdvisor)：用真实空组件（sanitizer/guard 均为 null）
         // 保证链式调用不 NPE 且不篡改 prompt/response，便于对 chatModel.call 精确打桩。
         ReflectionTestUtils.setField(service, "promptSafetyAdvisor", new PromptSafetyAdvisor(null, null));
+        // 注册表默认「回显 fallback」：既有用例不感知注册表存在（行为与改造前一致）
+        lenient().when(promptRegistry.resolve(anyString(), anyString(), any()))
+            .thenAnswer(inv -> new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+                inv.getArgument(0), inv.getArgument(1), 0));
     }
 
     // ==================== 入参短路 ====================
@@ -163,6 +171,64 @@ class PublishAssistantServiceImplTest {
 
         assertNotNull(vo);
         assertEquals(88, vo.getQualityScore());
+    }
+
+    // ==================== 主编/直答 prompt 版本化（P2-1 补齐） ====================
+
+    @Test
+    @DisplayName("主编主 prompt 走注册表：resolve 出的 content 传给 AgentRunner")
+    void agentPathUsesResolvedAgentPrompt() {
+        when(promptRegistry.resolve(eq("publish_precheck_agent"), anyString(), any()))
+            .thenReturn(new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+                "publish_precheck_agent", "已解析主编prompt", 2));
+        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+            .thenReturn(new AgentResult(FINAL_JSON, 1, true));
+        when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
+
+        AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
+
+        assertNotNull(vo);
+        assertEquals(88, vo.getQualityScore());
+        verify(agentRunner).run(eq("已解析主编prompt"), anyString(), anyList(), anyInt());
+        verify(promptRegistry).resolve(eq("publish_precheck_agent"), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("兜底直答 prompt 走注册表：resolve 出的 content 传给 LlmGateway")
+    void directPathUsesResolvedDirectPrompt() {
+        when(promptRegistry.resolve(eq("publish_precheck_direct"), anyString(), any()))
+            .thenReturn(new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+                "publish_precheck_direct", "已解析直答prompt", 3));
+        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+            .thenReturn(new AgentResult(null, 6, false)); // Agent 未收敛 → 降级直答
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(FINAL_JSON);
+
+        AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
+
+        assertNotNull(vo);
+        assertEquals(88, vo.getQualityScore());
+        verify(llmGateway).generateOrNull(
+            eq(com.heima.content.service.ai.AiFeatures.PRECHECK), eq("已解析直答prompt"), anyString(), any(), any());
+        verify(promptRegistry).resolve(eq("publish_precheck_direct"), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("注册表未装配(null)：回落代码常量，行为不变")
+    void registryNullFallsBackToConstants() {
+        ReflectionTestUtils.setField(service, "promptRegistry", null);
+        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+            .thenReturn(new AgentResult(FINAL_JSON, 1, true));
+        when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
+
+        AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
+
+        assertNotNull(vo);
+        assertEquals(88, vo.getQualityScore());
+        verify(promptRegistry, never()).resolve(anyString(), anyString(), any());
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(agentRunner).run(captor.capture(), anyString(), anyList(), anyInt());
+        assertTrue(captor.getValue().startsWith("你是内容社区《逐日 Coding》的主编 Agent"));
     }
 
     // ==================== 兜底直答失败路径 ====================
