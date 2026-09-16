@@ -51,6 +51,10 @@ public class AiAskController {
     @Autowired
     private com.heima.content.service.ai.spring.AiSafetyTools aiSafetyTools;
 
+    /** MCP 工具目录（P2-8）：fail-open 聚合社区 stdio server 暴露的外部工具 */
+    @Autowired
+    private com.heima.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
+
     @Autowired
     private com.heima.content.service.ai.AiQuotaService aiQuotaService;
 
@@ -235,6 +239,40 @@ public class AiAskController {
             log.error("Spring AI tools-ping 失败", e);
             return ResponseResult.errorResult(500, "tools 调用失败: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
         }
+    }
+
+    /** MCP 工具目录（P2-8）：列出已接入的社区 stdio server 工具（登录 + 限频；MCP 未启用返回空表） */
+    @GetMapping("/mcp/tools")
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    public ResponseResult mcpTools() {
+        if (AppThreadLocalUtil.getUser() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        return ResponseResult.okResult(mcpToolCatalog.catalog());
+    }
+
+    /** MCP 全链路探针（P2-8）：让 LLM 实际调用 MCP 工具并回显结果（登录 + 限频，防匿名打接口烧 token） */
+    @PostMapping("/mcp/ping")
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    public ResponseResult mcpPing(@RequestBody(required = false) java.util.Map<String, String> body) {
+        if (AppThreadLocalUtil.getUser() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        String prompt = body == null ? null : body.get("prompt");
+        if (prompt == null || prompt.trim().isEmpty()) {
+            prompt = "请调用 MCP 的 clock 当前时间工具，回答现在是几点几分（北京时间）。";
+        }
+        org.springframework.ai.tool.ToolCallbackProvider provider = mcpToolCatalog.providerOrNull();
+        if (provider == null) {
+            return ResponseResult.errorResult(500, "MCP 未就绪（spring.ai.mcp.client.enabled=false 或工具未装配）");
+        }
+        String ans = llmGateway.probeWithToolsOrNull("请优先调用提供的 MCP 工具作答。", prompt, provider);
+        if (ans == null) {
+            return ResponseResult.errorResult(500, "MCP 调用失败：模型未装配 / 熔断打开 / 工具调用异常");
+        }
+        return ResponseResult.okResult(ans);
     }
 
     @PostMapping("/backfill")

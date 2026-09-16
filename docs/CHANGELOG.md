@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 2026-09-16 — P2-8 MCP 客户端接入（stdio 社区 server）：工具目录 + 全链路探针
+
+### 背景
+P2「Spring AI 进阶范式」唯一未开工项：Agent 工具生态封闭在进程内 `MethodToolCallbackProvider`（aiSafetyTools / 专家 Worker），无法消费外部工具生态。`spring-ai-starter-mcp-client`（BOM 1.1.8）成本极低，可直连社区 stdio MCP server，为 Agent 打开「搜索 / 日历 / 代码仓 / 文件检索」等外部工具（简历话题度高）。接入前全仓库零 `org.springframework.ai.mcp` 引用。
+
+### 变更
+- **依赖**：content 模块 pom 增加 `spring-ai-starter-mcp-client`（版本由根 pom `spring-ai-bom:1.1.8` 管理；本地仓库已缓存 1.1.8 制品，阿里云镜像可离线增量构建）。
+- **配置**：`application.yml` 新增 `spring.ai.mcp.client.stdio.connections` 两个**零密钥**社区 server：
+  - `docs-fs`：`@modelcontextprotocol/server-filesystem`（读本仓库 docs 目录，可检索设计文档）；
+  - `clock`：`mcp-server-time`（返回当前时间，作为 LLM 调用 MCP 工具的端到端验证载体）。
+  - Windows 下 Stdio 传输不做 `.cmd`/PATHEXT 解析，`command` 显式 `npx.cmd`；路径用 `/`。
+  - **懒初始化**：`spring.ai.mcp.client.initialized=false` 使客户端创建时不调用 `initialize()`（不拉起 npx 进程），首次调用 MCP 工具（`/mcp/tools`/`/mcp/ping`）才握手——避免无 node 环境或 npx 首次拉包慢导致全量 context 启动 20s 超时（实测 `ArticleCommentE2ETest` 启动失败后修复）；`spring.ai.mcp.client.enabled=false` 可整体降级。
+- **封装组件** `com.heima.content.service.ai.mcp.McpToolCatalog`：`@Autowired(required=false) SyncMcpToolCallbackProvider`（由 autoconfigure 装配）→ `enabled()/catalog()/providerOrNull()` 全部 fail-open（未装配/异常 → false/空表/null），MCP 故障不阻塞主链路。
+- **端点** `AiAskController`（登录 + 限频 USER 5/分、IP 20/分，对齐 tools-ping）：
+  - `GET /api/v1/ai/mcp/tools`：列出已接线工具的 name + description（MCP 未启用返回空表）；
+  - `POST /api/v1/ai/mcp/ping`：LLM 经 `AiLlmGateway.probeWithToolsOrNull` 实调 clock 工具回显当前时间（默认 prompt，支持 body.prompt 自定义），验证「模型 → 网关 → MCP 协议 → 外部工具」全链路。
+- **测试**：新增 `McpToolCatalogTest` 4 例（provider 未装配 fail-open / 目录 name+description / provider 抛异常 fail-open / null 定义跳过）。
+- 留待下批：MCP 工具并入主编 Agent 工具集（AgentRunner 需支持合并多 `ToolCallbackProvider`）、MCP 调用计量/审计。
+
+### 验证
+- content 模块 `mvn verify`（`jacoco.line.min=0.56`）全量通过；新增用例 4/4 通过。
+- 端到端：启动 content 后 `GET /mcp/tools` 列出 docs-fs/clock 工具；`POST /mcp/ping` 返回模型经 MCP 工具取得的当前时间。
+
+### 变更文件
+- 新增：`service/ai/mcp/McpToolCatalog.java`、`test/.../service/ai/mcp/McpToolCatalogTest.java`
+- 修改：`heima-leadnews-service/heima-leadnews-content/pom.xml`、`.../resources/application.yml`、`controller/v1/ai/AiAskController.java`、`docs/CHANGELOG.md`
 ## 2026-09-16 — P2 Spring AI 进阶范式（一）：Agent Skills + 检索显式链 + 意图路由 + 结构化输出
 
 ### 背景
