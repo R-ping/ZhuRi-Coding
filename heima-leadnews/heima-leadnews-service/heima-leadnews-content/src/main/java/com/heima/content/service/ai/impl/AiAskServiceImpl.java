@@ -153,6 +153,10 @@ public class AiAskServiceImpl implements AiAskService {
     @Autowired
     private com.heima.common.redis.CacheService cacheService;
 
+    /** 检索管线显式链（P2 Prompt Chaining）：向量化→召回→过滤→精排→组装 */
+    @Autowired
+    private com.heima.content.service.ai.pipeline.AskRetrievalChain retrievalChain;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -641,9 +645,11 @@ public class AiAskServiceImpl implements AiAskService {
     }
 
     /**
-     * 统一检索管线：向量化 -> 召回 -> 过滤已发布 ->（可选）LLM Rerank -> 组装【参考资料】文本与来源列表。
+     * 统一检索管线（显式链版）：委托 {@link com.heima.content.service.ai.pipeline.AskRetrievalChain}
+     * 按「向量化 → 混合召回 → 过滤已发布 → LLM Rerank → 组装」五阶段执行（Prompt Chaining 落地）。
      *
-     * <p>ask / askFast / streamFastAsk 三处共用，避免重复逻辑漂移。
+     * <p>ask / askFast / streamFastAsk 三处共用；运行期常量（召回宽口径/精排阈值/正文截断等）
+     * 经 {@code ChainCtx} 透传，链不再依赖本服务的私有常量。
      *
      * @param searchQuery  向量检索用查询（普通路径即问题原文；完整路径为 rewrite 后文本）
      * @param userQuestion 原始问题（用于 LLM Rerank；null 或 doRerank=false 则跳过精排）
@@ -652,114 +658,13 @@ public class AiAskServiceImpl implements AiAskService {
      * @return null=向量化失败（调用方降级）；hits==0 表示无命中（调用方返回空答案）
      */
     private Retrieval retrieveAndAssemble(String searchQuery, String userQuestion, int topK, boolean doRerank) {
-        int recall = doRerank ? RECALL_TOPK : topK;
-        double[] queryEmb = embeddingService.generateEmbedding(searchQuery);
-        if (queryEmb == null || queryEmb.length == 0) {
+        com.heima.content.service.ai.pipeline.AskRetrievalChain.ChainResult cr =
+            retrievalChain.run(new com.heima.content.service.ai.pipeline.AskRetrievalChain.ChainCtx(
+                searchQuery, userQuestion, topK, doRerank, RECALL_TOPK, RERANK_MIN_CANDIDATES, CONTEXT_CHARS, RERANK_PROMPT));
+        if (cr == null) {
             return null;
         }
-        // 混合召回：向量（父子分块，粒度细、长文后半段可召回）＋ BM25（术语/代码类查询强）→ RRF 融合排名；
-        // 任一路失败自动退化为单路，上下游流程不变
-        HybridRecallService.Recall hybrid = hybridRecallService.recall(searchQuery, queryEmb, recall);
-        List<Long> candidates = hybrid.getIds();
-        Map<Long, Double> simMap = new LinkedHashMap<>(hybrid.getVectorSims());
-        if (candidates == null || candidates.isEmpty()) {
-            return new Retrieval("", new ArrayList<>(), 0, queryEmb, new ArrayList<>());
-        }
-        // 相似度补全：BM25 独有命中用已存文章向量本地算余弦（零模型调用），保证来源卡片口径统一
-        Map<Long, Integer> fusedOrder = new HashMap<>();
-        for (int i = 0; i < candidates.size(); i++) {
-            Long id = candidates.get(i);
-            fusedOrder.put(id, i);
-            if (!simMap.containsKey(id)) {
-                simMap.put(id, localCosine(queryEmb, id));
-            }
-        }
-        // 过滤仅已发布；候选顺序即 RRF 融合顺序（不再按向量相似度重排，否则融合排名白做）
-        List<ApArticle> published = apArticleMapper.selectBatchIds(candidates).stream()
-            .filter(a -> a.getStatus() != null && a.getStatus() == Status.PUBLISHED.getCode()
-                && (a.getIsAigc() == null || a.getIsAigc() != 1))
-            .sorted(Comparator.comparingInt(a -> fusedOrder.getOrDefault(a.getId(), Integer.MAX_VALUE)))
-            .collect(Collectors.toList());
-        if (published.isEmpty()) {
-            return new Retrieval("", new ArrayList<>(), 0, queryEmb, new ArrayList<>());
-        }
-        List<ApArticle> articles = published;
-        // LLM Rerank：候选达到阈值时让模型挑选最相关至多 topK 篇（失败/关闭则取向量 TopK）
-        if (doRerank && userQuestion != null && published.size() >= RERANK_MIN_CANDIDATES) {
-            List<Long> reranked = rerankCandidates(userQuestion, published, topK);
-            if (reranked != null && !reranked.isEmpty()) {
-                Map<Long, ApArticle> byId = new HashMap<>();
-                for (ApArticle a : published) {
-                    byId.put(a.getId(), a);
-                }
-                List<ApArticle> ordered = new ArrayList<>();
-                for (Long id : reranked) {
-                    ApArticle a = byId.get(id);
-                    if (a != null && ordered.size() < topK) {
-                        ordered.add(a);
-                    }
-                }
-                if (!ordered.isEmpty()) {
-                    articles = ordered;
-                    log.info("[AiAsk] rerank 生效: {} 候选 -> {} 篇", published.size(), ordered.size());
-                }
-            }
-        }
-        if (articles.size() > topK) {
-            articles = articles.subList(0, topK);
-        }
-        List<Long> ids = articles.stream().map(ApArticle::getId).collect(Collectors.toList());
-        Map<Long, String> contentMap = new HashMap<>();
-        for (ApArticleContent c : contentMapper.selectList(
-            new LambdaQueryWrapper<ApArticleContent>().in(ApArticleContent::getArticleId, ids))) {
-            contentMap.put(c.getArticleId(), c.getContent());
-        }
-        // 组装上下文（docs 序号必须与 sources 一一对应，不可重排）
-        StringBuilder docs = new StringBuilder();
-        List<AiSourceVo> sources = new ArrayList<>();
-        int idx = 1;
-        for (ApArticle a : articles) {
-            double sim = simMap.getOrDefault(a.getId(), 0d);
-            docs.append("[").append(idx).append("] 标题：").append(a.getTitle())
-                .append("；作者：").append(a.getAuthorName()).append("\n");
-            String body = contentMap.getOrDefault(a.getId(), "");
-            docs.append(truncate(body, CONTEXT_CHARS)).append("\n----\n");
-            AiSourceVo src = new AiSourceVo();
-            src.setArticleId(a.getId());
-            src.setTitle(a.getTitle());
-            src.setAuthor(a.getAuthorName());
-            src.setLikes(a.getLikes());
-            src.setSimilarity(Math.round(sim * 10000) / 10000.0);
-            sources.add(src);
-            idx++;
-        }
-        return new Retrieval(docs.toString(), sources, candidates.size(), queryEmb, articles);
-    }
-
-    /** BM25 独有命中的相似度补全：用已存文章向量本地算余弦（不调模型、不引入新依赖） */
-    private double localCosine(double[] queryEmb, Long articleId) {
-        try {
-            com.heima.model.article.pojos.ApArticleEmbedding emb = embeddingService.getEmbedding(articleId);
-            if (emb == null || emb.getEmbedding() == null || queryEmb == null) {
-                return 0d;
-            }
-            double[] v = emb.getEmbedding();
-            int n = Math.min(queryEmb.length, v.length);
-            double dot = 0;
-            double na = 0;
-            double nb = 0;
-            for (int i = 0; i < n; i++) {
-                dot += queryEmb[i] * v[i];
-                na += queryEmb[i] * queryEmb[i];
-                nb += v[i] * v[i];
-            }
-            if (na <= 0 || nb <= 0) {
-                return 0d;
-            }
-            return dot / (Math.sqrt(na) * Math.sqrt(nb));
-        } catch (Exception e) {
-            return 0d;
-        }
+        return new Retrieval(cr.docsText(), cr.sources(), cr.hits(), cr.queryEmbedding(), cr.articles());
     }
 
     /**
@@ -1006,52 +911,6 @@ public class AiAskServiceImpl implements AiAskService {
             return r.length() > 80 ? r.substring(0, 80) : r;
         } catch (Exception e) {
             log.warn("[AiAsk] query rewrite 失败", e);
-            return null;
-        }
-    }
-
-    /** LLM Rerank：候选 -> 最相关 id 列表（失败返回 null -> 调用方回退向量序） */
-    private List<Long> rerankCandidates(String question, List<ApArticle> candidates, int maxN) {
-        StringBuilder sb = new StringBuilder();
-        int i = 1;
-        for (ApArticle a : candidates) {
-            sb.append("[").append(i).append("] ").append(a.getTitle()).append("\n");
-            i++;
-        }
-        String sys = prompt("ai_ask_rerank", RERANK_PROMPT, null).content;
-        String prompt = sys.replace("{maxN}", String.valueOf(maxN))
-            + "\n\n【问题】" + question + "\n【候选】\n" + sb;
-        try {
-            String raw = genText(AiFeatures.RERANK,
-                "你是信息检索重排器，严格按要求输出 JSON。", prompt, null, null);
-            if (raw == null) {
-                return null;
-            }
-            // 解析 {"selected":[...]}（容忍模型在首尾附加解释文本）
-            String body = raw;
-            int bs = raw.indexOf('{');
-            int es = raw.lastIndexOf('}');
-            if (bs >= 0 && es > bs) {
-                body = raw.substring(bs, es + 1);
-            }
-            com.fasterxml.jackson.databind.JsonNode selNode = objectMapper.readTree(body).path("selected");
-            List<Long> ids = new ArrayList<>();
-            if (selNode.isArray()) {
-                for (com.fasterxml.jackson.databind.JsonNode item : selNode) {
-                    if (item.isInt() || item.isLong()) {
-                        int idx = item.asInt();
-                        if (idx >= 1 && idx <= candidates.size()) {
-                            ids.add(candidates.get(idx - 1).getId());
-                        }
-                    }
-                }
-            }
-            if (ids.isEmpty()) {
-                log.warn("[AiAsk] rerank selected 为空, raw={}", truncate(raw, 200));
-            }
-            return ids.isEmpty() ? null : ids;
-        } catch (Exception e) {
-            log.warn("[AiAsk] rerank 失败", e);
             return null;
         }
     }
