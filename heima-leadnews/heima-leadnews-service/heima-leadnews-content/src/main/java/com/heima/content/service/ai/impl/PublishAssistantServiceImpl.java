@@ -124,9 +124,13 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     @Autowired
     private SimilaritySearchTool similaritySearchTool;
 
-    /** Prompt 注册表（P2-1 补齐）：主编主 prompt / 兜底直答 prompt 版本化 + 灰度 + 代码兜底；未装配时走代码常量 */
+/** Prompt 注册表（P2-1 补齐）：主编主 prompt / 兜底直答 prompt 版本化 + 灰度 + 代码兜底；未装配时走代码常量 */
     @Autowired(required = false)
     private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+
+    /** 结构化输出 Skill（P2）：FINAL JSON → Bean 化优先，失败回落容错解析 */
+    @Autowired(required = false)
+    private com.heima.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -201,9 +205,15 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
             try {
                 String raw = llmGateway.generateOrNull(
                     com.heima.content.service.ai.AiFeatures.PRECHECK, directP.content, user, null, null);
-                JsonNode root = parseJson(raw);
-                if (root != null) {
-                    vo = fromJson(root);
+                // 结构化输出（P2）：先走 Bean 化（BeanOutputConverter），失败回落容错解析 + 旧映射
+                AiPrecheckVo beanVo = jsonOutputSkill == null ? null : jsonOutputSkill.parsePrecheckBeanOrNull(raw);
+                if (beanVo != null) {
+                    vo = beanVo;
+                } else {
+                    JsonNode root = parseJson(raw);
+                    if (root != null) {
+                        vo = fromJson(root);
+                    }
                 }
             } catch (SafetyGuardException e) {
                 log.warn("[AiPrecheck] 兜底输出护栏命中（顺从短语），丢弃该结果: {}", e.getMessage());

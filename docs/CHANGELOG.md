@@ -26,6 +26,28 @@ P2「Spring AI 进阶范式」唯一未开工项：Agent 工具生态封闭在�
 ### 变更文件
 - 新增：`service/ai/mcp/McpToolCatalog.java`、`test/.../service/ai/mcp/McpToolCatalogTest.java`
 - 修改：`heima-leadnews-service/heima-leadnews-content/pom.xml`、`.../resources/application.yml`、`controller/v1/ai/AiAskController.java`、`docs/CHANGELOG.md`
+## 2026-09-16 — P2 Spring AI 进阶范式（一）：Agent Skills + 检索显式链 + 意图路由 + 结构化输出
+
+### 背景
+多智能体（Orchestrator-Workers / Evaluator-Optimizer）已收敛到 `AgentRunner`，但遗留三类可沉淀点：①「安全审查 / 质量评审 / 格式化输出」逻辑仍内嵌在专家 Worker 中，无法被非 Agent 流程（后台批量审核、兜底链路）复用；② RAG 检索管线（改写→检索→生成→校验）的检索段耦合在 `AiAskServiceImpl.retrieveAndAssemble` 内部且为私有方法；③ 发布预检 FINAL JSON 仅靠 `parseJson` 容错硬解析，多智能体解析失败率偏高。本项目选择：MCP 接入后置单独批次（本地离线仓库缺 `spring-ai-starter-mcp-client` 制品，无法离线构建）。
+
+### 变更
+- **Agent Skills** `service/ai/skill/`：
+  - 新增 `AiSkill` 接口（`id/name/description/execute(SkillContext)`，约定 fail-open 与可组合）+ `SkillContext` record（title/content/machineResult/promptKey/fallbackPrompt/rawText）；`AiSkillRegistry` 构造注入 `List<AiSkill>` 按 id 建 Map（重复 id 覆盖并告警），提供 `get/ids/size`；
+  - `ArticleSafetySkill`（机械检测 → LLM 终审裁定，异常回合规默认 JSON）、`ArticleQualitySkill`（LLM 评分+建议）、`JsonOutputSkill`（容错 JSON 提取 + 预检 FINAL 的 Spring AI `BeanOutputConverter` 结构化 Bean 化，失败回落旧映射）；
+  - `SafetyExpertWorker` / `QualityExpertWorker` 退化为薄门面：`skillRegistry.get("article_safety"/"article_quality")` 命中则委托，`orElseGet` 回落 `askExpert` 代码兜底（fail-open），行为等价。
+- **Prompt Chaining** `service/ai/pipeline/AskRetrievalChain.java`：把「向量化 → 混合召回 → 过滤已发布 → LLM Rerank → 组装」五阶段显式成链（每阶段独立 try-catch fail-open），`ChainCtx` 透传运行期常量、`ChainResult` 输出 docs/sources/hits/queryEmbedding/articles（hits 口径=候选数，与原实现一致）；`AiAskServiceImpl.retrieveAndAssemble` 退化为薄壳统一委托（ask / askFast / streamFastAsk 三路径共用）。
+- **Routing** `service/ai/AskQueryRouter.java`：闲聊/技术问答二分类（技术关键词优先 → TECH；闲聊词 + 短句 ≤20 字 → CHAT；默认 TECH），词表可配（`ai.router.chat.enabled/words/tech-words`）；`AiAskController#ask` 参数校验前置，非 fast 且命中 CHAT 时返回引导话术——不消耗配额、不打漏斗、不落记忆。
+- **结构化输出**：`PublishAssistantServiceImpl` 兜底直答先走 `JsonOutputSkill.parsePrecheckBeanOrNull`（Bean 化），失败回落 `parseJson + fromJson`。
+- **测试**：新增 `AiSkillRegistryTest`(2)、`ArticleSafetySkillTest`(5)、`ArticleQualitySkillTest`(5)、`JsonOutputSkillTest`(7)、`AskRetrievalChainTest`(6)、`AskQueryRouterTest`(7)；`AiAskServiceImplTest` setUp 注入真实链（防 NPE、复用同批 mock）；`PublishAssistantServiceImplTest` +1（兜底 Bean 化优先）。
+
+### 验证
+- content 模块 `mvn verify`（`jacoco.line.min=0.56`）全量通过；新增用例 33/33 通过。
+
+### 变更文件
+- 新增：`service/ai/skill/{AiSkill,AiSkillRegistry,ArticleSafetySkill,ArticleQualitySkill,JsonOutputSkill}.java`、`service/ai/pipeline/AskRetrievalChain.java`、`service/ai/AskQueryRouter.java`、对应 6 个测试类
+- 修改：`service/ai/agent/workers/{SafetyExpertWorker,QualityExpertWorker}.java`、`service/ai/impl/{AiAskServiceImpl,PublishAssistantServiceImpl}.java`、`controller/v1/ai/AiAskController.java`、`resources/application.yml`、`docs/CHANGELOG.md`
+- 测试修改：`test/.../impl/AiAskServiceImplTest.java`、`test/.../impl/PublishAssistantServiceImplTest.java`
 
 ## 2026-09-16 — Agent 提示词版本化补齐（发布预检主编 + 4 专家接入 ap_ai_prompt 注册表）
 

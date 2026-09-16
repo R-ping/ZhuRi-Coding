@@ -158,6 +158,14 @@ ai:
       qwen-plus: 0.002
       qwen-turbo: 0.0006
       qwen-max: 0.0096
+  # 问答意图路由（P2 Routing 二分类：闲聊/技术问答；闲聊短路不消耗配额与 RAG）
+  router:
+    chat:
+      enabled: ${AI_ROUTER_CHAT_ENABLED:true}  # 开关
+      # 自定义闲聊词表（逗号分隔；留空用代码内置默认词表）
+      words: ""
+      # 自定义技术关键词表（逗号分隔；命中即走技术问答；留空用代码内置默认词表）
+      tech-words: ""
 
 # AI 每日免费 tokens 额度（成本止血闸门；按主模型 qwen3.7-max 折算 ≈ 0.02 元/千）
 # 20000 tokens ≈ 0.4 元/用户/天 —— 免费层本质是获客成本，按预算调整

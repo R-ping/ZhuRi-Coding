@@ -36,6 +36,10 @@ public class AiAskController {
     @Autowired
     private PublishAssistantService publishAssistantService;
 
+    /** 意图路由（P2 Routing：闲聊/技术问答二分类，闲聊短路不消耗配额） */
+    @Autowired
+    private com.heima.content.service.ai.AskQueryRouter askQueryRouter;
+
     /** 统一 LLM 出口（探针端点 frame-ping/tools-ping 走这里，保持全仓库 LLM 调用单一出口） */
     @Autowired
     private com.heima.content.service.ai.AiLlmGateway llmGateway;
@@ -294,13 +298,19 @@ public class AiAskController {
         if (AppThreadLocalUtil.getUser() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
         }
+        // 参数校验前置（未通过不扣配额）
+        if (dto == null || dto.getQuestion() == null || dto.getQuestion().trim().isEmpty()) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "问题不能为空");
+        }
+        // Routing（二分类）：闲聊短路——不消耗配额、不打漏斗、不落记忆，仅给引导话术；fast 保持快通道不受影响
+        if (!Boolean.TRUE.equals(dto.getFast())
+                && askQueryRouter.intent(dto.getQuestion()) == com.heima.content.service.ai.AskQueryRouter.Intent.CHAT) {
+            return ResponseResult.okResult(chatHintVo());
+        }
         // AI 每日免费配额 → 钱包额度包（免费优先）
         Integer uid = AppThreadLocalUtil.getUser().getId();
         if (uid == null || !aiQuotaService.tryConsume(uid)) {
             return ResponseResult.errorResult(AppHttpCodeEnum.AI_QUOTA_EXHAUSTED);
-        }
-        if (dto == null || dto.getQuestion() == null || dto.getQuestion().trim().isEmpty()) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "问题不能为空");
         }
         // 消费漏斗：入口打点（配额通过且参数合法 = 真正开始消耗；fast 模式记 ask_fast 便于区分成本档位）
         funnelMeter.incr(Boolean.TRUE.equals(dto.getFast())
@@ -317,6 +327,17 @@ public class AiAskController {
             log.error("AI 问答异常", e);
             return ResponseResult.errorResult(500, "AI 服务暂不可用，请稍后再试");
         }
+    }
+
+    /** 闲聊引导话术（Routing 短路）：不消耗配额/不打漏斗/不落记忆 */
+    private com.heima.model.article.dtos.AiAnswerVo chatHintVo() {
+        com.heima.model.article.dtos.AiAnswerVo vo = new com.heima.model.article.dtos.AiAnswerVo();
+        vo.setAnswer("我是《逐日 Coding》社区的知识助手，专注技术问答（覆盖社区文章与课程相关知识点）。"
+            + "刚才这句看起来像寒暄，我不消耗你的免费额度——换个技术问题试试吧，例如“Redis 分布式锁怎么实现？”");
+        vo.setSources(new java.util.ArrayList<>());
+        vo.setPromptVersions(new java.util.LinkedHashMap<>());
+        vo.setLatencyMs(0L);
+        return vo;
     }
 
     /**
