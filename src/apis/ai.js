@@ -16,7 +16,13 @@ export function clearAiConversation() {
     return request.del('/content/api/v1/ai/conversation')
 }
 
-/** AI 发布预检：违规/质量分/建议/标签/摘要/相似预警 */
+/**
+ * AI 发布预检：违规/质量分/建议/标签/摘要/相似预警
+ *
+ * 返回 data 中的 `tags`（推荐标签，字符串数组）与 `summary`（一句话摘要）会被发布会页
+ * [src/pages/creator/publish/index.vue] 在预检成功后**自动回填**到发布表单（仅当字段为空，
+ * 标签按 maxTags 与 labels≤20 字符校验收敛），作者仍可手动修改。
+ */
 export function precheckArticle(data) {
     return request.post('/content/api/v1/ai/precheck', {
         title: data.title,

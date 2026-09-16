@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-09-16 — AI 发布预检结果自动回填（作者零手抄，主编 Agent 闭环送达表单）
+
+### 背景
+发布预检（`POST /content/api/v1/ai/precheck`）已产出结构化「推荐标签 + 一句话摘要」，但作者需在预检报告弹窗里**逐个点击「采用推荐标签」「一句话摘要点击填入」**才能写入发布表单——AI 产物利用率低，闭环落在作者手抄上（项目复盘记录的待补齐缺口）。
+
+### 变更
+- **`src/pages/creator/publish/index.vue`**：新增 `applyAiReportToForm(report)`，`runAiPrecheck` 成功分支在打开报告弹窗前自动回填——**仅当字段为空**（摘要未填才填、标签未选才选），绝不覆盖作者已写内容；
+  - 摘要按发布表单上限截断 100 字；标签按 `maxTags` 与「`labels` join ≤ 20 字符」校验收敛，**保证自动回填后仍能通过发布校验**；
+  - 第二次预检天然幂等（字段已填不覆盖）；弹窗内「点击采用」保留为兜底，行为不变。
+- **`src/apis/ai.js`**：`precheckArticle` JSDoc 补充回填契约说明（不改签名）。
+- 后端无改动（`AiPrecheckVo` 已含 `tags/summary`）。
+
+### 验证
+- `npm run build`（vite build）零报错。
+- 手工验收点：新文章预检后摘要/标签已自动上表单、已手填内容不被覆盖、超长摘要截断、超预算标签不越界、发布校验可通过。
+
+### 变更文件
+- 修改：`src/pages/creator/publish/index.vue`、`src/apis/ai.js`、`docs/CHANGELOG.md`
 ## 2026-09-16 — AI 消费漏斗埋点（ask/stream 全链路 stage 计数 + /metrics/funnel 观测）
 
 ### 背景
