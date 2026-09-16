@@ -1,6 +1,7 @@
 package com.heima.content.service.ai.agent.workers;
 
-import com.heima.content.service.ai.agent.tools.ContentSafetyTool;
+import com.heima.content.service.ai.skill.AiSkill;
+import com.heima.content.service.ai.skill.AiSkillRegistry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -10,21 +11,21 @@ import org.springframework.stereotype.Component;
 /**
  * 安全审查专家 Worker（多智能体发布助手 · Worker 之一）
  *
- * <p>职责：基于标题与正文判定内容是否违规。内部先调用事实检测工具
- * {@link ContentSafetyTool} 拿到机械检测结果，再以安全专家视角做最终裁定，
- * 保证"客观技术讨论（安全研究/科普/实战）不算违规"的社区口径。
+ * <p>职责：基于标题与正文判定内容是否违规。逻辑已沉淀为可复用 Skill（{@code article_safety}，
+ * 机械检测 + LLM 终审裁定），本 Worker 退化为薄门面——主编 Agent 的工具外观与 Promise 不变，
+ * 非 Agent 流程（后台批量审核）可直接复用同一 Skill。
  *
  * <p>输出 JSON（严格）：{"is_violation":boolean,"violation_type":"","violation_reason":""}
  */
 @Component
 public class SafetyExpertWorker extends ExpertWorkerBase {
 
-    private final ContentSafetyTool contentSafetyTool;
+    private final AiSkillRegistry skillRegistry;
 
     public SafetyExpertWorker(@Qualifier("aiExpertChatClient") ChatClient chatClient,
-                              ContentSafetyTool contentSafetyTool) {
+                              AiSkillRegistry skillRegistry) {
         super(chatClient);
-        this.contentSafetyTool = contentSafetyTool;
+        this.skillRegistry = skillRegistry;
     }
 
     private static final String SYSTEM_PROMPT =
@@ -41,12 +42,13 @@ public class SafetyExpertWorker extends ExpertWorkerBase {
     public String review(
             @ToolParam(description = "文章标题") String title,
             @ToolParam(description = "文章正文内容") String content) {
-        // 事实优先：先跑机械安全检测，专家基于结果做裁定
-        String machineResult = contentSafetyTool.execute(
-            "{\"title\":\"" + safe(title) + "\",\"content\":\"" + safe(content) + "\"}");
-        String user = "标题：" + title + "\n\n正文：\n" + content
-            + "\n\n机器检测结果：\n" + machineResult
-            + "\n\n请基于机器结果与全文做出最终裁定，仅输出 JSON。";
-        return askExpert(prompt("expert_safety", SYSTEM_PROMPT).content, user);
+        AiSkill skill = skillRegistry == null ? null : skillRegistry.get("article_safety").orElse(null);
+        if (skill != null) {
+            Object r = skill.execute(AiSkill.SkillContext.of(title, content, "expert_safety", SYSTEM_PROMPT));
+            return r == null ? "" : String.valueOf(r);
+        }
+        // 兜底（Skill 未装配）：直接 LLM 裁定（不含机械检测，口径略降但流程可用）
+        String user = "标题：" + title + "\n\n正文：\n" + content + "\n\n请完成安全裁定，仅输出 JSON。";
+        return askExpert(SYSTEM_PROMPT, user);
     }
 }

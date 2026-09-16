@@ -1,5 +1,7 @@
 package com.heima.content.service.ai.agent.workers;
 
+import com.heima.content.service.ai.skill.AiSkill;
+import com.heima.content.service.ai.skill.AiSkillRegistry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -9,16 +11,20 @@ import org.springframework.stereotype.Component;
 /**
  * 质量评审专家 Worker（多智能体发布助手 · Worker 之一）
  *
- * <p>职责：从原创性、逻辑性、表达清晰度、信息密度综合评分（0-100），
- * 并给出 2~4 条可执行的针对性建议。
+ * <p>职责：从原创性、逻辑性、表达清晰度、信息密度综合评分（0-100），并给出 2~4 条可执行的针对性建议。
+ * 逻辑已沉淀为可复用 Skill（{@code article_quality}），本 Worker 退化为薄门面。
  *
  * <p>输出 JSON（严格）：{"quality_score":0,"is_tech":true,"suggestions":["建议1",...]}
  */
 @Component
 public class QualityExpertWorker extends ExpertWorkerBase {
 
-    public QualityExpertWorker(@Qualifier("aiExpertChatClient") ChatClient chatClient) {
+    private final AiSkillRegistry skillRegistry;
+
+    public QualityExpertWorker(@Qualifier("aiExpertChatClient") ChatClient chatClient,
+                               AiSkillRegistry skillRegistry) {
         super(chatClient);
+        this.skillRegistry = skillRegistry;
     }
 
     private static final String SYSTEM_PROMPT =
@@ -36,6 +42,12 @@ public class QualityExpertWorker extends ExpertWorkerBase {
     public String review(
             @ToolParam(description = "文章标题") String title,
             @ToolParam(description = "文章正文内容") String content) {
+        AiSkill skill = skillRegistry == null ? null : skillRegistry.get("article_quality").orElse(null);
+        if (skill != null) {
+            Object r = skill.execute(AiSkill.SkillContext.of(title, content, "expert_quality", SYSTEM_PROMPT));
+            return r == null ? "" : String.valueOf(r);
+        }
+        // 兜底（Skill 未装配）：直接 LLM 评审
         String user = "标题：" + title + "\n\n正文：\n" + content + "\n\n请完成质量评审，仅输出 JSON。";
         return askExpert(prompt("expert_quality", SYSTEM_PROMPT).content, user);
     }

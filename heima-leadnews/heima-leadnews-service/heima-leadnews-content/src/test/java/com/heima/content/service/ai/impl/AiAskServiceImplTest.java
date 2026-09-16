@@ -20,6 +20,7 @@ import com.heima.content.service.ai.HybridRecallService;
 import com.heima.content.service.ai.HybridRecallService.Recall;
 import com.heima.content.service.ai.memory.AiConversationMemoryService;
 import com.heima.content.service.ai.memory.UserMemoryService;
+import com.heima.content.service.ai.pipeline.AskRetrievalChain;
 import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
 import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
 import com.heima.model.article.dtos.AiAnswerVo;
@@ -89,6 +90,10 @@ class AiAskServiceImplTest {
         // genText/genStream 走 ChatClient.defaultAdvisors(promptSafetyAdvisor)：用真实空组件保证链不 NPE
         ReflectionTestUtils.setField(service, "promptSafetyAdvisor", new PromptSafetyAdvisor(null, null));
         ReflectionTestUtils.setField(service, "faithfulnessMode", "async");
+        // P2 Prompt Chaining：retrieveAndAssemble 已委托 AskRetrievalChain，须注入真实链实例
+        // （复用同一批 mock 依赖，promptRegistry 传 null 走代码兜底），否则链字段为 null 导致 NPE
+        ReflectionTestUtils.setField(service, "retrievalChain", new AskRetrievalChain(
+            embeddingService, hybridRecallService, llmGateway, null, apArticleMapper, contentMapper));
     }
 
     /** 按 system 提示词路由 gateway 非流式调用：改写 / 生成 两条路径稳定响应 */

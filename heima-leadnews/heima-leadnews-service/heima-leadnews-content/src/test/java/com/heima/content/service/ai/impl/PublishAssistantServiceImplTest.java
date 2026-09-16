@@ -80,8 +80,11 @@ class PublishAssistantServiceImplTest {
     @Mock private CriticExpertWorker criticExpertWorker;
     @Mock private AiSimilarityTools aiSimilarityTools;
     @Mock private SimilaritySearchTool similaritySearchTool;
-    /** Prompt 注册表（P2-1 补齐）：默认回显 fallback（version=0），特定用例按 key 重打桩 */
+/** Prompt 注册表（P2-1 补齐）：默认回显 fallback（version=0），特定用例按 key 重打桩 */
     @Mock private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+
+    /** 结构化输出 Skill（P2）：兜底直答 Bean 化优先（parsePrecheckBeanOrNull） */
+    @Mock private com.heima.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
 
     @InjectMocks
     private PublishAssistantServiceImpl service;
@@ -232,6 +235,26 @@ class PublishAssistantServiceImplTest {
     }
 
     // ==================== 兜底直答失败路径 ====================
+
+    @Test
+    @DisplayName("兜底 Bean 化优先：JsonOutputSkill 解析成功即采用（不回落旧 JSON 映射）")
+    void fallbackPrefersBeanParsing() {
+        when(agentRunner.run(anyString(), anyString(), anyList(), anyInt()))
+            .thenReturn(new AgentResult(null, 3, false));
+        when(llmGateway.generateOrNull(anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(FINAL_JSON);
+        AiPrecheckVo beanVo = new AiPrecheckVo();
+        beanVo.setViolation(false);
+        beanVo.setQualityScore(99);
+        when(jsonOutputSkill.parsePrecheckBeanOrNull(FINAL_JSON)).thenReturn(beanVo);
+        when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
+
+        AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
+
+        assertNotNull(vo);
+        assertEquals(99, vo.getQualityScore(), "Spring AI Bean 化结果应直接采用");
+        verify(jsonOutputSkill).parsePrecheckBeanOrNull(FINAL_JSON);
+    }
 
     @Test
     @DisplayName("兜底输出护栏命中 → gateway 降级返回 null → 结果丢弃返回 null")
