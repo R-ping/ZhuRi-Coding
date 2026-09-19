@@ -1,5 +1,73 @@
 # CHANGELOG
 
+## 2026-09-20 — 清理三类 AI 链路 fail-open 噪音：JdbcTemplate 主源被 PG 抢占 / MCP time server 不可用 / cont_pics 存量格式不兼容
+
+### 背景
+预检链路修复后复查日志，存在三处周期性/偶发的噪音（均被 fail-open 兜住、不阻塞主链路，但持续刷 ERROR/WARN）：
+
+1. **[AiPrompt] 注册表刷新失败** `bad SQL grammar [SELECT ... FROM ap_ai_prompt ...]`——任意 AI 请求触发，每 60s 快照刷新必现；
+2. **MCP stdio 拉包失败**——npx 刷 `No versions available for mcp-server-time` / STDERR + `McpToolCatalog 可用性探测异常`（/mcp/ping 与预检每次触发）；
+3. **[AiAsk] 增量向量同步异常**（每 10 分钟调度）`MismatchedInputException: Cannot construct instance of ContPic ... from String value`，且文章 AI 摘要 `/summary` 同因 500。
+
+### 根因
+- **①**：`PgVectorConfig` 注册 `pgVectorJdbcTemplate`（用户配置先于自动配置），Boot 的 `JdbcTemplateAutoConfiguration` 因 `@ConditionalOnMissingBean(JdbcOperations)` 退位 → 容器内唯一 JdbcTemplate 变成 PostgreSQL 的 → `AiPromptRegistryImpl` 等未限定注入点把 MySQL 的 `ap_ai_prompt` 查询打到 PG 上（与 ContentDataSourceConfig 注释里 MyBatis 主源抢占同类问题，JdbcTemplate 侧漏修）。
+- **②**：官方 `mcp-server-time` 已于 2025-05-14 从 npm unpublish（npmmirror 同步后 404）；`time-mcp` 替代包在 stdout 打印启动 banner，污染 stdio JSON-RPC 导致握手失败（实测 `Error processing inbound message`）；`docs-fs` 默认目录 `./docs` 相对服务工作目录（`...\heima-leadnews-app\heima-leadnews`）解析为不存在路径，filesystem server 拒绝启动；MCP initialize 默认 20s 超时对首次 npx 拉包过紧。
+- **③**：历史导入（juejin 素材）写入 `ap_article.cont_pics` 为字符串数组 `["url"]`，实体 `List<ContPic>` 期望对象数组 `[{"picUrl":...}]`，JacksonTypeHandler 反序列化不兼容。
+
+### 变更
+- **① ContentDataSourceConfig**：补 `@Bean @Primary JdbcTemplate jdbcTemplate(主源)`，恢复"注入 JdbcTemplate 即连 MySQL"语义（HotServiceImpl / FansDataServiceImpl 同源隐患一并修复；显式 `@Qualifier("pgVectorJdbcTemplate")` 的向量链路不受影响）。
+- **② application.yml**：
+  - `spring.ai.mcp.client.request-timeout: 30s`（默认 20s 握手太紧）；
+  - 移除 clock connection（不可用的 time server），docs-fs 作为**唯一 MCP 端到端验证载体**，默认目录改 `../docs`（= 项目根 docs）；`/mcp/ping` 默认 prompt 改为调用 `list_directory` 验证 docs 目录。
+- **③ 数据迁移** `db/migrations/fix_ap_article_cont_pics_array_format.sql`：存量字符串数组 → `[{"picUri":"","picUrl":...}]` 对象数组（JSON_TABLE+JSON_ARRAYAGG，幂等，仅命中字符串数组行）。
+
+### 验证（全真实请求）
+- `[AiPrompt] 注册表快照已刷新, keys=13, cost=9ms`——不再 bad SQL。
+- `POST /content/api/v1/ai/mcp/ping` → `code:200`，模型真实调用 `list_directory` 列出 docs 下 20 个 .md 并分类（"LLM→网关→MCP→外部工具"全链路）。
+- `GET /content/api/v1/ai/summary/{id}`（此前 500）→ `code:200` 返回摘要。
+- `[AiAsk-fast]` RAG 问答 sources=3 正常；服务健康 UP。
+
+### 变更文件
+- 修改：`heima-leadnews-service/heima-leadnews-content/.../config/ContentDataSourceConfig.java`、`.../controller/v1/ai/AiAskController.java`、`.../resources/application.yml`、`docs/CHANGELOG.md`
+- 新增：`.../resources/db/migrations/fix_ap_article_cont_pics_array_format.sql`
+
+## 2026-09-20 — README 项目预览截图补齐：AI 额度包补图 + 课程支付闭环 + 沸点社区
+
+### 变更内容
+- **补图** `screenshots/07-ai-quota.png`：AI 额度中心实拍（今日 2 万 tokens 免费额度、三档额度包 50 万/300 万/2000 万 tokens、支付宝沙箱充值提示），修复 README 引用缺失裂图。
+- **新增长途变现闭环截图**：
+  - `14-course-list.png` 课程列表（分类 Tab / 价格 / 学习人数）；
+  - `15-course-detail.png` 课程详情（立即购买 / 免费试读 / 7 天无理由退款 / 目录 23 小节）；
+  - `16-course-order.png` 支付宝下单页（订单号 / 应付金额 ¥39.90 / 支付处理中 + 重新发起支付入口）。
+- **新增社区形态截图** `17-pins.png` 沸点广场（发布框 / 最新·最热·关注信息流 / 圈子与话题推荐）。
+- **README** 预览章节新增「课程小册 · 知识付费与支付闭环」「沸点广场 · 社区互动」两小节，引用 14-17 截图；全量核对 12→17 张截图无断裂引用。
+
+### 变更文件
+- 修改：`README.md`、`docs/CHANGELOG.md`
+- 新增：`screenshots/07-ai-quota.png`、`screenshots/14-course-list.png`、`screenshots/15-course-detail.png`、`screenshots/16-course-order.png`、`screenshots/17-pins.png`
+
+## 2026-09-19 — 修复 AI 预检 StackOverflowError：排除 Redisson Spring Data 自动配置；README 追加预检报告实拍截图
+
+### 背景
+AI 发布预检 / SSE 问答等入口偶发 `Handler dispatch failed: StackOverflowError`（栈顶千余帧重复 `DefaultedRedisConnection.pExpire`）。此前曾以为可借助 `redisson.spring.data.support=false` 关停 Spring Data 接管，实测无效、服务重启后依旧递归。
+
+### 根因（代码 + 字节码双重定位）
+- `redisson-spring-boot-starter:3.37.0` 的 `RedissonAutoConfiguration` 无条件注册 `redissonConnectionFactory`（`@ConditionalOnMissingBean(RedisConnectionFactory.class)`），在 Boot 3 中抢占唯一 `RedisConnectionFactory` 名额。
+- `redisson-spring-data` 的 `RedissonConnection` 未覆写 spring-data-redis 3.5 新增的 `pExpire` 签名，运行时经 `DefaultedRedisConnection` 接口默认实现自递归 → `StackOverflowError`。
+- `redisson.spring.data.support` 属性在 3.37.0 **不存在**（`RedissonProperties` 仅有 `config`/`file` 两字段，javap 反编译确认），故该配置无效。
+
+### 变更
+- `application.yml`：`spring.autoconfigure.exclude` 排除 `RedissonAutoConfigurationV2`（Boot 3 只认 `AutoConfiguration.imports`，V1 仅注册在 spring.factories 本就不加载、排除反而报 "not an auto-configuration class"）。排除后 `RedisConnectionFactory` 回落到 Boot 默认 Lettuce；`RedissonClient` 仍由 `com.heima.content.config.RedissonConfig` 提供，延迟队列（order 超时 / 定时任务）与限流 AOP 不受影响。
+- README「项目预览」新增 **第十三节「AI 发布预检报告 · 多智能体评审输出」**，配 `screenshots/13-ai-precheck.png`（真实调用通过 `code:200`，质量分 42 / 技术内容 / 4 条优化建议 / 5 个推荐标签 / 一句话摘要）。
+
+### 验证
+- 修复后 `api/v1/ai/precheck`（标题 + 440 字正文）实测返回 `code:200`，AgentRunner 全链路约 114s 收敛（此前几秒即 500/SOE）；服务重启无排除异常，`/actuator/health` UP。
+- 顺带确认：MCP stdio（npx mcp-server-time 拉取失败）与 `ap_ai_prompt` 表缺失均 fail-open，不阻塞主链路。
+
+### 变更文件
+- 修改：`heima-leadnews-service/heima-leadnews-content/src/main/resources/application.yml`、`README.md`、`docs/CHANGELOG.md`
+- 新增：`screenshots/13-ai-precheck.png`
+
 ## 2026-09-16 — MCP 工具并入主编 Agent（AgentRunner 支持合并多 ToolCallbackProvider）
 
 ### 背景
