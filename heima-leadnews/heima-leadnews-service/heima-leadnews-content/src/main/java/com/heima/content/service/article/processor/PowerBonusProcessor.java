@@ -18,7 +18,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@org.springframework.core.annotation.Order(4)
+@org.springframework.core.annotation.Order(5)
 public class PowerBonusProcessor implements ArticleAuditProcessor {
 
     private final LevelService levelService;
