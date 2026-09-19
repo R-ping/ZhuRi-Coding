@@ -115,20 +115,43 @@ public class AigcDetectServiceImpl implements AigcDetectService {
             if (ac == null || ac.getContent() == null || ac.getContent().isBlank()) {
                 return;
             }
-            String title = article.getTitle() == null ? "" : article.getTitle();
-            String text = title + "\n\n" + ac.getContent();
-            Integer authorId = article.getAuthorId() != null ? article.getAuthorId().intValue() : null;
-            int l1 = computeL1(text);
-            persistRecord(AigcRecord.TYPE_ARTICLE, articleId, authorId, l1, "{}", l1 >= THRESHOLD_FLAG);
-            if (l1 >= THRESHOLD_REVIEW) {
-                submitReview(AigcRecord.TYPE_ARTICLE, articleId, authorId, title, text, l1);
-            }
-            if (l1 >= THRESHOLD_FLAG) {
-                applyFlag(AigcRecord.TYPE_ARTICLE, articleId, true, l1);
-                log.warn("[Aigc] 文章 L1 快检 flagged, articleId={}, score={}", articleId, l1);
-            }
+            detectAndFlagArticle(article, ac.getContent());
         } catch (Exception e) {
             log.error("[Aigc] 文章检测异常, articleId={}", articleId, e);
+        }
+    }
+
+    /**
+     * 审核链内调用：复用链上实体与正文做 L1 快检（不重复查库），并返回结果供调用方回填实体。
+     *
+     * <p>2026-09-18 起文章侧检测并入审核责任链（Order 在相似度入库之前），
+     * 由 {@code AigcDetectProcessor} 调用本方法 → 回填 {@code article.isAigc} →
+     * 后续 {@code SimilarityProcessor} 读到本次最终判定，消除"实体快照过期导致水文入库"的时序窗口。
+     */
+    @Override
+    public AigcDetectService.AigcL1Outcome detectAndFlagArticle(ApArticle article, String content) {
+        if (article == null || article.getId() == null || content == null || content.isBlank()) {
+            return null;
+        }
+        try {
+            String title = article.getTitle() == null ? "" : article.getTitle();
+            String text = title + "\n\n" + content;
+            Integer authorId = article.getAuthorId() != null ? article.getAuthorId().intValue() : null;
+            int l1 = computeL1(text);
+            persistRecord(AigcRecord.TYPE_ARTICLE, article.getId(), authorId, l1, "{}", l1 >= THRESHOLD_FLAG);
+            if (l1 >= THRESHOLD_REVIEW) {
+                submitReview(AigcRecord.TYPE_ARTICLE, article.getId(), authorId, title, text, l1);
+            }
+            boolean flagged = l1 >= THRESHOLD_FLAG;
+            if (flagged) {
+                applyFlag(AigcRecord.TYPE_ARTICLE, article.getId(), true, l1);
+                log.warn("[Aigc] 文章 L1 快检 flagged, articleId={}, score={}", article.getId(), l1);
+            }
+            return new AigcDetectService.AigcL1Outcome(l1, flagged);
+        } catch (Exception e) {
+            // fail-open：检测异常返回 null（调用方按"未判定"处理），绝不阻断发布主链路
+            log.error("[Aigc] 文章检测异常(链内), articleId={}", article.getId(), e);
+            return null;
         }
     }
 

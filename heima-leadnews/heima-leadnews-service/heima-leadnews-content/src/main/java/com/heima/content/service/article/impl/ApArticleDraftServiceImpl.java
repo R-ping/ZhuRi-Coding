@@ -11,7 +11,6 @@ import com.heima.content.mapper.article.ApArticleDraftMapper;
 import com.heima.content.mapper.article.ApArticleMapper;
 import com.heima.content.service.article.ApArticleDraftService;
 import com.heima.content.service.article.ArticleAutoScanService;
-import com.heima.content.service.aigc.AigcDetectService;
 import com.heima.content.service.level.LevelPermissionService;
 import com.heima.content.utils.MarkdownUtils;
 import com.heima.model.article.pojos.ApArticle;
@@ -46,9 +45,6 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
 
     @Autowired
     private ArticleAutoScanService articleAutoScanService;
-
-    @Autowired
-    private AigcDetectService aigcDetectService;
 
     @Autowired
     private LevelPermissionService levelPermissionService;
@@ -137,9 +133,9 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
             @Override
             public void afterCommit() {
                 articleAutoScanService.autoScanArticle(article.getId());
-                // Step4 内容诚信：AIGC 水文检测（同步 L1 快检打标，打赏/向量库闸门即时生效）
-                aigcDetectService.detectAndFlagArticle(article.getId());
-                log.info("文章已提交审核（异步）, articleId: {}", article.getId());
+                // Step4 内容诚信：AIGC 检测已「并入审核责任链」（AigcDetectProcessor，Order 在向量入库之前），
+                // 由链内处理器同步 L1 快检并回填实体；此处不再并发调用，避免"入库判断读到过期实体快照"的时序窗口。
+                log.info("文章已提交审核（异步，含 AIGC 诚信检测）, articleId: {}", article.getId());
             }
         });
 

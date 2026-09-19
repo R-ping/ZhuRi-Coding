@@ -18,7 +18,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@org.springframework.core.annotation.Order(3)
+@org.springframework.core.annotation.Order(4)
 public class SimilarityProcessor implements ArticleAuditProcessor {
 
     private final ArticleSimilarityService articleSimilarityService;

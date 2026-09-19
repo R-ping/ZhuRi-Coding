@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@org.springframework.core.annotation.Order(5)
+@org.springframework.core.annotation.Order(6)
 public class BehaviorEventProcessor implements ArticleAuditProcessor {
 
     private final BehaviorEventBus behaviorEventBus;
