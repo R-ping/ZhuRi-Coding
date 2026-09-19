@@ -520,6 +520,19 @@ public class AiAskServiceImpl implements AiAskService {
 
             ArticleEmbeddingServiceImpl.EmbeddingMeta vecMeta = embeddingService.getEmbeddingMeta(articleId);
             ArticleEmbeddingServiceImpl.EmbeddingMeta chunkMeta = embeddingService.getChunksMeta(articleId);
+
+            // D 兜底（2026-09-18）：已判水文的文章不应留在向量库。
+            // 覆盖审核链仍可能漏掉的两类历史脏数据：① L1 在 45~69 未打标先入库、事后 L2/L3 升标；
+            // ② 打标与入库的历史竞态残留。判据直接读 is_aigc，与检索侧过滤口径一致。
+            if (article.getIsAigc() != null && article.getIsAigc() == 1) {
+                if (vecMeta != null || chunkMeta != null) {
+                    embeddingService.deleteEmbedding(articleId);
+                    embeddingService.deleteChunks(articleId);
+                    log.info("[AiAsk] 清理已判水文的残留向量, articleId={}", articleId);
+                }
+                return r;
+            }
+
             boolean vecMissing = vecMeta == null;
             boolean chunksMissing = chunkMeta == null;
             boolean vecStale = vecMissing
@@ -557,8 +570,9 @@ public class AiAskServiceImpl implements AiAskService {
     }
 
     /**
-     * 清理「非已发布文章的残留向量」：把 PG 侧有向量的 article_id 分批拿到 MySQL 校验状态，
-     * 非 PUBLISHED（下架/删除/审核驳回）或文章已不存在 → 删除其向量与分块。
+     * 清理「非可检索文章的残留向量」：把 PG 侧有向量的 article_id 分批拿到 MySQL 校验状态，
+     * 非 PUBLISHED（下架/删除/审核驳回）、**已判 AIGC 水文（is_aigc=1）** 或文章已不存在
+     * → 删除其向量与分块。
      *
      * <p>跨库无法 JOIN，故按 PG → MySQL 单向校验；每轮最多处理 20 批 × 200 条，避免长事务。
      */
@@ -576,10 +590,12 @@ public class AiAskServiceImpl implements AiAskService {
                 scanned += ids.size();
                 lastId = ids.get(ids.size() - 1);
                 // 一次性查回这些 id 的发布状态（MySQL 侧；未查到 = 文章已删除）
+                // 判据与检索侧口径一致：仅「已发布 且 未判水文」的文章才允许保留向量
                 List<ApArticle> existing = apArticleMapper.selectList(
                     new LambdaQueryWrapper<ApArticle>()
                         .in(ApArticle::getId, ids)
-                        .eq(ApArticle::getStatus, Status.PUBLISHED.getCode()));
+                        .eq(ApArticle::getStatus, Status.PUBLISHED.getCode())
+                        .and(w -> w.isNull(ApArticle::getIsAigc).or().ne(ApArticle::getIsAigc, 1)));
                 java.util.Set<Long> publishedIds = new java.util.HashSet<>();
                 for (ApArticle a : existing) {
                     publishedIds.add(a.getId());

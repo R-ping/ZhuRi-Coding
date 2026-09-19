@@ -3,9 +3,21 @@ server:
 spring:
   application:
     name: leadnews-content
+  # Redisson 仅用其 Client API（分布式限流/锁/延迟队列），不接管 Spring Data Redis 的 ConnectionFactory。
+  # 排除它的自动配置：redisson-spring-boot-starter 3.37.0 的 RedissonConnection 未覆写 spring-data-redis
+  # 3.5 新增的 pExpire 签名，运行时走 DefaultedRedisConnection 默认实现导致 pExpire 自递归
+  # StackOverflowError。排除后 RedisConnectionFactory 回到 Boot 默认的 Lettuce；
+  # RedissonClient 仍由 com.heima.content.config.RedissonConfig 创建，延迟队列/限流不受影响。
+  # 注意：Boot 3 只认 AutoConfiguration.imports，故这里排除 V2（V1 仅注册在 spring.factories，
+  # 默认不被加载，且排除它反而报 not an auto-configuration class）；redisson.spring.data.support
+  # 属性在 3.37.0 不存在（RedissonProperties 仅有 config/file 两字段），配置无效。
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2
   ai:
     openai:
       api-key: ${DASH_SCOPE_API_KEY:}
+      # Spring AI OpenAI 兼容客户端会自行在 base-url 后补 /v1，故此处只配置网关根地址（勿带 /v1）
       base-url: ${DASH_SCOPE_COMPATIBLE_BASE:https://llm-07pvgms9s4t42iko.cn-beijing.maas.aliyuncs.com/compatible-mode}
       chat:
         options:
@@ -28,15 +40,26 @@ spring:
       client:
         enabled: true
         initialized: false
+        # 握手超时兜底：首次 npx 拉包/启动 stdio 慢时，默认 20s 会使 initialize（tools/list）超时
+        # 触发 fail-open（TimeoutException within 20000ms），调大到 30s；包已本地缓存后握手毫秒级完成
+        request-timeout: 30s
         stdio:
           connections:
             docs-fs:
               # Windows 下 Stdio 传输不做 .cmd/PATHEXT 解析，必须显式 npx.cmd；路径使用 /
+              # 目录通过环境变量覆盖（默认 ./docs）。该工具仅用于本地 AI 编码辅助。
+              # MCP 端到端验证载体即 docs-fs（list_directory/read_file 等）：
+              # 官方 @modelcontextprotocol 包 stdout 纯 JSON-RPC，stdio 协议干净；
+              # npm 上无其它可用的 time server（官方 mcp-server-time 已于 2025-05-14 unpublish、
+              # 镜像不存在的 mcp-server-time 与 stdout 打印 banner 的 time-mcp 均不可用，
+              # 实测均导致 "Error processing inbound message" 使初始化握手失败/fail-open）。
+              # 未放置文档/MCP 不可用时为 fail-open，不影响业务链路与服务启动
               command: npx.cmd
-              args: ["-y", "@modelcontextprotocol/server-filesystem", "E:/heima-leadnews-portal/heima-leadnews-app/docs"]
-            clock:
-              command: npx.cmd
-              args: ["-y", "mcp-server-time", "--local-timezone=Asia/Shanghai"]
+              # 默认目录用 ../docs：服务工作目录为 ...\heima-leadnews-app\heima-leadnews，
+              # ./docs 会解析到不存在路径使 filesystem server 启动失败（"None of the specified
+              # directories are accessible"→初始化握手失败）；../docs 即 ...\heima-leadnews-app\docs。
+              # 可用系统环境变量 MCP_DOCS_PATH 覆盖（注意：需在服务进程启动前设置才生效）
+              args: ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_DOCS_PATH:../docs}"]
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true

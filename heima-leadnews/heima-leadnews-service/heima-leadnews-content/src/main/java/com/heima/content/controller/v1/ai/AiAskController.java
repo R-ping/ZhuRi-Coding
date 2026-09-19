@@ -262,7 +262,7 @@ public class AiAskController {
         }
         String prompt = body == null ? null : body.get("prompt");
         if (prompt == null || prompt.trim().isEmpty()) {
-            prompt = "请调用 MCP 的 clock 当前时间工具，回答现在是几点几分（北京时间）。";
+            prompt = "请调用 MCP 的文件系统工具（list_directory）查看 docs 目录，并回答该目录下有哪些 .md 文件。";
         }
         org.springframework.ai.tool.ToolCallbackProvider provider = mcpToolCatalog.providerOrNull();
         if (provider == null) {
