@@ -9,6 +9,7 @@ import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticle.Status;
 import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -175,13 +176,29 @@ public class ArticleQaServiceImpl implements ArticleQaService {
         } catch (Exception e) {
             log.warn("读取摘要缓存失败, articleId={}", articleId, e);
         }
+        // 优先复用文章元数据 summary（发布预检已回填 ap_article.summary，0 LLM 调用、实时返回）。
+        // 只在未回填时兜底走 LLM 生成——避免每次页面访问都重新请求强模型（实测 40-50s 太慢且易失败）。
+        ApArticle article = apArticleMapper.selectById(articleId);
+        if (article != null && StringUtils.isNotBlank(article.getSummary())) {
+            String metaSummary = article.getSummary().trim();
+            try {
+                cacheService.set(key, metaSummary);
+                cacheService.expire(key, SUMMARY_TTL_HOURS, TimeUnit.HOURS);
+            } catch (Exception e) {
+                log.warn("写入摘要元数据缓存失败, articleId={}", articleId, e);
+            }
+            return metaSummary;
+        }
+        // 元数据无摘要时兜底 LLM 生成：摘要任务为低成本高频场景，映射到 flash 快模型（
+        // ai.model-router.features.article_summary），避免强模型 40-50s 级别的同步阻塞。
         String bodyText = loadArticleBody(articleId);
         if (bodyText == null) {
             return null;
         }
         try {
             String user = "【文章正文】\n" + bodyText;
-            String summary = genText(prompt("qa_summary", SUMMARY_SYSTEM).content, user, null);
+            String summary = genText(com.zhuri.coding.content.service.ai.AiFeatures.ARTICLE_SUMMARY,
+                prompt("qa_summary", SUMMARY_SYSTEM).content, user, null);
             if (summary == null || summary.isBlank()) {
                 return null;
             }
@@ -246,7 +263,13 @@ public class ArticleQaServiceImpl implements ArticleQaService {
     /** 同步生成统一入口（P0-2）：委托 gateway（安全 advisor + token 计量），本方法只构建记忆窗口 */
     private String genText(String systemPrompt, String user,
                            List<Map<String, String>> history) {
-        return llmGateway.generateOrNull(com.zhuri.coding.content.service.ai.AiFeatures.ASK_ARTICLE,
+        return genText(com.zhuri.coding.content.service.ai.AiFeatures.ASK_ARTICLE, systemPrompt, user, history);
+    }
+
+    /** 同步生成统一入口（按 feature 指定）用于摘要等低成本场景走模型路由的 flash 映射 */
+    private String genText(String feature, String systemPrompt, String user,
+                           List<Map<String, String>> history) {
+        return llmGateway.generateOrNull(feature,
             systemPrompt, user, buildConversationMemory(history), MEMORY_CONVERSATION_ID);
     }
 
