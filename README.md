@@ -28,6 +28,7 @@
 - [七、目录结构](#七目录结构)
 - [八、本地运行](#八本地运行)
 - [九、已知限制与规划](#九已知限制与规划)
+- [十、作者](#十作者)
 
 ---
 
@@ -56,91 +57,97 @@
 
 内容社区主入口：分类 Tab、文章卡片（封面/标签/作者/互动数据）、每日签到、推荐话题，**右下角为 AI 问答悬浮球入口**。
 
-![首页](screenshots/01-home.png)
+![首页](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/01-home.png)
 
 ### 文章详情页 · 内容 + AI 能力交汇点
 
 整篇文章级功能：作者卡片与关注、左侧互动栏（点赞/评论/收藏/分享/举报）、文章目录、**右下角「问这篇文章」单篇 AI 问答入口**（正文即上下文、答案限本文）。
 
-![文章详情](screenshots/02-article-detail.png)
+![文章详情](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/02-article-detail.png)
 
 ### AI 速读广场 · AI 摘要聚合页
 
 由发布助手产出的文章摘要（已回填元数据）聚合而成的公开页，可直接阅读 AI 摘要并跳转原文。
 
-![AI 速读广场](screenshots/05-ai-reading.png)
+![AI 速读广场](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/05-ai-reading.png)
 
 ### 搜索页 · 多维度检索
 
 综合/文章/课程/标签/用户多 Tab 检索，支持综合排序、最新、最热与时间范围筛选；关键词命中不足时自动触发语义召回兜底。
 
-![搜索](screenshots/04-search.png)
+![搜索](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/04-search.png)
 
 ### 登录 · 验证码 + 社交登录
 
 手机号验证码登录（本地开发环境验证码自动填入）、密码登录，以及 **GitHub / 微博 / 微信** 三种社交登录方式。
 
-![登录弹窗](screenshots/06-login-modal.png)
+![登录弹窗](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/06-login-modal.png)
 
 ### AI 问答面板 · 社区 AI 全量入口
 
 登录后点击悬浮球展开：支持「快速 / 深度」两种回答模式、可溯源引用、对话记忆持久化，交互时实时展示今日免费额度与钱包余额。
 
-![AI 问答面板](screenshots/11-ai-ask.png)
+![AI 问答面板](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/11-ai-ask.png)
 
 ### AI 额度包 · 商业化与成本工程
 
 AI 免费额度 + 钱包余额 + 充值包三重计费体系：今日免费 2 万 tokens、按量扣减钱包、额度包（50 万 / 300 万 / 2000 万 tokens）支付宝沙箱支付购买。
 
-![AI 额度包](screenshots/07-ai-quota.png)
+![AI 额度包](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/07-ai-quota.png)
 
 ### 成长体系 · 等级与行为积分
 
 掘友分驱动的等级体系（JY1–JY8）：点赞、评论、发布、互动等行为按规则加分，页面展示当前等级、分值进度与升级行为任务列表。
 
-![成长体系](screenshots/08-growth.png)
+![成长体系](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/08-growth.png)
 
 ### 创作者中心 · 数据仪表盘
 
 创作者总览：数据概况卡片、创作任务（今日 0/8）、创作活动与内容数据看板，为作者提供一站式数据驾驶舱。
 
-![创作者中心](screenshots/09-creator-dashboard.png)
+![创作者中心](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/09-creator-dashboard.png)
 
 ### 内容数据 · 单篇/整体分析
 
 按时间范围筛选的统计卡片 + 整体分析与单篇分析，交互式图表（ECharts）与数据导出能力。
 
-![内容数据](screenshots/10-creator-data.png)
+![内容数据](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/10-creator-data.png)
 
 ### 创作发布 · Markdown 编辑器 + AI 预检
 
 文章发布页：标题 + 双栏 Markdown 编辑器（编辑/预览同步滚动）、导入 Markdown 文档、草稿自动保存，以及 **「AI 预检」** 一键调起多智能体发布预检（安全 / 质量 / SEO 评审，输出违规判定、质量分、推荐标签与摘要）。
 
-![创作发布](screenshots/12-creator-publish.png)
+![创作发布](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/12-creator-publish.png)
 
 ### AI 发布预检报告 · 多智能体评审输出
 
 点击发布页 **「AI 预检」** 后，由主编 Agent 编排安全 / 质量 / SEO 三个 Worker（Function Calling 并行评审）产出预检报告：违规判定、质量分（42 偏低提示优化）、技术/非技术标记、优化建议、推荐标签与一句话摘要——标签和摘要可直接点击回填到发布表单。
 
-![AI 发布预检报告](screenshots/13-ai-precheck.png)
+![AI 发布预检报告](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/13-ai-precheck.png)
 
 ### 课程小册 · 知识付费与支付闭环
 
 创作者将文章沉淀为付费小册：分类 Tab 的课程列表 → 课程详情（立即购买 / 免费试读 / 7 天无理由退款 / 目录试读锁定）→ 下单页确认订单并调起**支付宝沙箱支付**（订单号 + 应付金额 + 重新发起支付），打通「创作 → 内容 → 变现」闭环。
 
-![课程列表](screenshots/14-course-list.png)
+![课程列表](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/14-course-list.png)
 
-![课程详情](screenshots/15-course-detail.png)
+![课程详情](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/15-course-detail.png)
 
-![支付宝下单](screenshots/16-course-order.png)
+![支付宝下单](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/16-course-order.png)
 
 ### 沸点广场 · 社区互动
 
 社区轻量动态流：发布框（表情 / 图片 / 链接 / 圈子 / 话题）、最新 / 最热 / 关注三 Tab 信息流、我的圈子与推荐圈子、精选沸点与推荐话题，支撑「逐友」间的日常互动与社交关系沉淀。
 
-![沸点广场](screenshots/17-pins.png)
+![沸点广场](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/17-pins.png)
 
-> 📷 **补充说明**：以上均为**本地全量启动后的实拍截图**（前端 + 五微服务 + 网关 + MySQL/pgvector/Redis/ES 全部运行）。截图目录 `screenshots/` 可继续追加，README 中加一行图片引用即可。
+### 热榜 · 实时内容排行
+
+排行榜页：掘金热榜 Banner +「掘金文章榜 / 优质作者榜 / 文章收藏榜」三榜并立，支持按「综合 / 后端 / 前端 / Android / iOS / 人工智能 / 开发工具 / 代码人生 / 阅读」分类过滤；榜单按文章阅读量、评论数、收藏数等综合热度实时排名，与首页推荐流、搜索互为流量入口。
+
+![热榜](https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com/material/readme/2026-09-20/18-hot.png)
+
+> 📷 **补充说明**：以上均为**本地全量启动后的实拍截图**（前端 + 五微服务 + 网关 + MySQL/pgvector/Redis/ES 全部运行）。原图存于仓库 `screenshots/` 目录，README 展示使用 **OSS 图床链接**（`material/readme/` 前缀，公网可访问、不受 GitHub 图片代理网络影响）。
 
 ---
 
@@ -185,7 +192,7 @@ flowchart TB
     end
 
     LLM["DashScope / qwen<br/>Chat · Embedding · Vision"]
-    MCP["MCP Server<br/>docs / clock"]
+    MCP["MCP Server<br/>docs 文件系统"]
     ALIPAY["支付宝沙箱"]
 
     FE --> G1
@@ -402,7 +409,7 @@ spring.datasource.username: ${DB_USER:root}
 spring.datasource.password: ${DB_PASSWORD:}
 
 # 向量库（PostgreSQL + pgvector）
-pgvector.datasource.url: jdbc:postgresql://127.0.0.1:5432/leadnews_vector
+pgvector.datasource.url: jdbc:postgresql://127.0.0.1:5432/leadnews_content
 
 # Redis / Nacos / Elasticsearch / OSS / 支付宝沙箱 同理，均通过环境变量注入
 ```
