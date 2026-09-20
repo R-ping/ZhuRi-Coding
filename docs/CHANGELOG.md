@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-09-20 — 文章详情页：右侧栏常驻 + 操作栏中性灰 + 「问这篇文章」弹框搬入「读完想问」
+
+### 变更内容
+- **右侧栏**：随滚动切换 toc/相关推荐/相似文章的卡片改为**全部常驻 + 整体 sticky**（参考稀土掘金），滚动时不再出现卡片互跳。
+- **左侧操作栏**：图标统一为中性灰（`#8a919f` / dark `#9aa4b2`），hover 变蓝，弱化非必要视觉强调。
+- 将正文末尾的「读完想问」相关问答区块**整体搬入**「问这篇文章」AI 问答弹框（`#aiAskPanel` body 空态）：弹框打开即展示 LLM 生成的 4 条追问，点击问题自动提问，解决弹框"太空"问题；正文末尾不再保留独立区块，避免双份加载（数据仍由 `/content/api/v1/ai/related-questions` 一次性加载）。
+- 弹框内问题列表以浅灰圆角卡呈现、垂直居中布局，并新增引导文案「点击问题即可向本文提问」；首条提问发出后建议区自动收起，让位给对话。
+
+### 验证
+- 浏览器实测（文章 2091867593875820921）：滚动后右侧栏整体 sticky（inlineTop=80）不跳动；左侧图标色 rgb(138,145,159)；FAB 打开弹框 → 4 条问题居中显示；点击问题自动发起 SSE 流式问答、建议区收起、对话气泡正常渲染，无 JS 报错。
+
+### 变更文件
+- `zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/templates/article.ftl`（侧栏常驻样式、操作栏配色、移除正文区块、弹框 body 内新增问题区）
+- `zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/static/article-static.js`（移除阶段切换逻辑；首条提问后收起建议区；相关问答加载成功 `display:flex`）
+
 ## 2026-09-20 — 全仓品牌重构：heima-leadnews → zhuri-coding（含 Java 包名 / Maven artifact / 目录 / 服务名）
 
 ### 变更内容

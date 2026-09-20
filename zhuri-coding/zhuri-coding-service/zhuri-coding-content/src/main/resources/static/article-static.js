@@ -414,42 +414,10 @@
     window.addEventListener('scroll', highlightToc);
     highlightToc();
 
-    // ========== 侧边栏随滚动切换内容阶段 ==========
-    // 阅读过程中侧边栏依次展示：目录 -> 相关推荐 -> 精选内容，
-    // 临近结尾重新展示 目录+相关推荐（目录定位到当前标题），
-    // 读完结尾只展示 相关推荐+精选内容。
-    function getReadingProgress() {
-        var body = document.getElementById('articleContent');
-        if (!body) return 1;
-        var top = body.getBoundingClientRect().top + window.pageYOffset;
-        var bottom = body.getBoundingClientRect().bottom + window.pageYOffset;
-        if (bottom - top <= 0) return 1;
-        var p = (window.pageYOffset - top) / (bottom - top);
-        return Math.max(0, Math.min(1, p));
-    }
-
-    function updateSidebarStage() {
-        var sidebar = document.getElementById('tocSidebar');
-        if (!sidebar) return;
-        var p = getReadingProgress();
-        var phase;
-        if (p < 0.3) {
-            phase = 'toc';
-        } else if (p < 0.6) {
-            phase = 'related';
-        } else if (p < 0.85) {
-            phase = 'featured';
-        } else if (p < 1.0) {
-            phase = 'toc-related';
-        } else {
-            phase = 'end';
-        }
-        if (sidebar.getAttribute('data-stage') !== phase) {
-            sidebar.setAttribute('data-stage', phase);
-        }
-    }
-    window.addEventListener('scroll', updateSidebarStage, { passive: true });
-    updateSidebarStage();
+    // ========== 侧边栏常驻展示 ==========
+    // 右侧栏（作者卡 + 目录 + 相关推荐 + 相似文章）全部常驻、整体 sticky 跟随视口，
+    // 不再按阅读进度切换阶段（切换会致滚动中卡片消失/跳动）。此段仅保留目录滚动高亮定位
+    //（highlighActiveToc 在下方独立实现），进度计算函数移除。
 
     // 移动端抽屉
     var tocFloatBtn = document.getElementById('tocFloatBtn');
@@ -2358,6 +2326,11 @@
     function aiAskAppend(msg) {
         if (!aiAskBodyEl) return;
         if (aiAskEmptyEl) aiAskEmptyEl.style.display = 'none';
+        // 用户发出首个提问后收起弹框内的"读完想问"建议区，让位给对话
+        if (msg.role === 'user') {
+            var rqWrap = document.getElementById('aiRelatedQuestions');
+            if (rqWrap) rqWrap.style.display = 'none';
+        }
         var wrap = document.createElement('div');
         wrap.className = 'ai-msg';
         var node;
@@ -2589,7 +2562,7 @@
                     listEl.appendChild(btn);
                 })(qs[i]);
             }
-            wrap.style.display = 'block';
+            wrap.style.display = 'flex';
         }).catch(function() { wrap.style.display = 'none'; });
     }
     function askRelatedQuestion(q) {
