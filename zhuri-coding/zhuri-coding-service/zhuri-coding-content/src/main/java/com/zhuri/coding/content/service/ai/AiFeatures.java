@@ -21,6 +21,8 @@ public final class AiFeatures {
     public static final String ASK_STREAM = "ask_stream";
     /** 单篇问答 */
     public static final String ASK_ARTICLE = "ask_article";
+    /** 单篇文章 AI 摘要（详情页摘要卡；低成本高频场景，路由到 flash 快模型） */
+    public static final String ARTICLE_SUMMARY = "article_summary";
     /** 查询改写（Query Rewrite） */
     public static final String REWRITE = "rewrite";
     /** 候选精排（LLM Rerank） */

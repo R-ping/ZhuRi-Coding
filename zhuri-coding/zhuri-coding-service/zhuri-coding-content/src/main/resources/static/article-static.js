@@ -2276,7 +2276,7 @@
     if (immersiveExitBtn) immersiveExitBtn.addEventListener('click', toggleImmersiveMode);
 
     // ========== Step3·① AI 摘要 + 单篇问答 ==========
-    // AI 摘要：加载失败/不可用时隐藏卡片，不影响正文阅读
+    // AI 摘要：加载失败时保留卡片降级展示「生成失败・点此重试」，不再整卡消失（避免页面布局跳动）
     function loadAiSummary() {
         if (!articleId || articleId === '0') return;
         var card = document.getElementById('aiSummaryCard');
@@ -2284,17 +2284,33 @@
         if (!card || !bodyEl) return;
         card.style.display = 'block';
         bodyEl.classList.add('ai-summary-loading');
+        bodyEl.style.cursor = 'default';
         bodyEl.textContent = '正在生成摘要…';
         apiGet('/content/api/v1/ai/summary/' + encodeURIComponent(articleId)).then(function(res) {
             if (res && res.code === 200 && res.data) {
                 bodyEl.textContent = String(res.data);
                 bodyEl.classList.remove('ai-summary-loading');
+                bodyEl.style.cursor = 'default';
             } else {
-                card.style.display = 'none';
+                renderSummaryFailure(bodyEl);
             }
         }).catch(function() {
-            card.style.display = 'none';
+            renderSummaryFailure(bodyEl);
         });
+    }
+
+    // 摘要降级占位：点击可重试（LLM 偶发超时/网关 444 兜底，不阻塞正文阅读）
+    function renderSummaryFailure(bodyEl) {
+        bodyEl.classList.remove('ai-summary-loading');
+        bodyEl.style.cursor = 'pointer';
+        bodyEl.innerHTML = 'AI 摘要生成失败，点击重试';
+        bodyEl.onclick = function() {
+            bodyEl.classList.remove('ai-summary-loading');
+            bodyEl.style.cursor = 'default';
+            bodyEl.innerHTML = '';
+            bodyEl.textContent = '正在生成摘要…';
+            loadAiSummary();
+        };
     }
 
     // ---- 单篇问答浮层（答案只来自本文，逐字流式，协议与 AiAskFloating 一致） ----

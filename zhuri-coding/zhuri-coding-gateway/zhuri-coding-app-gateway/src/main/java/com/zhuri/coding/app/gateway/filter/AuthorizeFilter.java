@@ -230,7 +230,9 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             // 统一搜索公开只读接口（未登录也可搜索文章/课程/标签/用户，按 id_type 分发，利于 SEO 与浏览）。
             // 搜索为纯只读查询，无写接口，故公开放行。
             // 课程/标签/用户搜索已收敛进该统一入口，不再单独放行 content/user 的搜索路径。
-            || path.startsWith("/search/api/v1/search");
+            || path.startsWith("/search/api/v1/search")
+            // 详情页 AI 摘要（只读展示，未登录也可浏览；生成有 IP 限频 + Redis 缓存 24h 兜底）
+            || path.startsWith("/content/api/v1/ai/summary/");
     }
 
     /**
