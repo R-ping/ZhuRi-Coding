@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhuri.coding.content.mapper.circle.ApCircleMapper">
+
+    <select id="selectRecommendCircles" resultType="com.zhuri.coding.model.circle.pojos.ApCircle">
+        SELECT * FROM ap_circle
+        ORDER BY (COALESCE(member_count, 0) + COALESCE(pins_count, 0)) DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectSquareCircles" resultType="com.zhuri.coding.model.circle.pojos.ApCircle">
+        SELECT * FROM ap_circle
+        ORDER BY (COALESCE(member_count, 0) + COALESCE(pins_count, 0)) DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="selectSquareCirclesCount" resultType="long">
+        SELECT COUNT(*) FROM ap_circle
+    </select>
+
+</mapper>

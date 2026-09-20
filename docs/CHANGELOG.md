@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-09-20 — 全仓品牌重构：heima-leadnews → zhuri-coding（含 Java 包名 / Maven artifact / 目录 / 服务名）
+
+### 变更内容
+- **Java 包名**：`com.heima.*` → `com.zhuri.coding.*`（全网替换：源码/测试、import、MyBatis XML namespace、自动配置 imports、单测），`src/main|test/java/com/heima` 目录同步迁移为 `com/zhuri/coding`。
+- **Maven**：`groupId com.heima` → `com.zhuri.coding`；`artifactId heima-leadnews-*` → `zhuri-coding-*`；模块目录 `heima-leadnews-*` → `zhuri-coding-*`（后端根 `heima-leadnews/` → `zhuri-coding/`）；`heima-file-starter` → `zhuri-file-starter`。
+- **服务名**：`spring.application.name` / Feign `value` / 网关 `lb://` 路由 / logback `service` 从 `leadnews-{svc}` → `zhuri-coding-{svc}`（注意：数据库库名 `leadnews_*` 下划线形式按既定决策**保留不动**）。
+- **前端**：`package.json` name → `zhuri-coding-app`、description 品牌化；移除模板遗留 `/server_85` 远程代理与 `conf.js` server_85 前缀（所有服务均本地直连网关）；`toast` 类名 `heima-toast` → `zhuri-toast`；删除孤立遗留组件 `src/pages/creator/components/editor/heima.vue`；视图模板（article.ftl / login.ftl）「黑马头条」文案 → 「逐日 Coding」。
+- **运行时标识**：JWT issuer `heima` → `zhuri-coding`；Jackson 混淆模块 name → `zhuri-coding`。
+- **README/CHANGELOG**：目录结构、命令示例、历史路径同步为新命名；README 目录结构章节对齐新包路径。
+
+### 验证（构建回归）
+- 后端全模块 `mvn clean install -DskipTests` 通过（新 groupId `com.zhuri.coding` 下 17 个 artifact 正常安装）；`utils/common` 重编译复验通过。
+- 前端 `npm run build`（Vite）两次通过。
+- 全仓残留核对：`com.heima` / `heima-leadnews` / `黑马` / `server_85` / 独立 `heima` token 均为 0（仅保留 Java 注释 `@author itheima` 历史署名）。
+
+### 变更文件
+- 全局重命名：后端 `zhuri-coding/` 下全部模块目录、`com/zhuri/coding/` 包树、README、CHANGELOG、`.github/workflows/ci.yml`、前端 `package.json` / `vite.config.js` / `src/common/conf.js` / `src/utils/toast.js` 等（984 + 150 个文件内容替换）。
+
 ## 2026-09-20 — 清理三类 AI 链路 fail-open 噪音：JdbcTemplate 主源被 PG 抢占 / MCP time server 不可用 / cont_pics 存量格式不兼容
 
 ### 背景
@@ -11,7 +29,7 @@
 
 ### 根因
 - **①**：`PgVectorConfig` 注册 `pgVectorJdbcTemplate`（用户配置先于自动配置），Boot 的 `JdbcTemplateAutoConfiguration` 因 `@ConditionalOnMissingBean(JdbcOperations)` 退位 → 容器内唯一 JdbcTemplate 变成 PostgreSQL 的 → `AiPromptRegistryImpl` 等未限定注入点把 MySQL 的 `ap_ai_prompt` 查询打到 PG 上（与 ContentDataSourceConfig 注释里 MyBatis 主源抢占同类问题，JdbcTemplate 侧漏修）。
-- **②**：官方 `mcp-server-time` 已于 2025-05-14 从 npm unpublish（npmmirror 同步后 404）；`time-mcp` 替代包在 stdout 打印启动 banner，污染 stdio JSON-RPC 导致握手失败（实测 `Error processing inbound message`）；`docs-fs` 默认目录 `./docs` 相对服务工作目录（`...\heima-leadnews-app\heima-leadnews`）解析为不存在路径，filesystem server 拒绝启动；MCP initialize 默认 20s 超时对首次 npx 拉包过紧。
+- **②**：官方 `mcp-server-time` 已于 2025-05-14 从 npm unpublish（npmmirror 同步后 404）；`time-mcp` 替代包在 stdout 打印启动 banner，污染 stdio JSON-RPC 导致握手失败（实测 `Error processing inbound message`）；`docs-fs` 默认目录 `./docs` 相对服务工作目录（`...\zhuri-coding-app\zhuri-coding`）解析为不存在路径，filesystem server 拒绝启动；MCP initialize 默认 20s 超时对首次 npx 拉包过紧。
 - **③**：历史导入（juejin 素材）写入 `ap_article.cont_pics` 为字符串数组 `["url"]`，实体 `List<ContPic>` 期望对象数组 `[{"picUrl":...}]`，JacksonTypeHandler 反序列化不兼容。
 
 ### 变更
@@ -28,7 +46,7 @@
 - `[AiAsk-fast]` RAG 问答 sources=3 正常；服务健康 UP。
 
 ### 变更文件
-- 修改：`heima-leadnews-service/heima-leadnews-content/.../config/ContentDataSourceConfig.java`、`.../controller/v1/ai/AiAskController.java`、`.../resources/application.yml`、`docs/CHANGELOG.md`
+- 修改：`zhuri-coding-service/zhuri-coding-content/.../config/ContentDataSourceConfig.java`、`.../controller/v1/ai/AiAskController.java`、`.../resources/application.yml`、`docs/CHANGELOG.md`
 - 新增：`.../resources/db/migrations/fix_ap_article_cont_pics_array_format.sql`
 
 ## 2026-09-20 — README 项目预览截图补齐：AI 额度包补图 + 课程支付闭环 + 沸点社区
@@ -57,7 +75,7 @@ AI 发布预检 / SSE 问答等入口偶发 `Handler dispatch failed: StackOverf
 - `redisson.spring.data.support` 属性在 3.37.0 **不存在**（`RedissonProperties` 仅有 `config`/`file` 两字段，javap 反编译确认），故该配置无效。
 
 ### 变更
-- `application.yml`：`spring.autoconfigure.exclude` 排除 `RedissonAutoConfigurationV2`（Boot 3 只认 `AutoConfiguration.imports`，V1 仅注册在 spring.factories 本就不加载、排除反而报 "not an auto-configuration class"）。排除后 `RedisConnectionFactory` 回落到 Boot 默认 Lettuce；`RedissonClient` 仍由 `com.heima.content.config.RedissonConfig` 提供，延迟队列（order 超时 / 定时任务）与限流 AOP 不受影响。
+- `application.yml`：`spring.autoconfigure.exclude` 排除 `RedissonAutoConfigurationV2`（Boot 3 只认 `AutoConfiguration.imports`，V1 仅注册在 spring.factories 本就不加载、排除反而报 "not an auto-configuration class"）。排除后 `RedisConnectionFactory` 回落到 Boot 默认 Lettuce；`RedissonClient` 仍由 `com.zhuri.coding.content.config.RedissonConfig` 提供，延迟队列（order 超时 / 定时任务）与限流 AOP 不受影响。
 - README「项目预览」新增 **第十三节「AI 发布预检报告 · 多智能体评审输出」**，配 `screenshots/13-ai-precheck.png`（真实调用通过 `code:200`，质量分 42 / 技术内容 / 4 条优化建议 / 5 个推荐标签 / 一句话摘要）。
 
 ### 验证
@@ -65,7 +83,7 @@ AI 发布预检 / SSE 问答等入口偶发 `Handler dispatch failed: StackOverf
 - 顺带确认：MCP stdio（npx mcp-server-time 拉取失败）与 `ap_ai_prompt` 表缺失均 fail-open，不阻塞主链路。
 
 ### 变更文件
-- 修改：`heima-leadnews-service/heima-leadnews-content/src/main/resources/application.yml`、`README.md`、`docs/CHANGELOG.md`
+- 修改：`zhuri-coding-service/zhuri-coding-content/src/main/resources/application.yml`、`README.md`、`docs/CHANGELOG.md`
 - 新增：`screenshots/13-ai-precheck.png`
 
 ## 2026-09-16 — MCP 工具并入主编 Agent（AgentRunner 支持合并多 ToolCallbackProvider）
@@ -99,7 +117,7 @@ P2「Spring AI 进阶范式」唯一未开工项：Agent 工具生态封闭在�
   - `clock`：`mcp-server-time`（返回当前时间，作为 LLM 调用 MCP 工具的端到端验证载体）。
   - Windows 下 Stdio 传输不做 `.cmd`/PATHEXT 解析，`command` 显式 `npx.cmd`；路径用 `/`。
   - **懒初始化**：`spring.ai.mcp.client.initialized=false` 使客户端创建时不调用 `initialize()`（不拉起 npx 进程），首次调用 MCP 工具（`/mcp/tools`/`/mcp/ping`）才握手——避免无 node 环境或 npx 首次拉包慢导致全量 context 启动 20s 超时（实测 `ArticleCommentE2ETest` 启动失败后修复）；`spring.ai.mcp.client.enabled=false` 可整体降级。
-- **封装组件** `com.heima.content.service.ai.mcp.McpToolCatalog`：`@Autowired(required=false) SyncMcpToolCallbackProvider`（由 autoconfigure 装配）→ `enabled()/catalog()/providerOrNull()` 全部 fail-open（未装配/异常 → false/空表/null），MCP 故障不阻塞主链路。
+- **封装组件** `com.zhuri.coding.content.service.ai.mcp.McpToolCatalog`：`@Autowired(required=false) SyncMcpToolCallbackProvider`（由 autoconfigure 装配）→ `enabled()/catalog()/providerOrNull()` 全部 fail-open（未装配/异常 → false/空表/null），MCP 故障不阻塞主链路。
 - **端点** `AiAskController`（登录 + 限频 USER 5/分、IP 20/分，对齐 tools-ping）：
   - `GET /api/v1/ai/mcp/tools`：列出已接线工具的 name + description（MCP 未启用返回空表）；
   - `POST /api/v1/ai/mcp/ping`：LLM 经 `AiLlmGateway.probeWithToolsOrNull` 实调 clock 工具回显当前时间（默认 prompt，支持 body.prompt 自定义），验证「模型 → 网关 → MCP 协议 → 外部工具」全链路。
@@ -112,7 +130,7 @@ P2「Spring AI 进阶范式」唯一未开工项：Agent 工具生态封闭在�
 
 ### 变更文件
 - 新增：`service/ai/mcp/McpToolCatalog.java`、`test/.../service/ai/mcp/McpToolCatalogTest.java`
-- 修改：`heima-leadnews-service/heima-leadnews-content/pom.xml`、`.../resources/application.yml`、`controller/v1/ai/AiAskController.java`、`docs/CHANGELOG.md`
+- 修改：`zhuri-coding-service/zhuri-coding-content/pom.xml`、`.../resources/application.yml`、`controller/v1/ai/AiAskController.java`、`docs/CHANGELOG.md`
 ## 2026-09-16 — P2 Spring AI 进阶范式（一）：Agent Skills + 检索显式链 + 意图路由 + 结构化输出
 
 ### 背景
@@ -243,7 +261,7 @@ AI 增强批次（`jacoco.line.min` 0.62 → 0.54）后，经两轮单测补齐�
 - content `pom.xml`：`jacoco.line.min` 0.54 → 0.56；更新注释说明回升背景与后续继续上调计划。
 
 ### 验证
-- 本地完整复现 CI 门禁：`mvn verify -pl heima-leadnews-service/heima-leadnews-content -am` → **BUILD SUCCESS**（858 用例全部通过，`All coverage checks have been met`）。
+- 本地完整复现 CI 门禁：`mvn verify -pl zhuri-coding-service/zhuri-coding-content -am` → **BUILD SUCCESS**（858 用例全部通过，`All coverage checks have been met`）。
 
 ### 遗留（后续随剩余模块补测继续上调）
 - 可选补点：`AgentRunner`（有界 ReAct 循环与工具并行）、`AiTopupServiceImpl`（充值回调幂等）、`AiEvalServiceImpl`（Recall@k 评测）。覆盖稳定后可将门禁逐步上调至 0.60 并向 65% 靠拢。
@@ -326,7 +344,7 @@ AI 增强批次（#88，含 outbox/AIGC 检测/语义记忆/混合检索）引�
 - 前端 `AiAskFloating.vue`：打开面板自动 `restoreConversation()` 恢复历史对话；标题旁新增「清空记忆」按钮；`src/apis/ai.js` 新增 `getAiConversation` / `clearAiConversation`。
 
 ### 验证
-- `heima-leadnews-content` `mvn test-compile` 通过；新增 `RedisConversationMemoryServiceTest` 5 用例（追加/解析/脏数据容忍/异常 fail-open/清空）全部通过；既有的 `AiAskMemoryAdvisorTest` 不受影响。
+- `zhuri-coding-content` `mvn test-compile` 通过；新增 `RedisConversationMemoryServiceTest` 5 用例（追加/解析/脏数据容忍/异常 fail-open/清空）全部通过；既有的 `AiAskMemoryAdvisorTest` 不受影响。
 
 ### 变更文件
 - 新增：`service/ai/memory/AiConversationMemoryService.java`、`service/ai/memory/impl/RedisConversationMemoryService.java`、`service/ai/memory/UserMemoryService.java`、`service/ai/memory/impl/UserMemoryServiceImpl.java`、`resources/db/migrations/ai_memory_setup.sql`、`test/.../ai/memory/RedisConversationMemoryServiceTest.java`
@@ -350,7 +368,7 @@ AI 增强批次（#88，含 outbox/AIGC 检测/语义记忆/混合检索）引�
 - 保留既有降级链：主编异常/超步/解析失败 → 一次性结构化直答 → 相似度兜底 → 封面多模态审核。
 
 ### 验证
-- `heima-leadnews-content` `mvn compile` / `test-compile` 通过（EXIT=0）；无既有测试引用旧结构。
+- `zhuri-coding-content` `mvn compile` / `test-compile` 通过（EXIT=0）；无既有测试引用旧结构。
 
 ### 变更文件
 - 新增：`service/ai/agent/workers/ExpertWorkerBase.java`、`SafetyExpertWorker.java`、`QualityExpertWorker.java`、`SeoExpertWorker.java`、`CriticExpertWorker.java`；`config/AiExpertConfig.java`
@@ -381,7 +399,7 @@ AI 问答/预检此前"只计量不扣费"（钱包只入账不消耗，免费�
 - 保持免费优先体验：额度条仅做展示与引导，不阻断提问。
 
 ### 验证
-- 后端：`heima-leadnews-model` + `heima-leadnews-content` `mvn compile` 通过（EXIT=0）。
+- 后端：`zhuri-coding-model` + `zhuri-coding-content` `mvn compile` 通过（EXIT=0）。
 - 前端：`vite build` 通过。
 
 ### 变更文件
@@ -474,15 +492,15 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 - `ArticleInteractionController` / `FansDataServiceImpl` 的行为编码改用常量引用，实现后端单一来源。
 
 ### 验证
-`heima-leadnews-content` 相关单测全绿：LevelScoreProcessorTest 10、LevelActionServiceTest 19、TransactionRegressionTest 1 及其余 level 包共计 0 失败；`mvn -pl .../content compile` 通过。
+`zhuri-coding-content` 相关单测全绿：LevelScoreProcessorTest 10、LevelActionServiceTest 19、TransactionRegressionTest 1 及其余 level 包共计 0 失败；`mvn -pl .../content compile` 通过。
 
 ### 变更文件
-- `heima-leadnews-content/.../constants/LevelScoreActionCode.java`（新增）
-- `heima-leadnews-content/.../constants/LevelScoreConstants.java`
-- `heima-leadnews-content/.../behavior/service/impl/LevelScoreProcessor.java`
-- `heima-leadnews-content/.../service/level/impl/LevelActionService.java`
-- `heima-leadnews-content/.../controller/v1/article/ArticleInteractionController.java`
-- `heima-leadnews-content/.../service/fans/impl/FansDataServiceImpl.java`
+- `zhuri-coding-content/.../constants/LevelScoreActionCode.java`（新增）
+- `zhuri-coding-content/.../constants/LevelScoreConstants.java`
+- `zhuri-coding-content/.../behavior/service/impl/LevelScoreProcessor.java`
+- `zhuri-coding-content/.../service/level/impl/LevelActionService.java`
+- `zhuri-coding-content/.../controller/v1/article/ArticleInteractionController.java`
+- `zhuri-coding-content/.../service/fans/impl/FansDataServiceImpl.java`
 - `docs/CHANGELOG.md`
 
 ## 2026-09-05 — 发布链路单延迟化（方案A）+ ArticleFreemarkerService 瘦身
@@ -509,7 +527,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 - 单延迟语义：任务到 publishTime 触发 → 本地消息表入库（20s 重试兜底）→ @Async syncArticle → 事件 → DB/ES 置发布态 + consumerTask。`refreshTaskToRedis`（30min，分布式锁）兜底 Redis 重启丢队列场景保持不变。
 
 ### 变更文件
-- `heima-leadnews-common/.../constants/ArticleConstants.java`
+- `zhuri-coding-common/.../constants/ArticleConstants.java`
 - `content/.../event/ArticleBuildCompleteEvent.java`、`ArticleBuildCompleteEventListener.java`、`RedissonDelayTaskEventListener.java`、`(删)ScheduleLastDelayTaskEvent.java`
 - `content/.../schedule/listener/RedissonDelayQueue.java`、`(删)LastDelayTaskScheduler.java`
 - `content/.../service/article/ApArticleService.java`、`ArticleFreemarkerService.java`
@@ -532,7 +550,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 - 此前已核验：`like_article`、`collect_article`、`like_pin`、`comment_pin`、`comment_article`、`publish_article/publish_pin`、粉丝页关注 均能写入今日进度。
 
 ### 变更文件
-- `heima-leadnews-content/.../controller/v1/article/ArticleInteractionController.java`
+- `zhuri-coding-content/.../controller/v1/article/ArticleInteractionController.java`
 - `docs/CHANGELOG.md`
 
 ## 2026-09-03 — 修复社区活跃任务进度不累计 + 创作者中心创作任务缺进度
@@ -555,9 +573,9 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 端到端验证：点赞 3 篇文章后，任务接口返回 `like_article: done=3, limit=5`；`ap_user_daily_progress` 写入 count，`ap_user_action_log` 写入积分。
 
 ### 变更文件
-- `heima-leadnews-content/.../controller/v1/article/ArticleInteractionController.java`
-- `heima-leadnews-content/.../constants/LevelScoreConstants.java`
-- `heima-leadnews-content/src/main/resources/db/migrations/align_daily_limit_comment_like_to_5.sql`（新增）
+- `zhuri-coding-content/.../controller/v1/article/ArticleInteractionController.java`
+- `zhuri-coding-content/.../constants/LevelScoreConstants.java`
+- `zhuri-coding-content/src/main/resources/db/migrations/align_daily_limit_comment_like_to_5.sql`（新增）
 - `src/pages/creator/dashboard/components/GrowthTasks.vue`
 - `docs/CHANGELOG.md`
 
@@ -638,7 +656,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 - 执行后：`ap_article_config` 168 行；`推荐`分栏候选 11 篇（不变），`最新`分栏 160 篇。
 
 ### 变更文件
-- `heima-leadnews-content/src/main/resources/db/migrations/backfill_article_config_for_imported_articles.sql`（新增）
+- `zhuri-coding-content/src/main/resources/db/migrations/backfill_article_config_for_imported_articles.sql`（新增）
 
 ## 2026-09-03 — 数据模型向稀土掘金对象属性对齐（概念修正：小册=课程、专栏免费、不加会员）
 
@@ -667,8 +685,8 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 - `UserProfileServiceImplTest` 17 用例全部通过（含新增字段回填/技能解析/统计聚合断言）。
 
 ### 变更文件
-- 迁移：`heima-leadnews-user/src/main/resources/db/migrations/user_profile_add_rich_attrs.sql`（新增）
-- schema：`heima-leadnews-user/src/main/resources/db/schema.sql`（重新导出）
+- 迁移：`zhuri-coding-user/src/main/resources/db/migrations/user_profile_add_rich_attrs.sql`（新增）
+- schema：`zhuri-coding-user/src/main/resources/db/schema.sql`（重新导出）
 - 模型：`UserProfile`、`UserProfileVO`、`ProfileUpdateDTO`、`UserStatsVO`（新增）、`ApArticle`（hotIndex）
 - Feign：`IUserStatsClient`（新增）、`IUserStatsClientFallback`（新增）、内容侧 `UserStatsFeignClient`（新增）
 - 服务：`UserContentStatsService(+Impl)`（新增）、`AuthorProfileServiceImpl`、`UserProfileServiceImpl`
@@ -762,11 +780,11 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 4. 数据回流闭环（近期热度 → 曝光负反馈）
 - **正反馈**：聚合候选文章在近 24h 内跨用户真实阅读次数（`ap_browse_history`），作为「近期热度」加到评分（`interaction-boost-max`），让新内容因真实反馈上浮。
-- **负反馈（新增）**：新增曝光表 `ap_article_exposure` + 实体 [ApArticleExposure.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-model/src/main/java/com/heima/model/behavior/pojos/ApArticleExposure.java) + Mapper [ApArticleExposureMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/interaction/ApArticleExposureMapper.java)。推荐下发时记录本页曝光（最佳努力，失败不影响主流程）；评分时对该用户「近期曝光而未消费」的文章降权（`exposure-penalty-max`）。
-- 建表脚本：[init_article_recommend_exposure.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/db/migrations/init_article_recommend_exposure.sql)。
+- **负反馈（新增）**：新增曝光表 `ap_article_exposure` + 实体 [ApArticleExposure.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-model/src/main/java/com/heima/model/behavior/pojos/ApArticleExposure.java) + Mapper [ApArticleExposureMapper.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/mapper/interaction/ApArticleExposureMapper.java)。推荐下发时记录本页曝光（最佳努力，失败不影响主流程）；评分时对该用户「近期曝光而未消费」的文章降权（`exposure-penalty-max`）。
+- 建表脚本：[init_article_recommend_exposure.sql](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/db/migrations/init_article_recommend_exposure.sql)。
 
 ### 测试
-[ApArticleRecommendServiceImplTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java) 覆盖兴趣缓存命中/回源、权重注入、服务端已读合并、近期热度反哺、曝光降权。23 个用例全部通过。
+[ApArticleRecommendServiceImplTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java) 覆盖兴趣缓存命中/回源、权重注入、服务端已读合并、近期热度反哺、曝光降权。23 个用例全部通过。
 
 ## 2026-08-28 — LLM 结构化输出保障（解析兜底·带原因重试·统一入口）
 
@@ -774,22 +792,22 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 参考《structured-output-guide》将"结构化输出"能力迁移到本项目。由于本项目未引入 Spring AI（ChatClient/BeanOutputConverter 不存在），改为**适配现有 DashScope SDK**：统一调用 `DashScopeClient` + 新增强类型 DTO，并在这一个组件里收敛「调用 → 清洗 → 触发式修复 → 解析 → 带失败原因重试」，让模型输出可被 Java 类型直接反序列化。
 
 ### 1. 统一调用器 `StructuredOutputInvoker`（核心）
-- 新增 [StructuredOutputInvoker.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/main/java/com/heima/common/bailian/StructuredOutputInvoker.java)：对外只暴露一个泛型 `invoke(systemPrompt, userPrompt, dtoClass, errorCode, errorPrefix, logContext, log)`。
+- 新增 [StructuredOutputInvoker.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-common/src/main/java/com/heima/common/bailian/StructuredOutputInvoker.java)：对外只暴露一个泛型 `invoke(systemPrompt, userPrompt, dtoClass, errorCode, errorPrefix, logContext, log)`。
   - **解析兜底**：清洗 Markdown 代码块 ` ```json `；首次解析失败后用**单遍字符扫描**触发式修复字符串内未转义引号再解析一次，修复失败 `addSuppressed` 保留原始异常不吞错。
   - **重试增强**：按 `maxAttempts`（默认 2）重试；重试时向 system prompt 追加 `STRICT_JSON_INSTRUCTION` + "上次失败原因"（单行化+截断，默认 200 字符），而非盲目重试。
   - **防注入**：所有调用在末尾统一追加 `PromptSecurityConstants.ANTI_INJECTION_INSTRUCTION`。
   - **指标**：`MeterRegistry`（`@Autowired(required=false)`）上报 `ai.structured.invocation` 计数与延迟 timer。
   - **最终失败**：统一抛 `StructuredOutputException`（携带 `AppHttpCodeEnum`）。
-- 新增 [StructuredOutputProperties.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/main/java/com/heima/common/bailian/StructuredOutputProperties.java)：读取 `app.ai.structured-*` 配置（次数/开关/截断长度/指标）。
-- 新增 [StructuredOutputException.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/main/java/com/heima/common/bailian/StructuredOutputException.java)。
+- 新增 [StructuredOutputProperties.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-common/src/main/java/com/heima/common/bailian/StructuredOutputProperties.java)：读取 `app.ai.structured-*` 配置（次数/开关/截断长度/指标）。
+- 新增 [StructuredOutputException.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-common/src/main/java/com/heima/common/bailian/StructuredOutputException.java)。
 
 ### 2. 强类型 DTO + 业务改造
-- 新增 [ArticleAuditResult.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/model/ai/ArticleAuditResult.java) / [ViolationCheckResult.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/model/ai/ViolationCheckResult.java)：用 `@JSONField` 映射模型输出的 snake_case 字段，字段命名稳定，可被直接反序列化。
-- 改造 [BailianAiServiceImpl.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/BailianAiServiceImpl.java)：`comprehensiveAudit`/`checkViolation` 移除手动 `parseJsonResponse`（整体删除），两处均改走 `structuredOutputInvoker.invoke(...)` 接收强类型 DTO；`SYSTEM_PROMPT` 去掉手动拼接防注入指令（改为 invoker 统一追加）；`saveComprehensiveAudit` 改为接收 DTO 落库。fail-closed 兜底不变（解析失败仍 `success=false`，绝不降级放行）。
+- 新增 [ArticleAuditResult.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/model/ai/ArticleAuditResult.java) / [ViolationCheckResult.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/model/ai/ViolationCheckResult.java)：用 `@JSONField` 映射模型输出的 snake_case 字段，字段命名稳定，可被直接反序列化。
+- 改造 [BailianAiServiceImpl.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/article/impl/BailianAiServiceImpl.java)：`comprehensiveAudit`/`checkViolation` 移除手动 `parseJsonResponse`（整体删除），两处均改走 `structuredOutputInvoker.invoke(...)` 接收强类型 DTO；`SYSTEM_PROMPT` 去掉手动拼接防注入指令（改为 invoker 统一追加）；`saveComprehensiveAudit` 改为接收 DTO 落库。fail-closed 兜底不变（解析失败仍 `success=false`，绝不降级放行）。
 
 ### 3. 测试
-- 新增 [StructuredOutputInvokerTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/test/java/com/heima/common/bailian/StructuredOutputInvokerTest.java)：覆盖首次成功、Markdown 清洗、未转义引号修复、修复失败重试、最终失败抛业务异常、重试 prompt 追加增强信息。
-- 新增 [BailianAiServiceImplTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/BailianAiServiceImplTest.java)：验证 DTO→resultMap 映射、落库、fail-closed 不降级。
+- 新增 [StructuredOutputInvokerTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-common/src/test/java/com/heima/common/bailian/StructuredOutputInvokerTest.java)：覆盖首次成功、Markdown 清洗、未转义引号修复、修复失败重试、最终失败抛业务异常、重试 prompt 追加增强信息。
+- 新增 [BailianAiServiceImplTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/BailianAiServiceImplTest.java)：验证 DTO→resultMap 映射、落库、fail-closed 不降级。
 
 ### 配置
 `app.ai.structured-max-attempts`（默认 2）、`structured-include-last-error`、`structured-retry-use-repair-prompt`、`structured-retry-append-strict-json-instruction`、`structured-error-message-max-length`、`structured-metrics-enabled`、`structured-schema-validation-enabled`（默认 false，暂走本地修复路径）。
@@ -798,33 +816,33 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 1. 双等级体系 TOCTOU 越上限刷分 / 重复签到（S5 高）
 - 问题：`LevelActionService` 的 `recordAction`/`recordActionWithLimit`/`checkIn`/`grantScore` 在 `@Transactional` 内"先查后写"（`getTodayActionCount`→判断、`getTodayScore`→截断、`checkIn`→查当日签到次数）。并发请求可同时越过**每日行为次数上限**、**每日积分上限**，并让签到被**重复发放**（资产/积分被刷）。
-- 修复：在三个事务入口（`recordAction`/`recordActionWithLimit`/`checkIn`）先对用户等级行加**悲观行锁** `SELECT ... FOR UPDATE`（新增 [ApUserLevelMapper.selectByUserIdForUpdate](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/level/ApUserLevelMapper.java)），串行化同一用户"上限校验 + 加分落库"，从根上杜绝并发越限。
+- 修复：在三个事务入口（`recordAction`/`recordActionWithLimit`/`checkIn`）先对用户等级行加**悲观行锁** `SELECT ... FOR UPDATE`（新增 [ApUserLevelMapper.selectByUserIdForUpdate](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/mapper/level/ApUserLevelMapper.java)），串行化同一用户"上限校验 + 加分落库"，从根上杜绝并发越限。
 - 变更文件：
-  - [LevelActionService.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/level/impl/LevelActionService.java)：三个入口加锁 + 新增 `lockUserLevel` 私有方法。
-  - [ApUserLevelMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/level/ApUserLevelMapper.java)：新增 `selectByUserIdForUpdate` 行锁查询。
-  - [LevelActionServiceTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelActionServiceTest.java)：新增"S5 先加行锁再校验、以锁后实例落库"与"checkIn 锁先于签到查询"单测。
+  - [LevelActionService.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/level/impl/LevelActionService.java)：三个入口加锁 + 新增 `lockUserLevel` 私有方法。
+  - [ApUserLevelMapper.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/mapper/level/ApUserLevelMapper.java)：新增 `selectByUserIdForUpdate` 行锁查询。
+  - [LevelActionServiceTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/level/impl/LevelActionServiceTest.java)：新增"S5 先加行锁再校验、以锁后实例落库"与"checkIn 锁先于签到查询"单测。
 
 ### 2. 事件总线热点分并发丢计数（M5 中）
 - 问题：`ArticleScoreProcessor.incrementField` 用 `selectById` + 字段自增 + `updateById`（整行回写）的"读-改-写"，注释称"直接SQL"实为回写；并发互动下**计数可能丢失**，且每次 3 次 DB 往返。
 - 修复：改为**单条原子 UPDATE** `ap_article SET {field}=COALESCE({field},0)+1, score=...`（依赖 MySQL 左到右赋值），一次往返完成计数递增 + 热度分重算，杜绝并发丢计数。
 - 变更文件：
-  - [ApArticleMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java) + [ApArticleMapper.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/mapper/ApArticleMapper.xml)：新增 `updateInteractionAndScore`。
-  - [ArticleScoreProcessor.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/behavior/service/impl/ArticleScoreProcessor.java)：删除读-改-写，改调原子方法；字段名白名单限定防注入。
-  - [ArticleScoreProcessorTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/behavior/service/impl/ArticleScoreProcessorTest.java)：重写为原子方法单测。
+  - [ApArticleMapper.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java) + [ApArticleMapper.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/mapper/ApArticleMapper.xml)：新增 `updateInteractionAndScore`。
+  - [ArticleScoreProcessor.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/behavior/service/impl/ArticleScoreProcessor.java)：删除读-改-写，改调原子方法；字段名白名单限定防注入。
+  - [ArticleScoreProcessorTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/behavior/service/impl/ArticleScoreProcessorTest.java)：重写为原子方法单测。
 
 ### 3. AI 审核链 ap_article_config 唯一索引兜底（L2）
 - 问题：`SimilarityProcessor` / `PowerBonusProcessor` 采用"先查后插"创建 `ap_article_config`，并发首次发布同一配置时若不加唯一索引会插入**重复行**（原 `idx_article_id` 为普通索引无法兜底）。
-- 修复：`article_id` 升级为唯一索引 `uk_article_id`（迁移脚本 [alter_ap_article_config_add_unique_article_id.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/db/migrations/alter_ap_article_config_add_unique_article_id.sql)，已在 `leadnews_article` 执行并重导出 `schema.sql`）；应用层改用幂等写入 [ApArticleConfigMapper.insertOrUpdateRecommend](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleConfigMapper.java)（`INSERT ... ON DUPLICATE KEY UPDATE is_recommend`，保留其余字段），两个 Processor 删除"查后插/整行更新"，并发首次插入由唯一键兜底。
+- 修复：`article_id` 升级为唯一索引 `uk_article_id`（迁移脚本 [alter_ap_article_config_add_unique_article_id.sql](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/db/migrations/alter_ap_article_config_add_unique_article_id.sql)，已在 `leadnews_article` 执行并重导出 `schema.sql`）；应用层改用幂等写入 [ApArticleConfigMapper.insertOrUpdateRecommend](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/mapper/article/ApArticleConfigMapper.java)（`INSERT ... ON DUPLICATE KEY UPDATE is_recommend`，保留其余字段），两个 Processor 删除"查后插/整行更新"，并发首次插入由唯一键兜底。
 - 变更文件：
-  - [SimilarityProcessor.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/processor/SimilarityProcessor.java) / [PowerBonusProcessor.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/processor/PowerBonusProcessor.java)：推荐状态改为幂等 upsert。
-  - [ApArticleConfigMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleConfigMapper.java)：新增 `insertOrUpdateRecommend`。
-  - [SimilarityProcessorTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/processor/SimilarityProcessorTest.java)（新增）：覆盖高/低相似度 upsert 取值、空内容不落库、外部异常不落库。
-  - [schema.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/db/schema.sql)：重导出，`ap_article_config` 带 `uk_article_id`。
+  - [SimilarityProcessor.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/article/processor/SimilarityProcessor.java) / [PowerBonusProcessor.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/article/processor/PowerBonusProcessor.java)：推荐状态改为幂等 upsert。
+  - [ApArticleConfigMapper.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/mapper/article/ApArticleConfigMapper.java)：新增 `insertOrUpdateRecommend`。
+  - [SimilarityProcessorTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/processor/SimilarityProcessorTest.java)（新增）：覆盖高/低相似度 upsert 取值、空内容不落库、外部异常不落库。
+  - [schema.sql](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/db/schema.sql)：重导出，`ap_article_config` 带 `uk_article_id`。
 
 ### 4. 推荐算法 latest 分栏 total 真实总数（低）
 - 问题：`loadLatest` 返回的 `total` 用 `safeList.size()`（当页已过滤后的条数），末页/多页时并非真实总数，与 recommend 分栏口径不一致。
-- 修复：新增 [ApArticleMapper.countLatestArticles](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java)（与 `selectLatestArticles` 同一过滤条件），仅当本页有数据时多一次 count，`total` 返回真实总数，空结果免查询。
-- 变更文件：[ApArticleMapper.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java) + [ApArticleMapper.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/mapper/ApArticleMapper.xml) + [ApArticleRecommendServiceImpl.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImpl.java) + [ApArticleRecommendServiceImplTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java)（新增真实总数单测）。
+- 修复：新增 [ApArticleMapper.countLatestArticles](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java)（与 `selectLatestArticles` 同一过滤条件），仅当本页有数据时多一次 count，`total` 返回真实总数，空结果免查询。
+- 变更文件：[ApArticleMapper.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/mapper/article/ApArticleMapper.java) + [ApArticleMapper.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/mapper/ApArticleMapper.xml) + [ApArticleRecommendServiceImpl.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImpl.java) + [ApArticleRecommendServiceImplTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java)（新增真实总数单测）。
 
 ## 2026-08-28 — 支付/兑换/抽奖/社交登录安全加固（防资损·防超发·防CSRF）
 
@@ -832,27 +850,27 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 针对支付与奖励经济链路做业务漏洞审计，定位并修复多类非原子/越权/超发隐患。重点是让「支付回调幂等」「兑换原子扣减」「抽奖实物防超发」「OAuth 回调防 CSRF」四处达成可落地的安全闭环，且与既有纵深防御（验签+金额二次比对、Redis 预扣+DB 乐观锁）保持一致。
 
 ### 1. 支付回调幂等（课程 + 打赏）
-- [OrderServiceImpl.handlePaySuccess](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/order/impl/OrderServiceImpl.java)：以「条件更新 `WHERE status=PENDING`」原子抢占 `PENDING→PAID`，`updated!=1` 直接跳过后续，杜绝支付宝重复通知/并发回调造成重复放权、重复加销量、重复核销。
-- [TipServiceImpl.handleNotify](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/tip/impl/TipServiceImpl.java)：同构改造打赏回调，幂等抢占成功才写流水、`tip_count/tip_amount` 用 `setSql` 原子累加。
+- [OrderServiceImpl.handlePaySuccess](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/order/impl/OrderServiceImpl.java)：以「条件更新 `WHERE status=PENDING`」原子抢占 `PENDING→PAID`，`updated!=1` 直接跳过后续，杜绝支付宝重复通知/并发回调造成重复放权、重复加销量、重复核销。
+- [TipServiceImpl.handleNotify](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/tip/impl/TipServiceImpl.java)：同构改造打赏回调，幂等抢占成功才写流水、`tip_count/tip_amount` 用 `setSql` 原子累加。
 - 金额二次校验沿用既有防线：支付宝回调先 `rsaCheckV1` 验签（公钥缺失 fail-closed），再以服务端 `paidAmount`/`amount` 用 `compareTo` 比对，不信任回调 `total_amount`。
 
 ### 2. 兑换原子扣减
-- [WelfareServiceImpl.exchange](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/WelfareServiceImpl.java)：矿石扣减改用带余额检查的原子 SQL `UserAssetsMapper.deductOreBalance`（`WHERE ore_balance >= amount`）；扣矿失败抛异常触发事务回滚，catch 回滚 Redis 预扣，保证 **DB 库存 / Redis / 矿石余额** 三者回滚一致。
+- [WelfareServiceImpl.exchange](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/impl/WelfareServiceImpl.java)：矿石扣减改用带余额检查的原子 SQL `UserAssetsMapper.deductOreBalance`（`WHERE ore_balance >= amount`）；扣矿失败抛异常触发事务回滚，catch 回滚 Redis 预扣，保证 **DB 库存 / Redis / 矿石余额** 三者回滚一致。
 - 移除原非原子的 `exchanged_count` 读改写，交由 `WelfareGoodsMapper.updateStock`（`stock-1, exchanged_count+1`）在同一 UPDATE 内原子完成。
-- 新增单测 [WelfareServiceImplTest.testExchangeAtomicOreDeductFailRollsBackRedis](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/service/impl/WelfareServiceImplTest.java)：固化「扣矿返回0→抛异常→回滚Redis→不产生订单」。
+- 新增单测 [WelfareServiceImplTest.testExchangeAtomicOreDeductFailRollsBackRedis](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/test/java/com/heima/reward/service/impl/WelfareServiceImplTest.java)：固化「扣矿返回0→抛异常→回滚Redis→不产生订单」。
 
 ### 3. 转盘抽奖实物防超发
-- 奖池新增 `total_stock`（-1 不限量 / 0 售罄 / >0 剩余），迁移脚本 [alter_lottery_prize_pool_add_total_stock.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/resources/db/migrations/alter_lottery_prize_pool_add_total_stock.sql)（已在 `leadnews_reward` 执行）。
-- [LotteryPrizePoolMapper.deductStock](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/mapper/LotteryPrizePoolMapper.java)：`WHERE total_stock>0` 原子占用一件（并发不超发）。
-- [LotteryServiceImpl.occupyOrDowngrade](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：实物发放前先占用库存；售罄/并发抢空则降级为矿石兜底，杜绝"中奖实物却发不出"；`getDashboard` 返回实物 `stock` 供前端限量展示。
-- [LotteryServiceImpl.draw](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：抽奖成本矿石改用带余额检查的原子扣减 `deductOreBalance`，中奖矿石用 `addOreBalance` 原子累加，资产写回仅更新幸运值（修复并发下矿石重复消耗/累加丢失）；`claimPhysical` 增加收货人/手机号/地址的格式与长度校验。
+- 奖池新增 `total_stock`（-1 不限量 / 0 售罄 / >0 剩余），迁移脚本 [alter_lottery_prize_pool_add_total_stock.sql](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/resources/db/migrations/alter_lottery_prize_pool_add_total_stock.sql)（已在 `leadnews_reward` 执行）。
+- [LotteryPrizePoolMapper.deductStock](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/mapper/LotteryPrizePoolMapper.java)：`WHERE total_stock>0` 原子占用一件（并发不超发）。
+- [LotteryServiceImpl.occupyOrDowngrade](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：实物发放前先占用库存；售罄/并发抢空则降级为矿石兜底，杜绝"中奖实物却发不出"；`getDashboard` 返回实物 `stock` 供前端限量展示。
+- [LotteryServiceImpl.draw](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：抽奖成本矿石改用带余额检查的原子扣减 `deductOreBalance`，中奖矿石用 `addOreBalance` 原子累加，资产写回仅更新幸运值（修复并发下矿石重复消耗/累加丢失）；`claimPhysical` 增加收货人/手机号/地址的格式与长度校验。
 
 ### 4. 社交登录 OAuth 回调防 CSRF
-- [oauth.js getOAuthUrl](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/common/oauth.js)：发起授权时生成**随机 state**（`platform:随机串`）写入 `sessionStorage`，替换原静态 `state=platform`（无防护价值）。
-- [oauth_callback/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/oauth_callback/index.vue)：回调带回的 `state` 必须与会话发起时一致，否则拒绝登录/绑定，拦截"用攻击者 code 诱导受害者回调"的登录 CSRF。兼容旧调用（无随机 state 时仍按平台路径放行）。
+- [oauth.js getOAuthUrl](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/common/oauth.js)：发起授权时生成**随机 state**（`platform:随机串`）写入 `sessionStorage`，替换原静态 `state=platform`（无防护价值）。
+- [oauth_callback/index.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/pages/oauth_callback/index.vue)：回调带回的 `state` 必须与会话发起时一致，否则拒绝登录/绑定，拦截"用攻击者 code 诱导受害者回调"的登录 CSRF。兼容旧调用（无随机 state 时仍按平台路径放行）。
 
 ### 验收
-- `mvn -pl heima-leadnews-service/heima-leadnews-reward compile` 通过；reward 单测 `WelfareServiceImplTest`、`LotteryServiceImplTest` 全通过。
+- `mvn -pl zhuri-coding-service/zhuri-coding-reward compile` 通过；reward 单测 `WelfareServiceImplTest`、`LotteryServiceImplTest` 全通过。
 - `LotteryServiceImplTest` 覆盖实物占用/降级（限量充足/售罄降级/不限量）及付费抽奖原子扣矿/累加、`claimPhysical` 格式校验共 18 例，`WelfareServiceImplTest` 13 例，全部通过。
 - 迁移脚本已在本地 `leadnews_reward` 库执行（`total_stock` 列已存在，默认 -1）。
 
@@ -862,29 +880,29 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 检查站内信及 IM 业务后定位到 4 个严重安全隐患（S1–S4）与 2 个一致性问题（M1/M2）。按修复优先级逐项修复，重点解决 WebSocket 身份伪造、跨会话越权、会话并发重复创建、实时推送失效及未读计数不一致。
 
 ### S1 发送者身份可信化（身份伪造）
-- [WebSocketMessageController.handleMessage](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/controller/v1/WebSocketMessageController.java)：发送者身份改为从 `SimpMessageHeaderAccessor` 会话属性取 **握手 Token 校验后写入的 userId**，丢弃客户端 payload 中的 `sender_id`，杜绝冒充他人发送。
+- [WebSocketMessageController.handleMessage](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/java/com/heima/notification/controller/v1/WebSocketMessageController.java)：发送者身份改为从 `SimpMessageHeaderAccessor` 会话属性取 **握手 Token 校验后写入的 userId**，丢弃客户端 payload 中的 `sender_id`，杜绝冒充他人发送。
 
 ### S2 握手身份统一（不信任裸 Header）
-- [UserInterceptor.preSend](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/websocket/UserInterceptor.java)：CONNECT 帧仅从 `sessionAttributes.get("userId")` 设置 Principal，不再读取客户端 header 中的 userId。
+- [UserInterceptor.preSend](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/java/com/heima/notification/websocket/UserInterceptor.java)：CONNECT 帧仅从 `sessionAttributes.get("userId")` 设置 Principal，不再读取客户端 header 中的 userId。
 
 ### S3 会话归属校验 + 消息边界（越权）
-- [ImServiceImpl.getPeerUserId](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：新增会话成员归属校验；`listMessages` / `markRead` 非成员返回 `NO_OPERATOR_AUTH(3000)`。
-- [WebSocketMessageController.handleReadReceipt](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/controller/v1/WebSocketMessageController.java)：已读人以认证身份为准，对端由会话归属推导，避免越权推送已读回执。
-- [ImServiceImpl.sendMessage](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：消息内容限 2000 字。
+- [ImServiceImpl.getPeerUserId](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：新增会话成员归属校验；`listMessages` / `markRead` 非成员返回 `NO_OPERATOR_AUTH(3000)`。
+- [WebSocketMessageController.handleReadReceipt](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/java/com/heima/notification/controller/v1/WebSocketMessageController.java)：已读人以认证身份为准，对端由会话归属推导，避免越权推送已读回执。
+- [ImServiceImpl.sendMessage](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：消息内容限 2000 字。
 
 ### S4 会话并发创建保护
-- [ImServiceImpl.getOrInsertSession](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：利用 `im_sessions.session_key` 唯一索引 + 捕获 `DuplicateKeyException` 回读既有会话。
-- 新增迁移脚本 [alter_im_sessions_add_unique_session_key.sql](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/resources/db/migrations/alter_im_sessions_add_unique_session_key.sql)：`session_key` 加唯一索引 `uk_session_key`。
+- [ImServiceImpl.getOrInsertSession](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/java/com/heima/notification/service/impl/ImServiceImpl.java)：利用 `im_sessions.session_key` 唯一索引 + 捕获 `DuplicateKeyException` 回读既有会话。
+- 新增迁移脚本 [alter_im_sessions_add_unique_session_key.sql](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/resources/db/migrations/alter_im_sessions_add_unique_session_key.sql)：`session_key` 加唯一索引 `uk_session_key`。
 
 ### 实时推送生命周期补齐
-- 新增 [WebSocketEventListener](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/websocket/WebSocketEventListener.java)：监听 `SessionConnectedEvent` / `SessionDisconnectEvent`，连接建立调用 `SessionManager.userOnline`、断开调用 `userOffline`，使接收者在线实时推送真正生效。
+- 新增 [WebSocketEventListener](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/java/com/heima/notification/websocket/WebSocketEventListener.java)：监听 `SessionConnectedEvent` / `SessionDisconnectEvent`，连接建立调用 `SessionManager.userOnline`、断开调用 `userOffline`，使接收者在线实时推送真正生效。
 
 ### M1/M2 未读计数一致性
-- [NotificationServiceImpl.unreadCount](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/main/java/com/heima/notification/service/impl/NotificationServiceImpl.java)：未读数以 **DB 为唯一事实源**，缓存整包数据（total + 各类型）；`incrUnreadCache` / `markTypeRead` 命中后整体失效缓存，下次按 DB 重建，杜绝 total 与各类型之和不一致及扣减负数。
+- [NotificationServiceImpl.unreadCount](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/main/java/com/heima/notification/service/impl/NotificationServiceImpl.java)：未读数以 **DB 为唯一事实源**，缓存整包数据（total + 各类型）；`incrUnreadCache` / `markTypeRead` 命中后整体失效缓存，下次按 DB 重建，杜绝 total 与各类型之和不一致及扣减负数。
 
 ### 验收
 - notification 模块新增/适配单测：`ImServiceImplTest`（含 getPeerUserId、会话并发）、`WebSocketMessageControllerTest`（认证身份 + 已读归属）、`UserInterceptorTest`（不信任裸 Header）、`NotificationServiceImplTest`（整包缓存 + 失效重建）。
-- `mvn -pl heima-leadnews-service/heima-leadnews-notification test` 全量通过。
+- `mvn -pl zhuri-coding-service/zhuri-coding-notification test` 全量通过。
 
 ## 2026-08-27 — 抽奖闭环③：前端「我的收获」完善（惊喜好物 / 我的道具）
 
@@ -892,21 +910,21 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 签到→矿石→抽奖→兑换链路本体已闭环，但此前 **抽到实体奖品后前端无处查看/领取**（侧边栏「我的收获」占位提示"开发中"）。本次补齐抽奖侧前端闭环：抽中实体 → 结果弹窗跳「我的收获」→「惊喜好物」展示 →「去兑换」进入兑换详情页填写收货地址 → 状态流转为「备货中」。
 
 ### 后端改动（reward）
-- [LotteryServiceImpl.getMyPrizes](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：返回字段补充 `prizeId`、`iconUrl`（奖品池索引回填）、`virtualItemCode`（虚拟道具）、`orderStatusNum`（数字状态，供前端状态样式判断）；状态文案统一为 待填地址/备货中/运送中/已收货/已过期。
-- 新增 [LotteryServiceImpl.getPhysicalOrderDetail](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：按订单号返回实体奖品详情（奖品名/图标/状态/已填地址/物流单号），供兑换详情页展示，含用户归属校验。
-- [LotteryController](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/controller/v1/LotteryController.java)：新增 `GET /api/v1/lottery/physical-order/{orderId}`。
+- [LotteryServiceImpl.getMyPrizes](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：返回字段补充 `prizeId`、`iconUrl`（奖品池索引回填）、`virtualItemCode`（虚拟道具）、`orderStatusNum`（数字状态，供前端状态样式判断）；状态文案统一为 待填地址/备货中/运送中/已收货/已过期。
+- 新增 [LotteryServiceImpl.getPhysicalOrderDetail](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：按订单号返回实体奖品详情（奖品名/图标/状态/已填地址/物流单号），供兑换详情页展示，含用户归属校验。
+- [LotteryController](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/controller/v1/LotteryController.java)：新增 `GET /api/v1/lottery/physical-order/{orderId}`。
 
 ### 前端改动
-- 新增「我的收获」页 [harvest/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/user/harvest/index.vue)：分栏「惊喜好物」（实体奖品）与「我的道具」（虚拟奖品）；实体奖品按状态展示「去兑换」（待填地址）/「备货中」等，虚拟奖品标「已发放」。路由 `/user/center/harvest`。
-- 复用兑换详情页 [redeem.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/user/welfare/redeem.vue)：新增 `source` 双模式——`lottery` 模式加载实体订单、**不显示矿石数**、走 `claim-physical` 提交地址（不扣矿石）、按钮文案「确认领取」、成功提示「进入备货状态」。路由 `/user/center/harvest/redeem/:id`。
-- 抽奖结果弹窗 [LotteryResultModal.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/lottery/LotteryResultModal.vue)：抽中实体时出现「去查看我的收获」按钮。
+- 新增「我的收获」页 [harvest/index.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/pages/user/harvest/index.vue)：分栏「惊喜好物」（实体奖品）与「我的道具」（虚拟奖品）；实体奖品按状态展示「去兑换」（待填地址）/「备货中」等，虚拟奖品标「已发放」。路由 `/user/center/harvest`。
+- 复用兑换详情页 [redeem.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/pages/user/welfare/redeem.vue)：新增 `source` 双模式——`lottery` 模式加载实体订单、**不显示矿石数**、走 `claim-physical` 提交地址（不扣矿石）、按钮文案「确认领取」、成功提示「进入备货状态」。路由 `/user/center/harvest/redeem/:id`。
+- 抽奖结果弹窗 [LotteryResultModal.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/components/lottery/LotteryResultModal.vue)：抽中实体时出现「去查看我的收获」按钮。
 - 各用户中心页面（成长/逐日签到/抽奖/兑换）侧边栏「我的收获」由"开发中"占位改为跳转 `/user/center/harvest`。
 
 ### 运行时验证（实证全链路）+ 修复
 起网关/5 个服务 + 前端，真实账号（userId=1700683778）走通 **抽奖保底实物 → 我的收获惊喜好物 → 去兑换 → 填地址 → 备货中** 全链路：
 1. 往空的 `lottery_prize_pool` 补 8 条奖品（随机矿石/随机盲盒/课程5折券/马克杯/小夜灯/金币眼罩/周边徽章/Switch），此前空表导致前端转盘只能用占位数据。
-2. 修复 [oauth.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/common/oauth.js)：`get.env(CPOlAR_BASE_URL)` 未定义 `get` 导致整个入口 `ReferenceError` → 前端白屏；回退为正确 OAuth 回调地址。
-3. 修复 [LotteryServiceImpl.claimPhysical](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：`(String) body.get("orderId")` 强转前端传入的数字抛 `ClassCastException` → HTTP 500；改为 `String.valueOf` 兼容数字/字符串。
+2. 修复 [oauth.js](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/common/oauth.js)：`get.env(CPOlAR_BASE_URL)` 未定义 `get` 导致整个入口 `ReferenceError` → 前端白屏；回退为正确 OAuth 回调地址。
+3. 修复 [LotteryServiceImpl.claimPhysical](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：`(String) body.get("orderId")` 强转前端传入的数字抛 `ClassCastException` → HTTP 500；改为 `String.valueOf` 兼容数字/字符串。
 4. 实测断言：draw 幸运值 5990→0；`lottery_physical_orders` status 由待填地址(1)→备货中(2)，收货信息落库；「我的收获」页面状态联动（待填地址+「去兑换」↔ 备货中+「物品状态跟随物流同步」），物品信息区不显示矿石数。
 
 ### 验收
@@ -918,23 +936,23 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 上一轮补齐了抽奖→兑换的实体物品链路，但虚拟道具（课程5折券）此前只记在抽奖记录字段里，**不真正入账、也无使用消费场景**，属于"看得见用不上"。本次打通虚拟道具闭环：抽中 → 入账持有 → 「我的道具」展示 → 课程下单选购 → 支付成功核销。
 
 ### 后端改动（reward）
-- 新增持有表 [user_virtual_assets](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/resources/db/migrations/add_user_virtual_assets.sql)：`(user_id,item_code)` 唯一，持有数量可累加/扣减。
+- 新增持有表 [user_virtual_assets](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/resources/db/migrations/add_user_virtual_assets.sql)：`(user_id,item_code)` 唯一，持有数量可累加/扣减。
 - `lottery_prize_pool` 新增 `discount_rate` 字段（全课程通用折扣比例，0.5=5折），`prize_course`(course50) 置 0.5000。
-- 新增 [UserVirtualAsset](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/entity/UserVirtualAsset.java) 实体 + [UserVirtualAssetMapper](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/mapper/UserVirtualAssetMapper.java)（`credit` 幂等累加、`consume` 数量守卫原子扣减）。
-- 新增 [VirtualAssetService](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/VirtualAssetService.java) + [VirtualAssetServiceImpl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/VirtualAssetServiceImpl.java)：入账/我的道具聚合查询/持有校验/核销。
-- [LotteryServiceImpl.draw](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：抽中 `type=2` 虚拟道具时调用 `virtualAssetService.credit` 同事务入账。
-- 新增 [VirtualAssetController](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/controller/v1/VirtualAssetController.java)：
+- 新增 [UserVirtualAsset](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/entity/UserVirtualAsset.java) 实体 + [UserVirtualAssetMapper](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/mapper/UserVirtualAssetMapper.java)（`credit` 幂等累加、`consume` 数量守卫原子扣减）。
+- 新增 [VirtualAssetService](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/VirtualAssetService.java) + [VirtualAssetServiceImpl](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/impl/VirtualAssetServiceImpl.java)：入账/我的道具聚合查询/持有校验/核销。
+- [LotteryServiceImpl.draw](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/service/impl/LotteryServiceImpl.java)：抽中 `type=2` 虚拟道具时调用 `virtualAssetService.credit` 同事务入账。
+- 新增 [VirtualAssetController](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/controller/v1/VirtualAssetController.java)：
   - `GET /api/v1/virtual-assets`（外部，我的道具）
   - `GET/ POST /api/v1/reward/user/{userId}/virtual-asset/hold|consume`（内部 Feign，非外部访问，防越权）。
 
 ### 后端改动（content + feign）
-- [IRewardClient](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-feign-api/src/main/java/com/heima/apis/reward/IRewardClient.java) 新增 `getVirtualAssetHold` / `consumeVirtualAsset`，[RewardClient](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/main/java/com/heima/reward/feign/RewardClient.java) 与 [fallback](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-feign-api/src/main/java/com/heima/apis/reward/fallback/IRewardClientFallback.java) 同步实现。
-- `ap_course_order` 新增 `coupon_item_code` 字段（[迁移脚本](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/db/migrations/alter_course_order_add_coupon_item_code.sql)），实体 [ApCourseOrder](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-model/src/main/java/com/heima/model/course/pojos/ApCourseOrder.java) 增加 `couponItemCode`。
-- [OrderServiceImpl.createOrder](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/order/impl/OrderServiceImpl.java)：支持 `couponItemCode`，下单前 Feign 校验持有量与折扣率并计算折扣金额（折扣券与折扣码二选一，券优先）；`handlePaySuccess` 支付成功后 Feign 核销（原子扣减防止超核，失败仅告警留补偿）。
+- [IRewardClient](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-feign-api/src/main/java/com/heima/apis/reward/IRewardClient.java) 新增 `getVirtualAssetHold` / `consumeVirtualAsset`，[RewardClient](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/main/java/com/heima/reward/feign/RewardClient.java) 与 [fallback](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-feign-api/src/main/java/com/heima/apis/reward/fallback/IRewardClientFallback.java) 同步实现。
+- `ap_course_order` 新增 `coupon_item_code` 字段（[迁移脚本](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/db/migrations/alter_course_order_add_coupon_item_code.sql)），实体 [ApCourseOrder](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-model/src/main/java/com/heima/model/course/pojos/ApCourseOrder.java) 增加 `couponItemCode`。
+- [OrderServiceImpl.createOrder](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/order/impl/OrderServiceImpl.java)：支持 `couponItemCode`，下单前 Feign 校验持有量与折扣率并计算折扣金额（折扣券与折扣码二选一，券优先）；`handlePaySuccess` 支付成功后 Feign 核销（原子扣减防止超核，失败仅告警留补偿）。
 
 ### 前端改动
-- [course/detail.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/course/detail.vue)：购买弹窗加载"我的折扣券"，5折券可选可取消（与折扣码互斥），实付 = 原价×折扣率，下单传 `couponItemCode`。
-- [harvest/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/user/harvest/index.vue)：「我的道具」分栏改走聚合持有接口，展示数量；`discountRate<1` 的课程券显示「去使用」→ 跳 `/course`。
+- [course/detail.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/pages/course/detail.vue)：购买弹窗加载"我的折扣券"，5折券可选可取消（与折扣码互斥），实付 = 原价×折扣率，下单传 `couponItemCode`。
+- [harvest/index.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/pages/user/harvest/index.vue)：「我的道具」分栏改走聚合持有接口，展示数量；`discountRate<1` 的课程券显示「去使用」→ 跳 `/course`。
 
 ### 验收
 - reward/content 模块 `mvn compile` 通过；`OrderServiceImplTest` 新增虚拟道具用例（下单折扣、无券下单、持有不足、支付核销）通过；前端 `vite build` 通过。
@@ -946,17 +964,17 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 链路追踪（①）与指标监控（②）已落地，剩余最后一块——**日志管理**。此前日志散落在各服务文件（`e:/logs/leadnews.*.log`），排查问题需逐台机器 `tail/grep`，无法按服务/级别/时间集中检索。选型上放弃 ELK（Elasticsearch + Logstash + Kibana 全家桶内存/磁盘占用高，对本地项目太重），改用 **Loki + Promtail**：Loki 与 Prometheus 同源（标签索引 + 压缩原文，不建全文索引），Promtail 与 Grafana 也复用既有组件，整体资源占用和上手成本都低得多。
 
 ### 日志侧改造（各服务 logback）
-- **[logback-spring.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/main/resources/logback-spring.xml)**：统一由 pattern 日志切到 **LogstashEncoder 结构化 JSON 输出**，字段含 `@timestamp`、`message`、`level`、`logger_name`、`thread_name`、`service`（customFields）、`traceId`/`spanId`（MDC，来自上一块 Micrometer Tracing）。滚转为 `leadnews.{yyyy-MM-dd}.log`（10MB/30 个文件），异步 Appender 避免日志 IO 阻塞业务。
+- **[logback-spring.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-search/src/main/resources/logback-spring.xml)**：统一由 pattern 日志切到 **LogstashEncoder 结构化 JSON 输出**，字段含 `@timestamp`、`message`、`level`、`logger_name`、`thread_name`、`service`（customFields）、`traceId`/`spanId`（MDC，来自上一块 Micrometer Tracing）。滚转为 `leadnews.{yyyy-MM-dd}.log`（10MB/30 个文件），异步 Appender 避免日志 IO 阻塞业务。
 - 同一份 logback 配置按同构方式覆盖 6 个服务兜底 JSON 字段 `service` = 各自服务名。
 
-### 监控组件（[monitoring](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring) 目录，本地一键启动）
-- **Loki（[loki.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/loki/loki.yml)）**：单机模式，监听 3100；TSDB 索引（schema v13）+ filesystem 对象存储；`allow_structured_metadata: true`、pattern ingester 开启；`ingestion_rate_mb: 16` 兜底。
-- **Promtail（[promtail.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/promtail/promtail.yml)）**：按 `e:/logs/leadnews.*.log` 通配采集全部服务日志。pipeline 用 `json` stage 提取 `service/level/traceId` → 仅 `service`/`level` 提升为索引标签 → `timestamp` stage 以日志内 `@timestamp` 为准（RFC3339Nano）。`grpc_listen_port: 0` 规避与 Loki 的 9095 冲突；positions 落盘支持断点续读。
-- **Grafana（[provisioning/datasources/loki.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/grafana/provisioning/datasources/loki.yml)）**：Loki 数据源自动化注册（uid=`loki-main`），与 Prometheus 数据源并存，Explore 中可直接 LogQL 检索。
+### 监控组件（[monitoring](file:///e:/zhuri-coding-portal/zhuri-coding-app/monitoring) 目录，本地一键启动）
+- **Loki（[loki.yml](file:///e:/zhuri-coding-portal/zhuri-coding-app/monitoring/loki/loki.yml)）**：单机模式，监听 3100；TSDB 索引（schema v13）+ filesystem 对象存储；`allow_structured_metadata: true`、pattern ingester 开启；`ingestion_rate_mb: 16` 兜底。
+- **Promtail（[promtail.yml](file:///e:/zhuri-coding-portal/zhuri-coding-app/monitoring/promtail/promtail.yml)）**：按 `e:/logs/leadnews.*.log` 通配采集全部服务日志。pipeline 用 `json` stage 提取 `service/level/traceId` → 仅 `service`/`level` 提升为索引标签 → `timestamp` stage 以日志内 `@timestamp` 为准（RFC3339Nano）。`grpc_listen_port: 0` 规避与 Loki 的 9095 冲突；positions 落盘支持断点续读。
+- **Grafana（[provisioning/datasources/loki.yml](file:///e:/zhuri-coding-portal/zhuri-coding-app/monitoring/grafana/provisioning/datasources/loki.yml)）**：Loki 数据源自动化注册（uid=`loki-main`），与 Prometheus 数据源并存，Explore 中可直接 LogQL 检索。
 
 ### 关键设计与踩坑：trace_id 高基数问题
 - Sematext/官方明确 trace_id 属**高基数**（每条请求唯一），若提升为标签会让 Loki 按 trace 拆出无限增长的数据流 → 索引/存储/查询全面劣化。初版配置曾将 `traceId` 一并 `labels` 提升，实测流分裂严重（同一条日志被拆成数百个流）。
-- 修复：`traceId` 仅留在 JSON 原文，查询时用 LogQL 运行时解析——`{service="leadnews-content"} | json | traceId="6a8d..."` 仍然可以精确定位单链路日志。也尝试过 promtail `metadata` stage（Loki 3.x structured metadata），但官方 2.9.8 二进制未带该扩展，故采用 JSON 原文方案。
+- 修复：`traceId` 仅留在 JSON 原文，查询时用 LogQL 运行时解析——`{service="zhuri-coding-content"} | json | traceId="6a8d..."` 仍然可以精确定位单链路日志。也尝试过 promtail `metadata` stage（Loki 3.x structured metadata），但官方 2.9.8 二进制未带该扩展，故采用 JSON 原文方案。
 
 ### 验证（运行时实证）
 - 端口就绪：Loki 3100 / Promtail 9081 / Grafana 3000 / Prometheus 9090 全监听；Loki `/ready` 返回 ready。
@@ -974,19 +992,19 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 链路追踪（①）解决"某一笔请求跨服务怎么串起来"，但无法回答"系统整体负载如何、哪类接口变慢、内存是否告急"。本次落地第二块——**指标监控**：各服务通过 Micrometer 暴露标准 Prometheus 格式指标，Prometheus 周期性抓取存储，Grafana 出大盘可视化。三个运行中服务（gateway/content/search）已实测出图，user/reward/notification 未启动不影响整体架构。
 
 ### 后端改动
-- **依赖（[pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/pom.xml)）**：父 POM 引入 `micrometer-registry-prometheus`，Micrometer 注册表自动装配为 Prometheus 格式（兼容上一块已引入的 Actuator）。所有服务/网关通过 Actuator 暴露 `/actuator/prometheus`。
+- **依赖（[pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/pom.xml)）**：父 POM 引入 `micrometer-registry-prometheus`，Micrometer 注册表自动装配为 Prometheus 格式（兼容上一块已引入的 Actuator）。所有服务/网关通过 Actuator 暴露 `/actuator/prometheus`。
 - **配置（各服务 / 网关 application.yml）**：`management.endpoints.web.exposure.include` 追加 `prometheus`（与 `health,info` 并列）。**注：暴露端点需重启对应服务生效。**
 
-### 监控组件（[monitoring](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring) 目录，均为本地一键启动，不侵入代码）
-- **Prometheus（[prometheus.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/prometheus/prometheus.yml)）**：`scrape_interval: 10s`；6 个抓取 job（网关 51601 / content 51802 / search 51804 / user 51780 / reward 51905 / notification 51807），每 job 以 `app` 标签标注服务名，`metrics_path: /actuator/prometheus`。端口均按各服务 `application.yml` 实际配置核对过。
+### 监控组件（[monitoring](file:///e:/zhuri-coding-portal/zhuri-coding-app/monitoring) 目录，均为本地一键启动，不侵入代码）
+- **Prometheus（[prometheus.yml](file:///e:/zhuri-coding-portal/zhuri-coding-app/monitoring/prometheus/prometheus.yml)）**：`scrape_interval: 10s`；6 个抓取 job（网关 51601 / content 51802 / search 51804 / user 51780 / reward 51905 / notification 51807），每 job 以 `app` 标签标注服务名，`metrics_path: /actuator/prometheus`。端口均按各服务 `application.yml` 实际配置核对过。
 - **Grafana**：
-  - 数据源自动注册（[provisioning/datasources/prometheus.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/grafana/provisioning/datasources/prometheus.yml)）：`http://127.0.0.1:9090`，`isDefault: true`，uid=`prometheus-main`。
-  - 自定义大盘 [leadnews-dashboard.json](file:///e:/heima-leadnews-portal/heima-leadnews-app/monitoring/grafana/leadnews-dashboard.json)：10 个面板——服务存活（up）、HTTP QPS（`rate(http_server_requests_seconds_count[1m])`）、P50/P95/P99 延迟（`histogram_quantile`）、HTTP 错误率、JVM 堆内存（`jvm_memory_used_bytes`）、CPU 使用率（`system_cpu_usage`）等，支持按 `app` 变量筛选。
+  - 数据源自动注册（[provisioning/datasources/prometheus.yml](file:///e:/zhuri-coding-portal/zhuri-coding-app/monitoring/grafana/provisioning/datasources/prometheus.yml)）：`http://127.0.0.1:9090`，`isDefault: true`，uid=`prometheus-main`。
+  - 自定义大盘 [zhuri-coding-dashboard.json](file:///e:/zhuri-coding-portal/zhuri-coding-app/monitoring/grafana/zhuri-coding-dashboard.json)：10 个面板——服务存活（up）、HTTP QPS（`rate(http_server_requests_seconds_count[1m])`）、P50/P95/P99 延迟（`histogram_quantile`）、HTTP 错误率、JVM 堆内存（`jvm_memory_used_bytes`）、CPU 使用率（`system_cpu_usage`）等，支持按 `app` 变量筛选。
 
 ### 验证（运行时实证）
 - Prometheus Targets API：gateway / content / search **up**（repeated 4 次抓取均成功），user / reward / notification 显示 down（服务未启动，预期行为）。
 - PromQL 实测有真实数据：`sum by (app) (rate(http_server_requests_seconds_count[5m]))` 返回三服务 QPS（gateway≈0.12、search≈0.10、content≈0.09，来自脚本触发的搜索流量）。
-- Grafana：数据源 Prometheus 已注册且 `isDefault=True`；大盘 `leadnews-observability`（7b97c82）导入成功，访问 `http://127.0.0.1:3000/d/leadnews-observability/7b97c82` 出图。
+- Grafana：数据源 Prometheus 已注册且 `isDefault=True`；大盘 `zhuri-coding-observability`（7b97c82）导入成功，访问 `http://127.0.0.1:3000/d/zhuri-coding-observability/7b97c82` 出图。
 
 ### 备注
 - 索引/查询语句均为只读观测，不影响业务代码与运行时行为。
@@ -999,12 +1017,12 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 项目已可在本地完整上线，但缺少上线后必备的可观测能力。本次落地第一块——**调用链路追踪**：生产环境一次请求会跨网关 → search → content/user 多个服务，需要能按 traceId 串起整条调用链，定位慢调用与故障链路。后续指标（Prometheus）与日志集中（ELK）另行规划。
 
 ### 后端改动（全链路，网关 + 5 个业务服务）
-- **依赖（[pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/pom.xml)）**：父 POM 引入 `spring-boot-starter-actuator`、`micrometer-tracing-bridge-brave`、`zipkin-reporter-brave`；网关与服务模块统一引入 Actuator，使 `ServerHttpObservationFilter` 挂载，HTTP 请求进入观测链路并向下游传播追踪头。
+- **依赖（[pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/pom.xml)）**：父 POM 引入 `spring-boot-starter-actuator`、`micrometer-tracing-bridge-brave`、`zipkin-reporter-brave`；网关与服务模块统一引入 Actuator，使 `ServerHttpObservationFilter` 挂载，HTTP 请求进入观测链路并向下游传播追踪头。
 - **配置（各服务 / 网关 application.yml）**：新增 `management.tracing.sampling.probability: 1.0`（本地全量采样，生产建议 0.1~0.5）与 `management.zipkin.tracing.endpoint: http://localhost:9411/api/v2/spans`，开启 Brave + Zipkin 上报。移除各服务无效的 `feign.observation.enabled` 配置。
-- **日志（各服务 [logback-spring.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/main/resources/logback-spring.xml)）**：统一日志 pattern 中 MDC 字段为 `traceId`/`spanId`，使每条日志携带当前链路上下文，跨服务日志可按 traceId 关联。
+- **日志（各服务 [logback-spring.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-search/src/main/resources/logback-spring.xml)）**：统一日志 pattern 中 MDC 字段为 `traceId`/`spanId`，使每条日志携带当前链路上下文，跨服务日志可按 traceId 关联。
 - **关键修复——Feign 调用未生成 CLIENT span（链路中断）**：
   - 根因：Spring Cloud OpenFeign 4.1+ 已移除内置 `FeignObservationAutoConfiguration`，且未引入 `feign-micrometer`，导致 search→content 的 Feign 调用不产生 CLIENT span，trace 上下文在下游中断。
-  - 方案：heima-leadnews-feign-api 引入 `io.github.openfeign:feign-micrometer:13.3`；新增 [FeignObservationConfiguration.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-feign-api/src/main/java/com/heima/apis/config/FeignObservationConfiguration.java)，以全局 `FeignBuilderCustomizer` 注册 `MicrometerObservationCapability`，所有 Feign 客户端接入 Micrometer Observation（CLIENT span + traceId 头传播）。
+  - 方案：zhuri-coding-feign-api 引入 `io.github.openfeign:feign-micrometer:13.3`；新增 [FeignObservationConfiguration.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-feign-api/src/main/java/com/heima/apis/config/FeignObservationConfiguration.java)，以全局 `FeignBuilderCustomizer` 注册 `MicrometerObservationCapability`，所有 Feign 客户端接入 Micrometer Observation（CLIENT span + traceId 头传播）。
 
 ### 验证（运行时实证）
 - Zipkin UI（`http://localhost:9411`）：搜索请求生成包含网关 / search / content 等服务的完整 trace。示例链路 `traceId=6a8d912662187e643407c8cd9bffc501`：search 服务 SERVER span（`id=3407c8cd9bffc501`）+ CLIENT span（`id=283b380e848ce9ae`），content 服务 SERVER span（`id=1bc69e8b7696726f`、`parentId=283b380e848ce9ae`），父子 span 关系正确、上下文传播正常。
@@ -1022,47 +1040,47 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ## 2026-08-24 — 修复搜索结果页文章点击 404（ES 索引雪花 ID 精度丢失）
 - 问题：搜索页点任意文章跳详情页均 404（"文章不存在或已被删除"），但同一文章从文章列表打开正常。
 - 根因（运行时实证）：`app_info_article` 索引曾被一次性回填脚本以 **JS Number** 解析 19 位雪花 ID 写入 `_id`，触发 JS Number（双精度，安全整数上限 ~9e15）舍入 → 精度丢失。例如 DB 真实 ID `2086403442600767490`，ES `_id` 存成 `2086403442600767500`；`2086449569626734593`→`2086449569626734600`，仅末位或末两位不同。搜索返回的 `id` 是错误的舍入值，跳转 `/article/:id` 时后端查库查不到 → 404。正常发布链路（Java Long + `searchClient.syncArticle`）写的是精确 ID，不受影响。
-- 修复（数据侧重建）：新增一次性脚本 [reindex_es_articles.cjs](file:///e:/heima-leadnews-portal/heima-leadnews-app/reindex_es_articles.cjs)，从 MySQL 以 **`CAST AS CHAR`** 导出已发布文章（`ap_article` status=9 + 最新草稿正文），清空旧索引（`_delete_by_query match_all`）后按**精确字符串 `_id`** 重建。`_source.id`/`authorId` 同样以字符串提交，借助 ES long 字段原生强转，避免二次精度丢失。共重建 12 篇，BULK 成功 12/12。
+- 修复（数据侧重建）：新增一次性脚本 [reindex_es_articles.cjs](file:///e:/zhuri-coding-portal/zhuri-coding-app/reindex_es_articles.cjs)，从 MySQL 以 **`CAST AS CHAR`** 导出已发布文章（`ap_article` status=9 + 最新草稿正文），清空旧索引（`_delete_by_query match_all`）后按**精确字符串 `_id`** 重建。`_source.id`/`authorId` 同样以字符串提交，借助 ES long 字段原生强转，避免二次精度丢失。共重建 12 篇，BULK 成功 12/12。
 - 验证：搜索服务 `POST /api/v1/search`（idType=1）返回 `code=200`，`id` 与 DB 完全一致（如 `2086893096533925890`），跳转文章详情不再 404。ES 端 `_id` 与 DB 逐条吻合。
 
 ## 2026-08-24 — 搜索结果页为课程/标签/用户分栏定制独立组件（对齐稀土掘金）
 - 背景：搜索接口已收敛为单一 `/api/v1/search`（`id_type` 分栏）后，课程/标签/用户分栏仍复用文章卡片渲染，字段不匹配。本次为三类分栏定制独立组件，对齐掘金搜索页的卡片视觉：
-  - [SearchResultCourse.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/search/SearchResultCourse.vue)（小册风格）：左竖封面 + 右标题(高亮)/副标题 + 作者头像昵称 + 章节数·学习人数 + 右下价格（0 元显示"免费"）。点击打开 `/course/:id`。
-  - [SearchResultTag.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/search/SearchResultTag.vue)（标签风格）：渐变蓝 `#` 图标 + 标签名(高亮) + "文章数·关注数" + "＋订阅"按钮。点击打开 `/tag/:name`。
-  - [SearchResultUser.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/search/SearchResultUser.vue)（用户风格）：圆形头像 + 昵称(高亮/品牌蓝) + 关注/粉丝数(容错) + "＋关注"按钮。点击跳转 `/user/:id`。
-- [sanitize.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/utils/sanitize.js)：新增 `highlight(text, keyword)` 安全高亮函数——先 HTML 转义再包裹 `<em>`，避免标题/昵称注入 XSS，正则元字符已转义。
-- [search_result/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/search_result/index.vue)：`load()` 对课程/标签/用户分栏原样写入各分栏数组（不再走文章字段转换），模板按 `currentTab` 用 `<template v-if>` 分发渲染对应组件；新增 `onOpenCourse`/`onOpenTag`/`onOpenUser` 跳转与 `onFollowUser` 关注交互（复用 [follow.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/apis/follow.js) 的 `/api/v1/follow/do`，未登录提示弹登录框，乐观更新失败回滚）。
+  - [SearchResultCourse.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/components/search/SearchResultCourse.vue)（小册风格）：左竖封面 + 右标题(高亮)/副标题 + 作者头像昵称 + 章节数·学习人数 + 右下价格（0 元显示"免费"）。点击打开 `/course/:id`。
+  - [SearchResultTag.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/components/search/SearchResultTag.vue)（标签风格）：渐变蓝 `#` 图标 + 标签名(高亮) + "文章数·关注数" + "＋订阅"按钮。点击打开 `/tag/:name`。
+  - [SearchResultUser.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/components/search/SearchResultUser.vue)（用户风格）：圆形头像 + 昵称(高亮/品牌蓝) + 关注/粉丝数(容错) + "＋关注"按钮。点击跳转 `/user/:id`。
+- [sanitize.js](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/utils/sanitize.js)：新增 `highlight(text, keyword)` 安全高亮函数——先 HTML 转义再包裹 `<em>`，避免标题/昵称注入 XSS，正则元字符已转义。
+- [search_result/index.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/pages/search_result/index.vue)：`load()` 对课程/标签/用户分栏原样写入各分栏数组（不再走文章字段转换），模板按 `currentTab` 用 `<template v-if>` 分发渲染对应组件；新增 `onOpenCourse`/`onOpenTag`/`onOpenUser` 跳转与 `onFollowUser` 关注交互（复用 [follow.js](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/apis/follow.js) 的 `/api/v1/follow/do`，未登录提示弹登录框，乐观更新失败回滚）。
 - 说明：标签订阅按钮暂为占位（后端无订阅接口）；用户 search 返回暂无 followCount/isFollowed 字段，卡片对缺失元信息自动隐藏。
 - 验证：`npm run build` 通过（exit 0，仅 chunk size 提示）。
 
 ## 2026-08-24 — 搜索结果页搜索图标失效修复 + 搜索接口改名 + 沸点话题接口对齐
-- 搜索图标修复（前端 [search_result/index.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/search_result/index.vue)）：`/search_result` 与首页共用同名 `Layout`，切换不同 `keyword`（仅路由 query 变化）时 `SearchResult` 组件实例被 Vue Router 复用，`created()` 不会重新执行，导致图标点击不发起搜索。新增 `watch: '$route.query.keyword'`，感知关键词变化后重置分页/列表并重新 `load()`。
-- 搜索接口改名（避免与联想词混）：文章搜索完整路径由 `/api/v1/article/search/search` 缩短为 `/api/v1/article/search`，与 `/api/v1/associate/search` 同级语义。改动：后端 [ArticleSearchController.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/main/java/com/heima/search/controller/v1/ArticleSearchController.java) 方法映射 `/search` → 空路径；前端 [conf.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/common/conf.js) URL 更新；网关单测 [AuthorizeFilterTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java) 断言路径同步（网关白名单用 `startsWith("/search/api/v1/article/search")` 仍命中，无需改动）。**需重启 search 服务与网关生效。**
-- 沸点话题接口对齐（前端 [topic.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/apis/topic.js)）：`getRecommendTopics` 请求路径由 `/api/v1/topics/recommend` 修正为 `/api/v1/topics/recommend-topics`，与后端 `TopicController` 当前映射一致。
+- 搜索图标修复（前端 [search_result/index.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/pages/search_result/index.vue)）：`/search_result` 与首页共用同名 `Layout`，切换不同 `keyword`（仅路由 query 变化）时 `SearchResult` 组件实例被 Vue Router 复用，`created()` 不会重新执行，导致图标点击不发起搜索。新增 `watch: '$route.query.keyword'`，感知关键词变化后重置分页/列表并重新 `load()`。
+- 搜索接口改名（避免与联想词混）：文章搜索完整路径由 `/api/v1/article/search/search` 缩短为 `/api/v1/article/search`，与 `/api/v1/associate/search` 同级语义。改动：后端 [ArticleSearchController.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-search/src/main/java/com/heima/search/controller/v1/ArticleSearchController.java) 方法映射 `/search` → 空路径；前端 [conf.js](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/common/conf.js) URL 更新；网关单测 [AuthorizeFilterTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-gateway/zhuri-coding-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java) 断言路径同步（网关白名单用 `startsWith("/search/api/v1/article/search")` 仍命中，无需改动）。**需重启 search 服务与网关生效。**
+- 沸点话题接口对齐（前端 [topic.js](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/apis/topic.js)）：`getRecommendTopics` 请求路径由 `/api/v1/topics/recommend` 修正为 `/api/v1/topics/recommend-topics`，与后端 `TopicController` 当前映射一致。
 
 ## 2026-08-24 — 搜索结果页搜索报错修复（ES 索引缺 publishTime 导致排序崩溃 + 游客搜索放行）
 - 问题：搜索结果页再次搜索报 `UncategorizedElasticsearchException: [es/search] failed: [search_phase_execution_exception] all shards failed`。
 - 根因（运行时实证）：`app_info_article` 索引为陈旧的手工创建，mapping 与文档均**缺失 `publishTime`**。`ArticleSearchServiceImpl.search` 无条件 `sort by publishTime`（Controller 还会把 `minBehotTime` 缺省为 now，触发对其 `range` 过滤），对不存在字段排序 → ES 报 `No mapping found for [publishTime] in order to sort on` → 所有分片失败。此时索引仅有 2 篇残缺文档（缺标题/作者名），而 DB 中已发布(状态9)文章有 11 篇未同步。
 - 数据侧处理：重建 `app_info_article` 索引（`publishTime` 映射为 `date / epoch_millis`，标题/正文为 `text`，其余字段按实体对齐），并从 DB `ap_article` + `ap_article_content` 一次性回填全部 11 篇已发布文章（含 `publishTime` 时间戳、标题、作者、正文 markdown）。ES 未安装 ik 分词插件（仅 x-pack），故映射沿用默认 standard 分词，未启用实体中的 `ik_max_word`。
-- 网关（[AuthorizeFilter.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/main/java/com/heima/app/gateway/filter/AuthorizeFilter.java)）：按需求放行 `/search/api/v1/article/search` 匿名只读搜索（与 `associate/search` 联想一致，利于 SEO 与浏览）。并新增对应单测 [AuthorizeFilterTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java)。
+- 网关（[AuthorizeFilter.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-gateway/zhuri-coding-app-gateway/src/main/java/com/heima/app/gateway/filter/AuthorizeFilter.java)）：按需求放行 `/search/api/v1/article/search` 匿名只读搜索（与 `associate/search` 联想一致，利于 SEO 与浏览）。并新增对应单测 [AuthorizeFilterTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-gateway/zhuri-coding-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java)。
 - 验证：搜索服务直接调用 `/api/v1/article/search/search` 返回 `code=200`，并按 `publishTime` 倒序；ES 排序查询恢复（文档数 11）。网关模块 `mvn test` 通过。**网关需重启后白名单生效。**
 - 运行修复脚本：临时 reindex 脚本与数据文件（`reindex-search.js`/`search_articles.tsv`）已用后清理，未留在仓库。
 
 ## 2026-08-24 — 文章发布后异步链路报错修复（乐观锁未注册 + search 未启动）
-- 后端（[ContentApplication.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/ContentApplication.java)）：`MybatisPlusInterceptor` 补回 `OptimisticLockerInnerInterceptor`。根因：`TaskinfoLogs.version` 标注 `@Version`，但 content 服务未注册乐观锁拦截器，导致 `updateById`（`TaskServiceImpl.updateDb`）触发 `Parameter 'MP_OPTLOCK_VERSION_ORIGINAL' not found` 绑定异常。修复后与 DB（`version` 默认 0、非空）相匹配，任务日志状态更新按设计走乐观锁，异常消除。
-- 环境项：`leadnews-search` 未注册实例导致 Feign `updateArticleStatus` 503。代码已有兜底（`pub_status=1` + 本地消息表 20s 重试），待启动搜索服务后自动重放同步，无需改代码。
+- 后端（[ContentApplication.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/ContentApplication.java)）：`MybatisPlusInterceptor` 补回 `OptimisticLockerInnerInterceptor`。根因：`TaskinfoLogs.version` 标注 `@Version`，但 content 服务未注册乐观锁拦截器，导致 `updateById`（`TaskServiceImpl.updateDb`）触发 `Parameter 'MP_OPTLOCK_VERSION_ORIGINAL' not found` 绑定异常。修复后与 DB（`version` 默认 0、非空）相匹配，任务日志状态更新按设计走乐观锁，异常消除。
+- 环境项：`zhuri-coding-search` 未注册实例导致 Feign `updateArticleStatus` 503。代码已有兜底（`pub_status=1` + 本地消息表 20s 重试），待启动搜索服务后自动重放同步，无需改代码。
 
 ## 2026-08-24 — 文章详情页左侧行为栏视觉优化 & 导入文章 NoClassDefFoundError 修复
-- 前端（[article.ftl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/templates/article.ftl)）：
+- 前端（[article.ftl](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/templates/article.ftl)）：
   - 左侧行为工具栏（`.action-sidebar`）改为距左 `24px` 留白，脱离屏幕边缘；四周统一圆角 + 柔和投影，不再贴死最左边。
   - 行为元素语义化配色，告别"全黑无区分"：未激活图标统一中性灰；点赞=红、评论=蓝、收藏=金、分享=绿、举报=红(警示)、沉浸/设置/回顶=灰；悬停与激活由品牌蓝 `#1e80ff` 高亮并加浅蓝底。同时补齐暗色模式下的图标提亮与高亮配色。
-- 后端（[pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/pom.xml)）：`lang3.version` `3.5` → `3.17.0`。根因：content 服务运行时 classpath 中 commons-lang3 被父 POM 降为 `3.5`（缺 `org.apache.commons.lang3.SystemProperties` 类，该类 3.16.0 才引入），导入文章（引入 Apache Tika 解析链路）触发 `NoClassDefFoundError`。升级后全模块统一解析到含该类版本。
-- 验证：`mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 通过（含 model/common/utils/feign-api/file-starter）。
+- 后端（[pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/pom.xml)）：`lang3.version` `3.5` → `3.17.0`。根因：content 服务运行时 classpath 中 commons-lang3 被父 POM 降为 `3.5`（缺 `org.apache.commons.lang3.SystemProperties` 类，该类 3.16.0 才引入），导入文章（引入 Apache Tika 解析链路）触发 `NoClassDefFoundError`。升级后全模块统一解析到含该类版本。
+- 验证：`mvn -pl zhuri-coding-service/zhuri-coding-content -am compile` 通过（含 model/common/utils/feign-api/file-starter）。
 
 ## 2026-08-23 — 修复 login_auth 异常输入被误报为"服务器错误 503"
 - 问题定位（运行时实证）：网关路由正常，异常输入触发的其实是 user 服务内部异常被全局处理器误标记。复现根因两条：
-  1. [ApUserLoginController.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/main/java/com/heima/user/controller/v1/ApUserLoginController.java) `login()` 直接 `phoneOrEmail.contains("@")`，请求体缺 `phoneOrEmail` 时 NPE（实测堆栈 `NullPointerException: ... "phoneOrEmail" is null`）→ 被 `ExceptionCatch` 通用分支兜成 HTTP 500 / code 503"服务器内部错误"。
-  2. 畸形 JSON 触发 `HttpMessageNotReadableException`，未被 [ExceptionCatch.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-common/src/main/java/com/heima/common/exception/ExceptionCatch.java) 单独处理，同样被当作服务器错误。
+  1. [ApUserLoginController.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-user/src/main/java/com/heima/user/controller/v1/ApUserLoginController.java) `login()` 直接 `phoneOrEmail.contains("@")`，请求体缺 `phoneOrEmail` 时 NPE（实测堆栈 `NullPointerException: ... "phoneOrEmail" is null`）→ 被 `ExceptionCatch` 通用分支兜成 HTTP 500 / code 503"服务器内部错误"。
+  2. 畸形 JSON 触发 `HttpMessageNotReadableException`，未被 [ExceptionCatch.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-common/src/main/java/com/heima/common/exception/ExceptionCatch.java) 单独处理，同样被当作服务器错误。
 - 后端改动：
   - `ApUserLoginController.login()`：`phoneOrEmail` 判空，缺失返回 `PARAM_REQUIRE`（不再 NPE）。
   - `ExceptionCatch`：新增 `@ExceptionHandler(HttpMessageNotReadableException.class)`，坏 JSON 返回 `PARAM_INVALID` + HTTP 400（公共模块，所有服务收益）。
@@ -1070,12 +1088,12 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ## 2026-08-23 — B4 内容审核 fail-closed 收紧：AI 服务不可用不再"降级通过"
 - 问题定位：摸底清单 B4「AI 审核异常降级通过」的实际根因在两条链路的**共流传入点** `BailianAiServiceImpl`——`comprehensiveAudit`(文章) 与 `checkViolation`(评论/沸点/专栏) 在 AI 调用失败或无有效响应时把结果伪装成"通过"(`success=true, is_violation=false`)，导致上层的 fail-closed 形同虚设（`AbstractAuditService` 的 `AuditServiceUnavailableException` 永远不会触发）。
 - 后端改动：
-  - [BailianAiServiceImpl.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/BailianAiServiceImpl.java)：`comprehensiveAudit`/`checkViolation` 仅在解析到**有效审核结果**时置 `success=true`；异常或响应解析失败/无响应时保持 `success=false`，删除了"降级通过"分支。
-  - [AIViolationProcessor.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/processor/AIViolationProcessor.java)：`success!=true` 或抛异常时 `return false`（拒审→文章不入库/不上架），并写入"内容审核服务暂不可用"原因。
-  - [AbstractAuditService.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/AbstractAuditService.java) `checkViolation`：`success!=true` 时抛 `AuditServiceUnavailableException`（与既有 fail-closed 文档策略对齐，真正触发）。
+  - [BailianAiServiceImpl.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/article/impl/BailianAiServiceImpl.java)：`comprehensiveAudit`/`checkViolation` 仅在解析到**有效审核结果**时置 `success=true`；异常或响应解析失败/无响应时保持 `success=false`，删除了"降级通过"分支。
+  - [AIViolationProcessor.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/article/processor/AIViolationProcessor.java)：`success!=true` 或抛异常时 `return false`（拒审→文章不入库/不上架），并写入"内容审核服务暂不可用"原因。
+  - [AbstractAuditService.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/article/impl/AbstractAuditService.java) `checkViolation`：`success!=true` 时抛 `AuditServiceUnavailableException`（与既有 fail-closed 文档策略对齐，真正触发）。
 - 测试：
-  - [AbstractAuditServiceTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/AbstractAuditServiceTest.java)：为通过/违规 mock 补 `success=true`，新增「服务不可用返回 success=false → fail-closed 抛异常」用例（6 例）。
-  - [AIViolationProcessorTest.java](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/processor/AIViolationProcessorTest.java)（新增）：空内容跳过 / success=false 拒审 / 违规拒审 / 通过 / 异常拒审 5 例。
+  - [AbstractAuditServiceTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/AbstractAuditServiceTest.java)：为通过/违规 mock 补 `success=true`，新增「服务不可用返回 success=false → fail-closed 抛异常」用例（6 例）。
+  - [AIViolationProcessorTest.java](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/processor/AIViolationProcessorTest.java)（新增）：空内容跳过 / success=false 拒审 / 违规拒审 / 通过 / 异常拒审 5 例。
 - 说明：评论/沸点默认"先展后审"、重试超限后仍走各自既有 `DEGRADED_PASSED`（属 B2/B3 产品窗口，本次不改）；文章路径为硬 fail-closed（不发布）。
 
 ---
@@ -1083,14 +1101,14 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ## 2026-08-23 — 应用首页内容展示优化：点击产品名回到首页 & 重复点击子分栏均触发文章列表重查
 - API/Bug 背景：此前「已处于综合首页 /home 时点击产品名（逐日Coding）」因路由无变化（同路由 push 为 no-op）不触发查询；「已选中 推荐/最新 子分栏后再点同一分栏」被 `switchSubTab` 的 `current===subTab` 早退跳过。
 - 前端改动：
-  - [layout_main.vue](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/components/layouts/layout_main.vue#L575-L588) `goToHome`：已在 `/home` 时点击产品名/首页 → `dispatchEvent(new CustomEvent('feed-refresh'))`，走 `handleGlobalRefresh → loadnew(currentTab)` 重置种子重新查询；否则正常 `router.push('/home')`。
-  - [feedMixin.js](file:///e:/heima-leadnews-portal/heima-leadnews-app/src/pages/home/mixins/feedMixin.js#L523-L530) `switchSubTab`：移除 `current===subTab` 早退，改为「重复点击当前子分栏也重置种子并重新请求」；`follow` 分栏未登录仍先引导登录。
+  - [layout_main.vue](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/components/layouts/layout_main.vue#L575-L588) `goToHome`：已在 `/home` 时点击产品名/首页 → `dispatchEvent(new CustomEvent('feed-refresh'))`，走 `handleGlobalRefresh → loadnew(currentTab)` 重置种子重新查询；否则正常 `router.push('/home')`。
+  - [feedMixin.js](file:///e:/zhuri-coding-portal/zhuri-coding-app/src/pages/home/mixins/feedMixin.js#L523-L530) `switchSubTab`：移除 `current===subTab` 早退，改为「重复点击当前子分栏也重置种子并重新请求」；`follow` 分栏未登录仍先引导登录。
 - 回归：`npm run build` 通过（Vite 构建成功，仅 chunk 体积提示非错误）。
 
 ---
 
 ## 2026-08-23 — reward 权限安全（D1 越权 / D2 匿名冒充）运行时实证拦截通过
-- 实证方式：本地经 `AppJwtUtil` + `JWT_SECRET` 自造「攻击者 token」(userId=9999)/「本人 token」(userId=1)，经网关(51601)发起 5 条攻击向量，**全部被拦截**（详见 [上线就绪度业务摸底清单.md](file:///e:/heima-leadnews-portal/heima-leadnews-app/docs/上线就绪度业务摸底清单.md) P4）。
+- 实证方式：本地经 `AppJwtUtil` + `JWT_SECRET` 自造「攻击者 token」(userId=9999)/「本人 token」(userId=1)，经网关(51601)发起 5 条攻击向量，**全部被拦截**（详见 [上线就绪度业务摸底清单.md](file:///e:/zhuri-coding-portal/zhuri-coding-app/docs/上线就绪度业务摸底清单.md) P4）。
 - D1 用户资产越权：`/reward/api/v1/reward/user/{他人id}/ore/add`、`.../assets` —— 无 token 匿名→网关 **444**；带合法 token→reward 拦截器注入用户后 `UserAssetsController.isExternalCall()` → **403 该接口仅限服务内部调用**（仅服务间 Feign 直连放行）。
 - D2 匿名冒充 ID=1：`/reward/api/v1/sign/checkin` 无 token 或伪造 `userId` 头→网关 **444**；`CheckinController.requireUserId()` 对匿名 `NEED_LOGIN`（仅信任拦截器从 accToken 解析的 userId，废弃原"缺省 1L"）。
 - 正常路径不受损：本人 token 调 `/sign/status`、`/sign/today` 均 **200**。
@@ -1099,127 +1117,127 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ---
 
 ## 2026-08-23 — 支付宝支付回调地址动态化（去除显式 notify/return 配置，按场景 base-url/web-base-url 拼接）
-- 移除 [application.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/application.yml) 中显式的 `notify-url` / `return-url` 配置，仅保留 `base-url`（网关对外，经 `ALIPAY_BASE_URL` 注入）与 `web-base-url`（前端 SPA，经 `ALIPAY_WEB_BASE_URL` 注入）。内网穿透域名变更时只需改环境变量，无需改动代码。
+- 移除 [application.yml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/application.yml) 中显式的 `notify-url` / `return-url` 配置，仅保留 `base-url`（网关对外，经 `ALIPAY_BASE_URL` 注入）与 `web-base-url`（前端 SPA，经 `ALIPAY_WEB_BASE_URL` 注入）。内网穿透域名变更时只需改环境变量，无需改动代码。
 - 支付场景各自拼接绝对地址：
-  - 课程支付 [PayController](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/controller/v1/pay/PayController.java)：异步通知 = `base-url + /content/api/v1/course/pay/notify`（回打网关），回跳 = `web-base-url + /course/{courseId}`（前端课程页）。
-  - 文章打赏 [TipServiceImpl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/tip/impl/TipServiceImpl.java)：通知/回跳均基于 `base-url`。
-- 精简 [AlipayService](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/pay/AlipayService.java)：移除引用已删字段的 3 参 `generatePayPage` 重载，统一使用 5 参方法由业务场景传入拼接好的 URL；同步更新 [AlipayServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/pay/impl/AlipayServiceImplTest.java)（去掉已删除字段注入、改 5 参调用）。`mvn test` 通过。
+  - 课程支付 [PayController](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/controller/v1/pay/PayController.java)：异步通知 = `base-url + /content/api/v1/course/pay/notify`（回打网关），回跳 = `web-base-url + /course/{courseId}`（前端课程页）。
+  - 文章打赏 [TipServiceImpl](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/tip/impl/TipServiceImpl.java)：通知/回跳均基于 `base-url`。
+- 精简 [AlipayService](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/pay/AlipayService.java)：移除引用已删字段的 3 参 `generatePayPage` 重载，统一使用 5 参方法由业务场景传入拼接好的 URL；同步更新 [AlipayServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/pay/impl/AlipayServiceImplTest.java)（去掉已删除字段注入、改 5 参调用）。`mvn test` 通过。
 
 ---
 
 ## 2026-08-23 — content 模块第六轮：支付/订单域核心补齐，整体行覆盖约 66%，门禁 0.62 保持达标
 - content 模块 `mvn verify` 通过（门禁 `jacoco.line.min=0.62`），共 **673** 例单测全绿。
 - 新增 5 个 service/impl 测试类（支付/订单域核心——折扣码、订单、结算、支付联动、支付宝）：
-  - [DiscountServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/order/impl/DiscountServiceImplTest.java)（约 13 例，97%）：折扣码创建缺省补齐/编码/上限/启用状态、列表、禁用、validateDiscount 校验（过期/停用/超额/不匹配课程）、consumeDiscountCode 幂等与失败。
-  - [OrderServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/order/impl/OrderServiceImplTest.java)（15 例，98.5%）：createOrder 参数校验/课程不存在/折扣码无效/FIXED 与 PERCENTAGE 计算/金额下溢归零/默认支付方式、getOrderStatus 归属防越权、getMyOrders 分页、handlePaySuccess 全链路（原子消费折扣码、课程学习人数/营收、新购/续购权限、联动异常隔离）、getByOrderNo。
-  - [SettlementServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/order/impl/SettlementServiceImplTest.java)（10 例，99%）：月度结算幂等(已结算跳过)、无订单提前返回、按课程分组 70/30 分成、作者缺失 authorId 兜底 0、并发 DuplicateKeyException 幂等跳过、getMonthlyList 汇总与 getSettlementDetail。
-  - [PaymentRewardServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/payment/impl/PaymentRewardServiceImplTest.java)（9 例，97.7%）：购课/打赏成功加逐日经验 + 发系统通知，等级服务异常与通知/课程查询失败降级不影响支付主流程。
-  - [AlipayServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/pay/impl/AlipayServiceImplTest.java)（9 例，91%）：凭据齐全生成真实支付表单/凭据或生成失败回退模拟页、回调验签/金额一致性/订单状态校验（防篡改）。
-- 修复 [OrderServiceImplTest.createOrderPercentageDiscount](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/order/impl/OrderServiceImplTest.java#L152-L165)：百分比折扣产出 80.0/20.0（scale=1），改用 `compareTo` 做刻度无关的数值断言。
+  - [DiscountServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/order/impl/DiscountServiceImplTest.java)（约 13 例，97%）：折扣码创建缺省补齐/编码/上限/启用状态、列表、禁用、validateDiscount 校验（过期/停用/超额/不匹配课程）、consumeDiscountCode 幂等与失败。
+  - [OrderServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/order/impl/OrderServiceImplTest.java)（15 例，98.5%）：createOrder 参数校验/课程不存在/折扣码无效/FIXED 与 PERCENTAGE 计算/金额下溢归零/默认支付方式、getOrderStatus 归属防越权、getMyOrders 分页、handlePaySuccess 全链路（原子消费折扣码、课程学习人数/营收、新购/续购权限、联动异常隔离）、getByOrderNo。
+  - [SettlementServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/order/impl/SettlementServiceImplTest.java)（10 例，99%）：月度结算幂等(已结算跳过)、无订单提前返回、按课程分组 70/30 分成、作者缺失 authorId 兜底 0、并发 DuplicateKeyException 幂等跳过、getMonthlyList 汇总与 getSettlementDetail。
+  - [PaymentRewardServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/payment/impl/PaymentRewardServiceImplTest.java)（9 例，97.7%）：购课/打赏成功加逐日经验 + 发系统通知，等级服务异常与通知/课程查询失败降级不影响支付主流程。
+  - [AlipayServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/pay/impl/AlipayServiceImplTest.java)（9 例，91%）：凭据齐全生成真实支付表单/凭据或生成失败回退模拟页、回调验签/金额一致性/订单状态校验（防篡改）。
+- 修复 [OrderServiceImplTest.createOrderPercentageDiscount](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/order/impl/OrderServiceImplTest.java#L152-L165)：百分比折扣产出 80.0/20.0（scale=1），改用 `compareTo` 做刻度无关的数值断言。
 
 ---
 
 ## 2026-08-23 — content 模块第五轮：逐力值/钻石/权限补齐，整体行覆盖提升至约 65%，门禁棘轮至 0.62
 - content 模块整体行覆盖提升至 **65.12%**（覆盖 6181 / 总 9491），verify「All coverage checks have been met」通过（门禁 0.62）。
 - 新增 3 个 service/impl 测试类（等级体系剩余核心）：
-  - [LevelPowerServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelPowerServiceTest.java)（8 例）：逐力值计算常规/等级不变、等级升级触发权限重算与钻石奖励、发布文章达日限额(上限2)短路、发布/互动(like/comment/favorite=1)/阅读(折算÷100)/兜底各 changeType、实际值<=0 处理、入明细与等级落库、简化入口 calculatePower 委托。
-  - [LevelDiamondServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelDiamondServiceTest.java)（5 例）：无等级配置/无钻石奖励跳过、正常发放并落明细日志、远程返回异常/null 时安全降级。
-  - [LevelPermissionServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelPermissionServiceImplTest.java)（9 例）：hasPermission 判定、getUserPermissions、升级授予(空记录新建/已过期重置)、降级回收、等级不跨门槛不变更、基础权限首次分配(7项)/已有跳过。
-- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/pom.xml) 将 JaCoCo 门禁棘轮至 `jacoco.line.min=0.62`。
+  - [LevelPowerServiceTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/level/impl/LevelPowerServiceTest.java)（8 例）：逐力值计算常规/等级不变、等级升级触发权限重算与钻石奖励、发布文章达日限额(上限2)短路、发布/互动(like/comment/favorite=1)/阅读(折算÷100)/兜底各 changeType、实际值<=0 处理、入明细与等级落库、简化入口 calculatePower 委托。
+  - [LevelDiamondServiceTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/level/impl/LevelDiamondServiceTest.java)（5 例）：无等级配置/无钻石奖励跳过、正常发放并落明细日志、远程返回异常/null 时安全降级。
+  - [LevelPermissionServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/level/impl/LevelPermissionServiceImplTest.java)（9 例）：hasPermission 判定、getUserPermissions、升级授予(空记录新建/已过期重置)、降级回收、等级不跨门槛不变更、基础权限首次分配(7项)/已有跳过。
+- 在 [pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/pom.xml) 将 JaCoCo 门禁棘轮至 `jacoco.line.min=0.62`。
 
 ---
 
 ## 2026-08-23 — content 模块第四轮：等级体系核心补齐，整体行覆盖提升至约 64%，门禁棘轮至 0.60
 - content 模块整体行覆盖提升至 **63.55%**（覆盖 6032 / 总 9491），verify「All coverage checks have been met」通过（门禁 0.60）。
 - 新增 2 个 service/impl 测试类（等级体系核心——逐日/逐力两套等级）：
-  - [LevelQueryServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelQueryServiceTest.java)（10 例）：getUserLevel 命中/新建默认落库、getUserLevelInfo 逐日/逐力标题与权限、getUserLevelData 矿石远端获取与异常降级、下一级门槛存在/回退 dailyLevel×150、升级百分比计算、getLevelConfigs、calculateLevel 命中/回落最高级/无配置返回 1。
-  - [LevelPrivilegeServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelPrivilegeServiceTest.java)（6 例）：getLevelPrivileges 登录/未登录分支、等级规格与按 needJscoreLevel 分组、priv_status 解锁判断、descJson 正常/空/非法解析；getUserInfoPack 用户信息与成长信息回填、当前/下一级门槛匹配、Feign 异常降级、未登录空态。
-- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/pom.xml) 将 JaCoCo 门禁棘轮至 `jacoco.line.min=0.60`。
+  - [LevelQueryServiceTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/level/impl/LevelQueryServiceTest.java)（10 例）：getUserLevel 命中/新建默认落库、getUserLevelInfo 逐日/逐力标题与权限、getUserLevelData 矿石远端获取与异常降级、下一级门槛存在/回退 dailyLevel×150、升级百分比计算、getLevelConfigs、calculateLevel 命中/回落最高级/无配置返回 1。
+  - [LevelPrivilegeServiceTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/level/impl/LevelPrivilegeServiceTest.java)（6 例）：getLevelPrivileges 登录/未登录分支、等级规格与按 needJscoreLevel 分组、priv_status 解锁判断、descJson 正常/空/非法解析；getUserInfoPack 用户信息与成长信息回填、当前/下一级门槛匹配、Feign 异常降级、未登录空态。
+- 在 [pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/pom.xml) 将 JaCoCo 门禁棘轮至 `jacoco.line.min=0.60`。
 
 ---
 
 ## 2026-08-23 — content 模块第三轮：个人动态/沸点互动补齐，整体行覆盖提升至约 62%
 - content 模块整体行覆盖提升至 **61.62%**（覆盖 5848 / 总 9491），verify「All coverage checks have been met」通过（门禁 0.55）。
 - 新增 2 个测试类：
-  - [UserDynamicControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/controller/v1/user/UserDynamicControllerTest.java)（12 例）：userId 空/0 迁移取当前用户、未登录 NEED_LOGIN、size 下限/上限；文章/沸点/关注三类动态 VO 组装与描述/封面/URL/阅读格式化；目标数据缺失或用户信息异常时丢弃、targetUserId 缺失回退 targetId 的正确组装；firstImage 对空/逗号/JSON 数组解析。
-  - [PinsInteractionServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/pins/impl/PinsInteractionServiceTest.java)（17 例）：like/unlike 守卫与幂等、跨用户触发事件、本人操作不触发、事件异常降级、沸点缺失；评论未登录/内容校验/1000 字上限、纯文本与纯图（表情包）评论、回复递增父级回复数、事件降级；share 参数/目标不存在/正常递增分享数。
-- 修复 [UserDynamicControllerTest.followFallbackTargetId](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/controller/v1/user/UserDynamicControllerTest.java#L243-L256)：断言由「空列表」修正为验证 targetUserId 缺失时回退 targetId=500 的组装结果。
+  - [UserDynamicControllerTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/controller/v1/user/UserDynamicControllerTest.java)（12 例）：userId 空/0 迁移取当前用户、未登录 NEED_LOGIN、size 下限/上限；文章/沸点/关注三类动态 VO 组装与描述/封面/URL/阅读格式化；目标数据缺失或用户信息异常时丢弃、targetUserId 缺失回退 targetId 的正确组装；firstImage 对空/逗号/JSON 数组解析。
+  - [PinsInteractionServiceTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/pins/impl/PinsInteractionServiceTest.java)（17 例）：like/unlike 守卫与幂等、跨用户触发事件、本人操作不触发、事件异常降级、沸点缺失；评论未登录/内容校验/1000 字上限、纯文本与纯图（表情包）评论、回复递增父级回复数、事件降级；share 参数/目标不存在/正常递增分享数。
+- 修复 [UserDynamicControllerTest.followFallbackTargetId](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/controller/v1/user/UserDynamicControllerTest.java#L243-L256)：断言由「空列表」修正为验证 targetUserId 缺失时回退 targetId=500 的组装结果。
 
 ---
 
 ## 2026-08-23 — content 模块第二轮：推荐/专栏服务补齐，整体行覆盖提升至约 59%，门禁棘轮至 0.55
 - content 模块整体行覆盖由 56.4% 提升至 **58.97%**（覆盖 5597 / 总 9491），549 例单测全绿，verify「All coverage checks have been met」通过。
 - 新增 2 个 service/impl 测试类：
-  - [ApArticleRecommendServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java)（10 例）：四入口委托与默认参数归一、follow 分栏（未登录/未关注/有关注）、latest 分栏 hasMore 两种边界、推荐分栏多候选全局序列与跨页分页、标签/作者配额贪心及配额不足追加降级、computeBaseScore 对数归一化与 logNorm 边界。`@Value` 通过 ReflectionTestUtils 注入。
-  - [ColumnServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/column/impl/ColumnServiceImplTest.java)（13 例）：列表（未登录/过滤/分页）、统计四段 count、创建参数校验与异步审核、更新/删除各守卫分支与成功路径、asyncReviewColumn 封面审核与异常捕获、getStatusCode 各 status。`ServiceImpl` baseMapper 反射注入 + ApColumn TableInfo 初始化。
-- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/pom.xml) 将 JaCoCo 门禁二次棘轮至 `jacoco.line.min=0.55`。
+  - [ApArticleRecommendServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/ApArticleRecommendServiceImplTest.java)（10 例）：四入口委托与默认参数归一、follow 分栏（未登录/未关注/有关注）、latest 分栏 hasMore 两种边界、推荐分栏多候选全局序列与跨页分页、标签/作者配额贪心及配额不足追加降级、computeBaseScore 对数归一化与 logNorm 边界。`@Value` 通过 ReflectionTestUtils 注入。
+  - [ColumnServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/column/impl/ColumnServiceImplTest.java)（13 例）：列表（未登录/过滤/分页）、统计四段 count、创建参数校验与异步审核、更新/删除各守卫分支与成功路径、asyncReviewColumn 封面审核与异常捕获、getStatusCode 各 status。`ServiceImpl` baseMapper 反射注入 + ApColumn TableInfo 初始化。
+- 在 [pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/pom.xml) 将 JaCoCo 门禁二次棘轮至 `jacoco.line.min=0.55`。
 
 ---
 
 ## 2026-08-23 — content 模块：粉丝/打赏/热门/标签/浏览服务补齐，整体行覆盖提升至约 56%，门禁棘轮至 0.50
 - content 模块整体行覆盖由约 41.5% 提升至 **56.4%**（覆盖 5351 / 总 9491），527 例单测全绿。
 - 新增 5 个 service/impl 测试类，聚焦此前近零覆盖的核心业务服务：
-  - [FansDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/fans/impl/FansDataServiceImplTest.java)（11 例）：未登录兜底、粉丝统计/趋势、列表与头像分页（含用户信息缺失回退、回关判定）、关注（自关注/重复/并发 `DuplicateKeyException` 幂等降级）。
-  - [TipServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/tip/impl/TipServiceImplTest.java)（18 例）：下单参数/金额/文章/自打赏校验、支付页生成、回调（非成功/订单缺失/状态异常/金额不一致/金额非法/合法入账 + 用户信息降级）、汇总/列表/收益。
-  - [HotServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/hot/impl/HotServiceImplTest.java)（8 例）：热门文章（综合/分类/登录收藏态）、收藏榜、作者榜（周期/质量文章/粉丝/回关）、规则文案与 limit 兜底。
-  - [TagServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/tag/impl/TagServiceImplTest.java)（6 例）：标签列表关键字过滤、分类标签聚合排序、标签文章分页与参数兜底（`ServiceImpl` baseMapper 反射注入）。
-  - [BrowseHistoryServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/browse/impl/BrowseHistoryServiceImplTest.java)（6 例）：浏览历史分页扁平化、逻辑删除、上报（参数校验/已存在更新/不存在插入）。
-- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/pom.xml) 将 JaCoCo 门禁由 0.38 棘轮至 `jacoco.line.min=0.50`，verify「All coverage checks have been met」通过。
+  - [FansDataServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/fans/impl/FansDataServiceImplTest.java)（11 例）：未登录兜底、粉丝统计/趋势、列表与头像分页（含用户信息缺失回退、回关判定）、关注（自关注/重复/并发 `DuplicateKeyException` 幂等降级）。
+  - [TipServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/tip/impl/TipServiceImplTest.java)（18 例）：下单参数/金额/文章/自打赏校验、支付页生成、回调（非成功/订单缺失/状态异常/金额不一致/金额非法/合法入账 + 用户信息降级）、汇总/列表/收益。
+  - [HotServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/hot/impl/HotServiceImplTest.java)（8 例）：热门文章（综合/分类/登录收藏态）、收藏榜、作者榜（周期/质量文章/粉丝/回关）、规则文案与 limit 兜底。
+  - [TagServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/tag/impl/TagServiceImplTest.java)（6 例）：标签列表关键字过滤、分类标签聚合排序、标签文章分页与参数兜底（`ServiceImpl` baseMapper 反射注入）。
+  - [BrowseHistoryServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/browse/impl/BrowseHistoryServiceImplTest.java)（6 例）：浏览历史分页扁平化、逻辑删除、上报（参数校验/已存在更新/不存在插入）。
+- 在 [pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/pom.xml) 将 JaCoCo 门禁由 0.38 棘轮至 `jacoco.line.min=0.50`，verify「All coverage checks have been met」通过。
 
 ---
 
 ## 2026-08-23 — gateway 模块：鉴权过滤器全覆盖，整体行覆盖 85%，新增门禁 0.70
-- 新增 [AuthorizeFilterTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java)（8 例）：`mockStatic(AppJwtUtil)` + 请求头注入 Captor。
+- 新增 [AuthorizeFilterTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-gateway/zhuri-coding-app-gateway/src/test/java/com/heima/app/gateway/filter/AuthorizeFilterTest.java)（8 例）：`mockStatic(AppJwtUtil)` + 请求头注入 Captor。
   - 公开接口（无 token 匿名放行 / 带有效 token 注入 userId/nickName/image / token 解析失败按匿名放行）；
   - 非公开接口（无 token → 444、verifyToken=false → 444、解析异常 → 444、有效 token 注入请求头放行）；
   - 覆盖 URL 编码昵称与 image 空串兜底，`AuthorizeFilter` 行覆盖 96.7%。
-- 新增 [AppJwtUtilTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/src/test/java/com/heima/app/gateway/util/AppJwtUtilTest.java)（7 例）：verifyToken null/未过期/已过期、generalKey、HS512 真实 token 生成-解析往返、init 空密钥抛异常。
+- 新增 [AppJwtUtilTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-gateway/zhuri-coding-app-gateway/src/test/java/com/heima/app/gateway/util/AppJwtUtilTest.java)（7 例）：verifyToken null/未过期/已过期、generalKey、HS512 真实 token 生成-解析往返、init 空密钥抛异常。
 - gateway 全量单测 **15 例全绿**，整体行覆盖 108/127 ≈ **85%**（AuthorizeFilter 96.7%、AppJwtUtil 100%）。
-- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-gateway/heima-leadnews-app-gateway/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.70` 与 surefire argLine，verify「All coverage checks have been met」通过。
+- 在 [pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-gateway/zhuri-coding-app-gateway/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.70` 与 surefire argLine，verify「All coverage checks have been met」通过。
 
 ---
 
 ## 2026-08-23 — notification 模块：业务全量补齐，整体行覆盖约 90%，门禁棘轮至 0.80
 - 新增 8 个 controller/websocket/config 测试类：
-  - [ImControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/controller/v1/ImControllerTest.java)（6 例）：会话列表/创建/消息列表/发送/已读 + 未登录传 null。
-  - [NotificationControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/controller/v1/NotificationControllerTest.java)（19 例）：列表/回复/点赞/回关/未读/已读/按类型已读 + 4 个 Feign 内部接口，覆盖参数缺失兜底与 NEED_LOGIN 拦截。
-  - [WebSocketMessageControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/controller/v1/WebSocketMessageControllerTest.java)（8 例）：发送成功（在线/离线分派 ACK 与实时推送）、失败/空数据错误分支、msg_type 默认兜底、已读回执推送。
-  - [AuthHandshakeInterceptorTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/websocket/AuthHandshakeInterceptorTest.java)（8 例）：`mockStatic(AppJwtUtil)` 覆盖握手鉴权缺失/空/无效 token、无 userId、解析异常与成功放行。
-  - [UserInterceptorTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/websocket/UserInterceptorTest.java)（3 例）：CONNECT 带 userId 设 Principal、无 userId/非 CONNECT 不处理。
-  - [SessionManagerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/websocket/SessionManagerTest.java)（4 例）：上线/下线/在线判断/人数统计。
-  - [NotificationWebMvcConfigTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/config/NotificationWebMvcConfigTest.java) 与 [WebSocketConfigTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/src/test/java/com/heima/notification/config/WebSocketConfigTest.java)：拦截器注册、消息代理、STOMP 端点与入站通道配置。
+  - [ImControllerTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/test/java/com/heima/notification/controller/v1/ImControllerTest.java)（6 例）：会话列表/创建/消息列表/发送/已读 + 未登录传 null。
+  - [NotificationControllerTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/test/java/com/heima/notification/controller/v1/NotificationControllerTest.java)（19 例）：列表/回复/点赞/回关/未读/已读/按类型已读 + 4 个 Feign 内部接口，覆盖参数缺失兜底与 NEED_LOGIN 拦截。
+  - [WebSocketMessageControllerTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/test/java/com/heima/notification/controller/v1/WebSocketMessageControllerTest.java)（8 例）：发送成功（在线/离线分派 ACK 与实时推送）、失败/空数据错误分支、msg_type 默认兜底、已读回执推送。
+  - [AuthHandshakeInterceptorTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/test/java/com/heima/notification/websocket/AuthHandshakeInterceptorTest.java)（8 例）：`mockStatic(AppJwtUtil)` 覆盖握手鉴权缺失/空/无效 token、无 userId、解析异常与成功放行。
+  - [UserInterceptorTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/test/java/com/heima/notification/websocket/UserInterceptorTest.java)（3 例）：CONNECT 带 userId 设 Principal、无 userId/非 CONNECT 不处理。
+  - [SessionManagerTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/test/java/com/heima/notification/websocket/SessionManagerTest.java)（4 例）：上线/下线/在线判断/人数统计。
+  - [NotificationWebMvcConfigTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/test/java/com/heima/notification/config/NotificationWebMvcConfigTest.java) 与 [WebSocketConfigTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/src/test/java/com/heima/notification/config/WebSocketConfigTest.java)：拦截器注册、消息代理、STOMP 端点与入站通道配置。
 - notification 全量单测全绿，整体行覆盖约 **90%**（含 3 个 controller 100%、状态机 100%、拦截器/Config 高覆盖）。
-- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-notification/pom.xml) 将 JaCoCo 门禁由 0.40 棘轮至 `jacoco.line.min=0.80`，verify「All coverage checks have been met」通过。
+- 在 [pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-notification/pom.xml) 将 JaCoCo 门禁由 0.40 棘轮至 `jacoco.line.min=0.80`，verify「All coverage checks have been met」通过。
 
 ---
 
 ## 2026-08-23 — user 模块：核心服务补齐，整体行覆盖 69.0%，新增门禁 0.60
 - 新增 4 个 service/impl 测试类（46 例），`@Mock` 注入 Feign/OSS/RestTemplate/TokenService 等外部依赖：
-  - [UserProfileServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/test/java/com/heima/user/service/impl/UserProfileServiceImplTest.java)（17 例）：个人资料查询/更新 + 头像上传（类型/大小校验、OSS 异常兜底），OSS URL 校验；
-  - [UserStatisticsServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/test/java/com/heima/user/service/impl/UserStatisticsServiceImplTest.java)（6 例）：文章/等级 Feign 聚合、注册天数、等级数据缺失/异常兜底；
-  - [SocialAuthServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/test/java/com/heima/user/service/impl/SocialAuthServiceImplTest.java)（7 例）：GitHub/微博 token 获取、用户信息拉取、uid 绑定检查；
-  - [SocialLoginServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/src/test/java/com/heima/user/service/impl/SocialLoginServiceImplTest.java)（10 例）：继承 `ServiceImpl`，baseMapper 反射注入 + TableInfo 初始化；认证/绑定/验证码/绑定状态全分支。
+  - [UserProfileServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-user/src/test/java/com/heima/user/service/impl/UserProfileServiceImplTest.java)（17 例）：个人资料查询/更新 + 头像上传（类型/大小校验、OSS 异常兜底），OSS URL 校验；
+  - [UserStatisticsServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-user/src/test/java/com/heima/user/service/impl/UserStatisticsServiceImplTest.java)（6 例）：文章/等级 Feign 聚合、注册天数、等级数据缺失/异常兜底；
+  - [SocialAuthServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-user/src/test/java/com/heima/user/service/impl/SocialAuthServiceImplTest.java)（7 例）：GitHub/微博 token 获取、用户信息拉取、uid 绑定检查；
+  - [SocialLoginServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-user/src/test/java/com/heima/user/service/impl/SocialLoginServiceImplTest.java)（10 例）：继承 `ServiceImpl`，baseMapper 反射注入 + TableInfo 初始化；认证/绑定/验证码/绑定状态全分支。
 - service/impl 包各核心类行覆盖 **75.6%~100%**（8/9 类 ≥94.6%）。
 - user 全量单测 **53 → 99 例全绿**，整体行覆盖 657/952 ≈ **69.0%**（此前 33.6%）。
-- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-user/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.60`，verify「All coverage checks have been met」通过。
+- 在 [pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-user/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.60`，verify「All coverage checks have been met」通过。
 
 ---
 
 ## 2026-08-23 — search 模块：核心服务 100% 行覆盖，模块整体 90.9%，新增门禁 0.80
-- 新增 [ArticleSearchServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/test/java/com/heima/search/service/impl/ArticleSearchServiceImplTest.java)（12 例）：纯 `@Service`，`ElasticsearchOperations`/`ApAssociateWordsService`/`IArticleClient` 均 Mock。
+- 新增 [ArticleSearchServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-search/src/test/java/com/heima/search/service/impl/ArticleSearchServiceImplTest.java)（12 例）：纯 `@Service`，`ElasticsearchOperations`/`ApAssociateWordsService`/`IArticleClient` 均 Mock。
   - search：参数校验、高亮标题与回退原文、minBehotTime 过滤、空结果集、默认分页兜底；
   - syncArticle：入参校验、成功（Feign 正文回填 + tocList 转换）、Feign 无数据跳过、异常兜底；
   - updateArticleStatus：成功与 ES 异常分支。
-  - `com.heima.search.service.impl` 包 **行覆盖 100%（148/148）**。
-- 新增 [AppTokenInterceptorTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/test/java/com/heima/search/interceptor/AppTokenInterceptorTest.java)（4 例）：请求头 userId/nickName → 线程本地登录态写入、URL 解码、未登录放行、清理。
-- 新增 [SearchControllersTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/src/test/java/com/heima/search/controller/v1/SearchControllersTest.java)（5 例）：文章检索默认值补全、历史加载/删除、联想词委托。
+  - `com.zhuri.coding.search.service.impl` 包 **行覆盖 100%（148/148）**。
+- 新增 [AppTokenInterceptorTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-search/src/test/java/com/heima/search/interceptor/AppTokenInterceptorTest.java)（4 例）：请求头 userId/nickName → 线程本地登录态写入、URL 解码、未登录放行、清理。
+- 新增 [SearchControllersTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-search/src/test/java/com/heima/search/controller/v1/SearchControllersTest.java)（5 例）：文章检索默认值补全、历史加载/删除、联想词委托。
 - search 全量单测 **16 → 37 例**，整体行覆盖 190/209 ≈ **90.9%**（此前 27.8%）。
-- 在 [pom.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-search/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.80` 与 surefire `--add-opens` argLine，verify「All coverage checks have been met」通过。
+- 在 [pom.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-search/pom.xml) 新增 JaCoCo 门禁 `jacoco.line.min=0.80` 与 surefire `--add-opens` argLine，verify「All coverage checks have been met」通过。
 
 ---
 
 ## 2026-08-22 — content 模块：ContentDataServiceImpl 收尾至 100% 行覆盖，模块整体 41.6%
-- [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java) 由 10 例扩充至 **14 例**：
+- [ContentDataServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java) 由 10 例扩充至 **14 例**：
   - getColumnDetail / getPinDetail 携带起止日期过滤（覆盖 ge/le 分支 L210、L303）；
   - getArticleDetail 非法 startDate / endDate 触发 parseDate / parseDateEnd 异常兜底（覆盖 L407-409、L417-419）。
 - `ContentDataServiceImpl` 与 `TopicServiceImpl` 均达 **100% 行覆盖**。
@@ -1228,11 +1246,11 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ---
 
 ## 2026-08-22 — content 模块：创作中心统计与话题服务补齐，行覆盖 41.5%，门禁棘轮至 0.38
-- 新增 [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java)（10 例）：纯 `@Service`，3 个 mapper 由 `@InjectMocks` 注入。
+- 新增 [ContentDataServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java)（10 例）：纯 `@Service`，3 个 mapper 由 `@InjectMocks` 注入。
   - getArticleStatistics / getColumnStatistics / getPinStatistics：当日 vs 前日指标与趋势差、空列表；
   - getArticleTrend / getColumnTrend / getPinTrend：逐日趋势含空天数默认值、null 指标兜底；
   - getArticleDetail / getColumnDetail / getPinDetail：分页细节组装、null 字段兜底（views/likes/comment/collection→0）。
-- 新增 [TopicServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/topic/impl/TopicServiceImplTest.java)（17 例）：继承 `ServiceImpl`，私有 `baseMapper` 用反射注入，7 个 `@Autowired` mapper 由 `@InjectMocks` 注入。
+- 新增 [TopicServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/topic/impl/TopicServiceImplTest.java)（17 例）：继承 `ServiceImpl`，私有 `baseMapper` 用反射注入，7 个 `@Autowired` mapper 由 `@InjectMocks` 注入。
   - recommend：环形缓冲分页（offset=(page*size)%total）、空列表返回空、VO 转换 null 兜底；
   - square：cursor 分页、过滤、总数/详情分页；
   - detail：多表关联组装（沸点+文章统计+type2 圈子）、viewCount/participantCount 聚合、availableTabs；
@@ -1246,17 +1264,17 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ## 2026-08-22 — content 模块：文章创作组补齐（新增 4 测试类），修复草稿删除类型缺陷
 - 新增文章创作组单元测试：
-  - [ApArticleServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleServiceImplTest.java)（15 例）：load 分页/规则、事件生成(空文章/缺失/成功/入库异常回滚)、updateScore 累加统计并持久化、updateScoreByBehavior、listByAuthorId 作者+频道+标签 JSON_OVERLAPS 过滤、updateArticleStatus 与 ES 联动（成功/失败置重试/无记录）、computeScore null 兜底。
-  - [ApArticleDraftServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ApArticleDraftServiceImplTest.java)（14 例）：草稿 CRUD、publishFromDraft 发布为文章(config/content/删草稿/事务提交后异步审核)、deleteDraft 守卫(空id/未登录/不存在/越权/本人成功)。
-  - [ArticleManageServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ArticleManageServiceImplTest.java)（10 例）：我的文章列表/统计/删除/详情。
-  - [ArticleStatisticsServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/article/impl/ArticleStatisticsServiceImplTest.java)（2 例）：个人主页关注/粉丝/点赞/收藏/阅读/勋章/等级统计聚合。
-- 修复 bug：`ApArticleDraftServiceImpl.deleteDraft` 归属校验原用 `draft.getAuthorId()(Long).equals(user.getId())(Integer)` 恒为 false，导致作者无法删除自己的草稿；改为统一 `longValue()` 比较（[ApArticleDraftServiceImpl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/article/impl/ApArticleDraftServiceImpl.java)）。
+  - [ApArticleServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/ApArticleServiceImplTest.java)（15 例）：load 分页/规则、事件生成(空文章/缺失/成功/入库异常回滚)、updateScore 累加统计并持久化、updateScoreByBehavior、listByAuthorId 作者+频道+标签 JSON_OVERLAPS 过滤、updateArticleStatus 与 ES 联动（成功/失败置重试/无记录）、computeScore null 兜底。
+  - [ApArticleDraftServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/ApArticleDraftServiceImplTest.java)（14 例）：草稿 CRUD、publishFromDraft 发布为文章(config/content/删草稿/事务提交后异步审核)、deleteDraft 守卫(空id/未登录/不存在/越权/本人成功)。
+  - [ArticleManageServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/ArticleManageServiceImplTest.java)（10 例）：我的文章列表/统计/删除/详情。
+  - [ArticleStatisticsServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/article/impl/ArticleStatisticsServiceImplTest.java)（2 例）：个人主页关注/粉丝/点赞/收藏/阅读/勋章/等级统计聚合。
+- 修复 bug：`ApArticleDraftServiceImpl.deleteDraft` 归属校验原用 `draft.getAuthorId()(Long).equals(user.getId())(Integer)` 恒为 false，导致作者无法删除自己的草稿；改为统一 `longValue()` 比较（[ApArticleDraftServiceImpl](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/article/impl/ApArticleDraftServiceImpl.java)）。
 - content 全量单测 **294 例全绿**（较上批 +24），完整 `verify`（含 JaCoCo check）通过，门禁 `0.33` 校验 ok。
 
 ---
 
 ## 2026-08-22 — content 模块：个人主页（UserHomeController）补齐，整体行覆盖 36.67%，门禁棘轮至 0.33
-- 新增 [UserHomeControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/controller/v1/user/UserHomeControllerTest.java)（18 例）：@RestController，10 个依赖由 `@InjectMocks` 注入，直调 public 方法。
+- 新增 [UserHomeControllerTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/controller/v1/user/UserHomeControllerTest.java)（18 例）：@RestController，10 个依赖由 `@InjectMocks` 注入，直调 public 方法。
   - home：参数校验(PARAM_INVALID)、正常合并用户信息+统计、userClient/统计异常兜底；
   - articles/columns/pins/courses：公开已发布过滤、分页、VO 组装、page/size 越界夹紧；
   - following/followers：关注/关注者分页、userBrief 失败过滤 null；
@@ -1270,7 +1288,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ---
 
 ## 2026-08-22 — content 模块：圈子服务（CircleServiceImpl）补齐，行覆盖率保持 36.7%，门禁棘轮至 0.30
-- 新增 [CircleServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/circle/impl/CircleServiceImplTest.java)（21 例）：普通 @Service，5 个 mapper 由 `@InjectMocks` 注入。
+- 新增 [CircleServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/circle/impl/CircleServiceImplTest.java)（21 例）：普通 @Service，5 个 mapper 由 `@InjectMocks` 注入。
   - recommend：未登录 isJoined=false / 已登录 isJoined=true；
   - square：列表+总数(page/size)+空列表；
   - hot：按 display_order 保序 JOIN、Banner 配置圈子缺失跳过、空配置返回空；
@@ -1288,13 +1306,13 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ---
 
 ## 2026-08-22 — content 模块：内容数据看板（ContentDataServiceImpl）+ 话题（TopicServiceImpl）补齐，行覆盖率 25.83% → 36.7%
-- 新增 [ContentDataServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java)（10 例）：纯数据聚合服务，依赖三 Mapper 由 `@InjectMocks` 注入。
+- 新增 [ContentDataServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/contentdata/impl/ContentDataServiceImplTest.java)（10 例）：纯数据聚合服务，依赖三 Mapper 由 `@InjectMocks` 注入。
   - 文章：统计(当前区间 vs 前一天增减/空列表零值)、按天趋势、明细(日期过滤+分页+null 指标按 0)；
   - 专栏：统计(数量+订阅增减)、趋势、明细(id/标题/订阅数)；
   - 沸点：统计(数量+点赞/评论增减)、趋势、明细(分页+内容)。
   - 说明：`parseDate/parseDateEnd` 的 catch 属不可达防御分支（上游 `getPreviousDay` 已先校验格式），未强行覆盖。
 - `ContentDataServiceImpl` 行覆盖达到 **95%**（260 行）。
-- 新增 [TopicServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/topic/impl/TopicServiceImplTest.java)（14 例）：继承 `ServiceImpl`，`baseMapper` 反射注入，其余 7 个 Mapper 由 `@InjectMocks` 注入。
+- 新增 [TopicServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/topic/impl/TopicServiceImplTest.java)（14 例）：继承 `ServiceImpl`，`baseMapper` 反射注入，其余 7 个 Mapper 由 `@InjectMocks` 注入。
   - recommend：环形缓冲(offset 回卷)、空列表；
   - square：hot/new 排序、keyword 过滤、size+1 探测 has_more 截断、cursor 推进；
   - detail：不存在返回 null、沸点+文章浏览/参与聚合、type=1/2 的 tabs 差异、关联圈子(含圈子缺失名称兜底)；
@@ -1309,7 +1327,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ---
 
 ## 2026-08-22 — content 模块：小册章节核心（ApCourseChapterServiceImpl）补齐，行覆盖率 24.59% → 25.83%
-- 新增 [ApCourseChapterServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/course/impl/ApCourseChapterServiceImplTest.java)（22 例）：
+- 新增 [ApCourseChapterServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/course/impl/ApCourseChapterServiceImplTest.java)（22 例）：
   - createChapter/updateChapter/deleteChapter：参数缺失、课程/章节不存在、非作者、已上架(PUBLISHED=9)禁编、默认排序与节数重算、部分字段更新；
   - updateSort：参数缺失、归属不一致的小节只跳过不更新；
   - getChapterDetail、submitForReview：参数缺失、不存在、非作者、已发布(1)/审核中(2)拦截、草稿(0)→审核中(2)并写审核备注。
@@ -1320,10 +1338,10 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ---
 
 ## 2026-08-22 — content 模块测试补齐：课程核心（ApCourseServiceImpl）+ 沸点查询（PinsQueryService），行覆盖率 17.1% → 24.6%
-- 修复并跑通 [ApCourseServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/course/impl/ApCourseServiceImplTest.java)（38 例）：
+- 修复并跑通 [ApCourseServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/course/impl/ApCourseServiceImplTest.java)（38 例）：
   - 根因修复：MyBatis-Plus 3.5.7 的 `setBaseMapper` 在 Mockito `@InjectMocks` 下注入失败（`baseMapper can not be null`），改用反射直接写 ServiceImpl 私有 `baseMapper` 字段，跨版本稳定。
   - 覆盖：公开列表仅上架、详情作者头像回退、我的课程三类过滤器、学习进度 新建/更新/完成率按章节比例重算、创作归属校验、上架保护、软删、申报 applyContent 校验(空主题/超长/非法渠道/非法JSON)、状态机合法/非法跳转(草稿→申报、写作中→上架待审等)。
-- 新增 [PinsQueryServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/pins/impl/PinsQueryServiceTest.java)（26 例）：沸点查询核心。
+- 新增 [PinsQueryServiceTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/pins/impl/PinsQueryServiceTest.java)（26 例）：沸点查询核心。
   - 列表 tab 分流(following 未登录拦截/hot/latest)、热度排序按 赞+评论+分享+作者等级加权、
   - 详情(参数缺失/不存在/正常)、浏览自增(异常吞掉)、侧边栏(游客/登录统计+精选前3+推荐话题兜底)、
   - 评论列表(热序/时间序/带子回复)、话题列表(带/不带关键字)、圈子按分类分组、链接预览(空URL/非法段/正常)、
@@ -1334,9 +1352,9 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ---
 
 ## 2026-08-22 — content 模块测试补齐（评论审核 + 逐日等级积分，行覆盖率 15.1% → 17.1%）
-- 修复并跑通 [CommentAuditServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/comment/impl/CommentAuditServiceTest.java)（13 例）：采用 MybatisPlus `TableInfoHelper` 预热 lambda 列缓存，单测 CI 无库自足；修正 `verify` 中裸值/匹配器混用。
+- 修复并跑通 [CommentAuditServiceTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/comment/impl/CommentAuditServiceTest.java)（13 例）：采用 MybatisPlus `TableInfoHelper` 预热 lambda 列缓存，单测 CI 无库自足；修正 `verify` 中裸值/匹配器混用。
   - 覆盖"先展示后审核"窗口的可靠性：任务幂等入队(DuplicateKey 忽略)、CAS 抢占失败不重复执行、通过回调给作者发通知、违规软删评论并联系统通知、退避重试与补偿拉取。
-- 新增 [LevelActionServiceTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/test/java/com/heima/content/service/level/impl/LevelActionServiceTest.java)（17 例）：逐日等级/积分核心。
+- 新增 [LevelActionServiceTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/test/java/com/heima/content/service/level/impl/LevelActionServiceTest.java)（17 例）：逐日等级/积分核心。
   - `recordAction`：有效行为加分落库、0 分行为忽略、升级时发权限与钻石；
   - `recordActionWithLimit`：今日次数/积分双上限拦截、正常加分；
   - `recordPaymentAction`：金额<=0 拒绝、超额按每日上限截断、金额即经验(支持小数)；
@@ -1349,11 +1367,11 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ## 2026-08-22 — reward 模块测试补齐（行覆盖率 5% → 66.7%）
 - 新增 5 个测试类共 55 个用例，覆盖 reward 核心业务的安全与幂等诉求：
-  - [SignRewardUtilTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/util/SignRewardUtilTest.java)（10 例）：30 天周期奖励表逐日校验、取模循环、特殊日屏蔽判定、非法入参兜底。
-  - [CheckinServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/service/impl/CheckinServiceImplTest.java)（12 例）：Redis 锁竞争(429)/重复签到(400)/DuplicateKey 兜底、首签与已有 state assets 的 insert/update 分流、补签卡不足与日期范围校验、状态/连续天数查询。
-  - [CheckinControllerTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/controller/v1/CheckinControllerTest.java)（9 例）：未登录一律 NEED_LOGIN 且不调服务，杜绝"匿名缺省 1L"冒签；补签缺 date 校验。
-  - [LotteryServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/service/impl/LotteryServiceImplTest.java)（12 例）：免费次数/矿石余额/十连门槛校验、免费成功抽奖落库、实物领取订单归属校验（防越权）。
-  - [WelfareServiceImplTest](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-reward/src/test/java/com/heima/reward/service/impl/WelfareServiceImplTest.java)（12 例）：下架/库存0/矿石不足/实物缺地址防线、Redis 预扣负库存与乐观锁失败的双重回滚、虚拟商品即时发码。
+  - [SignRewardUtilTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/test/java/com/heima/reward/util/SignRewardUtilTest.java)（10 例）：30 天周期奖励表逐日校验、取模循环、特殊日屏蔽判定、非法入参兜底。
+  - [CheckinServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/test/java/com/heima/reward/service/impl/CheckinServiceImplTest.java)（12 例）：Redis 锁竞争(429)/重复签到(400)/DuplicateKey 兜底、首签与已有 state assets 的 insert/update 分流、补签卡不足与日期范围校验、状态/连续天数查询。
+  - [CheckinControllerTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/test/java/com/heima/reward/controller/v1/CheckinControllerTest.java)（9 例）：未登录一律 NEED_LOGIN 且不调服务，杜绝"匿名缺省 1L"冒签；补签缺 date 校验。
+  - [LotteryServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/test/java/com/heima/reward/service/impl/LotteryServiceImplTest.java)（12 例）：免费次数/矿石余额/十连门槛校验、免费成功抽奖落库、实物领取订单归属校验（防越权）。
+  - [WelfareServiceImplTest](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-reward/src/test/java/com/heima/reward/service/impl/WelfareServiceImplTest.java)（12 例）：下架/库存0/矿石不足/实物缺地址防线、Redis 预扣负库存与乐观锁失败的双重回滚、虚拟商品即时发码。
 - 全量 `mvn verify` BUILD SUCCESS（reward 70 例全绿），JaCoCo 行覆盖率由约 5% 提升至 **66.7%**（741/1111）。
 - 将 reward 门禁阈值由 `0.04` 棘轮上调至 `0.50`，防覆盖率回归。
 
@@ -1370,9 +1388,9 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ---
 
 ## 2026-08-21 — 落地 GitHub Actions CI 流水线（self-hosted）
-- 新增 [ci.yml](file:///e:/heima-leadnews-portal/heima-leadnews-app/.github/workflows/ci.yml)：`push master` / `PR` 触发，自托管 Runner（本机/虚拟机）连接本地 MySQL 等基础设施，跑通含真库的 `@SpringBootTest` 集成测试。
+- 新增 [ci.yml](file:///e:/zhuri-coding-portal/zhuri-coding-app/.github/workflows/ci.yml)：`push master` / `PR` 触发，自托管 Runner（本机/虚拟机）连接本地 MySQL 等基础设施，跑通含真库的 `@SpringBootTest` 集成测试。
 - 构建范围：上线前重点加固模块 `reward` + `content`（含级联依赖），`verify` 阶段自动产出 JaCoCo 覆盖率报告，surefire / jacoco 报告作为 artifact 上传。
-- 环境适配：复用本机 JDK21 + Maven（移除在线 `setup-java` 下载，避免网络卡顿），显式注入 PATH/JAVA_HOME；新增 [maven-settings.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/maven-settings.xml) 走阿里云镜像加速依赖。
+- 环境适配：复用本机 JDK21 + Maven（移除在线 `setup-java` 下载，避免网络卡顿），显式注入 PATH/JAVA_HOME；新增 [maven-settings.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/maven-settings.xml) 走阿里云镜像加速依赖。
 - 说明：修复了"带反斜杠 Windows 绝对路径的 `-D` 参数被 `mvn.cmd` 误解析为插件前缀"的构建失败。
 
 ---
@@ -1389,10 +1407,10 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ## 2026-08-21 — 加固批次二：结算幂等兜底 / OSS 清理误删修复 / 沸点可靠审核队列
 
 ### A7 中危 — 月度结算并发竞态
-- [SettlementServiceImpl](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/java/com/heima/content/service/order/impl/SettlementServiceImpl.java) 在 `executeMonthlySettlement` 插入结算记录处捕获 `DuplicateKeyException` 幂等跳过，配合已存在的 `uk_author_course_month` 唯一约束，杜绝并发请求重复生成结算记录导致收入失真。
+- [SettlementServiceImpl](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/java/com/heima/content/service/order/impl/SettlementServiceImpl.java) 在 `executeMonthlySettlement` 插入结算记录处捕获 `DuplicateKeyException` 幂等跳过，配合已存在的 `uk_author_course_month` 唯一约束，杜绝并发请求重复生成结算记录导致收入失真。
 
 ### C1 中危 — OSS 脏图清理误删正常图片
-- 修复 [OssImageCleanupMapper.xml](file:///e:/heima-leadnews-portal/heima-leadnews-app/heima-leadnews/heima-leadnews-service/heima-leadnews-content/src/main/resources/mapper/OssImageCleanupMapper.xml)：`findArticleContentImages` 原按 `ap_article_content.created_time` 过滤，但该表无此字段，SQL 必然报错被吞→文章内容图无法进入引用集合→有被误删风险；改为联表 `ap_article` 且不限时间（仅排除已删除），坚持"宁可保留脏图，绝不误删正文图"。
+- 修复 [OssImageCleanupMapper.xml](file:///e:/zhuri-coding-portal/zhuri-coding-app/zhuri-coding/zhuri-coding-service/zhuri-coding-content/src/main/resources/mapper/OssImageCleanupMapper.xml)：`findArticleContentImages` 原按 `ap_article_content.created_time` 过滤，但该表无此字段，SQL 必然报错被吞→文章内容图无法进入引用集合→有被误删风险；改为联表 `ap_article` 且不限时间（仅排除已删除），坚持"宁可保留脏图，绝不误删正文图"。
 - 文章封面改 `publish_time`、专栏封面改 `updated_time`、课程封面改 `updated_time`，覆盖"编辑旧内容新增图""定时发布"场景，避免窗口误删。
 
 ### B2 中危 — 沸点异步审核可靠队列
@@ -1430,7 +1448,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ### 后端 — 评论【先展示后审核】窗口期加固（数据库可靠队列）
 
 - 新增 `ap_comment_audit_task` 待审核队列表（`migrations/add_comment_audit_task.sql`），评论发布时审核任务持久化落库，替代原仅存在于进程内的 `CompletableFuture` 任务，服务重启/崩溃后审核不丢失。
-- 新增实体 `ApCommentAuditTask`（`heima-leadnews-model`）与 Mapper `ApCommentAuditTaskMapper`。
+- 新增实体 `ApCommentAuditTask`（`zhuri-coding-model`）与 Mapper `ApCommentAuditTaskMapper`。
 - 重写 `CommentAuditService`：入队幂等（唯一键 `comment_id` 兜底）、执行前 CAS 抢占（`PENDING→PROCESSING`）避免重复处理、处理异常按指数退避（60s→120s→240s…）重试，重试超限降级通过避免系统故障误删正常评论。
 - 新增 `CommentAuditRecoveryTask` 定时补偿扫描器（`@Scheduled` 每 30s）：兜底重拉待审核评论，与进程内触发共用 CAS 抢占，保证审核最终可达。
 
@@ -1464,7 +1482,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 验证
 
-- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- `mvn -pl zhuri-coding-service/zhuri-coding-content -am compile` 编译通过。
 
 ---
 
@@ -1487,7 +1505,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 验证
 
-- `mvn -pl heima-leadnews-model,heima-leadnews-service/heima-leadnews-content -am install -DskipTests` 后端编译通过，内容服务已重启。
+- `mvn -pl zhuri-coding-model,zhuri-coding-service/zhuri-coding-content -am install -DskipTests` 后端编译通过，内容服务已重启。
 - `npm run build`（临时输出目录）前端构建通过。
 - Playwright 浏览器验证：沸点分页 10→20→30→34 全部加载并显示「没有更多」；左右边栏 sticky 固定（距视口 80px）；圈子输入「打工人」在「推荐圈子」分类下跨分类搜出「打工人的日常」（属职场分类）；话题弹窗 480px、推荐话题带「荐」置顶、滚动加载 20→28 条显示「没有更多」、搜索「AI」命中。
 
@@ -1497,7 +1515,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 后端 — 打赏记录查询接口
 
-- `heima-leadnews-content/.../controller/v1/user/UserHomeController.java`：新增 `GET /api/v1/user/home/{userId}/tips` 公开接口，按作者 ID 分页查询 `ap_article_tip_record` 打赏流水（按打赏时间倒序），批量关联 `ap_article` 表加载被打赏文章标题；返回打赏人昵称/头像、打赏金额、打赏留言、打赏时间及文章标题，文章 ID 序列化为字符串防止雪花 ID 精度丢失；`page`/`size` 参数校验（size 上限 50）。
+- `zhuri-coding-content/.../controller/v1/user/UserHomeController.java`：新增 `GET /api/v1/user/home/{userId}/tips` 公开接口，按作者 ID 分页查询 `ap_article_tip_record` 打赏流水（按打赏时间倒序），批量关联 `ap_article` 表加载被打赏文章标题；返回打赏人昵称/头像、打赏金额、打赏留言、打赏时间及文章标题，文章 ID 序列化为字符串防止雪花 ID 精度丢失；`page`/`size` 参数校验（size 上限 50）。
 
 ### 前端 — 个人主页打赏分栏
 
@@ -1507,7 +1525,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 ### 验证
 
 - 数据库核对：`ap_article_tip_record` 表已存在于 `leadnews_article` 库（含数据），字段与迁移脚本 `create_ap_article_tip_tables.sql` 一致。
-- `mvn -pl heima-leadnews-model,heima-leadnews-service/heima-leadnews-content -am compile` 后端编译通过。
+- `mvn -pl zhuri-coding-model,zhuri-coding-service/zhuri-coding-content -am compile` 后端编译通过。
 - `npm run build` 前端构建通过。
 
 ---
@@ -1527,16 +1545,16 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 后端 — 推荐接口分流
 
-- `heima-leadnews-model/.../dtos/ArticleRecommendDto.java`：新增 `subTab`（recommend/latest）与 `type`（all/follow/cate）字段。
-- `heima-leadnews-content/.../controller/v1/article/ArticleHomeController.java`：新增 `/recommend_all`、`/recommend_follow`、`/recommend_cate` 三个分流端点，配置差异化限流（综合通道配额更高，起到分流效果）。
-- `heima-leadnews-content/.../service/article/impl/ApArticleRecommendServiceImpl.java`：`doRecommend` 统一核心逻辑按 `type` 分流；`follow` 通过 `ap_user_follow` 表查询关注作者文章（未登录/未关注返回空列表）；`latest` 分栏走 `selectLatestArticles` 按发布时间倒序 SQL 分页。
-- `heima-leadnews-content/.../mapper/ApArticleMapper.java` + `ApArticleMapper.xml`：新增 `selectLatestArticles`、`selectRecommendCandidatesByAuthors` 查询。
-- `heima-leadnews-app-gateway/.../AuthorizeFilter.java`：`/content/api/v1/article/recommend` 前缀已在公开路径白名单，三个分流端点均可匿名访问（关注接口无 token 时按匿名返回空列表）。
+- `zhuri-coding-model/.../dtos/ArticleRecommendDto.java`：新增 `subTab`（recommend/latest）与 `type`（all/follow/cate）字段。
+- `zhuri-coding-content/.../controller/v1/article/ArticleHomeController.java`：新增 `/recommend_all`、`/recommend_follow`、`/recommend_cate` 三个分流端点，配置差异化限流（综合通道配额更高，起到分流效果）。
+- `zhuri-coding-content/.../service/article/impl/ApArticleRecommendServiceImpl.java`：`doRecommend` 统一核心逻辑按 `type` 分流；`follow` 通过 `ap_user_follow` 表查询关注作者文章（未登录/未关注返回空列表）；`latest` 分栏走 `selectLatestArticles` 按发布时间倒序 SQL 分页。
+- `zhuri-coding-content/.../mapper/ApArticleMapper.java` + `ApArticleMapper.xml`：新增 `selectLatestArticles`、`selectRecommendCandidatesByAuthors` 查询。
+- `zhuri-coding-app-gateway/.../AuthorizeFilter.java`：`/content/api/v1/article/recommend` 前缀已在公开路径白名单，三个分流端点均可匿名访问（关注接口无 token 时按匿名返回空列表）。
 
 ### 验证
 
 - `npm run build` 前端构建通过。
-- `mvn -pl heima-leadnews-model,heima-leadnews-service/heima-leadnews-content -am compile` 后端编译通过。
+- `mvn -pl zhuri-coding-model,zhuri-coding-service/zhuri-coding-content -am compile` 后端编译通过。
 
 ---
 
@@ -1548,21 +1566,21 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 后端 — ID 统一序列化为字符串
 
-- `heima-leadnews-model/.../pojos/ApArticle.java`：`nullSafeToMap()` 中 `id`、`authorId` 改为 `String.valueOf(...)`（覆盖首页 recommend/load/new/more、标签详情文章列表等以 Map 返回的链路）。
-- `heima-leadnews-model/.../vos/HotArticleVo.java`：移除 `id`/`authorId` 上实验性添加的 `@JsonSerialize(ToStringSerializer)` 注解——该注解与全局 `ConfusionSerializer`（对所有数值型 `id` 字段自动转字符串）冲突，会抛 `Cannot override _serializer` 500；移除后由全局序列化器兜底，热榜接口恢复正常。
-- `heima-leadnews-content/.../service/browse/impl/BrowseHistoryServiceImpl.java`：`getHistoryList` 中 `id`、`articleId` 转字符串（浏览历史）。
-- `heima-leadnews-content/.../controller/v1/user/UserHomeController.java`：`articles` 中 `id` 转字符串（个人主页文章列表）。
-- `heima-leadnews-content/.../service/topic/impl/TopicServiceImpl.java`：`articleFeed` 中 `id`、`authorId` 转字符串（话题文章 Feed）。
-- `heima-leadnews-search/.../service/impl/ArticleSearchServiceImpl.java`：`search` 结果中 `id`、`authorId` 转字符串（搜索结果）。
+- `zhuri-coding-model/.../pojos/ApArticle.java`：`nullSafeToMap()` 中 `id`、`authorId` 改为 `String.valueOf(...)`（覆盖首页 recommend/load/new/more、标签详情文章列表等以 Map 返回的链路）。
+- `zhuri-coding-model/.../vos/HotArticleVo.java`：移除 `id`/`authorId` 上实验性添加的 `@JsonSerialize(ToStringSerializer)` 注解——该注解与全局 `ConfusionSerializer`（对所有数值型 `id` 字段自动转字符串）冲突，会抛 `Cannot override _serializer` 500；移除后由全局序列化器兜底，热榜接口恢复正常。
+- `zhuri-coding-content/.../service/browse/impl/BrowseHistoryServiceImpl.java`：`getHistoryList` 中 `id`、`articleId` 转字符串（浏览历史）。
+- `zhuri-coding-content/.../controller/v1/user/UserHomeController.java`：`articles` 中 `id` 转字符串（个人主页文章列表）。
+- `zhuri-coding-content/.../service/topic/impl/TopicServiceImpl.java`：`articleFeed` 中 `id`、`authorId` 转字符串（话题文章 Feed）。
+- `zhuri-coding-search/.../service/impl/ArticleSearchServiceImpl.java`：`search` 结果中 `id`、`authorId` 转字符串（搜索结果）。
 
 ### 后端 — 推荐/热榜时间窗口与跨库修复
 
-- `heima-leadnews-content/src/main/resources/application.yml` + `ApArticleRecommendServiceImpl.java`：推荐候选时间窗口 `recommend.window-days` 由 7 放宽到 90 天，避免陈旧优质内容被硬过滤导致推荐流空列表（评分排序本身已含时效衰减）。
-- `heima-leadnews-content/.../service/hot/impl/HotServiceImpl.java`：热榜综合/分类时间窗口统一由 3/7 天放宽到 90 天；作者热榜 SQL 的 `INNER JOIN ap_user` 补全跨库前缀为 `INNER JOIN leadnews_user.ap_user`，修复 `BadSqlGrammarException`（content 服务连的是 `leadnews_article` 库，`ap_user` 表在 `leadnews_user` 库）。
+- `zhuri-coding-content/src/main/resources/application.yml` + `ApArticleRecommendServiceImpl.java`：推荐候选时间窗口 `recommend.window-days` 由 7 放宽到 90 天，避免陈旧优质内容被硬过滤导致推荐流空列表（评分排序本身已含时效衰减）。
+- `zhuri-coding-content/.../service/hot/impl/HotServiceImpl.java`：热榜综合/分类时间窗口统一由 3/7 天放宽到 90 天；作者热榜 SQL 的 `INNER JOIN ap_user` 补全跨库前缀为 `INNER JOIN leadnews_user.ap_user`，修复 `BadSqlGrammarException`（content 服务连的是 `leadnews_article` 库，`ap_user` 表在 `leadnews_user` 库）。
 
 ### 验证
 
-- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过；search 服务运行进程的类文件编译时间晚于源码修改，已包含字符串序列化。
+- `mvn -pl zhuri-coding-service/zhuri-coding-content -am compile` 编译通过；search 服务运行进程的类文件编译时间晚于源码修改，已包含字符串序列化。
 - `curl`/接口实测：`/content/api/v1/article/load` 返回 200，响应中 `id` 为字符串且与数据库一致；`recommend` 接口恢复正常返回文章列表；热榜/作者热榜接口 200。
 - 浏览器实测：首页点击文章可正常进入 SSR 详情页（PASS），不再出现「文章不存在或已被删除」。
 
@@ -1572,23 +1590,23 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 后端
 
-- `heima-leadnews-content/.../controller/page/ArticlePageController.java`：文章不存在/已删除时返回视图 `"error/404"`，但 `templates/` 下缺失该模板，FreeMarker 渲染抛异常被全局异常处理器捕获为 503「服务器内部错误」；现补充 `HttpServletResponse` 参数，在返回 404 视图前显式设置 HTTP 404 状态码。
-- `heima-leadnews-content/src/main/resources/templates/error/404.ftl`：**新增**站点风格一致的 404 错误页（复用文章详情页顶栏样式），提示「文章不存在或已被删除」，提供「返回首页 / 返回上一页」入口，与有效文章详情页回归验证均通过。
+- `zhuri-coding-content/.../controller/page/ArticlePageController.java`：文章不存在/已删除时返回视图 `"error/404"`，但 `templates/` 下缺失该模板，FreeMarker 渲染抛异常被全局异常处理器捕获为 503「服务器内部错误」；现补充 `HttpServletResponse` 参数，在返回 404 视图前显式设置 HTTP 404 状态码。
+- `zhuri-coding-content/src/main/resources/templates/error/404.ftl`：**新增**站点风格一致的 404 错误页（复用文章详情页顶栏样式），提示「文章不存在或已被删除」，提供「返回首页 / 返回上一页」入口，与有效文章详情页回归验证均通过。
 
 ### 验证
 
-- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- `mvn -pl zhuri-coding-service/zhuri-coding-content -am compile` 编译通过。
 - 浏览器实测：`/content/article/999999` 由 503 JSON 变为正常渲染 404 页面；有效文章 `/content/article/2087071668418568194` 仍正常渲染。
 
 ---
 
 ## 2026-08-18 — 沸点"关注"分栏按关注关系过滤修复
 
-- `heima-leadnews-content/.../service/pins/impl/PinsQueryService.java`：`list` 中的 following 分支原本仅匹配 `"following"`，而前端实际传参为 `"follow"`，导致关注分栏落入默认分支返回所有人沸点。现兼容 `"follow"` 与 `"following"` 两种取值，未关注任何用户时返回空列表。
+- `zhuri-coding-content/.../service/pins/impl/PinsQueryService.java`：`list` 中的 following 分支原本仅匹配 `"following"`，而前端实际传参为 `"follow"`，导致关注分栏落入默认分支返回所有人沸点。现兼容 `"follow"` 与 `"following"` 两种取值，未关注任何用户时返回空列表。
 
 ### 验证
 
-- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- `mvn -pl zhuri-coding-service/zhuri-coding-content -am compile` 编译通过。
 
 ---
 
@@ -1633,13 +1651,13 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 后端
 
-- `heima-leadnews-content/.../controller/v1/order/OrderController.java`：移除 `POST /order/free-join`。
-- `heima-leadnews-content/.../service/order/OrderService.java`：删除 `freeJoin(courseId, userId)` 声明。
-- `heima-leadnews-content/.../service/order/impl/OrderServiceImpl.java`：删除 `freeJoin` 实现。
+- `zhuri-coding-content/.../controller/v1/order/OrderController.java`：移除 `POST /order/free-join`。
+- `zhuri-coding-content/.../service/order/OrderService.java`：删除 `freeJoin(courseId, userId)` 声明。
+- `zhuri-coding-content/.../service/order/impl/OrderServiceImpl.java`：删除 `freeJoin` 实现。
 
 ### 验证
 
-- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- `mvn -pl zhuri-coding-service/zhuri-coding-content -am compile` 编译通过。
 
 ---
 
@@ -1647,9 +1665,9 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 后端
 
-- `heima-leadnews-content/.../service/order/OrderService.java`：新增 `freeJoin(courseId, userId)`。
-- `heima-leadnews-content/.../service/order/impl/OrderServiceImpl.java`：实现 `freeJoin`——仅允许价格为 0 的免费小册，直接写入 `ap_user_course`（accessType=免费）授予阅读权限，不创建任何订单；幂等处理，并联动更新学习人数、加逐日等级经验。
-- `heima-leadnews-content/.../controller/v1/order/OrderController.java`：新增 `POST /order/free-join`。
+- `zhuri-coding-content/.../service/order/OrderService.java`：新增 `freeJoin(courseId, userId)`。
+- `zhuri-coding-content/.../service/order/impl/OrderServiceImpl.java`：实现 `freeJoin`——仅允许价格为 0 的免费小册，直接写入 `ap_user_course`（accessType=免费）授予阅读权限，不创建任何订单；幂等处理，并联动更新学习人数、加逐日等级经验。
+- `zhuri-coding-content/.../controller/v1/order/OrderController.java`：新增 `POST /order/free-join`。
 
 ### 前端
 
@@ -1660,7 +1678,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 验证
 
-- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile` 编译通过。
+- `mvn -pl zhuri-coding-service/zhuri-coding-content -am compile` 编译通过。
 - `npm run build` 构建通过。
 
 ---
@@ -1669,13 +1687,13 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 变更
 
-- `heima-leadnews-content/.../controller/v1/course/CourseController.java`：
+- `zhuri-coding-content/.../controller/v1/course/CourseController.java`：
   - 修复 `/manage/submit`（提交上架审核）后端路由错误。原实现误调用三参数 `submitApply(courseId, null, userId)`（该方法签名为四参数 `courseId, applyContent, authorProfile, userId`），导致编译失败；且业务语义不符（`submitApply` 为"申报 0→1"）。
   - 改为调用两参数 `submitForReview(courseId, userId)`，对应"写作中 4 → 上架待审 5"，与前端 `submitForReview` 及状态机校验一致。
 
 ### 验证
 
-- `mvn -pl heima-leadnews-service/heima-leadnews-content -am compile -q` 编译通过。
+- `mvn -pl zhuri-coding-service/zhuri-coding-content -am compile -q` 编译通过。
 
 ---
 
@@ -1866,8 +1884,8 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 验证
 
-- 后端 `mvn -q -o -pl heima-leadnews-service/heima-leadnews-content -am compile` 通过。
-- 后端 `mvn -q -o -pl heima-leadnews-service/heima-leadnews-user -am compile` 通过。
+- 后端 `mvn -q -o -pl zhuri-coding-service/zhuri-coding-content -am compile` 通过。
+- 后端 `mvn -q -o -pl zhuri-coding-service/zhuri-coding-user -am compile` 通过。
 - 前端 `npm run build` 通过。
 
 ---
@@ -1931,18 +1949,18 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
    - 独立顶层路由 `/booklet/edit`（不嵌套 CreatorLayout，避免侧边栏），新窗口打开（`CreatorDropdown.handleCourseClick` 改为 `handleNavigate('/booklet/edit', true)`）。
    - 布局：顶部工具栏（标题/自动保存状态/操作按钮）+ 左侧小节目录（可折叠隐藏，`tocCollapsed`）+ 中间 Markdown 编辑器（复用例 `ByteMdEditor`）+ 右侧实时预览（可折叠），折叠按钮在编辑器底部工具栏两端（复刻掘金小册参考图）。
    - 新建无 courseId 自动建草稿（`createCourse`），有 courseId 经 `manageDetail` 加载小册与全部小节；内容变更防抖自动保存。
-2. **ApCourse.Status 状态机扩展**（`heima-leadnews-model/.../ApCourse.java`）：
+2. **ApCourse.Status 状态机扩展**（`zhuri-coding-model/.../ApCourse.java`）：
    - 新增 `WRITING(4)`（申报通过、写作中）/ `REVIEW(5)`（上架待审）；现有 `NORMAL(0)` 语义扩展为「草稿/申报前」，`SUBMIT(1)` 细化为「申报待审」，复用 `OFFLINE(3)`/`PUBLISHED(9)`。
    - 状态机：作者 `0→1（提交申报）→4（编辑通过）/ 2（拒绝，改后重提）→5（提交上架审核）→9（编辑上架）/ 4（驳回）`；编辑 `1→4/2、5→9/4、9→3（下架）、3→9（重新上架）`。
    - `ApCourseServiceImpl.transitionTo` 集中校验状态迁移合法性，禁止非法跳转。
 3. **编辑白名单**（前后端双常量，不落库）：
-   - 后端 `heima-leadnews-content/.../config/EditorConfig.java`：`EDITOR_USER_IDS = [4]`（admin 账号）。
+   - 后端 `zhuri-coding-content/.../config/EditorConfig.java`：`EDITOR_USER_IDS = [4]`（admin 账号）。
    - 前端 `src/utils/permission.js` 新增 `isEditor()`；`menus.js` 新增「小册审核」菜单（`isEditorOnly` 标记），`Sidebar.vue` 对非编辑过滤该菜单。
 4. **后端接口**：
    - 作者侧（`CourseController` 扩展）：`POST /manage/apply`（提交申报 0→1）、`GET /manage/my-booklets`（我的小册列表）。
    - 编辑侧（新增 `BookletReviewController`，`/api/v1/course/review`，全部校验编辑白名单）：申报待审列表/通过/拒绝、上架待审列表/上架（含批量发布小节）/驳回、发布小节、下架。
    - 申报内容独立存储 `apply_content` 字段，**不覆盖** `description`（小册介绍），避免两处共用字段互相覆盖。
-5. **数据库迁移**（`heima-leadnews-service/.../db/migrations/`）：
+5. **数据库迁移**（`zhuri-coding-service/.../db/migrations/`）：
    - `alter_ap_course_add_booklet_fields.sql`：新增 `apply_reason` / `apply_time` / `review_time`。
    - `alter_ap_course_add_apply_content.sql`：新增 `apply_content`。
 6. **前端 API 封装**（`src/apis/course.js`）：新增 `applyBooklet` / `getMyBooklets` / `getApplyReviewList` / `approveApply` / `rejectApply` / `getPublishReviewList` / `approvePublish` / `rejectPublish` / `publishSection` / `reviewUnpublish`。
@@ -2020,7 +2038,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 验证
 
-- `mvn compile/package`（heima-leadnews-content + app-gateway 模块，-am，skipTests）通过（exit 0）。
+- `mvn compile/package`（zhuri-coding-content + app-gateway 模块，-am，skipTests）通过（exit 0）。
 - 网关 + 内容服务以新 jar 重启，全部公开接口匿名请求返回 HTTP 200 + code 200（原 444/未发请求）。
 - 浏览器实测（未登录，`/user/1`）：
   - 动态 4 条、文章 2 篇、沸点 10 条、课程 1 门（卡片正常渲染）、关注者 1 人、赞-沸点 1 条均正常加载渲染；专栏/收藏集/赞-文章为空态（该用户暂无数据）。
@@ -2045,7 +2063,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 验证
 
-- `mvn install`（heima-leadnews-content + app-gateway 模块，-am，skipTests）通过（exit 0）。
+- `mvn install`（zhuri-coding-content + app-gateway 模块，-am，skipTests）通过（exit 0）。
 - 网关 + 内容服务以新 jar 重启，匿名请求 `GET /content/api/v1/user/home/1` 返回 200（原 444）。
 - 浏览器实测（未登录）：
   - 文章详情页作者信息区头像/昵称可见，昵称旁展示 `Lv.3`（逐力值等级）徽章，作者链接 `href=/user/1` 可跳转作者主页。
@@ -2078,7 +2096,7 @@ PromptSanitizer（输入净化）+ ComplianceGuard（输出护栏）此前以「
 
 ### 验证
 
-- `mvn compile`（heima-leadnews-content 模块，-am）通过（exit 0）。
+- `mvn compile`（zhuri-coding-content 模块，-am）通过（exit 0）。
 - `node --check article-static.js` 语法通过。
 - 浏览器实测通过：
   - 作者信息区水平布局（`flex-direction: row`），头像/昵称 `href=/user/1` 可点击跳转作者主页（实测点击后进入 `/user/1`）。
@@ -2260,7 +2278,7 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 - 修改：`model/.../level/pojos/ApUserLevel.java`、`model/.../user/pojos/ApUserActionLog.java`（字段类型改 BigDecimal）
 - 修改：`content/.../service/order/impl/OrderServiceImpl.java`（课程支付成功联动）
 - 修改：`content/.../service/tip/impl/TipServiceImpl.java`（打赏支付成功联动，补 import）
-- 修改：`heima-leadnews-basic/heima-file-starter/pom.xml`（库模块跳过 spring-boot repackage，修复全量构建）
+- 修改：`zhuri-coding-basic/zhuri-file-starter/pom.xml`（库模块跳过 spring-boot repackage，修复全量构建）
 - 修改：`content/.../resources/db/schema.sql`（同步 decimal 字段定义）
 
 ## 2026-08-13 — 课程订单详情页 + 支付回跳修复 + 列表新开标签
@@ -2296,7 +2314,7 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 - 变更脚本：`content/src/main/resources/db/migrations/create_ap_article_tip_tables.sql`，并同步更新 `schema.sql`
 
 ### 变更文件
-- 新增：`heima-leadnews-model/.../article/pojos/ApArticleTipOrder.java`、`ApArticleTipRecord.java`
+- 新增：`zhuri-coding-model/.../article/pojos/ApArticleTipOrder.java`、`ApArticleTipRecord.java`
 - 新增：`content/.../mapper/tip/ApArticleTipOrderMapper.java`、`ApArticleTipRecordMapper.java`
 - 新增：`content/.../service/tip/TipService.java`、`impl/TipServiceImpl.java`
 - 新增：`content/.../controller/v1/tip/TipController.java`
@@ -2317,8 +2335,8 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 - 前端话题详情移除「帖子」计数项，仅保留「阅读」「参与」
 
 ### 变更文件
-- 新增：`heima-leadnews-model/.../user/vo/UserDynamicVO.java`
-- 新增：`heima-leadnews-service/heima-leadnews-content/.../controller/v1/user/UserDynamicController.java`
+- 新增：`zhuri-coding-model/.../user/vo/UserDynamicVO.java`
+- 新增：`zhuri-coding-service/zhuri-coding-content/.../controller/v1/user/UserDynamicController.java`
 - 修改：`src/apis/author.js`
 - 修改：`src/pages/user/index.vue`
 
@@ -2333,9 +2351,9 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 - 保留通用 `checkViolation(Long, title, content)` 方法，供沸点/评论等其他审核流程使用，不受影响
 
 ### 变更文件
-- 修改：`heima-leadnews-service/heima-leadnews-content/.../article/BailianAiService.java`
-- 修改：`heima-leadnews-service/heima-leadnews-content/.../article/impl/BailianAiServiceImpl.java`
-- 修改：`heima-leadnews-service/heima-leadnews-content/.../article/processor/AIViolationProcessor.java`
+- 修改：`zhuri-coding-service/zhuri-coding-content/.../article/BailianAiService.java`
+- 修改：`zhuri-coding-service/zhuri-coding-content/.../article/impl/BailianAiServiceImpl.java`
+- 修改：`zhuri-coding-service/zhuri-coding-content/.../article/processor/AIViolationProcessor.java`
 
 ## 2026-08-13 — 修复：OSS 封面/图片 URL 过期签名参数导致图片无法加载
 
@@ -2612,11 +2630,11 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 - **未登录交互无反馈**：点赞/收藏/关注/评论输入在未登录时唤起登录弹窗而非无效操作
 
 ### 变更文件
-- `heima-leadnews-content/.../controller/page/ArticlePageController.java`（新增）
-- `heima-leadnews-content/src/main/resources/templates/article.ftl`（修改）
-- `heima-leadnews-content/src/main/resources/static/article-static.js`（修改）
-- `heima-leadnews-content/.../service/article/impl/ArticleFreemarkerServiceImpl.java`（修改，移除冗余 JS 上传）
-- `heima-leadnews-app-gateway/.../filter/AuthorizeFilter.java`（修改，公开路径注入用户上下文）
+- `zhuri-coding-content/.../controller/page/ArticlePageController.java`（新增）
+- `zhuri-coding-content/src/main/resources/templates/article.ftl`（修改）
+- `zhuri-coding-content/src/main/resources/static/article-static.js`（修改）
+- `zhuri-coding-content/.../service/article/impl/ArticleFreemarkerServiceImpl.java`（修改，移除冗余 JS 上传）
+- `zhuri-coding-app-gateway/.../filter/AuthorizeFilter.java`（修改，公开路径注入用户上下文）
 - `docs/qa_test_report_ftl_article_detail_20260811.md`（新增，测试报告）
 
 ---
@@ -2626,15 +2644,15 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 ### 架构变更
 
 #### ScheduleApplication → 合并入 Article 服务
-- **BREAKING**: 删除 `heima-leadnews-schedule` 独立微服务模块
-- 将 TaskService、TaskinfoMapper、TaskDelayConsumer 等全部迁移至 article 模块的 `com.heima.article.schedule` 包
+- **BREAKING**: 删除 `zhuri-coding-schedule` 独立微服务模块
+- 将 TaskService、TaskinfoMapper、TaskDelayConsumer 等全部迁移至 article 模块的 `com.zhuri.coding.article.schedule` 包
 - 使用 Redisson 延迟队列（`RBlockingQueue` + `RDelayedQueue`）替代 RabbitMQ 延迟插件，消除外部 RabbitMQ 依赖
 - 移除 `IScheduleClient` Feign 接口，远程调用改为本地 Service 方法调用
 - 新增 `schedule.sql` DDL 文件，用于在 `leadnews_article` 库中创建 `taskinfo` 和 `taskinfo_logs` 表
 
 #### BehaviorApplication → 合并入 Article 服务并重构
-- **BREAKING**: 删除 `heima-leadnews-behavior` 独立微服务模块
-- 将 LikesBehavior、ReadBehavior、UnlikesBehavior 的 Controller 和 Service 全部迁移至 article 模块的 `com.heima.article.behavior` 包
+- **BREAKING**: 删除 `zhuri-coding-behavior` 独立微服务模块
+- 将 LikesBehavior、ReadBehavior、UnlikesBehavior 的 Controller 和 Service 全部迁移至 article 模块的 `com.zhuri.coding.article.behavior` 包
 - **移除 Redis 缓存用户行为逻辑**（`LIKE_BEHAVIOR`、`READ_BEHAVIOR`、`UN_LIKE_BEHAVIOR`），改为直接数据库持久化
   - 点赞/取消点赞：原子更新 `ap_article.likes` 字段，并记录到 `ap_user_action_log` 表
   - 阅读行为：原子更新 `ap_article.views` 字段，并记录到 `ap_browse_history` 表
@@ -2657,59 +2675,59 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 - 新增 `taskinfo` 和 `taskinfo_logs` 表（`leadnews_article` 库），参考 `schedule.sql`
 
 ### 基础架构变更
-- 从 `heima-leadnews-service/pom.xml` 中移除 `heima-leadnews-schedule` 和 `heima-leadnews-behavior` 模块
+- 从 `zhuri-coding-service/pom.xml` 中移除 `zhuri-coding-schedule` 和 `zhuri-coding-behavior` 模块
 - 网关路由中移除 `/schedule/` 和 `/behavior/` 路由
 - 减少 2 个微服务实例、消除 Kafka 和 RabbitMQ 外部依赖
 
 ### 变更文件列表
 
 #### 删除（模块）
-- `heima-leadnews-service/heima-leadnews-schedule/`（完整模块）
-- `heima-leadnews-service/heima-leadnews-behavior/`（完整模块）
+- `zhuri-coding-service/zhuri-coding-schedule/`（完整模块）
+- `zhuri-coding-service/zhuri-coding-behavior/`（完整模块）
 
 #### 删除（Feign接口）
-- `heima-leadnews-feign-api/.../schedule/IScheduleClient.java`
+- `zhuri-coding-feign-api/.../schedule/IScheduleClient.java`
 
 #### 删除（Kafka相关）
-- `heima-leadnews-article/.../config/KafkaStreamConfig.java`
-- `heima-leadnews-article/.../stream/HotArticleStreamHandler.java`
-- `heima-leadnews-article/.../listener/ArticleIncrHandleListener.java`
-- `heima-leadnews-article/.../listener/ArticleIsDownListener.java`
+- `zhuri-coding-article/.../config/KafkaStreamConfig.java`
+- `zhuri-coding-article/.../stream/HotArticleStreamHandler.java`
+- `zhuri-coding-article/.../listener/ArticleIncrHandleListener.java`
+- `zhuri-coding-article/.../listener/ArticleIsDownListener.java`
 
 #### 新增（article模块）
-- `heima-leadnews-article/.../schedule/service/TaskService.java`
-- `heima-leadnews-article/.../schedule/service/impl/TaskServiceImpl.java`
-- `heima-leadnews-article/.../schedule/listener/TaskDelayConsumer.java`
-- `heima-leadnews-article/.../schedule/mapper/TaskinfoLogsMapper.java`
-- `heima-leadnews-article/.../schedule/mapper/TaskinfoMapper.java`
-- `heima-leadnews-article/.../behavior/controller/v1/ApLikesBehaviorController.java`
-- `heima-leadnews-article/.../behavior/controller/v1/ApReadBehaviorController.java`
-- `heima-leadnews-article/.../behavior/controller/v1/ApUnlikesBehaviorController.java`
-- `heima-leadnews-article/.../behavior/service/ApLikesBehaviorService.java`
-- `heima-leadnews-article/.../behavior/service/ApReadBehaviorService.java`
-- `heima-leadnews-article/.../behavior/service/ApUnlikesBehaviorService.java`
-- `heima-leadnews-article/.../behavior/service/impl/ApLikesBehaviorServiceImpl.java`
-- `heima-leadnews-article/.../behavior/service/impl/ApReadBehaviorServiceImpl.java`
-- `heima-leadnews-article/.../behavior/service/impl/ApUnlikesBehaviorServiceImpl.java`
-- `heima-leadnews-article/.../config/RedissonConfig.java`
-- `heima-leadnews-article/src/main/resources/schedule.sql`
-- `heima-leadnews-article/src/main/resources/mapper/TaskinfoMapper.xml`
+- `zhuri-coding-article/.../schedule/service/TaskService.java`
+- `zhuri-coding-article/.../schedule/service/impl/TaskServiceImpl.java`
+- `zhuri-coding-article/.../schedule/listener/TaskDelayConsumer.java`
+- `zhuri-coding-article/.../schedule/mapper/TaskinfoLogsMapper.java`
+- `zhuri-coding-article/.../schedule/mapper/TaskinfoMapper.java`
+- `zhuri-coding-article/.../behavior/controller/v1/ApLikesBehaviorController.java`
+- `zhuri-coding-article/.../behavior/controller/v1/ApReadBehaviorController.java`
+- `zhuri-coding-article/.../behavior/controller/v1/ApUnlikesBehaviorController.java`
+- `zhuri-coding-article/.../behavior/service/ApLikesBehaviorService.java`
+- `zhuri-coding-article/.../behavior/service/ApReadBehaviorService.java`
+- `zhuri-coding-article/.../behavior/service/ApUnlikesBehaviorService.java`
+- `zhuri-coding-article/.../behavior/service/impl/ApLikesBehaviorServiceImpl.java`
+- `zhuri-coding-article/.../behavior/service/impl/ApReadBehaviorServiceImpl.java`
+- `zhuri-coding-article/.../behavior/service/impl/ApUnlikesBehaviorServiceImpl.java`
+- `zhuri-coding-article/.../config/RedissonConfig.java`
+- `zhuri-coding-article/src/main/resources/schedule.sql`
+- `zhuri-coding-article/src/main/resources/mapper/TaskinfoMapper.xml`
 
 #### 修改
-- `heima-leadnews-article/.../ArticleApplication.java`（MapperScan 增加 schedule 包）
-- `heima-leadnews-article/.../service/ApArticleService.java`（新增 updateScoreByBehavior 方法）
-- `heima-leadnews-article/.../service/impl/ApArticleServiceImpl.java`（实现 updateScoreByBehavior）
-- `heima-leadnews-article/.../service/impl/ArticleTaskServiceImpl.java`（Feign 改为本地调用）
-- `heima-leadnews-article/pom.xml`（移除 Kafka 依赖，保留 Redisson）
-- `heima-leadnews-article/src/main/resources/application.yml`（移除 Kafka 配置）
-- `heima-leadnews-service/pom.xml`（移除 schedule 和 behavior 模块引用）
-- `heima-leadnews-gateway/.../application-gateway.yml`（移除 schedule 和 behavior 路由）
-- `heima-leadnews-common/.../constants/BehaviorConstants.java`（添加废弃注释）
+- `zhuri-coding-article/.../ArticleApplication.java`（MapperScan 增加 schedule 包）
+- `zhuri-coding-article/.../service/ApArticleService.java`（新增 updateScoreByBehavior 方法）
+- `zhuri-coding-article/.../service/impl/ApArticleServiceImpl.java`（实现 updateScoreByBehavior）
+- `zhuri-coding-article/.../service/impl/ArticleTaskServiceImpl.java`（Feign 改为本地调用）
+- `zhuri-coding-article/pom.xml`（移除 Kafka 依赖，保留 Redisson）
+- `zhuri-coding-article/src/main/resources/application.yml`（移除 Kafka 配置）
+- `zhuri-coding-service/pom.xml`（移除 schedule 和 behavior 模块引用）
+- `zhuri-coding-gateway/.../application-gateway.yml`（移除 schedule 和 behavior 路由）
+- `zhuri-coding-common/.../constants/BehaviorConstants.java`（添加废弃注释）
 
 ### 新增功能
 
-#### 课程微服务 (heima-leadnews-course)
-- 新增 `heima-leadnews-course` 微服务模块（端口 51803），独立处理课程交易、营销、结算、审核逻辑
+#### 课程微服务 (zhuri-coding-course)
+- 新增 `zhuri-coding-course` 微服务模块（端口 51803），独立处理课程交易、营销、结算、审核逻辑
 - 网关路由：`/course/**` → 课程微服务
 
 #### 课程创作与章节管理
@@ -2766,7 +2784,7 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 
 ### 基础架构变更
 
-- 新增 `heima-leadnews-course` 模块到 `heima-leadnews-service/pom.xml`
+- 新增 `zhuri-coding-course` 模块到 `zhuri-coding-service/pom.xml`
 - Vite 配置添加 `/course` 代理路由
 - 创作者中心菜单和路由更新（折扣码管理、收入结算入口）
 - 课程详情页/阅读页移除静态 Mock 数据，全部改为 API 调用
@@ -2775,21 +2793,21 @@ P0+P1 共 18 项，建议 5-7 个工作日内完成后再上线。
 ### 变更文件列表
 
 #### 后端（新增）
-- `heima-leadnews-service/heima-leadnews-course/`（完整微服务模块）
-- `heima-leadnews-model/.../dtos/CourseDto.java`
-- `heima-leadnews-model/.../dtos/ChapterDto.java`
-- `heima-leadnews-model/.../dtos/ChapterSortDto.java`
-- `heima-leadnews-model/.../dtos/CourseDiscountDto.java`
-- `heima-leadnews-model/.../pojos/ApCourseDiscount.java`
-- `heima-leadnews-model/.../pojos/ApCourseOrder.java`
-- `heima-leadnews-model/.../pojos/ApCourseReview.java`
-- `heima-leadnews-model/.../pojos/ApCourseInvitation.java`
-- `heima-leadnews-model/.../pojos/ApCourseSettlement.java`
-- `heima-leadnews-model/.../pojos/ApCourseChapterComment.java`
-- `heima-leadnews-article/.../controller/v1/CourseChapterController.java`
-- `heima-leadnews-article/.../service/ApCourseChapterService.java`
-- `heima-leadnews-article/.../service/impl/ApCourseChapterServiceImpl.java`
-- `heima-leadnews-gateway/.../dto/`（网关新增 DTO）
+- `zhuri-coding-service/zhuri-coding-course/`（完整微服务模块）
+- `zhuri-coding-model/.../dtos/CourseDto.java`
+- `zhuri-coding-model/.../dtos/ChapterDto.java`
+- `zhuri-coding-model/.../dtos/ChapterSortDto.java`
+- `zhuri-coding-model/.../dtos/CourseDiscountDto.java`
+- `zhuri-coding-model/.../pojos/ApCourseDiscount.java`
+- `zhuri-coding-model/.../pojos/ApCourseOrder.java`
+- `zhuri-coding-model/.../pojos/ApCourseReview.java`
+- `zhuri-coding-model/.../pojos/ApCourseInvitation.java`
+- `zhuri-coding-model/.../pojos/ApCourseSettlement.java`
+- `zhuri-coding-model/.../pojos/ApCourseChapterComment.java`
+- `zhuri-coding-article/.../controller/v1/CourseChapterController.java`
+- `zhuri-coding-article/.../service/ApCourseChapterService.java`
+- `zhuri-coding-article/.../service/impl/ApCourseChapterServiceImpl.java`
+- `zhuri-coding-gateway/.../dto/`（网关新增 DTO）
 - `sql/init_course_extended.sql`
 
 #### 前端（新增）

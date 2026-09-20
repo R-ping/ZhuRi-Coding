@@ -1,0 +1,64 @@
+package com.zhuri.coding.content.service.column.impl;
+
+import com.zhuri.coding.content.service.article.impl.AbstractAuditService;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.content.mapper.column.ApColumnMapper;
+import com.zhuri.coding.content.utils.NotificationHelper;
+import com.zhuri.coding.model.column.pojos.ApColumn;
+import com.zhuri.coding.model.audit.AuditContext;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+/**
+ * 专栏审核服务
+ * 审核流程：AI违规检测 → 图片审核 → 更新状态
+ */
+@Slf4j
+@Service
+public class ColumnAuditService extends AbstractAuditService {
+
+    @Autowired
+    private ApColumnMapper apColumnMapper;
+
+    @Autowired(required = false)
+    private INotificationClient notificationClient;
+
+    @Override
+    protected void handlePassed(AuditContext context) {
+        ApColumn column = apColumnMapper.selectById(context.getEntityId());
+        if (column == null) {
+            log.error("专栏不存在, columnId={}", context.getEntityId());
+            return;
+        }
+        column.setStatus(ApColumn.Status.PUBLISHED.getCode());
+        apColumnMapper.updateById(column);
+        log.info("专栏审核通过, columnId={}", context.getEntityId());
+    }
+
+    @Override
+    protected void handleFailed(AuditContext context, String reason) {
+        ApColumn column = apColumnMapper.selectById(context.getEntityId());
+        if (column == null) {
+            log.error("专栏不存在, columnId={}", context.getEntityId());
+            return;
+        }
+        column.setStatus(ApColumn.Status.FAIL.getCode());
+        apColumnMapper.updateById(column);
+
+        // 发送审核失败通知
+        sendModerationFailNotification(column, reason);
+        log.info("专栏审核未通过, columnId={}, reason={}", context.getEntityId(), reason);
+    }
+
+    private void sendModerationFailNotification(ApColumn column, String reason) {
+        NotificationHelper.sendModerationFailNotification(
+            notificationClient,
+            column.getAuthorId(),
+            String.valueOf(column.getId()),
+            "专栏",
+            column.getTitle(),
+            reason
+        );
+    }
+}

@@ -1,0 +1,43 @@
+server:
+  port: 51905
+spring:
+  application:
+    name: zhuri-coding-reward
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/leadnews_reward?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  data:
+    redis:
+      port: 6379
+      host: localhost
+mybatis-plus:
+  configuration:
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.nologging.NoLoggingImpl}
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      update-strategy: not_null
+      id-type: auto
+  mapper-locations: classpath*:mapper/*.xml
+  type-aliases-package: com.zhuri.coding.reward.entity
+logging:
+  level:
+    com.zhuri.coding: debug
+
+# 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: 1.0        # 本地全量采样；生产建议 0.1~0.5
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans

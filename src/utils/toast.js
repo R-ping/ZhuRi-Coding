@@ -6,11 +6,11 @@ export function toast(message, duration) {
   // 移除上一个toast
   if (toastTimer) {
     clearTimeout(toastTimer)
-    var existing = document.querySelector('.heima-toast')
+    var existing = document.querySelector('.zhuri-toast')
     if (existing) existing.parentNode.removeChild(existing)
   }
   var div = document.createElement('div')
-  div.className = 'heima-toast'
+  div.className = 'zhuri-toast'
   div.textContent = message
   div.style.cssText = [
     'position: fixed',
@@ -29,7 +29,7 @@ export function toast(message, duration) {
     'overflow: hidden',
     'text-overflow: ellipsis',
     'box-shadow: 0 4px 12px rgba(0,0,0,0.15)',
-    'animation: heima-toast-in 0.25s ease'
+    'animation: zhuri-toast-in 0.25s ease'
   ].join(';')
   document.body.appendChild(div)
   toastTimer = setTimeout(function () {
@@ -53,9 +53,9 @@ export function confirmDialog(message, callback) {
 }
 
 // 注入动画样式
-if (typeof document !== 'undefined' && !document.getElementById('heima-toast-style')) {
+if (typeof document !== 'undefined' && !document.getElementById('zhuri-toast-style')) {
   var style = document.createElement('style')
-  style.id = 'heima-toast-style'
-  style.textContent = '@keyframes heima-toast-in{from{opacity:0;transform:translate(-50%,-50%) scale(0.85)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}'
+  style.id = 'zhuri-toast-style'
+  style.textContent = '@keyframes zhuri-toast-in{from{opacity:0;transform:translate(-50%,-50%) scale(0.85)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}'
   document.head.appendChild(style)
 }

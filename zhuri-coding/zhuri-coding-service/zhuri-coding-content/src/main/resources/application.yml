@@ -1,0 +1,272 @@
+server:
+  port: 51802
+spring:
+  application:
+    name: zhuri-coding-content
+  # Redisson 仅用其 Client API（分布式限流/锁/延迟队列），不接管 Spring Data Redis 的 ConnectionFactory。
+  # 排除它的自动配置：redisson-spring-boot-starter 3.37.0 的 RedissonConnection 未覆写 spring-data-redis
+  # 3.5 新增的 pExpire 签名，运行时走 DefaultedRedisConnection 默认实现导致 pExpire 自递归
+  # StackOverflowError。排除后 RedisConnectionFactory 回到 Boot 默认的 Lettuce；
+  # RedissonClient 仍由 com.zhuri.coding.content.config.RedissonConfig 创建，延迟队列/限流不受影响。
+  # 注意：Boot 3 只认 AutoConfiguration.imports，故这里排除 V2（V1 仅注册在 spring.factories，
+  # 默认不被加载，且排除它反而报 not an auto-configuration class）；redisson.spring.data.support
+  # 属性在 3.37.0 不存在（RedissonProperties 仅有 config/file 两字段），配置无效。
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+  ai:
+    openai:
+      api-key: ${DASH_SCOPE_API_KEY:}
+      # Spring AI OpenAI 兼容客户端会自行在 base-url 后补 /v1，故此处只配置网关根地址（勿带 /v1）
+      base-url: ${DASH_SCOPE_COMPATIBLE_BASE:https://llm-07pvgms9s4t42iko.cn-beijing.maas.aliyuncs.com/compatible-mode}
+      chat:
+        options:
+          model: ${DASH_SCOPE_MODEL:qwen3.8-27b}
+          temperature: 0.3
+          max-tokens: 2048
+          max-completion-tokens: 2048
+          reasoning-effort: high
+          output-modalities:
+            - text
+      embedding:
+        options:
+          model: ${DASH_SCOPE_EMBEDDING_MODEL:qwen3.7-text-embedding}
+          dimensions: 1024
+    # Spring AI MCP client：接入社区 stdio server
+    # initialized=false 关键：客户端创建时不 initialize()（不拉起 npx 进程），首次调用 MCP 工具才握手，
+    # 避免无 node/首次 npx 拉包慢把全量 context 启动拖挂（实测 JournalArticle 全量 context 20s 超时）。
+    # enabled=false 时整体降级：tools 目录返回空、ping 返回不可用，不影响其它接口
+    mcp:
+      client:
+        enabled: true
+        initialized: false
+        # 握手超时兜底：首次 npx 拉包/启动 stdio 慢时，默认 20s 会使 initialize（tools/list）超时
+        # 触发 fail-open（TimeoutException within 20000ms），调大到 30s；包已本地缓存后握手毫秒级完成
+        request-timeout: 30s
+        stdio:
+          connections:
+            docs-fs:
+              # Windows 下 Stdio 传输不做 .cmd/PATHEXT 解析，必须显式 npx.cmd；路径使用 /
+              # 目录通过环境变量覆盖（默认 ./docs）。该工具仅用于本地 AI 编码辅助。
+              # MCP 端到端验证载体即 docs-fs（list_directory/read_file 等）：
+              # 官方 @modelcontextprotocol 包 stdout 纯 JSON-RPC，stdio 协议干净；
+              # npm 上无其它可用的 time server（官方 mcp-server-time 已于 2025-05-14 unpublish、
+              # 镜像不存在的 mcp-server-time 与 stdout 打印 banner 的 time-mcp 均不可用，
+              # 实测均导致 "Error processing inbound message" 使初始化握手失败/fail-open）。
+              # 未放置文档/MCP 不可用时为 fail-open，不影响业务链路与服务启动
+              command: npx.cmd
+              # 默认目录用 ../docs：服务工作目录为 ...\zhuri-coding-app\zhuri-coding，
+              # ./docs 会解析到不存在路径使 filesystem server 启动失败（"None of the specified
+              # directories are accessible"→初始化握手失败）；../docs 即 ...\zhuri-coding-app\docs。
+              # 可用系统环境变量 MCP_DOCS_PATH 覆盖（注意：需在服务进程启动前设置才生效）
+              args: ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_DOCS_PATH:../docs}"]
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+  # 设置Mapper接口所对应的XML文件位置，如果你在Mapper接口中有自定义方法，需要进行该配置
+  freemarker:
+    suffix: .ftl               #指定Freemarker模板文件的后缀名
+    template-loader-path: classpath:/templates
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+#      password: 123456
+      connect-timeout: 10000ms
+      lettuce:
+        pool:
+          max-idle: 16
+          max-active: 32
+          min-idle: 8
+#  rabbitmq:
+#    host: 192.168.44.128
+#    port: 5672
+#    virtual-host: /
+#    username: ${RABBITMQ_USERNAME:admin}
+#    password: ${RABBITMQ_PASSWORD:admin}
+#    listener:
+#      simple:
+#        prefetch: 1
+#        acknowledge-mode: auto
+#        retry:
+#          enabled: true
+#          initial-interval: 2000ms
+#          max-attempts: 2
+#          multiplier: 1
+mybatis-plus:
+  configuration:
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.nologging.NoLoggingImpl}
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      update-strategy: not_null
+      id-type: auto
+  mapper-locations: classpath*:mapper/*.xml
+  # 设置别名包扫描路径，通过该属性可以给包中的类注册别名
+  type-aliases-package: com.zhuri.coding.model.article.pojos
+
+minio:
+  accessKey: ${MINIO_ACCESS_KEY:minio}
+  secretKey: ${MINIO_SECRET_KEY:minio123}
+  bucket: ${MINIO_BUCKET:leadnews}
+  endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+  readPath: ${MINIO_READ_PATH:http://127.0.0.1:9000}
+
+aliyun:
+  oss:
+    accessKeyId: ${ALIBABA_RAM_ACCESS_KEY}
+    accessKeySecret: ${ALIBABA_RAM_ACCESS_SECRET}
+    endpoint: oss-cn-beijing.aliyuncs.com
+    host: https://zhuri-leadnews.oss-cn-beijing.aliyuncs.com
+    bucket: zhuri-leadnews
+    dir: material/
+    expireTime: 300
+
+bailian:
+  dashscope:
+    api-key: ${DASH_SCOPE_API_KEY:}
+    api-host: ${DASH_SCOPE_API_HOST:}
+    model: ${DASH_SCOPE_MODEL:qwen3.7-max}
+    embedding-model: ${DASH_SCOPE_EMBEDDING_MODEL:qwen3.7-text-embedding}
+    vision-model: ${DASH_SCOPE_VISION_MODEL:qwen3.8-27b}
+    timeout:
+      connect: 5000
+      read: 30000
+    retry:
+      max-attempts: 3
+      backoff-delay: 1000
+
+# AI 模型路由与成本（token 计量 → 金额折算）
+#
+# 定价 key = 计量上报的模型名（取自 ChatResponse.metadata.model），单位：元 / 千 token。
+# 数据来源（2026-09-14 查证，官方公示价，中国内地/华北2-北京部署范围）：
+#   - qwen3.8-27b  输入 3 元/百万、输出 12 元/百万（help.aliyun.com/zh/model-studio/qwen3-8-27b）
+#   - qwen3.7-max  输入 12 元/百万、输出 36 元/百万（help.aliyun.com/zh/model-studio/model-pricing，2026-06-15）
+#   - qwen-plus    输入 0.8 元/百万、输出 2 元/百万（aliyun.com/product/bailian/pricing）
+#   - qwen-turbo   输入 0.3 元/百万、输出 0.6 元/百万（同上）
+#   - qwen-max     输入 2.4 元/百万、输出 9.6 元/百万（model-pricing 文档）
+#   - qwen3.8-flash 输入 0.8 元/百万、输出 2.7 元/百万（开发者社区对比文，2026）
+# 注意：以上为"无阶梯/最低档"单价，实际存在阶梯计费、Batch 半价、上下文缓存折扣与限时活动，
+# 请以百炼控制台账单为准；未配价的模型会在成本报表里列入 unpricedModels（不静默当免费）。
+ai:
+  model-router:
+    default: openAiChatModel      # 默认模型 key（spring-ai 自动配置主模型 bean 名；原 "primary" 指向不存在的名称）
+    flash-model: ${AI_FLASH_MODEL:qwen3.8-flash}  # 低成本模型名（配 AiModelConfig 的 qwenFlashChatModel）
+    # 功能 → 模型 Bean 名（低成本高频功能走 flash 便宜约 15 倍，高价值问答/预检/复盘/Agent 不映射走默认强模型）
+    features:
+      rewrite: qwenFlashChatModel
+      rerank: qwenFlashChatModel
+      faithfulness: qwenFlashChatModel
+      comment_audit: qwenFlashChatModel
+      pins_comment_audit: qwenFlashChatModel
+      aigc_detect: qwenFlashChatModel
+      memory_compress: qwenFlashChatModel
+      appeal_audit: qwenFlashChatModel
+    pricing-prompt:
+      qwen3.7-max: 0.012          # 当前主模型（DASH_SCOPE_MODEL 默认值）
+      qwen3.8-27b: 0.003          # 视觉/长文场景
+      qwen3.8-flash: 0.0008       # 轻量场景（便宜 15 倍，适合审核/精排/改写）
+      qwen-plus: 0.0008
+      qwen-turbo: 0.0003
+      qwen-max: 0.0024
+    pricing-completion:
+      qwen3.7-max: 0.036
+      qwen3.8-27b: 0.012
+      qwen3.8-flash: 0.0027
+      qwen-plus: 0.002
+      qwen-turbo: 0.0006
+      qwen-max: 0.0096
+  # 问答意图路由（P2 Routing 二分类：闲聊/技术问答；闲聊短路不消耗配额与 RAG）
+  router:
+    chat:
+      enabled: ${AI_ROUTER_CHAT_ENABLED:true}  # 开关
+      # 自定义闲聊词表（逗号分隔；留空用代码内置默认词表）
+      words: ""
+      # 自定义技术关键词表（逗号分隔；命中即走技术问答；留空用代码内置默认词表）
+      tech-words: ""
+
+# AI 每日免费 tokens 额度（成本止血闸门；按主模型 qwen3.7-max 折算 ≈ 0.02 元/千）
+# 20000 tokens ≈ 0.4 元/用户/天 —— 免费层本质是获客成本，按预算调整
+ai-quota:
+  daily-tokens: ${AI_DAILY_FREE_TOKENS:20000}
+  daily-requests: ${AI_DAILY_FREE_REQUESTS:20}
+
+# PostgreSQL pgvector 向量库（文章向量/相似度检索；配合 PgVectorConfig，enabled=true 才装配）
+pgvector:
+  enabled: true
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    jdbc-url: ${PGVECTOR_URL:jdbc:postgresql://192.168.44.128:5432/leadnews_content}
+    username: ${PGVECTOR_USERNAME:postgres}
+    password: ${PGVECTOR_PASSWORD:123456}
+    maximum-pool-size: 5
+    minimum-idle: 1
+    connection-timeout: 10000
+    idle-timeout: 300000
+    initialization-fail-timeout: -1
+
+# 文章推荐配置（全局公平 + 多样性配额）
+recommend:
+  max-candidates: 2000        # 候选池上限（性能兜底）
+  window-days: 90             # 候选时间窗口（天），放宽避免陈旧优质内容被硬过滤（评分已含时效衰减）
+  max-per-tag: 4              # 每 10 篇同一标签最多 N 篇
+  max-per-author: 3           # 每 10 篇同一作者最多 M 篇（0=不限制）
+  untagged-bucket: __untagged__ # 无标签文章去向
+  seed-jitter: 0.25           # 排序随机抖动幅度（±分数），与 seed 绑定：刷新出新内容、同 seed 分页连续
+  interest-boost-max: 0.20    # 用户兴趣标签命中时的最大加成幅度
+  interest-browse-sample: 100 # 构建兴趣画像时最多采样的最近浏览条数
+  interest-cache-ttl: 1800    # 兴趣画像 Redis 缓存 TTL（秒），默认 30 分钟，长 TTL 容忍用户行为滞后
+  # 基础评分权重（可配置，便于 A/B 调优）
+  weight:
+    score: 0.25               # 编辑/系统热度分权重
+    recency: 0.20             # 时效性权重
+    views: 0.15               # 阅读量权重
+    likes: 0.15               # 点赞量权重
+    comments: 0.10            # 评论量权重
+    collects: 0.10            # 收藏量权重
+  score-normalize-max: 10000  # 热度分归一化除数（越高，编辑热度影响越小）
+  recency-window-days: 7      # 时效线性衰减窗口（天）
+  # 服务端已读去重
+  exclude-read-count: 500     # 参与已读去重的最近浏览条数上限（控制 NOT IN 规模）
+  exclude-read-window-days: 7 # 已读去重只考虑该天数内的浏览记录
+  # 数据回流闭环（近期互动热度）
+  interaction-boost-max: 0.20 # 近期阅读热度权重（真实行为反哺排序）
+  interaction-window-seconds: 86400 # 统计近期互动的秒数窗口（默认 24 小时）
+  interaction-cache-ttl: 300  # 近期互动热度缓存 TTL（秒）
+  # 曝光/行为闭环（负反馈：曝光而未消费 → 降权）
+  exposure-window-days: 3     # 只看该天数内对该用户的曝光记录
+  exposure-penalty-max: 0.10  # 曝光而未消费的最大降权幅度（分数段内）
+
+# 支付宝沙箱配置（通过环境变量注入）
+alipay:
+  app-id: ${ALIPAY_APP_ID:}
+  private-key: ${ALIPAY_PRIVATE_KEY:}
+  alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
+  gateway-url: https://openapi-sandbox.dl.alipaydev.com/gateway.do
+  base-url: ${CPOlAR_BASE_URL:https://58c840b3.r40.cpolar.top}
+  # 课程支付成功后的回跳地址前缀（课程页是前端 Vue SPA，指向前端对外地址，本地默认 9901）
+  web-base-url: ${CPOlAR_BASE_URL_WEB:https://5bdb24b5.r40.cpolar.top}
+
+# 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: 1.0        # 本地全量采样；生产建议 0.1~0.5
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+# 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
+app:
+  internal-auth:
+    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
+

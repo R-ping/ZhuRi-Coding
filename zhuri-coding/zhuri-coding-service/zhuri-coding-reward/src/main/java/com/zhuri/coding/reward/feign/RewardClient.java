@@ -1,0 +1,105 @@
+package com.zhuri.coding.reward.feign;
+
+import com.zhuri.coding.apis.reward.IRewardClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.reward.entity.UserAssets;
+import com.zhuri.coding.reward.mapper.UserAssetsMapper;
+import com.zhuri.coding.reward.service.CheckinService;
+import com.zhuri.coding.reward.service.VirtualAssetService;
+import java.util.HashMap;
+import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+public class RewardClient implements IRewardClient {
+    @Autowired
+    private UserAssetsMapper userAssetsMapper;
+    @Autowired
+    private CheckinService checkinService;
+    @Autowired
+    private VirtualAssetService virtualAssetService;
+
+    /**
+     * 获取用户资产（矿石余额）
+     * 供其他服务 Feign 调用
+     */
+    @GetMapping("/user/{userId}/assets")
+    public ResponseResult getUserAssets(@PathVariable("userId") Long userId) {
+        UserAssets assets = userAssetsMapper.selectById(userId);
+        Map<String, Object> result = new HashMap<>();
+        if (assets != null) {
+            result.put("oreBalance", assets.getOreBalance() != null ? assets.getOreBalance() : 0);
+            result.put("frozenOre", assets.getFrozenOre() != null ? assets.getFrozenOre() : 0);
+            result.put("luckyValue", assets.getLuckyValue() != null ? assets.getLuckyValue() : 0);
+        } else {
+            result.put("oreBalance", 0);
+            result.put("frozenOre", 0);
+            result.put("luckyValue", 0);
+        }
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 仅获取用户矿石余额（轻量接口）
+     */
+    @GetMapping("/user/{userId}/ore")
+    public ResponseResult getUserOreBalance(@PathVariable("userId") Long userId) {
+        UserAssets assets = userAssetsMapper.selectById(userId);
+        int oreBalance = (assets != null && assets.getOreBalance() != null) ? assets.getOreBalance() : 0;
+        Map<String, Object> result = new HashMap<>();
+        result.put("oreBalance", oreBalance);
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 增加用户矿石余额（用于等级奖励等场景）
+     * 供其他服务 Feign 调用
+     */
+    @PostMapping("/user/{userId}/ore/add")
+    public ResponseResult addOreBalance(@PathVariable("userId") Long userId,
+        @RequestParam("amount") int amount) {
+        if (amount <= 0) {
+            return ResponseResult.errorResult(400, "增加数量必须大于0");
+        }
+        userAssetsMapper.addOreBalance(userId, amount);
+        UserAssets assets = userAssetsMapper.selectById(userId);
+        int newBalance = (assets != null && assets.getOreBalance() != null) ? assets.getOreBalance() : amount;
+        Map<String, Object> result = new HashMap<>();
+        result.put("oreBalance", newBalance);
+        result.put("added", amount);
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 获取用户连续签到天数（含今日，供其他服务 Feign 调用，成就勋章判定用）
+     */
+    @GetMapping("/user/{userId}/checkin/continuous")
+    @Override
+    public ResponseResult getContinuousCheckinDays(@PathVariable("userId") Long userId) {
+        return checkinService.getContinuousCheckinDays(userId);
+    }
+
+    /**
+     * 校验用户是否持有指定虚拟道具并返回折扣比例（课程下单前调用）
+     */
+    @GetMapping("/user/{userId}/virtual-asset/hold")
+    @Override
+    public ResponseResult getVirtualAssetHold(@PathVariable("userId") Long userId,
+        @RequestParam("itemCode") String itemCode) {
+        return virtualAssetService.getHold(userId, itemCode);
+    }
+
+    /**
+     * 核销用户虚拟道具（课程支付成功后调用）
+     */
+    @PostMapping("/user/{userId}/virtual-asset/consume")
+    @Override
+    public ResponseResult consumeVirtualAsset(@PathVariable("userId") Long userId,
+        @RequestParam("itemCode") String itemCode,
+        @RequestParam(value = "count", defaultValue = "1") int count) {
+        return virtualAssetService.consume(userId, itemCode, count);
+    }
+}

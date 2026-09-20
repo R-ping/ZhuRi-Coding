@@ -165,7 +165,7 @@ AI 免费额度 + 钱包余额 + 充值包三重计费体系：今日免费 2 �
 flowchart TB
     FE["前端 Web 应用<br/>Vue 2 + Vite + Element UI"]
 
-    subgraph GW["heima-leadnews-gateway 统一网关"]
+    subgraph GW["zhuri-coding-gateway 统一网关"]
         G1["JWT 鉴权 · 444 驱动刷新重放<br/>HMAC 内部签名 · 分层限流"]
     end
 
@@ -206,13 +206,13 @@ flowchart TB
 
 | 模块 | 职责 | 数据库 |
 |---|---|---|
-| `heima-leadnews-gateway` | 路由、JWT 鉴权、限流（IP 固定窗口 / 滑动窗口 / 令牌桶）、HMAC 内部签名 | — |
-| `heima-leadnews-service/content` | **内容 + 全部 AI 能力**（RAG 问答、发布助手 Agent、内容治理、向量与分块、语义检索、计费） | MySQL + **pgvector** + Redis |
-| `heima-leadnews-service/search` | ES 全文检索，对外搜索接口 + **对内 BM25 召回端点** | Elasticsearch |
-| `heima-leadnews-service/user` | 用户、双 Token 认证、社交登录（GitHub / 微博 OAuth） | MySQL |
-| `heima-leadnews-service/reward` | 打赏流水、结算（课程 7:3 月度） | MySQL |
-| `heima-leadnews-service/notification` | 站内信、IM（WebSocket STOMP） | MySQL |
-| `heima-leadnews-{model,common,utils,feign-api}` | 实体 / 公共组件 / 工具 / Feign 契约 | — |
+| `zhuri-coding-gateway` | 路由、JWT 鉴权、限流（IP 固定窗口 / 滑动窗口 / 令牌桶）、HMAC 内部签名 | — |
+| `zhuri-coding-service/content` | **内容 + 全部 AI 能力**（RAG 问答、发布助手 Agent、内容治理、向量与分块、语义检索、计费） | MySQL + **pgvector** + Redis |
+| `zhuri-coding-service/search` | ES 全文检索，对外搜索接口 + **对内 BM25 召回端点** | Elasticsearch |
+| `zhuri-coding-service/user` | 用户、双 Token 认证、社交登录（GitHub / 微博 OAuth） | MySQL |
+| `zhuri-coding-service/reward` | 打赏流水、结算（课程 7:3 月度） | MySQL |
+| `zhuri-coding-service/notification` | 站内信、IM（WebSocket STOMP） | MySQL |
+| `zhuri-coding-{model,common,utils,feign-api}` | 实体 / 公共组件 / 工具 / Feign 契约 | — |
 
 ---
 
@@ -330,19 +330,19 @@ flowchart TB
 
 ```
 .
-├── heima-leadnews/                        # 后端（Maven 多模块）
-│   ├── heima-leadnews-gateway/            # 网关：鉴权 / 限流 / 内部签名
-│   ├── heima-leadnews-service/
-│   │   ├── heima-leadnews-content/        # ★ 内容 + 全部 AI 能力（本项目重点）
-│   │   │   └── src/main/java/com/heima/content/
+├── zhuri-coding/                        # 后端（Maven 多模块）
+│   ├── zhuri-coding-gateway/            # 网关：鉴权 / 限流 / 内部签名
+│   ├── zhuri-coding-service/
+│   │   ├── zhuri-coding-content/        # ★ 内容 + 全部 AI 能力（本项目重点）
+│   │   │   └── src/main/java/com/zhuri/coding/content/
 │   │   │       ├── controller/v1/ai/      # AI 接口（问答/预检/评测/计费/指标…）
 │   │   │       └── service/ai/            # RAG/Agent/治理/计量/注册表/评测…（60+ 类）
-│   │   ├── heima-leadnews-search/         # ES 检索 + BM25 召回端点
-│   │   ├── heima-leadnews-user/           # 用户与双 Token 认证
-│   │   ├── heima-leadnews-reward/         # 打赏与结算
-│   │   └── heima-leadnews-notification/   # 站内信 / IM
-│   ├── heima-leadnews-{common,utils,model,feign-api}/
-│   └── heima-leadnews-basic/              # 基础 starter（OSS 等）
+│   │   ├── zhuri-coding-search/         # ES 检索 + BM25 召回端点
+│   │   ├── zhuri-coding-user/           # 用户与双 Token 认证
+│   │   ├── zhuri-coding-reward/         # 打赏与结算
+│   │   └── zhuri-coding-notification/   # 站内信 / IM
+│   ├── zhuri-coding-{common,utils,model,feign-api}/
+│   └── zhuri-coding-basic/              # 基础 starter（OSS 等）
 ├── src/                                   # 前端（Vue 2 + Vite）
 ├── monitoring/                            # 本地可观测性栈（Prometheus / Grafana / Promtail）
 ├── public/ · static/                      # 静态资源
@@ -375,12 +375,12 @@ flowchart TB
 #    ap_ai_semantic_cache / ap_user_memory）
 
 # 2) 后端：编译并启动（建议按 common → gateway → 各 service 顺序）
-cd heima-leadnews
+cd zhuri-coding
 mvn -DskipTests clean install
 # 依次启动各服务的 Application 主类（Nacos 注册成功后网关可路由）
 
 # 3) 后端：运行测试
-mvn -pl heima-leadnews-service/heima-leadnews-content -am test
+mvn -pl zhuri-coding-service/zhuri-coding-content -am test
 
 # 4) 前端
 npm install

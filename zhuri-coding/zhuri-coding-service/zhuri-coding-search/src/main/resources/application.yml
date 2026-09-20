@@ -1,0 +1,45 @@
+server:
+  port: 51804
+spring:
+  application:
+    name: zhuri-coding-search
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  data:
+    mongodb:
+#      username: root
+#      password: 123456
+      host: 127.0.0.1
+      port: 27017
+      database: zhuri-coding-history
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  elasticsearch:
+    uris: http://localhost:9201
+    connection-timeout: 10000
+    socket-timeout: 3000
+    username: elastic
+    password: ${ES_PASSWORD:x8YMlQeWvd4IGPnrb-4k}
+elasticsearch:
+  article:
+    index: ${ES_ARTICLE_INDEX:app_info_article}
+
+# 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: 1.0        # 本地全量采样；生产建议 0.1~0.5
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+
+# 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
+app:
+  internal-auth:
+    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}

@@ -1,0 +1,52 @@
+spring:
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedHeaders: "*"
+            allowedOrigins: "${CORS_ALLOWED_ORIGINS:*}"
+            allowedMethods:
+              - GET
+              - POST
+              - DELETE
+              - PUT
+              - OPTION
+      routes:
+        # 用户微服务
+        - id: user
+          uri: lb://zhuri-coding-user
+          predicates:
+            - Path=/user/**
+          filters:
+            - StripPrefix=1
+        # 内容微服务（原文章微服务，已合并课程、行为、Schedule等）
+        - id: content
+          uri: lb://zhuri-coding-content
+          predicates:
+            - Path=/content/**
+          filters:
+            - StripPrefix=1
+        #搜索微服务
+        - id: zhuri-coding-search
+          uri: lb://zhuri-coding-search
+          predicates:
+            - Path=/search/**
+          filters:
+            - StripPrefix=1
+        
+        
+        # 站内信微服务
+        - id: zhuri-coding-notification
+          uri: lb://zhuri-coding-notification
+          predicates:
+            - Path=/notification/**
+          filters:
+            - StripPrefix=1
+        # 奖励微服务（签到/抽奖/兑换）
+        - id: zhuri-coding-reward
+          uri: lb://zhuri-coding-reward
+          predicates:
+            - Path=/reward/**
+          filters:
+            - StripPrefix=1

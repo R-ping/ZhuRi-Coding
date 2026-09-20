@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>zhuri-coding</artifactId>
+        <groupId>com.zhuri.coding</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>zhuri-coding-service</artifactId>
+    <packaging>pom</packaging>
+    <modules>
+        <module>zhuri-coding-user</module>
+        <module>zhuri-coding-content</module>
+        <module>zhuri-coding-search</module>
+        <module>zhuri-coding-notification</module>
+        <module>zhuri-coding-reward</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <!-- 引入依赖模块 -->
+        <dependency>
+            <groupId>com.zhuri.coding</groupId>
+            <artifactId>zhuri-coding-model</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zhuri.coding</groupId>
+            <artifactId>zhuri-coding-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zhuri.coding</groupId>
+            <artifactId>zhuri-coding-feign-api</artifactId>
+        </dependency>
+        <!-- Spring boot starter -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- 可观测性：Actuator 提供 HTTP Server 观测过滤器（ServerHttpObservationFilter），
+             使 Servlet 请求进入 Micrometer Observation 链路，自动生成 span 并注入 MDC traceId/spanId -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>com.alibaba.cloud</groupId>-->
+<!--            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>-->
+<!--        </dependency>-->
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>com.alibaba.cloud</groupId>-->
+<!--            <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>-->
+<!--        </dependency>-->
+
+    </dependencies>
+
+</project>

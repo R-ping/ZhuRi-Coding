@@ -1,0 +1,9 @@
+package com.zhuri.coding.content.mapper.pins;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.zhuri.coding.model.pins.pojos.ApPinsComment;
+import org.apache.ibatis.annotations.Mapper;
+
+@Mapper
+public interface ApPinsCommentMapper extends BaseMapper<ApPinsComment> {
+}

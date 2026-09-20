@@ -1,0 +1,18 @@
+package com.zhuri.coding.model.topic.vos;
+
+import lombok.Data;
+
+import java.io.Serializable;
+
+@Data
+public class TopicSquareVO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
+    private Long id;
+    private String name = "";
+    private String description = "";
+    private Long participantCount = 0L;
+    private Long viewCount = 0L;
+    private Long postCount = 0L;
+}

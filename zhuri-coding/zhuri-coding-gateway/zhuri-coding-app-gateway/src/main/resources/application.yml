@@ -1,0 +1,52 @@
+server:
+  port: 51601
+spring:
+  profiles:
+    include: gateway
+  application:
+    name: zhuri-coding-app-gateway
+  # 网关为无状态 WebFlux 代理，不连接任何数据库；显式关闭 DataSource 自动装配，
+  # 避免 Actuator 健康检查（dbHealthContributor）尝试创建 HikariDataSource 导致启动失败。
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+# 网关入口级限流（IP 维度，固定窗口 1 分钟）
+gateway:
+  rate-limit:
+    ip-per-minute: ${GATEWAY_RL_IP_PER_MINUTE:600}          # 普通接口：每 IP 每分钟
+    sensitive-per-minute: ${GATEWAY_RL_SENSITIVE_PER_MINUTE:60}  # 登录/刷新等敏感接口：每 IP 每分钟
+
+jwt:
+  secret: ${JWT_SECRET}
+
+# 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: 1.0        # 本地全量采样；生产建议 0.1~0.5
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+#  cloud:
+#    nacos:
+#      discovery:
+#        server-addr: 192.168.200.130:8848
+#      config:
+#        server-addr: 192.168.200.130:8848
+#        file-extension: yml
+# 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
+app:
+  internal-auth:
+    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}

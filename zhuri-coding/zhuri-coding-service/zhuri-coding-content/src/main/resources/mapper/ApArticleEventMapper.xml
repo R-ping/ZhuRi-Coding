@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhuri.coding.content.mapper.article.ApArticleEventMapper">
+  <insert id="insertArticleEvent">
+    insert into article_event (article_id, status, create_time, update_time, retry_count, max_retry_count, minio_status, es_status, retry_time, parameter, pub_status)
+    values (#{articleEvent.articleId}, #{articleEvent.status}, #{articleEvent.createTime}, #{articleEvent.updateTime},
+            COALESCE(#{articleEvent.retryCount}, 0), COALESCE(#{articleEvent.maxRetryCount}, 5), COALESCE(#{articleEvent.minioStatus}, 0), COALESCE(#{articleEvent.esStatus}, 0), #{articleEvent.retryTime}, #{articleEvent.parameter}, COALESCE(#{articleEvent.pubStatus}, 0))
+  </insert>
+
+
+  <update id="updateArticleEvent">
+    update article_event
+    <set>
+      <if test="articleEvent.status != null">
+        status = #{articleEvent.status},
+      </if>
+      <if test="articleEvent.esStatus != null">
+        es_status = #{articleEvent.esStatus},
+      </if>
+      <if test="articleEvent.pubStatus != null">
+        pub_status = #{articleEvent.pubStatus},
+      </if>
+      <if test="articleEvent.retryCount != null">
+        retry_count = #{articleEvent.retryCount},
+      </if>
+      <if test="articleEvent.retryTime != null">
+        retry_time = #{articleEvent.retryTime},
+      </if>
+      <if test="articleEvent.updateTime != null">
+        update_time = #{articleEvent.updateTime},
+      </if>
+    </set>
+    where article_id = #{articleEvent.articleId}
+  </update>
+  <delete id="deleteArticleEvent">
+    delete from article_event where article_id in
+    <foreach collection="articleIds" item="articleId" open="(" separator="," close=")">
+      #{articleId}
+    </foreach>
+  </delete>
+</mapper>
