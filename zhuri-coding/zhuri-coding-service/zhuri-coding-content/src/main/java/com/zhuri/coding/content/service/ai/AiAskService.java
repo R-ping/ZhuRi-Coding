@@ -1,6 +1,6 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
-import com.heima.model.article.dtos.AiAnswerVo;
+import com.zhuri.coding.model.article.dtos.AiAnswerVo;
 
 /**
  * 社区 AI 问答（RAG）

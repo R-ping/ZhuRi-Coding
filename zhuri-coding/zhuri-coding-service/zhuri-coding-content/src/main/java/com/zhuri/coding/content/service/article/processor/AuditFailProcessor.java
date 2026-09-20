@@ -1,13 +1,13 @@
-package com.heima.content.service.article.processor;
+package com.zhuri.coding.content.service.article.processor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.apis.notification.INotificationClient;
-import com.heima.common.constants.ArticleConstants;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.article.AuditRecordService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.common.constants.ArticleConstants;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.article.AuditRecordService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

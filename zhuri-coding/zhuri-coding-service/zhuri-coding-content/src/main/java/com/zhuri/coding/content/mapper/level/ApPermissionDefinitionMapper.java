@@ -1,7 +1,7 @@
-package com.heima.content.mapper.level;
+package com.zhuri.coding.content.mapper.level;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.level.pojos.ApPermissionDefinition;
+import com.zhuri.coding.model.level.pojos.ApPermissionDefinition;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper

@@ -1,7 +1,7 @@
-package com.heima.apis.article.fallback;
+package com.zhuri.coding.apis.article.fallback;
 
-import com.heima.apis.article.IUserStatsClient;
-import com.heima.model.user.vo.UserStatsVO;
+import com.zhuri.coding.apis.article.IUserStatsClient;
+import com.zhuri.coding.model.user.vo.UserStatsVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

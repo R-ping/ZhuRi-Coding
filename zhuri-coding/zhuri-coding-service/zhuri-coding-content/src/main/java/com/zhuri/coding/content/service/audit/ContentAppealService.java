@@ -1,6 +1,6 @@
-package com.heima.content.service.audit;
+package com.zhuri.coding.content.service.audit;
 
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 import java.util.Map;
 

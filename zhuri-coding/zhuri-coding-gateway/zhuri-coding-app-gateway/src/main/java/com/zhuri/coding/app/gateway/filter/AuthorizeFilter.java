@@ -1,7 +1,7 @@
-package com.heima.app.gateway.filter;
+package com.zhuri.coding.app.gateway.filter;
 
 
-import com.heima.utils.common.AppJwtUtil;
+import com.zhuri.coding.utils.common.AppJwtUtil;
 import io.jsonwebtoken.Claims;
 import io.micrometer.common.util.StringUtils;
 import java.net.URLEncoder;
@@ -30,7 +30,7 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
     private static final String INTERNAL_SIGN_HEADER = "X-Internal-Sign";
 
     /** 与下游服务一致的签名固定前缀 */
-    private static final String INTERNAL_SIGN_PREFIX = "heima-leadnews-internal-v1";
+    private static final String INTERNAL_SIGN_PREFIX = "zhuri-coding-internal-v1";
 
     /** 网关与下游共享的内部身份签名密钥（未配置则不写签名，下游按 fail-closed 拒绝信任身份头） */
     @Value("${app.internal-auth.secret:}")

@@ -1,16 +1,16 @@
-package com.heima.content.service.draft.impl;
+package com.zhuri.coding.content.service.draft.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.content.mapper.article.ApArticleDraftMapper;
-import com.heima.content.service.draft.DraftManageService;
-import com.heima.model.article.pojos.ApArticleDraft;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.mapper.article.ApArticleDraftMapper;
+import com.zhuri.coding.content.service.draft.DraftManageService;
+import com.zhuri.coding.model.article.pojos.ApArticleDraft;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

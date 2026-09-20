@@ -1,10 +1,10 @@
-package com.heima.search.service.impl;
+package com.zhuri.coding.search.service.impl;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.search.dtos.UserSearchDto;
-import com.heima.search.pojos.ApAssociateWords;
-import com.heima.search.service.ApAssociateWordsService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.search.dtos.UserSearchDto;
+import com.zhuri.coding.search.pojos.ApAssociateWords;
+import com.zhuri.coding.search.service.ApAssociateWordsService;
 
 import java.util.Date;
 import java.util.List;

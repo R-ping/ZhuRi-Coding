@@ -1,8 +1,8 @@
-package com.heima.content.feign;
+package com.zhuri.coding.content.feign;
 
-import com.heima.apis.article.IUserStatsClient;
-import com.heima.content.service.stats.UserContentStatsService;
-import com.heima.model.user.vo.UserStatsVO;
+import com.zhuri.coding.apis.article.IUserStatsClient;
+import com.zhuri.coding.content.service.stats.UserContentStatsService;
+import com.zhuri.coding.model.user.vo.UserStatsVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

@@ -1,18 +1,18 @@
-package com.heima.content.service.ai.pipeline;
+package com.zhuri.coding.content.service.ai.pipeline;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.ai.AiFeatures;
-import com.heima.content.service.ai.AiLlmGateway;
-import com.heima.content.service.ai.AiPromptRegistry;
-import com.heima.content.service.ai.HybridRecallService;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.model.article.dtos.AiSourceVo;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.ai.AiFeatures;
+import com.zhuri.coding.content.service.ai.AiLlmGateway;
+import com.zhuri.coding.content.service.ai.AiPromptRegistry;
+import com.zhuri.coding.content.service.ai.HybridRecallService;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.model.article.dtos.AiSourceVo;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -260,7 +260,7 @@ public class AskRetrievalChain {
     /** BM25 独有命中相似度补全：用已存文章向量本地算余弦（零模型调用） */
     private double localCosine(double[] queryEmb, Long articleId) {
         try {
-            com.heima.model.article.pojos.ApArticleEmbedding emb = embeddingService.getEmbedding(articleId);
+            com.zhuri.coding.model.article.pojos.ApArticleEmbedding emb = embeddingService.getEmbedding(articleId);
             if (emb == null || emb.getEmbedding() == null || queryEmb == null) {
                 return 0d;
             }

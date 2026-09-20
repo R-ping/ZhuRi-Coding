@@ -1,7 +1,7 @@
-package com.heima.content.service.article;
+package com.zhuri.coding.content.service.article;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.heima.model.article.pojos.ApArticleConfig;
+import com.zhuri.coding.model.article.pojos.ApArticleConfig;
 
 import java.util.Map;
 

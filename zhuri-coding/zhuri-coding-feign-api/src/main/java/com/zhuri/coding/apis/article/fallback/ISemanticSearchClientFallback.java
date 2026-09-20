@@ -1,8 +1,8 @@
-package com.heima.apis.article.fallback;
+package com.zhuri.coding.apis.article.fallback;
 
-import com.heima.apis.article.ISemanticSearchClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.SemanticSearchDto;
+import com.zhuri.coding.apis.article.ISemanticSearchClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.SemanticSearchDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

@@ -1,4 +1,4 @@
-package com.heima.model.pins.pojos;
+package com.zhuri.coding.model.pins.pojos;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

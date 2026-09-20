@@ -2,12 +2,12 @@ server:
   port: 51802
 spring:
   application:
-    name: leadnews-content
+    name: zhuri-coding-content
   # Redisson 仅用其 Client API（分布式限流/锁/延迟队列），不接管 Spring Data Redis 的 ConnectionFactory。
   # 排除它的自动配置：redisson-spring-boot-starter 3.37.0 的 RedissonConnection 未覆写 spring-data-redis
   # 3.5 新增的 pExpire 签名，运行时走 DefaultedRedisConnection 默认实现导致 pExpire 自递归
   # StackOverflowError。排除后 RedisConnectionFactory 回到 Boot 默认的 Lettuce；
-  # RedissonClient 仍由 com.heima.content.config.RedissonConfig 创建，延迟队列/限流不受影响。
+  # RedissonClient 仍由 com.zhuri.coding.content.config.RedissonConfig 创建，延迟队列/限流不受影响。
   # 注意：Boot 3 只认 AutoConfiguration.imports，故这里排除 V2（V1 仅注册在 spring.factories，
   # 默认不被加载，且排除它反而报 not an auto-configuration class）；redisson.spring.data.support
   # 属性在 3.37.0 不存在（RedissonProperties 仅有 config/file 两字段），配置无效。
@@ -55,9 +55,9 @@ spring:
               # 实测均导致 "Error processing inbound message" 使初始化握手失败/fail-open）。
               # 未放置文档/MCP 不可用时为 fail-open，不影响业务链路与服务启动
               command: npx.cmd
-              # 默认目录用 ../docs：服务工作目录为 ...\heima-leadnews-app\heima-leadnews，
+              # 默认目录用 ../docs：服务工作目录为 ...\zhuri-coding-app\zhuri-coding，
               # ./docs 会解析到不存在路径使 filesystem server 启动失败（"None of the specified
-              # directories are accessible"→初始化握手失败）；../docs 即 ...\heima-leadnews-app\docs。
+              # directories are accessible"→初始化握手失败）；../docs 即 ...\zhuri-coding-app\docs。
               # 可用系统环境变量 MCP_DOCS_PATH 覆盖（注意：需在服务进程启动前设置才生效）
               args: ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_DOCS_PATH:../docs}"]
   datasource:
@@ -108,7 +108,7 @@ mybatis-plus:
       id-type: auto
   mapper-locations: classpath*:mapper/*.xml
   # 设置别名包扫描路径，通过该属性可以给包中的类注册别名
-  type-aliases-package: com.heima.model.article.pojos
+  type-aliases-package: com.zhuri.coding.model.article.pojos
 
 minio:
   accessKey: ${MINIO_ACCESS_KEY:minio}
@@ -268,5 +268,5 @@ management:
 # 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
 app:
   internal-auth:
-    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
 

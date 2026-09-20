@@ -1,10 +1,10 @@
-package com.heima.content.service.pins;
+package com.zhuri.coding.content.service.pins;
 
-import com.heima.model.pins.dtos.PinsCommentDTO;
-import com.heima.model.pins.dtos.PinsLinkPreviewDTO;
-import com.heima.model.pins.dtos.PinsPublishDTO;
-import com.heima.model.pins.dtos.PinsShareDTO;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.pins.dtos.PinsCommentDTO;
+import com.zhuri.coding.model.pins.dtos.PinsLinkPreviewDTO;
+import com.zhuri.coding.model.pins.dtos.PinsPublishDTO;
+import com.zhuri.coding.model.pins.dtos.PinsShareDTO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 public interface PinsPublicService {
 

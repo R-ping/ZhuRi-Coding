@@ -1,4 +1,4 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,10 +1,10 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
-import com.heima.content.service.article.BailianAiService;
-import com.heima.model.audit.AuditContext;
-import com.heima.model.audit.AuditEntityType;
-import com.heima.model.audit.AuditResult;
-import com.heima.model.audit.AuditServiceUnavailableException;
+import com.zhuri.coding.content.service.article.BailianAiService;
+import com.zhuri.coding.model.audit.AuditContext;
+import com.zhuri.coding.model.audit.AuditEntityType;
+import com.zhuri.coding.model.audit.AuditResult;
+import com.zhuri.coding.model.audit.AuditServiceUnavailableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

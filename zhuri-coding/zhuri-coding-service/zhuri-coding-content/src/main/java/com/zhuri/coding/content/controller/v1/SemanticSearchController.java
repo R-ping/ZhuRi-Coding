@@ -1,8 +1,8 @@
-package com.heima.content.controller.v1;
+package com.zhuri.coding.content.controller.v1;
 
-import com.heima.content.service.search.SemanticSearchService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.SemanticSearchDto;
+import com.zhuri.coding.content.service.search.SemanticSearchService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.SemanticSearchDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,8 +25,8 @@ public class SemanticSearchController {
     private SemanticSearchService semanticSearchService;
 
     @PostMapping("/semantic")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 60, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 60, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult semanticSearch(@RequestBody SemanticSearchDto dto) {
         return semanticSearchService.semanticSearch(dto);
     }

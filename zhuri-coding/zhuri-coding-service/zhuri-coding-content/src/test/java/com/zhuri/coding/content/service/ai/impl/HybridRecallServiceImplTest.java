@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -6,11 +6,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
-import com.heima.apis.search.ISearchClient;
-import com.heima.content.service.ai.HybridRecallService.Recall;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.Bm25RecallDto;
+import com.zhuri.coding.apis.search.ISearchClient;
+import com.zhuri.coding.content.service.ai.HybridRecallService.Recall;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;

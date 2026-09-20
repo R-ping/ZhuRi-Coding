@@ -1,7 +1,7 @@
-package com.heima.content.mapper.topic;
+package com.zhuri.coding.content.mapper.topic;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.topic.pojos.UserTopicPost;
+import com.zhuri.coding.model.topic.pojos.UserTopicPost;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper

@@ -1,4 +1,4 @@
-package com.heima.common.com;
+package com.zhuri.coding.common.com;
 
 import java.util.List;
 import java.util.stream.Collectors;

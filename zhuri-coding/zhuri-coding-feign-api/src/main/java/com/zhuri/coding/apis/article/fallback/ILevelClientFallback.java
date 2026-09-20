@@ -1,6 +1,6 @@
-package com.heima.apis.article.fallback;
+package com.zhuri.coding.apis.article.fallback;
 
-import com.heima.apis.article.ILevelClient;
+import com.zhuri.coding.apis.article.ILevelClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

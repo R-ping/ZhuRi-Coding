@@ -1,11 +1,11 @@
-package com.heima.content.controller.v1.ai;
+package com.zhuri.coding.content.controller.v1.ai;
 
-import com.heima.content.service.ai.AiFeedbackService;
-import com.heima.model.ai.pojos.AiFeedback;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.ai.AiFeedbackService;
+import com.zhuri.coding.model.ai.pojos.AiFeedback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,8 +28,8 @@ public class AiFeedbackController {
     private AiFeedbackService aiFeedbackService;
 
     @PostMapping("/feedback")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.USER,
-        count = 30, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.USER,
+        count = 30, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult feedback(@RequestBody Map<String, Object> body) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null || user.getId() == null) {
@@ -56,8 +56,8 @@ public class AiFeedbackController {
      * <p>要求登录（question/answer 含用户输入内容），IP 限频。
      */
     @GetMapping("/feedback/badcases")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult badCases(
         @org.springframework.web.bind.annotation.RequestParam(required = false) String feature,
         @org.springframework.web.bind.annotation.RequestParam(defaultValue = "50") int limit) {
@@ -73,8 +73,8 @@ public class AiFeedbackController {
      * {@code alerted} 并打指标 —— 让"哪个 AI 功能变差了"有主动信号，而不是靠用户投诉发现。
      */
     @GetMapping("/feedback/stats")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult feedbackStats(
         @org.springframework.web.bind.annotation.RequestParam(defaultValue = "7") int days) {
         return ResponseResult.okResult(aiFeedbackService.statsByFeature(days));

@@ -1,12 +1,12 @@
-package com.heima.content.controller.v1.pay;
+package com.zhuri.coding.content.controller.v1.pay;
 
-import com.heima.content.service.pay.AlipayService;
-import com.heima.content.service.order.OrderService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.course.pojos.ApCourseOrder;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.pay.AlipayService;
+import com.zhuri.coding.content.service.order.OrderService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
@@ -28,7 +28,7 @@ public class PayController {
     private OrderService orderService;
 
     @Autowired
-    private com.heima.content.service.ai.AiTopupService aiTopupService;
+    private com.zhuri.coding.content.service.ai.AiTopupService aiTopupService;
 
     /** 网关对外地址前缀（ALIPAY_BASE_URL）：用于拼装支付异步通知绝对地址（支付宝服务端回调，需外网可达） */
     @Value("${alipay.base-url:http://localhost:51601}")
@@ -113,7 +113,7 @@ public class PayController {
         String status = request.getParameter("trade_status");
 
         // AI 额度包订单（out_trade_no 前缀 "ai"）分发到充值服务；金额校验/幂等/入账在其内部完成
-        if (orderNo != null && orderNo.startsWith(com.heima.model.ai.pojos.AiTopupOrder.ORDER_PREFIX)) {
+        if (orderNo != null && orderNo.startsWith(com.zhuri.coding.model.ai.pojos.AiTopupOrder.ORDER_PREFIX)) {
             boolean aiOk = aiTopupService.handleNotify(orderNo, totalAmount, tradeNo);
             if (!aiOk) {
                 log.warn("AI 额度包回调处理失败, orderNo={}", orderNo);

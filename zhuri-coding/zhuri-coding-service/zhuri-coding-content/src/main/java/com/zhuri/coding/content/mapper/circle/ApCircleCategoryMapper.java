@@ -1,7 +1,7 @@
-package com.heima.content.mapper.circle;
+package com.zhuri.coding.content.mapper.circle;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.circle.pojos.ApCircleCategory;
+import com.zhuri.coding.model.circle.pojos.ApCircleCategory;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper

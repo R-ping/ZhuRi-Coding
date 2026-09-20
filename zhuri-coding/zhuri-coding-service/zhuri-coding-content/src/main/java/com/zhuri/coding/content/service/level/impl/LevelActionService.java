@@ -1,21 +1,21 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
-import static com.heima.content.constants.LevelScoreConstants.ACTION_SCORE_MAP;
-import static com.heima.content.constants.LevelScoreConstants.DAILY_ACTION_LIMIT;
+import static com.zhuri.coding.content.constants.LevelScoreConstants.ACTION_SCORE_MAP;
+import static com.zhuri.coding.content.constants.LevelScoreConstants.DAILY_ACTION_LIMIT;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.level.ApBehaviorConfigMapper;
-import com.heima.content.mapper.level.ApUserDailyProgressMapper;
-import com.heima.content.mapper.level.ApUserLevelMapper;
-import com.heima.content.mapper.pins.ApUserActionLogMapper;
-import com.heima.content.mapper.user.UserScoreDetailsMapper;
-import com.heima.content.mapper.user.UserScoreSummaryMapper;
-import com.heima.content.service.level.LevelPermissionService;
-import com.heima.model.level.pojos.ApBehaviorConfig;
-import com.heima.model.level.pojos.ApUserDailyProgress;
-import com.heima.model.level.pojos.ApUserLevel;
-import com.heima.model.user.pojos.ApUserActionLog;
-import com.heima.model.user.pojos.UserScoreDetails;
+import com.zhuri.coding.content.mapper.level.ApBehaviorConfigMapper;
+import com.zhuri.coding.content.mapper.level.ApUserDailyProgressMapper;
+import com.zhuri.coding.content.mapper.level.ApUserLevelMapper;
+import com.zhuri.coding.content.mapper.pins.ApUserActionLogMapper;
+import com.zhuri.coding.content.mapper.user.UserScoreDetailsMapper;
+import com.zhuri.coding.content.mapper.user.UserScoreSummaryMapper;
+import com.zhuri.coding.content.service.level.LevelPermissionService;
+import com.zhuri.coding.model.level.pojos.ApBehaviorConfig;
+import com.zhuri.coding.model.level.pojos.ApUserDailyProgress;
+import com.zhuri.coding.model.level.pojos.ApUserLevel;
+import com.zhuri.coding.model.user.pojos.ApUserActionLog;
+import com.zhuri.coding.model.user.pojos.UserScoreDetails;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

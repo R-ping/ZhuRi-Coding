@@ -1,6 +1,6 @@
-package com.heima.content.service.ai.spring;
+package com.zhuri.coding.content.service.ai.spring;
 
-import com.heima.content.service.ai.agent.tools.SimilaritySearchTool;
+import com.zhuri.coding.content.service.ai.agent.tools.SimilaritySearchTool;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Autowired;

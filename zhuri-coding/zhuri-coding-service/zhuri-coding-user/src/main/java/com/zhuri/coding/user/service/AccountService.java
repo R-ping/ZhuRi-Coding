@@ -1,8 +1,8 @@
-package com.heima.user.service;
+package com.zhuri.coding.user.service;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.dto.PasswordUpdateDTO;
-import com.heima.model.user.dto.PrivacyMessageDTO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.dto.PasswordUpdateDTO;
+import com.zhuri.coding.model.user.dto.PrivacyMessageDTO;
 
 public interface AccountService {
     ResponseResult getBindings();

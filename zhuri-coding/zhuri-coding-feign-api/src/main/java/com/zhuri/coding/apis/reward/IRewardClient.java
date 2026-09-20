@@ -1,7 +1,7 @@
-package com.heima.apis.reward;
+package com.zhuri.coding.apis.reward;
 
-import com.heima.apis.reward.fallback.IRewardClientFallback;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.reward.fallback.IRewardClientFallback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.Map;
 
-@FeignClient(value = "leadnews-reward", fallback = IRewardClientFallback.class)
+@FeignClient(value = "zhuri-coding-reward", fallback = IRewardClientFallback.class)
 public interface IRewardClient {
 
     /**

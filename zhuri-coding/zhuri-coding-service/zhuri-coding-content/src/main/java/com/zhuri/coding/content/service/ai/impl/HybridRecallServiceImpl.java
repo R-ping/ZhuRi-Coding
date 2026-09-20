@@ -1,11 +1,11 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
-import com.heima.apis.search.ISearchClient;
-import com.heima.content.service.ai.HybridRecallService;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.content.utils.RrfFusion;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.Bm25RecallDto;
+import com.zhuri.coding.apis.search.ISearchClient;
+import com.zhuri.coding.content.service.ai.HybridRecallService;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.content.utils.RrfFusion;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;

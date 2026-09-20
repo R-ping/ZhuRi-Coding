@@ -1,7 +1,7 @@
-package com.heima.reward.mapper;
+package com.zhuri.coding.reward.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.reward.entity.UserVirtualAsset;
+import com.zhuri.coding.reward.entity.UserVirtualAsset;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;

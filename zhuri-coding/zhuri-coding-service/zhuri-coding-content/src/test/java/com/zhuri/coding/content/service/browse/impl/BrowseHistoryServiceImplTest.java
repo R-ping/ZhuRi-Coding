@@ -1,11 +1,11 @@
-package com.heima.content.service.browse.impl;
+package com.zhuri.coding.content.service.browse.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
-import com.heima.content.mapper.interaction.ApBrowseHistoryMapper;
-import com.heima.model.behavior.pojos.ApBrowseHistory;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.content.mapper.interaction.ApBrowseHistoryMapper;
+import com.zhuri.coding.model.behavior.pojos.ApBrowseHistory;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

@@ -1,9 +1,9 @@
-package com.heima.content.service.ai.skill;
+package com.zhuri.coding.content.service.ai.skill;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.model.article.dtos.AiPrecheckVo;
+import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;

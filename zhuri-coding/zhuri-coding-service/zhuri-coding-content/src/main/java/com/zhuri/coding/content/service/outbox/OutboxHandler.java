@@ -1,4 +1,4 @@
-package com.heima.content.service.outbox;
+package com.zhuri.coding.content.service.outbox;
 
 /**
  * Outbox 事件处理器 SPI。

@@ -1,10 +1,10 @@
-package com.heima.content.controller.v1.ai;
+package com.zhuri.coding.content.controller.v1.ai;
 
-import com.heima.content.service.ai.ArticleQaService;
-import com.heima.model.article.dtos.ArticleAskDto;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.ai.ArticleQaService;
+import com.zhuri.coding.model.article.dtos.ArticleAskDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -39,10 +39,10 @@ public class AiArticleController {
     private ArticleQaService articleQaService;
 
     @Autowired
-    private com.heima.content.service.ai.AiQuotaService aiQuotaService;
+    private com.zhuri.coding.content.service.ai.AiQuotaService aiQuotaService;
 
     @Autowired
-    private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
+    private com.zhuri.coding.content.service.ai.AiMetricsCollector aiMetricsCollector;
 
     @Autowired
     @Qualifier("aiSseExecutor")
@@ -50,8 +50,8 @@ public class AiArticleController {
 
     /** 相关问答：文章页"读完想问"问题列表（游客可见，点击提问才需登录；LLM 生成 + Redis 缓存 24h） */
     @GetMapping("/related-questions")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 30, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 30, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult relatedQuestions(@RequestParam("articleId") Long articleId) {
         aiMetricsCollector.incr("ai_related_questions");
         if (articleId == null) {
@@ -67,8 +67,8 @@ public class AiArticleController {
 
     /** 单篇文章 AI 摘要（游客可访问；失败返回 503，由前端隐藏卡片） */
     @GetMapping("/summary/{articleId}")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 30, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 30, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult summary(@PathVariable("articleId") Long articleId) {
         aiMetricsCollector.incr("ai_summary");
         if (articleId == null) {
@@ -85,10 +85,10 @@ public class AiArticleController {
 
     /** 单篇文章流式问答（登录 + 限频；SSE：delta/done/error） */
     @PostMapping(value = "/ask-article", produces = "text/event-stream;charset=UTF-8")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.USER,
-        count = 5, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 20, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.USER,
+        count = 5, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 20, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public SseEmitter askArticle(@RequestBody ArticleAskDto dto) {
         aiMetricsCollector.incr("aiask_article");
         SseEmitter emitter = new SseEmitter(120_000L);

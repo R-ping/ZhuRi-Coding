@@ -1,6 +1,6 @@
-package com.heima.notification.config;
+package com.zhuri.coding.notification.config;
 
-import com.heima.notification.interceptor.AppTokenInterceptor;
+import com.zhuri.coding.notification.interceptor.AppTokenInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;

@@ -1,14 +1,14 @@
-package com.heima.content.service.search.impl;
+package com.zhuri.coding.content.service.search.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.content.service.search.SemanticSearchService;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.search.dtos.SemanticSearchDto;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.content.service.search.SemanticSearchService;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.search.dtos.SemanticSearchDto;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;

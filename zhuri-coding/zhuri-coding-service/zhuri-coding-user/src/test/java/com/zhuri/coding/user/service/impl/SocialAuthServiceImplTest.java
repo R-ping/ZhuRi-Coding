@@ -1,8 +1,8 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
-import com.heima.user.config.OAuthProperties;
-import com.heima.user.mapper.ApUserSocialMapper;
-import com.heima.user.service.SocialAuthService;
+import com.zhuri.coding.user.config.OAuthProperties;
+import com.zhuri.coding.user.mapper.ApUserSocialMapper;
+import com.zhuri.coding.user.service.SocialAuthService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -163,7 +163,7 @@ class SocialAuthServiceImplTest {
         void testCheckUidBound() {
             buildService();
             when(apUserSocialMapper.selectOne(any()))
-                    .thenReturn(new com.heima.model.user.pojos.ApUserSocial())
+                    .thenReturn(new com.zhuri.coding.model.user.pojos.ApUserSocial())
                     .thenReturn(null);
 
             assertTrue(socialAuthService.checkUidBound("uid-1", "github"));

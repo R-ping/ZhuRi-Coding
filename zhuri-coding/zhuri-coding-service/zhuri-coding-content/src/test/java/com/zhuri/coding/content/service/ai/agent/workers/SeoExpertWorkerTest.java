@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.agent.workers;
+package com.zhuri.coding.content.service.ai.agent.workers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,10 +55,10 @@ class SeoExpertWorkerTest {
     @Test
     @DisplayName("注册表命中：resolve 出的 content 传入 system（专家 prompt 版本化生效）")
     void reviewUsesResolvedPrompt() {
-        com.heima.content.service.ai.AiPromptRegistry registry =
-            Mockito.mock(com.heima.content.service.ai.AiPromptRegistry.class);
+        com.zhuri.coding.content.service.ai.AiPromptRegistry registry =
+            Mockito.mock(com.zhuri.coding.content.service.ai.AiPromptRegistry.class);
         when(registry.resolve(eq("expert_seo"), anyString(), isNull()))
-            .thenReturn(new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+            .thenReturn(new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(
                 "expert_seo", "已解析SEO专家prompt", 4));
         ReflectionTestUtils.setField(worker, "promptRegistry", registry);
         when(callSpec.content()).thenReturn(EXPERT_JSON);
@@ -84,8 +84,8 @@ class SeoExpertWorkerTest {
     @Test
     @DisplayName("注册表抛异常 fail-open：回落代码常量")
     void reviewRegistryThrowsUsesConstant() {
-        com.heima.content.service.ai.AiPromptRegistry registry =
-            Mockito.mock(com.heima.content.service.ai.AiPromptRegistry.class);
+        com.zhuri.coding.content.service.ai.AiPromptRegistry registry =
+            Mockito.mock(com.zhuri.coding.content.service.ai.AiPromptRegistry.class);
         when(registry.resolve(anyString(), anyString(), isNull())).thenThrow(new RuntimeException("db down"));
         ReflectionTestUtils.setField(worker, "promptRegistry", registry);
         when(callSpec.content()).thenReturn(EXPERT_JSON);

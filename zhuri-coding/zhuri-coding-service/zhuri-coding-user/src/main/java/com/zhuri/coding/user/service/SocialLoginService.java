@@ -1,8 +1,8 @@
-package com.heima.user.service;
+package com.zhuri.coding.user.service;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.dtos.SocialAuthDto;
-import com.heima.model.user.dtos.SocialBindDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.dtos.SocialAuthDto;
+import com.zhuri.coding.model.user.dtos.SocialBindDto;
 
 /**
  * 社交登录核心业务服务

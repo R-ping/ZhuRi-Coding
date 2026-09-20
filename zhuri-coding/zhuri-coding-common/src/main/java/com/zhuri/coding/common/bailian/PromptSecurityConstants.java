@@ -1,4 +1,4 @@
-package com.heima.common.bailian;
+package com.zhuri.coding.common.bailian;
 
 /**
  * 提示词安全常量定义

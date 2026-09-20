@@ -1,8 +1,8 @@
-package com.heima.common.aspect;
+package com.zhuri.coding.common.aspect;
 
-import com.heima.common.annotation.RateLimit;
-import com.heima.common.exception.RateLimitExceededException;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.common.exception.RateLimitExceededException;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -67,9 +67,9 @@ public class RateLimitAspect {
     /**
      * 方法级切入点：拦截所有标注了 @RateLimit 或 @RateLimit.Container 的方法
      */
-    @Around("@within(com.heima.common.annotation.RateLimit) || " +
-            "@annotation(com.heima.common.annotation.RateLimit) || " +
-            "@annotation(com.heima.common.annotation.RateLimit.Container)")
+    @Around("@within(com.zhuri.coding.common.annotation.RateLimit) || " +
+            "@annotation(com.zhuri.coding.common.annotation.RateLimit) || " +
+            "@annotation(com.zhuri.coding.common.annotation.RateLimit.Container)")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         Method method = signature.getMethod();

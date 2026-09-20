@@ -1,7 +1,7 @@
-package com.heima.content.mapper.comment;
+package com.zhuri.coding.content.mapper.comment;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.audit.pojos.ApCommentAuditTask;
+import com.zhuri.coding.model.audit.pojos.ApCommentAuditTask;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

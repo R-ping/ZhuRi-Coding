@@ -1,4 +1,4 @@
-package com.heima.model.circle.pojos;
+package com.zhuri.coding.model.circle.pojos;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

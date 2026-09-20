@@ -1,12 +1,12 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
-import com.heima.content.service.article.ApArticleDraftService;
-import com.heima.content.service.article.ContentImportService;
-import com.heima.model.article.pojos.ApArticleDraft;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.article.ApArticleDraftService;
+import com.zhuri.coding.content.service.article.ContentImportService;
+import com.zhuri.coding.model.article.pojos.ApArticleDraft;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;

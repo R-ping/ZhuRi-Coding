@@ -1,11 +1,11 @@
-package com.heima.reward.feign;
+package com.zhuri.coding.reward.feign;
 
-import com.heima.apis.reward.IRewardClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.reward.entity.UserAssets;
-import com.heima.reward.mapper.UserAssetsMapper;
-import com.heima.reward.service.CheckinService;
-import com.heima.reward.service.VirtualAssetService;
+import com.zhuri.coding.apis.reward.IRewardClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.reward.entity.UserAssets;
+import com.zhuri.coding.reward.mapper.UserAssetsMapper;
+import com.zhuri.coding.reward.service.CheckinService;
+import com.zhuri.coding.reward.service.VirtualAssetService;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;

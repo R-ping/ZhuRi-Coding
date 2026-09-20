@@ -1,4 +1,4 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
 /**
  * 用户兴趣画像（轻量版，供 AI 问答个性化参考）

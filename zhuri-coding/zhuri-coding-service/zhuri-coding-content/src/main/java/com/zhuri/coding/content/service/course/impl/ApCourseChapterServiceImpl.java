@@ -1,21 +1,21 @@
-package com.heima.content.service.course.impl;
+package com.zhuri.coding.content.service.course.impl;
 
-import com.heima.content.service.aigc.AigcDetectService;
+import com.zhuri.coding.content.service.aigc.AigcDetectService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.course.ApCourseChapterMapper;
-import com.heima.content.mapper.course.ApCourseMapper;
-import com.heima.content.mapper.course.ApUserCourseMapper;
-import com.heima.content.service.course.ApCourseChapterService;
-import com.heima.model.course.dtos.ChapterDto;
-import com.heima.model.course.dtos.ChapterSortDto;
-import com.heima.model.course.pojos.ApCourse;
-import com.heima.model.course.pojos.ApCourseChapter;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.model.user.pojos.ApUserCourse;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.mapper.course.ApCourseChapterMapper;
+import com.zhuri.coding.content.mapper.course.ApCourseMapper;
+import com.zhuri.coding.content.mapper.course.ApUserCourseMapper;
+import com.zhuri.coding.content.service.course.ApCourseChapterService;
+import com.zhuri.coding.model.course.dtos.ChapterDto;
+import com.zhuri.coding.model.course.dtos.ChapterSortDto;
+import com.zhuri.coding.model.course.pojos.ApCourse;
+import com.zhuri.coding.model.course.pojos.ApCourseChapter;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.model.user.pojos.ApUserCourse;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

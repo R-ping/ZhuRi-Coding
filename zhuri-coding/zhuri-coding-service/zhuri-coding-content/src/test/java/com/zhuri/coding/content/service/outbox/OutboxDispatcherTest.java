@@ -1,8 +1,8 @@
-package com.heima.content.service.outbox;
+package com.zhuri.coding.content.service.outbox;
 
-import com.heima.content.mapper.outbox.OutboxEventMapper;
-import com.heima.content.service.outbox.impl.OutboxServiceImpl;
-import com.heima.model.outbox.pojos.OutboxEvent;
+import com.zhuri.coding.content.mapper.outbox.OutboxEventMapper;
+import com.zhuri.coding.content.service.outbox.impl.OutboxServiceImpl;
+import com.zhuri.coding.model.outbox.pojos.OutboxEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,7 +50,7 @@ class OutboxDispatcherTest {
         com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
                 new org.apache.ibatis.builder.MapperBuilderAssistant(
                         new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
-                com.heima.model.outbox.pojos.OutboxEvent.class);
+                com.zhuri.coding.model.outbox.pojos.OutboxEvent.class);
         org.mockito.Mockito.lenient().when(handler.eventType()).thenReturn("PAY_REWARD");
         dispatcher = new OutboxDispatcher(outboxEventMapper, outboxService, List.of(handler));
     }

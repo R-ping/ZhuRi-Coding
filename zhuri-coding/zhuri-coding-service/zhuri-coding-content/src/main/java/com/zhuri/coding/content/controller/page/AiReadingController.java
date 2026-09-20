@@ -1,9 +1,9 @@
-package com.heima.content.controller.page;
+package com.zhuri.coding.content.controller.page;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;

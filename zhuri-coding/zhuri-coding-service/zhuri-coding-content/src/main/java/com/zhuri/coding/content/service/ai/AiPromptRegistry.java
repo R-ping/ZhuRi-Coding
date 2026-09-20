@@ -1,4 +1,4 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
 /**
  * AI Prompt 版本注册表（P2-1）。

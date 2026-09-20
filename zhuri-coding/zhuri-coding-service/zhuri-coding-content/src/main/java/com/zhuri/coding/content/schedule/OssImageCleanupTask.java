@@ -1,4 +1,4 @@
-package com.heima.content.schedule;
+package com.zhuri.coding.content.schedule;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.DeleteObjectsRequest;
@@ -6,8 +6,8 @@ import com.aliyun.oss.model.DeleteObjectsResult;
 import com.aliyun.oss.model.ListObjectsRequest;
 import com.aliyun.oss.model.ObjectListing;
 import com.aliyun.oss.model.OSSObjectSummary;
-import com.heima.content.config.OssConfig;
-import com.heima.content.mapper.OssImageCleanupMapper;
+import com.zhuri.coding.content.config.OssConfig;
+import com.zhuri.coding.content.mapper.OssImageCleanupMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;

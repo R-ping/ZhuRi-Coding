@@ -1,4 +1,4 @@
-package com.heima.model.common.enums;
+package com.zhuri.coding.model.common.enums;
 
 public enum AppHttpCodeEnum {
 

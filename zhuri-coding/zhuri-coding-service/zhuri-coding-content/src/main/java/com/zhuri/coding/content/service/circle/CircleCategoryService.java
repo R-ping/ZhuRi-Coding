@@ -1,6 +1,6 @@
-package com.heima.content.service.circle;
+package com.zhuri.coding.content.service.circle;
 
-import com.heima.model.circle.vos.CircleCategoryVO;
+import com.zhuri.coding.model.circle.vos.CircleCategoryVO;
 
 import java.util.List;
 

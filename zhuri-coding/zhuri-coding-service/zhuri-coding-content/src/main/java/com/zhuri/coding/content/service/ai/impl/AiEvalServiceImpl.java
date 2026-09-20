@@ -1,13 +1,13 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.service.ai.AiAskService;
-import com.heima.content.service.ai.AiEvalService;
-import com.heima.content.service.ai.AnswerFaithfulnessService;
-import com.heima.content.service.ai.HybridRecallService;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.content.utils.CitationParser;
+import com.zhuri.coding.content.service.ai.AiAskService;
+import com.zhuri.coding.content.service.ai.AiEvalService;
+import com.zhuri.coding.content.service.ai.AnswerFaithfulnessService;
+import com.zhuri.coding.content.service.ai.HybridRecallService;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.content.utils.CitationParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -102,7 +102,7 @@ public class AiEvalServiceImpl implements AiEvalService {
                     continue;
                 }
                 // 与线上 RAG 同口径（向量父子分块 + BM25 → RRF 融合）：口径不一致时 recall@k 没有意义
-                com.heima.content.service.ai.HybridRecallService.Recall hybrid =
+                com.zhuri.coding.content.service.ai.HybridRecallService.Recall hybrid =
                     hybridRecallService.recall(q, emb, TOP_KS[TOP_KS.length - 1]);
                 Set<Long> recallIds = new HashSet<>(hybrid.getIds());
                 List<Long> recalled = hybrid.getIds();
@@ -189,7 +189,7 @@ public class AiEvalServiceImpl implements AiEvalService {
                     continue;
                 }
 
-                com.heima.model.article.dtos.AiAnswerVo vo =
+                com.zhuri.coding.model.article.dtos.AiAnswerVo vo =
                     aiAskService.ask(q, ANSWER_TOP_K, Boolean.FALSE, null);
                 if (vo == null || vo.getAnswer() == null || vo.getAnswer().isBlank()) {
                     // expectNoAnswer 题的降级空答案也不计命中（偏严格：拒绝能力应来自模型而非故障）

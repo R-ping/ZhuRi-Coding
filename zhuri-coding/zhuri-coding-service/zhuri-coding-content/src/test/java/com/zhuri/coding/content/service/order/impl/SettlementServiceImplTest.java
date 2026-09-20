@@ -1,15 +1,15 @@
-package com.heima.content.service.order.impl;
+package com.zhuri.coding.content.service.order.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.course.ApCourseMapper;
-import com.heima.content.mapper.course.ApCourseOrderMapper;
-import com.heima.content.mapper.course.ApCourseSettlementMapper;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.course.pojos.ApCourse;
-import com.heima.model.course.pojos.ApCourseOrder;
-import com.heima.model.course.pojos.ApCourseOrder.Status;
-import com.heima.model.course.pojos.ApCourseSettlement;
+import com.zhuri.coding.content.mapper.course.ApCourseMapper;
+import com.zhuri.coding.content.mapper.course.ApCourseOrderMapper;
+import com.zhuri.coding.content.mapper.course.ApCourseSettlementMapper;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.course.pojos.ApCourse;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder.Status;
+import com.zhuri.coding.model.course.pojos.ApCourseSettlement;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

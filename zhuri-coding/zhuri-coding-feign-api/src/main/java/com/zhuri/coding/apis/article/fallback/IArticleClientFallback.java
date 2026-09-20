@@ -1,11 +1,11 @@
-package com.heima.apis.article.fallback;
+package com.zhuri.coding.apis.article.fallback;
 
-import com.heima.apis.article.IArticleClient;
-import com.heima.model.article.dtos.ArticleDto;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ArticleEvent;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.apis.article.IArticleClient;
+import com.zhuri.coding.model.article.dtos.ArticleDto;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ArticleEvent;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;

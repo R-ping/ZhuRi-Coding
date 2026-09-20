@@ -1,4 +1,4 @@
-package com.heima.content.service.pay.impl;
+package com.zhuri.coding.content.service.pay.impl;
 
 import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
@@ -7,9 +7,9 @@ import com.alipay.api.internal.util.AlipaySignature;
 import com.alipay.api.request.AlipayTradePagePayRequest;
 import com.alipay.api.request.AlipayTradeRefundRequest;
 import com.alipay.api.response.AlipayTradeRefundResponse;
-import com.heima.content.service.order.OrderService;
-import com.heima.content.service.pay.AlipayService;
-import com.heima.model.course.pojos.ApCourseOrder;
+import com.zhuri.coding.content.service.order.OrderService;
+import com.zhuri.coding.content.service.pay.AlipayService;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder;
 import java.math.BigDecimal;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;

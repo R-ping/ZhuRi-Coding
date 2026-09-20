@@ -1,9 +1,9 @@
-package com.heima.reward.controller.v1;
+package com.zhuri.coding.reward.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.utils.thread.AppThreadLocalUtil;
-import com.heima.reward.entity.UserAssets;
-import com.heima.reward.mapper.UserAssetsMapper;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.reward.entity.UserAssets;
+import com.zhuri.coding.reward.mapper.UserAssetsMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

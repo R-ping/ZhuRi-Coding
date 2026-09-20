@@ -1,7 +1,7 @@
-# 代码评审报告 — heima-leadnews-app
+# 代码评审报告 — zhuri-coding-app
 
 > 评审日期：2026-09-12
-> 评审范围：全仓库（后端 `heima-leadnews/` 891 个追踪文件 + 前端 `src/` 283 个追踪文件）
+> 评审范围：全仓库（后端 `zhuri-coding/` 891 个追踪文件 + 前端 `src/` 283 个追踪文件）
 > 评审方式：只读静态分析，所有结论均附 `文件:行号` 证据
 > 当前分支：`refactor/spring-ai-enhancement` @ `8e89a94`
 
@@ -73,16 +73,16 @@
 三个服务的 `application.yml` 末尾被写成了字面量 `/n`（应为 `\n`），导致 YAML 键名损坏、`app.internal-auth.secret` **从未被绑定**：
 
 ```
-heima-leadnews-service/heima-leadnews-user/src/main/resources/application.yml:80
-heima-leadnews-service/heima-leadnews-search/src/main/resources/application.yml:43
-heima-leadnews-service/heima-leadnews-notification/src/main/resources/application.yml:47
+zhuri-coding-service/zhuri-coding-user/src/main/resources/application.yml:80
+zhuri-coding-service/zhuri-coding-search/src/main/resources/application.yml:43
+zhuri-coding-service/zhuri-coding-notification/src/main/resources/application.yml:47
 
-app:/n  internal-auth:/n    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+app:/n  internal-auth:/n    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
 ```
 
 而下游校验是 **fail-open** 的——密钥为空 = 无条件信任请求头里的 `userId`：
 
-- `heima-leadnews-common/.../auth/InternalAuthSigner.java:16-17`（注释明确"未配置密钥时下游跳过校验"）
+- `zhuri-coding-common/.../auth/InternalAuthSigner.java:16-17`（注释明确"未配置密钥时下游跳过校验"）
 - `.../content/interceptor/ContentTokenInterceptor.java:44-48`（`if (secret == null || isEmpty()) return true;`）
 
 **影响**：user(51780) / search(51804) / notification(51807) 三个服务对伪造 `userId` 请求头**完全不设防**，绕过网关直连即可以任意用户身份操作。
@@ -99,7 +99,7 @@ app:
 
 ### P0-2 真实 Elasticsearch 口令硬编码进仓库
 
-`heima-leadnews-service/heima-leadnews-search/src/main/resources/application.yml:23`
+`zhuri-coding-service/zhuri-coding-search/src/main/resources/application.yml:23`
 ```yaml
 password: ${ES_PASSWORD:x8YMlQeWvd4IGPnrb-4k}
 ```
@@ -108,13 +108,13 @@ password: ${ES_PASSWORD:x8YMlQeWvd4IGPnrb-4k}
 **修复**（按铁律 2「保留原值作为兜底」）：
 1. YAML **不能**直接删空成 `${ES_PASSWORD}`，会丢原值无法追溯；正确写法是 `${ES_PASSWORD:x8YMlQeWvd4IGPnrb-4k}` + 启动期自检（`WARN` 提示「仍为公开兜底值，生产必须经 ES_PASSWORD 环境变量覆盖」）；
 2. 轮换该口令（线上实例正式值）；
-3. 清理 `target/classes/` 编译副本（`git clean -fdx heima-leadnews-service/heima-leadnews-search/target/`）。
+3. 清理 `target/classes/` 编译副本（`git clean -fdx zhuri-coding-service/zhuri-coding-search/target/`）。
 
 ---
 
 ### P0-3 微信公众号回调 POST 未验签 → 账号接管
 
-`heima-leadnews-user/.../controller/v1/WechatGZHLogin.java:47-99`
+`zhuri-coding-user/.../controller/v1/WechatGZHLogin.java:47-99`
 ```java
 @PostMapping
 public String using(HttpServletRequest request) {
@@ -161,7 +161,7 @@ public String using(HttpServletRequest request) {
 
 ### P0-5 支付成功回调中券/折扣码核销失败仅 `log.warn` → 直接资损
 
-`heima-leadnews-content/.../order/impl/OrderServiceImpl.java:341-361`
+`zhuri-coding-content/.../order/impl/OrderServiceImpl.java:341-361`
 ```java
 boolean consumed = discountService.consumeDiscountCode(order.getDiscountCode());
 if (!consumed) {
@@ -201,7 +201,7 @@ if (consumeResult == null || consumeResult.getCode() != 200) {
 
 ### P0-6 抽奖无锁 / 无幂等 / 空奖池越界
 
-`heima-leadnews-reward/.../service/impl/LotteryServiceImpl.java`
+`zhuri-coding-reward/.../service/impl/LotteryServiceImpl.java`
 ```java
 // :338  effective 为空时
 return pool.get(0);                                  // → IndexOutOfBoundsException
@@ -223,7 +223,7 @@ daily.setDrawCount(daily.getDrawCount() + drawCount); // null 时拆箱 NPE；�
 
 ### P0-7 ⭐ 核心表零二级索引，全站查询走全表扫描
 
-`heima-leadnews-content/src/main/resources/db/schema.sql:54-89` —— `ap_article` **只有 PRIMARY KEY**：
+`zhuri-coding-content/src/main/resources/db/schema.sql:54-89` —— `ap_article` **只有 PRIMARY KEY**：
 ```sql
 CREATE TABLE `ap_article` (
   ... `status` tinyint, `channel_id` int unsigned, `author_id` int unsigned,
@@ -337,7 +337,7 @@ ALTER TABLE `ap_user`
 | Prometheus **告警规则被注释掉，无任何告警** | `monitoring/prometheus/prometheus.yml` |
 | logback 6 份复制粘贴，日志路径硬编码 `e:/logs` | 各服务 `logback-spring.xml:7-8` |
 | 采样率 `probability: 1.0` 进仓库（注释自认生产应为 0.1~0.5） | `content/application.yml:168` 等 5 处 |
-| 父 pom 用 `<dependencies>` 强制所有模块继承日志/tracing/DB 依赖 | `heima-leadnews/pom.xml:53-89` |
+| 父 pom 用 `<dependencies>` 强制所有模块继承日志/tracing/DB 依赖 | `zhuri-coding/pom.xml:53-89` |
 | 依赖版本散落十余处、mockito/jacoco/surefire 重复声明、遗留 JUnit4 | `content/pom.xml:37-93` 等 |
 | 99% 测试是 Mock 单测，仅 2 个集成测试，无 Testcontainers | content 65 个测试中 2 个 `@SpringBootTest` |
 | `.env` 存在但**无 `.env.example`** | `.env` 已正确被忽略（`.gitignore:61`），但无模板 |

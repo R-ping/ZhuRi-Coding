@@ -1,10 +1,10 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.content.mapper.article.ApArticleConfigMapper;
-import com.heima.content.service.article.ApArticleConfigService;
-import com.heima.model.article.pojos.ApArticleConfig;
+import com.zhuri.coding.content.mapper.article.ApArticleConfigMapper;
+import com.zhuri.coding.content.service.article.ApArticleConfigService;
+import com.zhuri.coding.model.article.pojos.ApArticleConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

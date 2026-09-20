@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -9,10 +9,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.content.service.ai.AiMetricsCollector;
-import com.heima.content.service.ai.AnswerFaithfulnessService.Report;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.model.article.dtos.AiSourceVo;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
+import com.zhuri.coding.content.service.ai.AnswerFaithfulnessService.Report;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.model.article.dtos.AiSourceVo;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,7 +49,7 @@ class AnswerFaithfulnessServiceImplTest {
     private ArticleEmbeddingServiceImpl embeddingService;
 
     @Mock
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     @Mock
     private AiMetricsCollector metrics;

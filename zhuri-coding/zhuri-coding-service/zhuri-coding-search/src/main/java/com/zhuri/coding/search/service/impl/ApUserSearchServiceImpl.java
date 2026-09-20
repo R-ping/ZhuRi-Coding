@@ -1,12 +1,12 @@
-package com.heima.search.service.impl;
+package com.zhuri.coding.search.service.impl;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.search.dtos.HistorySearchDto;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.search.pojos.ApUserSearch;
-import com.heima.search.service.ApUserSearchService;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.search.dtos.HistorySearchDto;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.search.pojos.ApUserSearch;
+import com.zhuri.coding.search.service.ApUserSearchService;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;

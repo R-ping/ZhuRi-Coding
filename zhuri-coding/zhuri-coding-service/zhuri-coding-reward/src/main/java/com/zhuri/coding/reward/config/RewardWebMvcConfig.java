@@ -1,6 +1,6 @@
-package com.heima.reward.config;
+package com.zhuri.coding.reward.config;
 
-import com.heima.reward.interceptor.RewardTokenInterceptor;
+import com.zhuri.coding.reward.interceptor.RewardTokenInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;

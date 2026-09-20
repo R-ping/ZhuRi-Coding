@@ -1,7 +1,7 @@
-package com.heima.user.mapper;
+package com.zhuri.coding.user.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.user.pojos.ApUserSocial;
+import com.zhuri.coding.model.user.pojos.ApUserSocial;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

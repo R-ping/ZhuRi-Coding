@@ -1,4 +1,4 @@
-package com.heima.common.aliyun.util;
+package com.zhuri.coding.common.aliyun.util;
 
 import com.alibaba.fastjson.JSON;
 import com.aliyun.green20220302.Client;
@@ -8,7 +8,7 @@ import com.aliyun.green20220302.models.ImageModerationResponseBody;
 import com.aliyun.green20220302.models.ImageModerationResponseBody.ImageModerationResponseBodyData;
 import com.aliyun.teaopenapi.models.Config;
 import com.aliyun.teautil.models.RuntimeOptions;
-import com.heima.common.config.OssConfigForImageScan;
+import com.zhuri.coding.common.config.OssConfigForImageScan;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;

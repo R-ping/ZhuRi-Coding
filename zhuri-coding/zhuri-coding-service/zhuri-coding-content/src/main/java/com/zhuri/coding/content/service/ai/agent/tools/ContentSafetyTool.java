@@ -1,8 +1,8 @@
-package com.heima.content.service.ai.agent.tools;
+package com.zhuri.coding.content.service.ai.agent.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.service.ai.agent.AgentTool;
+import com.zhuri.coding.content.service.ai.agent.AgentTool;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;

@@ -1,8 +1,8 @@
-package com.heima.content.controller.v1.level;
+package com.zhuri.coding.content.controller.v1.level;
 
-import com.heima.content.service.level.LevelService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.level.pojos.ApLevelConfig;
+import com.zhuri.coding.content.service.level.LevelService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.level.pojos.ApLevelConfig;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;

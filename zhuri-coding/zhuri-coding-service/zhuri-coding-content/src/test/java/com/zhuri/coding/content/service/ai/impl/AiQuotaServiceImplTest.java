@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -12,9 +12,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.common.redis.CacheService;
-import com.heima.content.service.ai.AiQuotaService;
-import com.heima.content.service.ai.AiWalletService;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.content.service.ai.AiQuotaService;
+import com.zhuri.coding.content.service.ai.AiWalletService;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

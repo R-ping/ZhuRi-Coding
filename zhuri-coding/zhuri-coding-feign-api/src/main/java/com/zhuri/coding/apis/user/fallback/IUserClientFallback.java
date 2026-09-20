@@ -1,7 +1,7 @@
-package com.heima.apis.user.fallback;
+package com.zhuri.coding.apis.user.fallback;
 
-import com.heima.apis.user.IUserClient;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.user.IUserClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;

@@ -1,20 +1,20 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.common.bailian.DashScopeClient;
-import com.heima.content.service.ai.PublishAssistantService;
-import com.heima.content.service.ai.agent.AgentResult;
-import com.heima.content.service.ai.agent.AgentRunner;
-import com.heima.content.service.ai.agent.tools.SimilaritySearchTool;
-import com.heima.content.service.ai.agent.workers.CriticExpertWorker;
-import com.heima.content.service.ai.agent.workers.QualityExpertWorker;
-import com.heima.content.service.ai.agent.workers.SafetyExpertWorker;
-import com.heima.content.service.ai.agent.workers.SeoExpertWorker;
-import com.heima.content.service.ai.spring.AiSimilarityTools;
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
-import com.heima.content.service.ai.spring.SafetyGuardException;
-import com.heima.model.article.dtos.AiPrecheckVo;
+import com.zhuri.coding.common.bailian.DashScopeClient;
+import com.zhuri.coding.content.service.ai.PublishAssistantService;
+import com.zhuri.coding.content.service.ai.agent.AgentResult;
+import com.zhuri.coding.content.service.ai.agent.AgentRunner;
+import com.zhuri.coding.content.service.ai.agent.tools.SimilaritySearchTool;
+import com.zhuri.coding.content.service.ai.agent.workers.CriticExpertWorker;
+import com.zhuri.coding.content.service.ai.agent.workers.QualityExpertWorker;
+import com.zhuri.coding.content.service.ai.agent.workers.SafetyExpertWorker;
+import com.zhuri.coding.content.service.ai.agent.workers.SeoExpertWorker;
+import com.zhuri.coding.content.service.ai.spring.AiSimilarityTools;
+import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
+import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
  * AI 发布助手实现（v3：多智能体编排版 — Orchestrator-Workers + Evaluator-Optimizer）
  *
  * <p>主路径：{@link AgentRunner} 主编（Supervisor）ReAct 循环——拆解任务后并行调度
- * 安全/质量/SEO 三位专家 Worker（{@link com.heima.content.service.ai.agent.workers}）与
+ * 安全/质量/SEO 三位专家 Worker（{@link com.zhuri.coding.content.service.ai.agent.workers}）与
  * 相似度查重工具，汇总草稿后可调用终审专家（Critic）复审修正，最终输出 FINAL JSON。
  * 兜底路径：循环异常/超步/解析失败时降级为一次性结构化调用（保证接口始终可用）。
  */
@@ -98,7 +98,7 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
 
     /** 统一 LLM 出口（安全横切 + token 计量） */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     @Autowired
     private AgentRunner agentRunner;
@@ -126,35 +126,35 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
 
 /** Prompt 注册表（P2-1 补齐）：主编主 prompt / 兜底直答 prompt 版本化 + 灰度 + 代码兜底；未装配时走代码常量 */
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+    private com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
 
     /** 结构化输出 Skill（P2）：FINAL JSON → Bean 化优先，失败回落容错解析 */
     @Autowired(required = false)
-    private com.heima.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
+    private com.zhuri.coding.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
 
     /** MCP 工具目录（P2-8）：README/文档读写、时间查询等社区 server 工具并入主编 Agent；未启用时 fail-open 为 null */
     @Autowired(required = false)
-    private com.heima.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
+    private com.zhuri.coding.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** 注册表解析（带 null 兜底）：DB 不可用/未装配时返回代码常量（version=0） */
-    private com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
+    private com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
         String key, String fallback, Integer userId) {
         if (promptRegistry == null) {
-            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+            return new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
         }
         try {
             return promptRegistry.resolve(key, fallback, userId);
         } catch (Exception e) {
-            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+            return new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
         }
     }
 
     /** 当前登录用户 id（未登录/系统内部调用为 null → 灰度分流不生效，走正式版） */
     private Integer currentUserId() {
         try {
-            com.heima.model.user.pojos.ApUser u = com.heima.utils.thread.AppThreadLocalUtil.getUser();
+            com.zhuri.coding.model.user.pojos.ApUser u = com.zhuri.coding.utils.thread.AppThreadLocalUtil.getUser();
             return u == null ? null : u.getId().intValue();
         } catch (Exception e) {
             return null;
@@ -180,9 +180,9 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         String user = String.format(USER_PROMPT, t, truncate(c, LLM_CONTENT_CHARS));
         // 提示词版本化（P2-1 补齐）：主编主 prompt / 兜底直答 prompt 接入注册表（可灰度 userId、可回滚）；
         // DB 无行/异常/未装配时回落代码常量（version=0），行为零变化
-        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt agentP =
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt agentP =
             prompt("publish_precheck_agent", AGENT_SYSTEM_PROMPT, currentUserId());
-        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt directP =
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt directP =
             prompt("publish_precheck_direct", DIRECT_SYSTEM_PROMPT, currentUserId());
         // 提示词安全（净化 user + system 加固 + 输出护栏）由 PromptSafetyAdvisor 声明式处理；
         // Agent 主路径走 AgentRunner 内嵌的 Advisor，兜底路径在下方 ChatClient 上注册同一 Advisor。
@@ -211,7 +211,7 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
             // 兜底：一次性结构化调用（安全三层防御由 Advisor 横切处理）
             try {
                 String raw = llmGateway.generateOrNull(
-                    com.heima.content.service.ai.AiFeatures.PRECHECK, directP.content, user, null, null);
+                    com.zhuri.coding.content.service.ai.AiFeatures.PRECHECK, directP.content, user, null, null);
                 // 结构化输出（P2）：先走 Bean 化（BeanOutputConverter），失败回落容错解析 + 旧映射
                 AiPrecheckVo beanVo = jsonOutputSkill == null ? null : jsonOutputSkill.parsePrecheckBeanOrNull(raw);
                 if (beanVo != null) {

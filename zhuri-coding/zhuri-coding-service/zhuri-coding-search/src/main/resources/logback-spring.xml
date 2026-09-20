@@ -11,7 +11,7 @@
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <includeMdcKeyName>traceId</includeMdcKeyName>
             <includeMdcKeyName>spanId</includeMdcKeyName>
-            <customFields>{"service":"leadnews-search"}</customFields>
+            <customFields>{"service":"zhuri-coding-search"}</customFields>
         </encoder>
     </appender>
 
@@ -25,7 +25,7 @@
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <includeMdcKeyName>traceId</includeMdcKeyName>
             <includeMdcKeyName>spanId</includeMdcKeyName>
-            <customFields>{"service":"leadnews-search"}</customFields>
+            <customFields>{"service":"zhuri-coding-search"}</customFields>
         </encoder>
     </appender>
 

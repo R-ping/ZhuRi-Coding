@@ -1,4 +1,4 @@
-package com.heima.apis.config;
+package com.zhuri.coding.apis.config;
 
 import feign.micrometer.MicrometerObservationCapability;
 import io.micrometer.observation.ObservationRegistry;

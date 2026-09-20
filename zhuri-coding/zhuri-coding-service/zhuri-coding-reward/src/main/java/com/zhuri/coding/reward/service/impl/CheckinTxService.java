@@ -1,14 +1,14 @@
-package com.heima.reward.service.impl;
+package com.zhuri.coding.reward.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.reward.entity.SignRecord;
-import com.heima.reward.entity.UserAssets;
-import com.heima.reward.entity.UserCheckinState;
-import com.heima.reward.mapper.SignRecordMapper;
-import com.heima.reward.mapper.UserAssetsMapper;
-import com.heima.reward.mapper.UserCheckinStateMapper;
-import com.heima.reward.util.SignRewardUtil;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.reward.entity.SignRecord;
+import com.zhuri.coding.reward.entity.UserAssets;
+import com.zhuri.coding.reward.entity.UserCheckinState;
+import com.zhuri.coding.reward.mapper.SignRecordMapper;
+import com.zhuri.coding.reward.mapper.UserAssetsMapper;
+import com.zhuri.coding.reward.mapper.UserCheckinStateMapper;
+import com.zhuri.coding.reward.util.SignRewardUtil;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;

@@ -1,34 +1,34 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.apis.user.IUserClient;
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.column.ApColumnMapper;
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
-import com.heima.content.mapper.interaction.ApCollectionMapper;
-import com.heima.content.mapper.tag.TagMapper;
-import com.heima.content.service.article.ArticleDetailService;
-import com.heima.content.service.comment.ApCommentService;
-import com.heima.content.utils.MarkdownUtils;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleContent;
-import com.heima.model.article.vos.ArticleColumnVO;
-import com.heima.model.article.vos.ArticleDetailVO;
-import com.heima.model.article.vos.ArticleRecommendVO;
-import com.heima.model.article.vos.TagVO;
-import com.heima.model.article.vos.TocItemVO;
-import com.heima.model.behavior.pojos.ApBehaviorLikes;
-import com.heima.model.behavior.pojos.ApCollection;
-import com.heima.model.column.pojos.ApColumn;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.follow.pojos.ApFollow;
-import com.heima.model.search.vos.TocItem;
-import com.heima.model.tag.pojos.ApTag;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.apis.user.IUserClient;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.column.ApColumnMapper;
+import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
+import com.zhuri.coding.content.mapper.interaction.ApBehaviorLikesMapper;
+import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
+import com.zhuri.coding.content.mapper.tag.TagMapper;
+import com.zhuri.coding.content.service.article.ArticleDetailService;
+import com.zhuri.coding.content.service.comment.ApCommentService;
+import com.zhuri.coding.content.utils.MarkdownUtils;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.model.article.vos.ArticleColumnVO;
+import com.zhuri.coding.model.article.vos.ArticleDetailVO;
+import com.zhuri.coding.model.article.vos.ArticleRecommendVO;
+import com.zhuri.coding.model.article.vos.TagVO;
+import com.zhuri.coding.model.article.vos.TocItemVO;
+import com.zhuri.coding.model.behavior.pojos.ApBehaviorLikes;
+import com.zhuri.coding.model.behavior.pojos.ApCollection;
+import com.zhuri.coding.model.column.pojos.ApColumn;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.follow.pojos.ApFollow;
+import com.zhuri.coding.model.search.vos.TocItem;
+import com.zhuri.coding.model.tag.pojos.ApTag;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -457,7 +457,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
             if (embeddingService == null) {
                 return Collections.emptyList();
             }
-            com.heima.model.article.pojos.ApArticleEmbedding self =
+            com.zhuri.coding.model.article.pojos.ApArticleEmbedding self =
                 embeddingService.getEmbedding(articleId);
             if (self == null || self.getEmbedding() == null || self.getEmbedding().length == 0) {
                 return Collections.emptyList();

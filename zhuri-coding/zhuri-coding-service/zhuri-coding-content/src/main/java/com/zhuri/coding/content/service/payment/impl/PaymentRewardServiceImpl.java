@@ -1,14 +1,14 @@
-package com.heima.content.service.payment.impl;
+package com.zhuri.coding.content.service.payment.impl;
 
-import com.heima.apis.notification.INotificationClient;
-import com.heima.content.constants.LevelScoreConstants;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.course.ApCourseMapper;
-import com.heima.content.service.level.LevelService;
-import com.heima.content.service.payment.PaymentRewardService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.course.pojos.ApCourse;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.content.constants.LevelScoreConstants;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.course.ApCourseMapper;
+import com.zhuri.coding.content.service.level.LevelService;
+import com.zhuri.coding.content.service.payment.PaymentRewardService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.course.pojos.ApCourse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;

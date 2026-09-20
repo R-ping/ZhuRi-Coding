@@ -1,7 +1,7 @@
-package com.heima.content.service.pay.impl;
+package com.zhuri.coding.content.service.pay.impl;
 
-import com.heima.content.service.order.OrderService;
-import com.heima.model.course.pojos.ApCourseOrder;
+import com.zhuri.coding.content.service.order.OrderService;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

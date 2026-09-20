@@ -1,4 +1,4 @@
-package com.heima.notification.websocket;
+package com.zhuri.coding.notification.websocket;
 
 import java.util.Map;
 import java.util.Set;

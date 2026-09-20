@@ -1,12 +1,12 @@
-package com.heima.content.behavior.service.impl;
+package com.zhuri.coding.content.behavior.service.impl;
 
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.mapper.user.UserBehaviorRecordMapper;
-import com.heima.model.behavior.BehaviorContext;
-import com.heima.model.behavior.BehaviorResult;
-import com.heima.model.behavior.BehaviorType;
-import com.heima.model.behavior.pojos.UserBehaviorRecord;
-import com.heima.model.follow.pojos.ApFollow;
+import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
+import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
+import com.zhuri.coding.model.behavior.BehaviorContext;
+import com.zhuri.coding.model.behavior.BehaviorResult;
+import com.zhuri.coding.model.behavior.BehaviorType;
+import com.zhuri.coding.model.behavior.pojos.UserBehaviorRecord;
+import com.zhuri.coding.model.follow.pojos.ApFollow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

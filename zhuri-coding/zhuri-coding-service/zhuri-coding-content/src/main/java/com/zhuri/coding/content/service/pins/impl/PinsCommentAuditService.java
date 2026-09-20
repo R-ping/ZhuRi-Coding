@@ -1,19 +1,19 @@
-package com.heima.content.service.pins.impl;
+package com.zhuri.coding.content.service.pins.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.heima.apis.notification.INotificationClient;
-import com.heima.content.mapper.pins.ApPinsCommentAuditTaskMapper;
-import com.heima.content.mapper.pins.ApPinsCommentMapper;
-import com.heima.content.mapper.user.UserBehaviorRecordMapper;
-import com.heima.content.service.article.impl.AbstractAuditService;
-import com.heima.content.utils.NotificationHelper;
-import com.heima.model.audit.AuditContext;
-import com.heima.model.audit.AuditEntityType;
-import com.heima.model.audit.AuditResult;
-import com.heima.model.audit.pojos.ApPinsCommentAuditTask;
-import com.heima.model.behavior.pojos.UserBehaviorRecord;
-import com.heima.model.pins.pojos.ApPinsComment;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.content.mapper.pins.ApPinsCommentAuditTaskMapper;
+import com.zhuri.coding.content.mapper.pins.ApPinsCommentMapper;
+import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
+import com.zhuri.coding.content.service.article.impl.AbstractAuditService;
+import com.zhuri.coding.content.utils.NotificationHelper;
+import com.zhuri.coding.model.audit.AuditContext;
+import com.zhuri.coding.model.audit.AuditEntityType;
+import com.zhuri.coding.model.audit.AuditResult;
+import com.zhuri.coding.model.audit.pojos.ApPinsCommentAuditTask;
+import com.zhuri.coding.model.behavior.pojos.UserBehaviorRecord;
+import com.zhuri.coding.model.pins.pojos.ApPinsComment;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * 沸点评论异步审核服务（数据库可靠队列版，Step3 沸点接入治理）
  *
- * 与 {@link com.heima.content.service.comment.impl.CommentAuditService}（文章评论）同构，
+ * 与 {@link com.zhuri.coding.content.service.comment.impl.CommentAuditService}（文章评论）同构，
  * 但独立建表 ap_pins_comment_audit_task / 独立服务，零侵入文章侧已联调链路。
  * （两张源表 id 各自 AUTO 自增会撞号，无法共用文章任务的 comment_id 唯一键。）
  *
@@ -62,7 +62,7 @@ public class PinsCommentAuditService extends AbstractAuditService {
      * 模型选择交由网关内的 AiModelRouter 按 feature 路由（pins_comment_audit → 低成本模型）。
      */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     /**
      * 沸点评论入队并触发异步审核（延迟约 5-10 秒）
@@ -274,7 +274,7 @@ public class PinsCommentAuditService extends AbstractAuditService {
                 + "正常的不同意见、批评、调侃、表情/梗不算。仅输出 JSON：{\"action\":\"pass\"|\"hide\"}";
             // 模型按 feature(pins_comment_audit) 经 AiModelRouter 路由：未装配时网关返回 null → 走下方"判定失败默认放行"
             String ans = llmGateway.generateOrNull(
-                com.heima.content.service.ai.AiFeatures.PINS_COMMENT_AUDIT,
+                com.zhuri.coding.content.service.ai.AiFeatures.PINS_COMMENT_AUDIT,
                 sys, "评论内容：" + (content.length() > 500 ? content.substring(0, 500) : content), null, null);
             return ans != null && ans.contains("\"hide\"");
         } catch (Exception e) {

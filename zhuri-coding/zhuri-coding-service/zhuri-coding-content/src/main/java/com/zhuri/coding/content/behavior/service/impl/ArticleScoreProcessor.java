@@ -1,10 +1,10 @@
-package com.heima.content.behavior.service.impl;
+package com.zhuri.coding.content.behavior.service.impl;
 
-import com.heima.content.behavior.service.BehaviorPostProcessor;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.model.behavior.BehaviorContext;
-import com.heima.model.behavior.BehaviorResult;
-import com.heima.model.behavior.BehaviorType;
+import com.zhuri.coding.content.behavior.service.BehaviorPostProcessor;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.model.behavior.BehaviorContext;
+import com.zhuri.coding.model.behavior.BehaviorResult;
+import com.zhuri.coding.model.behavior.BehaviorType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;

@@ -3,13 +3,13 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>heima-leadnews-basic</artifactId>
-        <groupId>com.heima</groupId>
+        <artifactId>zhuri-coding-basic</artifactId>
+        <groupId>com.zhuri.coding</groupId>
         <version>1.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>heima-file-starter</artifactId>
+    <artifactId>zhuri-file-starter</artifactId>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -31,8 +31,8 @@
         </dependency>
 
         <dependency>
-            <groupId>com.heima</groupId>
-            <artifactId>heima-leadnews-feign-api</artifactId>
+            <groupId>com.zhuri.coding</groupId>
+            <artifactId>zhuri-coding-feign-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

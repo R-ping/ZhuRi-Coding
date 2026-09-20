@@ -1,4 +1,4 @@
-package com.heima.common.aliyun;
+package com.zhuri.coding.common.aliyun;
 
 import com.alibaba.fastjson.JSON;
 import com.aliyun.green20220302.Client;

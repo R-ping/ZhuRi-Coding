@@ -4,7 +4,7 @@ spring:
   profiles:
     include: gateway
   application:
-    name: leadnews-app-gateway
+    name: zhuri-coding-app-gateway
   # 网关为无状态 WebFlux 代理，不连接任何数据库；显式关闭 DataSource 自动装配，
   # 避免 Actuator 健康检查（dbHealthContributor）尝试创建 HikariDataSource 导致启动失败。
   autoconfigure:
@@ -49,4 +49,4 @@ management:
 # 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
 app:
   internal-auth:
-    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}

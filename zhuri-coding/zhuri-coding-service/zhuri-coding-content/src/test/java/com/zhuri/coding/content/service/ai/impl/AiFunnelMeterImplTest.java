@@ -1,7 +1,7 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
-import com.heima.content.service.ai.AiFeatures;
-import com.heima.content.service.ai.AiFunnelMeter;
+import com.zhuri.coding.content.service.ai.AiFeatures;
+import com.zhuri.coding.content.service.ai.AiFunnelMeter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

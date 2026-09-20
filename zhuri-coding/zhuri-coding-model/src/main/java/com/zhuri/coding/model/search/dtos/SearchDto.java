@@ -1,4 +1,4 @@
-package com.heima.model.search.dtos;
+package com.zhuri.coding.model.search.dtos;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.Data;

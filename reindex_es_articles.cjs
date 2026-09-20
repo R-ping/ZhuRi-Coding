@@ -67,7 +67,7 @@ async function main() {
     // 移除图片 URL 上的查询参数（?: 及之后）——领目规范要求
     const images = String(r.images || '').split('?')[0]
     const source = {
-      _class: 'com.heima.search.entity.SearchArticle',
+      _class: 'com.zhuri.coding.search.entity.SearchArticle',
       id: r.id, // 字符串，ES long 字段会精确强转
       title: r.title,
       layout: Number(r.layout) || 0,

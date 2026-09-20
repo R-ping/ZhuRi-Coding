@@ -1,4 +1,4 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
 /**
  * AI 功能标识（token 计量与成本归因的维度键）。

@@ -1,10 +1,10 @@
-package com.heima.reward.controller.v1;
+package com.zhuri.coding.reward.controller.v1;
 
-import com.heima.common.annotation.RateLimit;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.utils.thread.AppThreadLocalUtil;
-import com.heima.reward.service.LotteryService;
+import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.reward.service.LotteryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

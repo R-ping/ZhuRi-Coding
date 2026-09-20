@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.agent.workers;
+package com.zhuri.coding.content.service.ai.agent.workers;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.annotation.Tool;

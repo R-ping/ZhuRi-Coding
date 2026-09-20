@@ -1,6 +1,6 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 /**
  * 作者 AI 复盘报告（面向创作者的增值服务）

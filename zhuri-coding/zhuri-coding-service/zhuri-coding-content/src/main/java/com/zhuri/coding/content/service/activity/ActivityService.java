@@ -1,6 +1,6 @@
-package com.heima.content.service.activity;
+package com.zhuri.coding.content.service.activity;
 
-import com.heima.model.activity.pojos.ApActivity;
+import com.zhuri.coding.model.activity.pojos.ApActivity;
 
 import java.util.Map;
 

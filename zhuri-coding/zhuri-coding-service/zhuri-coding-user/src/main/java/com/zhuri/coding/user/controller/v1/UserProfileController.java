@@ -1,8 +1,8 @@
-package com.heima.user.controller.v1;
+package com.zhuri.coding.user.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.dto.ProfileUpdateDTO;
-import com.heima.user.service.UserProfileService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.dto.ProfileUpdateDTO;
+import com.zhuri.coding.user.service.UserProfileService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;

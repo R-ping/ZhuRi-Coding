@@ -1,21 +1,21 @@
-package com.heima.content.service.pins.impl;
+package com.zhuri.coding.content.service.pins.impl;
 
-import com.heima.content.service.aigc.AigcDetectService;
+import com.zhuri.coding.content.service.aigc.AigcDetectService;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.apis.notification.INotificationClient;
-import com.heima.common.com.ImageHandle;
-import com.heima.content.mapper.circle.ApCircleMapper;
-import com.heima.content.mapper.pins.ApPinsMapper;
-import com.heima.content.mapper.topic.TopicMapper;
-import com.heima.model.circle.pojos.ApCircle;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.pins.dtos.PinsPublishDTO;
-import com.heima.model.pins.pojos.ApPins;
-import com.heima.model.topic.pojos.ApTopic;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.common.com.ImageHandle;
+import com.zhuri.coding.content.mapper.circle.ApCircleMapper;
+import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
+import com.zhuri.coding.content.mapper.topic.TopicMapper;
+import com.zhuri.coding.model.circle.pojos.ApCircle;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.pins.dtos.PinsPublishDTO;
+import com.zhuri.coding.model.pins.pojos.ApPins;
+import com.zhuri.coding.model.topic.pojos.ApTopic;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package com.heima.content.service.oss;
+package com.zhuri.coding.content.service.oss;
 
 import org.springframework.stereotype.Component;
 

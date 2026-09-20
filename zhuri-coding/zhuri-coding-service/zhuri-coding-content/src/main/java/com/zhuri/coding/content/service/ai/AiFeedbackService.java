@@ -1,7 +1,7 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
-import com.heima.model.ai.pojos.AiFeedback;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.ai.pojos.AiFeedback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 import java.util.List;
 import java.util.Map;

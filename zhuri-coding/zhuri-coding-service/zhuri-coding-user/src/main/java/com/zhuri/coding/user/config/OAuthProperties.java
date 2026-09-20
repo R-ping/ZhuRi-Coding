@@ -1,4 +1,4 @@
-package com.heima.user.config;
+package com.zhuri.coding.user.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

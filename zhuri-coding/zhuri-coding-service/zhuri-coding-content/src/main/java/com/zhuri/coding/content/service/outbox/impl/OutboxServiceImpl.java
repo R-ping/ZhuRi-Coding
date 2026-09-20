@@ -1,9 +1,9 @@
-package com.heima.content.service.outbox.impl;
+package com.zhuri.coding.content.service.outbox.impl;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.heima.content.mapper.outbox.OutboxEventMapper;
-import com.heima.content.service.outbox.OutboxService;
-import com.heima.model.outbox.pojos.OutboxEvent;
+import com.zhuri.coding.content.mapper.outbox.OutboxEventMapper;
+import com.zhuri.coding.content.service.outbox.OutboxService;
+import com.zhuri.coding.model.outbox.pojos.OutboxEvent;
 import java.util.Date;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

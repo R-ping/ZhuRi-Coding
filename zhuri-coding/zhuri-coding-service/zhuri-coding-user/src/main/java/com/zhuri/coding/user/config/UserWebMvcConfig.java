@@ -1,6 +1,6 @@
-package com.heima.user.config;
+package com.zhuri.coding.user.config;
 
-import com.heima.user.interceptor.UserTokenInterceptor;
+import com.zhuri.coding.user.interceptor.UserTokenInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;

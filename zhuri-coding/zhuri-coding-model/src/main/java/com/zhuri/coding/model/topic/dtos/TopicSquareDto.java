@@ -1,4 +1,4 @@
-package com.heima.model.topic.dtos;
+package com.zhuri.coding.model.topic.dtos;
 
 import lombok.Data;
 

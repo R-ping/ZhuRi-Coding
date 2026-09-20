@@ -1,14 +1,14 @@
-package com.heima.content.service.course.impl;
+package com.zhuri.coding.content.service.course.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.course.ApAuthorProfileMapper;
-import com.heima.content.service.course.AuthorProfileService;
-import com.heima.content.service.stats.UserContentStatsService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.course.dtos.AuthorProfileDto;
-import com.heima.model.course.pojos.ApAuthorProfile;
-import com.heima.model.user.vo.UserStatsVO;
+import com.zhuri.coding.content.mapper.course.ApAuthorProfileMapper;
+import com.zhuri.coding.content.service.course.AuthorProfileService;
+import com.zhuri.coding.content.service.stats.UserContentStatsService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.course.dtos.AuthorProfileDto;
+import com.zhuri.coding.model.course.pojos.ApAuthorProfile;
+import com.zhuri.coding.model.user.vo.UserStatsVO;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;

@@ -1,14 +1,14 @@
-package com.heima.content.controller.v1.author;
+package com.zhuri.coding.content.controller.v1.author;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.apis.user.IUserClient;
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.service.level.LevelService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.follow.pojos.ApFollow;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.apis.user.IUserClient;
+import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
+import com.zhuri.coding.content.service.level.LevelService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.follow.pojos.ApFollow;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -1,7 +1,7 @@
-package com.heima.content.service.search;
+package com.zhuri.coding.content.service.search;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.SemanticSearchDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.SemanticSearchDto;
 
 /**
  * 语义搜索服务（向量化增强）：query 向量化 → pgvector 召回 → 过滤已发布且非 AIGC 水文。

@@ -1,4 +1,4 @@
-package com.heima.model.level.dtos;
+package com.zhuri.coding.model.level.dtos;
 
 import lombok.Data;
 import java.math.BigDecimal;

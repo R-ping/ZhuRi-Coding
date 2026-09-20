@@ -1,9 +1,9 @@
-package com.heima.content.service.article.processor;
+package com.zhuri.coding.content.service.article.processor;
 
-import com.heima.content.mapper.article.ApArticleConfigMapper;
-import com.heima.content.service.article.ArticleSimilarityService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleConfig;
+import com.zhuri.coding.content.mapper.article.ApArticleConfigMapper;
+import com.zhuri.coding.content.service.article.ArticleSimilarityService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticleConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

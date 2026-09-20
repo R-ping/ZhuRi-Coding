@@ -1,4 +1,4 @@
-package com.heima.model.article.pojos;
+package com.zhuri.coding.model.article.pojos;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;

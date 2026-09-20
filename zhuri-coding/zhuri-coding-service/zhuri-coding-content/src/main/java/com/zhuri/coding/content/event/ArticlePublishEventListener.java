@@ -1,6 +1,6 @@
-package com.heima.content.event;
+package com.zhuri.coding.content.event;
 
-import com.heima.content.service.article.ApArticleEventService;
+import com.zhuri.coding.content.service.article.ApArticleEventService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;

@@ -1,6 +1,6 @@
-package com.heima.content.service.aigc;
+package com.zhuri.coding.content.service.aigc;
 
-import com.heima.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle;
 
 /**
  * AIGC 水文检测服务（内容诚信治理，Step4）

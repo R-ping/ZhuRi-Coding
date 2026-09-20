@@ -1,4 +1,4 @@
-package com.heima.content;
+package com.zhuri.coding.content;
 
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -13,12 +13,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@SpringBootApplication(scanBasePackages = "com.heima")
+@SpringBootApplication(scanBasePackages = "com.zhuri.coding")
 @EnableDiscoveryClient
-@MapperScan({"com.heima.content.mapper", "com.heima.content.schedule.mapper"})
+@MapperScan({"com.zhuri.coding.content.mapper", "com.zhuri.coding.content.schedule.mapper"})
 @EnableAsync(proxyTargetClass = true)
 @EnableScheduling
-@EnableFeignClients(basePackages = "com.heima.apis")
+@EnableFeignClients(basePackages = "com.zhuri.coding.apis")
 public class ContentApplication {
 
     public static void main(String[] args) {

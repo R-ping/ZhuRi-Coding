@@ -1,4 +1,4 @@
-package com.heima.search.pojos;
+package com.zhuri.coding.search.pojos;
 
 import lombok.Data;
 import org.springframework.data.mongodb.core.mapping.Document;

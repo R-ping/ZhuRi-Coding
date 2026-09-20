@@ -1,12 +1,12 @@
-package com.heima.reward.service.impl;
+package com.zhuri.coding.reward.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.reward.entity.LotteryPrizePool;
-import com.heima.reward.entity.UserVirtualAsset;
-import com.heima.reward.mapper.LotteryPrizePoolMapper;
-import com.heima.reward.mapper.UserVirtualAssetMapper;
-import com.heima.reward.service.VirtualAssetService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.reward.entity.LotteryPrizePool;
+import com.zhuri.coding.reward.entity.UserVirtualAsset;
+import com.zhuri.coding.reward.mapper.LotteryPrizePoolMapper;
+import com.zhuri.coding.reward.mapper.UserVirtualAssetMapper;
+import com.zhuri.coding.reward.service.VirtualAssetService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

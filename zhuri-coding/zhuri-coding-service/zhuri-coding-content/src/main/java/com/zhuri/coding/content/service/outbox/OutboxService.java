@@ -1,6 +1,6 @@
-package com.heima.content.service.outbox;
+package com.zhuri.coding.content.service.outbox;
 
-import com.heima.model.outbox.pojos.OutboxEvent;
+import com.zhuri.coding.model.outbox.pojos.OutboxEvent;
 
 /**
  * 本地消息表（Transactional Outbox）写入与状态流转服务。

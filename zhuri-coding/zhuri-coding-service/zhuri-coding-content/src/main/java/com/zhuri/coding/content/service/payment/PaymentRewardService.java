@@ -1,4 +1,4 @@
-package com.heima.content.service.payment;
+package com.zhuri.coding.content.service.payment;
 
 import java.math.BigDecimal;
 

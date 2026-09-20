@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.memory;
+package com.zhuri.coding.content.service.ai.memory;
 
 import java.util.List;
 import java.util.Map;

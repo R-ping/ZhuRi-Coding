@@ -1,4 +1,4 @@
-package com.heima.content.config;
+package com.zhuri.coding.content.config;
 
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;

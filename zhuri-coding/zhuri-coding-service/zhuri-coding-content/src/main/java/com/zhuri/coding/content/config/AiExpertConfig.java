@@ -1,6 +1,6 @@
-package com.heima.content.config;
+package com.zhuri.coding.content.config;
 
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;

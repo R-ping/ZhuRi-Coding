@@ -1,8 +1,8 @@
-package com.heima.content.service.topic;
+package com.zhuri.coding.content.service.topic;
 
-import com.heima.model.topic.dtos.TopicSquareDto;
-import com.heima.model.topic.vos.TopicDetailVO;
-import com.heima.model.topic.vos.TopicRecommendVO;
+import com.zhuri.coding.model.topic.dtos.TopicSquareDto;
+import com.zhuri.coding.model.topic.vos.TopicDetailVO;
+import com.zhuri.coding.model.topic.vos.TopicRecommendVO;
 
 import java.util.List;
 import java.util.Map;

@@ -1,7 +1,7 @@
-package com.heima.content.service.article;
+package com.zhuri.coding.content.service.article;
 
-import com.heima.model.audit.AuditContext;
-import com.heima.model.audit.AuditResult;
+import com.zhuri.coding.model.audit.AuditContext;
+import com.zhuri.coding.model.audit.AuditResult;
 
 /**
  * 统一审核服务接口

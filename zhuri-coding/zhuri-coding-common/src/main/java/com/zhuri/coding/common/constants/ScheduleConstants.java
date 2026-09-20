@@ -1,4 +1,4 @@
-package com.heima.common.constants;
+package com.zhuri.coding.common.constants;
 
 public class ScheduleConstants {
 

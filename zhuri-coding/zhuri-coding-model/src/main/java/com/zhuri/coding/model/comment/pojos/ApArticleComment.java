@@ -1,4 +1,4 @@
-package com.heima.model.comment.pojos;
+package com.zhuri.coding.model.comment.pojos;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;

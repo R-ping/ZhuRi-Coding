@@ -1,7 +1,7 @@
-package com.heima.content.mapper.ai;
+package com.zhuri.coding.content.mapper.ai;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.ai.pojos.AiFeedback;
+import com.zhuri.coding.model.ai.pojos.AiFeedback;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

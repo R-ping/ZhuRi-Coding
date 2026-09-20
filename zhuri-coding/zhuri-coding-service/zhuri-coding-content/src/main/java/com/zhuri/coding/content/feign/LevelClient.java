@@ -1,7 +1,7 @@
-package com.heima.content.feign;
+package com.zhuri.coding.content.feign;
 
-import com.heima.apis.article.ILevelClient;
-import com.heima.content.service.level.LevelService;
+import com.zhuri.coding.apis.article.ILevelClient;
+import com.zhuri.coding.content.service.level.LevelService;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;

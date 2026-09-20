@@ -1,15 +1,15 @@
-package com.heima.content.service.hot.impl;
+package com.zhuri.coding.content.service.hot.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.interaction.ApCollectionMapper;
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.service.hot.HotService;
-import com.heima.model.behavior.pojos.ApCollection;
-import com.heima.model.follow.pojos.ApFollow;
-import com.heima.model.article.vos.HotArticleVo;
-import com.heima.model.article.vos.HotAuthorVo;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
+import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
+import com.zhuri.coding.content.service.hot.HotService;
+import com.zhuri.coding.model.behavior.pojos.ApCollection;
+import com.zhuri.coding.model.follow.pojos.ApFollow;
+import com.zhuri.coding.model.article.vos.HotArticleVo;
+import com.zhuri.coding.model.article.vos.HotAuthorVo;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;

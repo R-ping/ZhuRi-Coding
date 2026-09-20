@@ -1,4 +1,4 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

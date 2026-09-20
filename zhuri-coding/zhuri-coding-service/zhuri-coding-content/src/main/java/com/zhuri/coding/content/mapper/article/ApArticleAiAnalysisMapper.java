@@ -1,7 +1,7 @@
-package com.heima.content.mapper.article;
+package com.zhuri.coding.content.mapper.article;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.article.pojos.ApArticleAiAnalysis;
+import com.zhuri.coding.model.article.pojos.ApArticleAiAnalysis;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper

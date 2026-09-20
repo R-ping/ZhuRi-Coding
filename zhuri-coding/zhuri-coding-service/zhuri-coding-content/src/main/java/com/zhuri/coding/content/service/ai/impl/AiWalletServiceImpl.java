@@ -1,9 +1,9 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.ai.AiQuotaWalletMapper;
-import com.heima.content.service.ai.AiWalletService;
-import com.heima.model.ai.pojos.AiQuotaWallet;
+import com.zhuri.coding.content.mapper.ai.AiQuotaWalletMapper;
+import com.zhuri.coding.content.service.ai.AiWalletService;
+import com.zhuri.coding.model.ai.pojos.AiQuotaWallet;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

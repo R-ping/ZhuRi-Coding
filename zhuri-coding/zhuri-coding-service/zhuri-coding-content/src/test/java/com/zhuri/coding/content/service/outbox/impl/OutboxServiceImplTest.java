@@ -1,7 +1,7 @@
-package com.heima.content.service.outbox.impl;
+package com.zhuri.coding.content.service.outbox.impl;
 
-import com.heima.content.mapper.outbox.OutboxEventMapper;
-import com.heima.model.outbox.pojos.OutboxEvent;
+import com.zhuri.coding.content.mapper.outbox.OutboxEventMapper;
+import com.zhuri.coding.model.outbox.pojos.OutboxEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,7 +45,7 @@ class OutboxServiceImplTest {
         com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
                 new org.apache.ibatis.builder.MapperBuilderAssistant(
                         new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
-                com.heima.model.outbox.pojos.OutboxEvent.class);
+                com.zhuri.coding.model.outbox.pojos.OutboxEvent.class);
         outboxService = new OutboxServiceImpl();
         org.springframework.test.util.ReflectionTestUtils
                 .setField(outboxService, "outboxEventMapper", outboxEventMapper);

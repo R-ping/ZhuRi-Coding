@@ -1,15 +1,15 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.dtos.LoginDto;
-import com.heima.model.user.dtos.LoginResultVo;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.user.mapper.ApUserMapper;
-import com.heima.user.service.LoginCodeService;
-import com.heima.user.service.TokenService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.dtos.LoginDto;
+import com.zhuri.coding.model.user.dtos.LoginResultVo;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.user.mapper.ApUserMapper;
+import com.zhuri.coding.user.service.LoginCodeService;
+import com.zhuri.coding.user.service.TokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

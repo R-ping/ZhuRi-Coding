@@ -1,12 +1,12 @@
-package com.heima.apis.user;
+package com.zhuri.coding.apis.user;
 
-import com.heima.apis.user.fallback.IUserClientFallback;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.user.fallback.IUserClientFallback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
-@FeignClient(value = "leadnews-user", fallbackFactory = IUserClientFallback.class)
+@FeignClient(value = "zhuri-coding-user", fallbackFactory = IUserClientFallback.class)
 public interface IUserClient {
 
     /**

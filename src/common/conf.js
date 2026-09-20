@@ -8,10 +8,8 @@ const  config = {
     },
     // 请求本地的请求service
     local:{user:true,content:true,search:true,notification:true},
-    // 代理前缀
-    prefix:{
-        server_85:'/server_85'
-    },
+    // 代理前缀（所有服务均本地直连网关，无需远程前缀，占位保留）
+    prefix:{},
     urls:{
         recommend:{url:'api/v1/article/recommend',sv:'content'},
         // ==========  notification (站内信)
@@ -65,12 +63,8 @@ const  config = {
         // 解决多访问地址的问题
         getBase : function(url){
             let sv = url.sv
-            // 默认指向85服务器，并指向网关+服务名；否则走本地，不加服务名
-            if(config.local[sv]){
-                return "/"+sv;
-            }else{
-                return config.prefix.server_85+'/'+config.services[sv];
-            }
+            // 所有服务均本地直连（网关 51601），统一按 /服务名 前缀走本地代理
+            return "/"+sv;
         },
         get:function(name){
             let tmp = config.urls[name];

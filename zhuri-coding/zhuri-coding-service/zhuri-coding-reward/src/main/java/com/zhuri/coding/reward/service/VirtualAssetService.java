@@ -1,6 +1,6 @@
-package com.heima.reward.service;
+package com.zhuri.coding.reward.service;
 
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 /**
  * 用户虚拟道具（5折券等）服务

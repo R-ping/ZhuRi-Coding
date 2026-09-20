@@ -1,7 +1,7 @@
-package com.heima.content.service.course;
+package com.zhuri.coding.content.service.course;
 
-import com.heima.model.course.dtos.AuthorProfileDto;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.course.dtos.AuthorProfileDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 /**
  * 作者基础信息服务：小册申请时用于保存与回填作者个人基础信息。

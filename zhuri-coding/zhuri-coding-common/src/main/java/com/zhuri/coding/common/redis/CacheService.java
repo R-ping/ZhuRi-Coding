@@ -1,4 +1,4 @@
-package com.heima.common.redis;
+package com.zhuri.coding.common.redis;
 
 import java.util.Collection;
 import java.util.Collections;

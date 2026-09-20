@@ -1,7 +1,7 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
-import com.heima.common.redis.CacheService;
-import com.heima.content.service.ai.AiQuotaService;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.content.service.ai.AiQuotaService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -44,7 +44,7 @@ public class AiQuotaServiceImpl implements AiQuotaService {
     private CacheService cacheService;
 
     @Autowired
-    private com.heima.content.service.ai.AiWalletService walletService;
+    private com.zhuri.coding.content.service.ai.AiWalletService walletService;
 
     private String keyOf(Integer userId) {
         String day = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();

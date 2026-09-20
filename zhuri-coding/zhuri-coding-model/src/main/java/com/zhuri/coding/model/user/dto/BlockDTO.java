@@ -1,4 +1,4 @@
-package com.heima.model.user.dto;
+package com.zhuri.coding.model.user.dto;
 
 import lombok.Data;
 

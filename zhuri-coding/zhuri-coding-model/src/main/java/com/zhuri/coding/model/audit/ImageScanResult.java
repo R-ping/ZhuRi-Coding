@@ -1,4 +1,4 @@
-package com.heima.model.audit;
+package com.zhuri.coding.model.audit;
 
 /**
  * 图片审核结果值对象

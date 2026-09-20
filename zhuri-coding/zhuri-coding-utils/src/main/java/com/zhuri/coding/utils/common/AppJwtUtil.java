@@ -1,4 +1,4 @@
-package com.heima.utils.common;
+package com.zhuri.coding.utils.common;
 
 import io.jsonwebtoken.*;
 import javax.crypto.SecretKey;
@@ -32,7 +32,7 @@ public class AppJwtUtil {
             .setId(UUID.randomUUID().toString())
             .setIssuedAt(new Date(currentTime))  //签发时间
             .setSubject("system")  //说明
-            .setIssuer("heima") //签发者信息
+            .setIssuer("zhuri-coding") //签发者信息
             .setAudience("app")  //接收用户
             .compressWith(CompressionCodecs.GZIP)  //数据压缩方式
             .signWith(generalKey(), SignatureAlgorithm.HS512) //加密方式
@@ -58,7 +58,7 @@ public class AppJwtUtil {
             .setId(UUID.randomUUID().toString())
             .setIssuedAt(new Date(currentTime))
             .setSubject("system")
-            .setIssuer("heima")
+            .setIssuer("zhuri-coding")
             .setAudience("app")
             .compressWith(CompressionCodecs.GZIP)
             .signWith(generalKey(), SignatureAlgorithm.HS512)

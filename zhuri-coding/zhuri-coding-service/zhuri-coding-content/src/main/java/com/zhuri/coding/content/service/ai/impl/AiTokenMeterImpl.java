@@ -1,7 +1,7 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
-import com.heima.content.service.ai.AiFeatures;
-import com.heima.content.service.ai.AiTokenMeter;
+import com.zhuri.coding.content.service.ai.AiFeatures;
+import com.zhuri.coding.content.service.ai.AiTokenMeter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;

@@ -1,6 +1,6 @@
-package com.heima.user.controller.v1;
+package com.zhuri.coding.user.controller.v1;
 
-import com.heima.user.config.OAuthProperties;
+import com.zhuri.coding.user.config.OAuthProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.ui.Model;

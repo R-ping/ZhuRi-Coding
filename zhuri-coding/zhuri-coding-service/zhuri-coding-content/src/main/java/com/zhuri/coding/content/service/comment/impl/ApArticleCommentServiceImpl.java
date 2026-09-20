@@ -1,9 +1,9 @@
-package com.heima.content.service.comment.impl;
+package com.zhuri.coding.content.service.comment.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.content.mapper.comment.ApArticleCommentMapper;
-import com.heima.content.service.comment.ApArticleCommentService;
-import com.heima.model.comment.pojos.ApArticleComment;
+import com.zhuri.coding.content.mapper.comment.ApArticleCommentMapper;
+import com.zhuri.coding.content.service.comment.ApArticleCommentService;
+import com.zhuri.coding.model.comment.pojos.ApArticleComment;
 import org.springframework.stereotype.Service;
 
 @Service

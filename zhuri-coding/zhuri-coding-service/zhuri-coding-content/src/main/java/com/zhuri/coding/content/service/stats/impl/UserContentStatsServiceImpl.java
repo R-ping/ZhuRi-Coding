@@ -1,15 +1,15 @@
-package com.heima.content.service.stats.impl;
+package com.zhuri.coding.content.service.stats.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.mapper.pins.ApPinsMapper;
-import com.heima.content.service.stats.UserContentStatsService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.follow.pojos.ApFollow;
-import com.heima.model.pins.pojos.ApPins;
-import com.heima.model.user.vo.UserStatsVO;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
+import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
+import com.zhuri.coding.content.service.stats.UserContentStatsService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.follow.pojos.ApFollow;
+import com.zhuri.coding.model.pins.pojos.ApPins;
+import com.zhuri.coding.model.user.vo.UserStatsVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

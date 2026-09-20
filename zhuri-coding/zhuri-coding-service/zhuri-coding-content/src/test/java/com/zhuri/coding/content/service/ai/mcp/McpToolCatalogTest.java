@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.mcp;
+package com.zhuri.coding.content.service.ai.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-import com.heima.content.service.ai.mcp.McpToolCatalog.McpToolInfo;
+import com.zhuri.coding.content.service.ai.mcp.McpToolCatalog.McpToolInfo;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

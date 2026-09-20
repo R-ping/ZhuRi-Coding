@@ -1,4 +1,4 @@
-package com.heima.model.user.vo;
+package com.zhuri.coding.model.user.vo;
 
 import lombok.Data;
 

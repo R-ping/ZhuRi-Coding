@@ -1,4 +1,4 @@
-package com.heima.model.common.annotation;
+package com.zhuri.coding.model.common.annotation;
 
 import com.fasterxml.jackson.annotation.JacksonAnnotation;
 

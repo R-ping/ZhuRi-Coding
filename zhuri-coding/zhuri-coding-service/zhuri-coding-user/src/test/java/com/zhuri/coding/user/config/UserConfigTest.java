@@ -1,7 +1,7 @@
-package com.heima.user.config;
+package com.zhuri.coding.user.config;
 
 import com.aliyun.oss.OSS;
-import com.heima.user.interceptor.UserTokenInterceptor;
+import com.zhuri.coding.user.interceptor.UserTokenInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;

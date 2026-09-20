@@ -1,10 +1,10 @@
-package com.heima.apis.article;
+package com.zhuri.coding.apis.article;
 
-import com.heima.apis.article.fallback.IArticleClientFallback;
-import com.heima.model.article.dtos.ArticleDto;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ArticleEvent;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.article.fallback.IArticleClientFallback;
+import com.zhuri.coding.model.article.dtos.ArticleDto;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ArticleEvent;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import java.util.List;
 import java.util.Map;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
-@FeignClient(value = "leadnews-content", contextId = "leadnews-content-articleClient", fallback = IArticleClientFallback.class)
+@FeignClient(value = "zhuri-coding-content", contextId = "zhuri-coding-content-articleClient", fallback = IArticleClientFallback.class)
 public interface IArticleClient {
 
     @PostMapping("/api/v1/article/event")

@@ -1,4 +1,4 @@
-package com.heima.model.audit;
+package com.zhuri.coding.model.audit;
 
 /**
  * 审核实体类型枚举

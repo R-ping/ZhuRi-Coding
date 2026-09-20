@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.memory.impl;
+package com.zhuri.coding.content.service.ai.memory.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -14,9 +14,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.common.redis.CacheService;
-import com.heima.content.service.ai.AiLlmGateway;
-import com.heima.content.service.ai.memory.AiConversationMemoryService;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.content.service.ai.AiLlmGateway;
+import com.zhuri.coding.content.service.ai.memory.AiConversationMemoryService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;

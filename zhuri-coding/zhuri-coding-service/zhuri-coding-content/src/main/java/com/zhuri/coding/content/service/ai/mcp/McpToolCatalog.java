@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.mcp;
+package com.zhuri.coding.content.service.ai.mcp;
 
 import java.util.ArrayList;
 import java.util.List;

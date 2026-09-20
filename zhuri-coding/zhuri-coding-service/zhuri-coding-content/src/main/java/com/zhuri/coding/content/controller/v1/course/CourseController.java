@@ -1,12 +1,12 @@
-package com.heima.content.controller.v1.course;
+package com.zhuri.coding.content.controller.v1.course;
 
 import com.alibaba.fastjson.JSON;
-import com.heima.content.service.course.ApCourseService;
-import com.heima.model.course.dtos.AuthorProfileDto;
-import com.heima.model.course.dtos.CourseDto;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.course.ApCourseService;
+import com.zhuri.coding.model.course.dtos.AuthorProfileDto;
+import com.zhuri.coding.model.course.dtos.CourseDto;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -61,7 +61,7 @@ public class CourseController {
     public ResponseResult checkAuthorPermission() {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return apCourseService.checkAuthorPermission(user.getId().longValue());
     }
@@ -71,7 +71,7 @@ public class CourseController {
     public ResponseResult createCourse(@RequestBody CourseDto dto) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return apCourseService.createCourse(dto, user.getId().longValue());
     }
@@ -81,7 +81,7 @@ public class CourseController {
     public ResponseResult updateCourse(@RequestBody CourseDto dto) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return apCourseService.updateCourse(dto, user.getId().longValue());
     }
@@ -95,7 +95,7 @@ public class CourseController {
             @RequestParam(required = false) String keyword) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return apCourseService.manageList(page, size, status, keyword, user.getId().longValue());
     }
@@ -105,7 +105,7 @@ public class CourseController {
     public ResponseResult manageDetail(@RequestParam Long courseId) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return apCourseService.manageDetail(courseId, user.getId().longValue());
     }
@@ -115,7 +115,7 @@ public class CourseController {
     public ResponseResult softDelete(@RequestBody Map<String, Object> params) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
         return apCourseService.softDelete(courseId, user.getId().longValue());
@@ -126,7 +126,7 @@ public class CourseController {
     public ResponseResult submitForReview(@RequestBody Map<String, Object> params) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
         // 提交上架审核（写作中4 -> 上架待审5）：走状态机校验（含作者归属）
@@ -138,7 +138,7 @@ public class CourseController {
     public ResponseResult unpublish(@RequestBody Map<String, Object> params) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
         // 作者下架自己的已上架课程（9→3），走状态机校验（含作者归属）
@@ -152,7 +152,7 @@ public class CourseController {
     public ResponseResult submitApply(@RequestBody Map<String, Object> params) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         Long courseId = params.get("courseId") != null ? Long.parseLong(params.get("courseId").toString()) : null;
         String applyContent = params.get("applyContent") != null ? params.get("applyContent").toString() : null;
@@ -171,7 +171,7 @@ public class CourseController {
             @RequestParam(required = false) Byte status) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return apCourseService.getMyBooklets(user.getId().longValue(), page, size, status);
     }

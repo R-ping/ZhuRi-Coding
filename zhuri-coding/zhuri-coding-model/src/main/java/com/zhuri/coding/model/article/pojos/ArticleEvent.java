@@ -1,4 +1,4 @@
-package com.heima.model.article.pojos;
+package com.zhuri.coding.model.article.pojos;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.util.Date;

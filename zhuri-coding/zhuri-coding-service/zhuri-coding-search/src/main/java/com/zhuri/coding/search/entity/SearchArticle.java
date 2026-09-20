@@ -1,4 +1,4 @@
-package com.heima.search.entity;
+package com.zhuri.coding.search.entity;
 
 import lombok.Data;
 import org.springframework.data.annotation.Id;

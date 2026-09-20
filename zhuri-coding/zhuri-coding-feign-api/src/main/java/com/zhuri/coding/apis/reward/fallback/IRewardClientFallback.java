@@ -1,7 +1,7 @@
-package com.heima.apis.reward.fallback;
+package com.zhuri.coding.apis.reward.fallback;
 
-import com.heima.apis.reward.IRewardClient;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.reward.IRewardClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

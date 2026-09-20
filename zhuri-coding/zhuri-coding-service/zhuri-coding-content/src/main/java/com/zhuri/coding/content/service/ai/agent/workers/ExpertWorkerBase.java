@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.agent.workers;
+package com.zhuri.coding.content.service.ai.agent.workers;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,7 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>安全横切：所有 Worker 复用 {@code aiExpertChatClient} Bean（已内置 PromptSafetyAdvisor），
  * 输入净化 / 输出护栏对每个专家统一生效。
  *
- * <p>提示词版本化（P2-1 补齐）：专家 SYSTEM_PROMPT 接入 {@link com.heima.content.service.ai.AiPromptRegistry}，
+ * <p>提示词版本化（P2-1 补齐）：专家 SYSTEM_PROMPT 接入 {@link com.zhuri.coding.content.service.ai.AiPromptRegistry}，
  * DB 有行用注册表版（正式版），无/异常回落代码常量（version=0）。Worker 无用户上下文，灰度分流传 null（走正式版）。
  */
 public abstract class ExpertWorkerBase {
@@ -21,22 +21,22 @@ public abstract class ExpertWorkerBase {
     protected final ChatClient chatClient;
 
     @Autowired(required = false)
-    protected com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+    protected com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
 
     protected ExpertWorkerBase(ChatClient chatClient) {
         this.chatClient = chatClient;
     }
 
     /** 注册表解析（带 null 兜底）：DB 不可用/未装配时返回代码常量（version=0） */
-    protected com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
+    protected com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
         String key, String fallback) {
         if (promptRegistry == null) {
-            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+            return new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
         }
         try {
             return promptRegistry.resolve(key, fallback, null);
         } catch (Exception e) {
-            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+            return new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
         }
     }
 

@@ -1,4 +1,4 @@
-package com.heima.content.utils;
+package com.zhuri.coding.content.utils;
 
 import java.util.ArrayList;
 import java.util.List;

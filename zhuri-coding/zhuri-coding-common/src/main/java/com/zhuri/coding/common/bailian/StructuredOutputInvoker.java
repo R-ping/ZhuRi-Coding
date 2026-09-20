@@ -1,7 +1,7 @@
-package com.heima.common.bailian;
+package com.zhuri.coding.common.bailian;
 
 import com.alibaba.fastjson.JSON;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,8 +1,8 @@
-package com.heima.content.service.draft;
+package com.zhuri.coding.content.service.draft;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.heima.model.article.pojos.ApArticleDraft;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.article.pojos.ApArticleDraft;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 public interface DraftManageService extends IService<ApArticleDraft> {
 

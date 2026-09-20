@@ -1,7 +1,7 @@
-package com.heima.content.mapper.course;
+package com.zhuri.coding.content.mapper.course;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.course.pojos.ApAuthorProfile;
+import com.zhuri.coding.model.course.pojos.ApAuthorProfile;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper

@@ -1,19 +1,19 @@
-package com.heima.content.service.comment.impl;
+package com.zhuri.coding.content.service.comment.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.heima.content.service.article.impl.AbstractAuditService;
-import com.heima.apis.notification.INotificationClient;
-import com.heima.content.mapper.comment.ApCommentAuditTaskMapper;
-import com.heima.content.mapper.comment.ApCommentMapper;
-import com.heima.content.mapper.user.UserBehaviorRecordMapper;
-import com.heima.content.utils.NotificationHelper;
-import com.heima.model.comment.pojos.ApComment;
-import com.heima.model.audit.AuditContext;
-import com.heima.model.audit.AuditEntityType;
-import com.heima.model.audit.AuditResult;
-import com.heima.model.audit.pojos.ApCommentAuditTask;
-import com.heima.model.behavior.pojos.UserBehaviorRecord;
+import com.zhuri.coding.content.service.article.impl.AbstractAuditService;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.content.mapper.comment.ApCommentAuditTaskMapper;
+import com.zhuri.coding.content.mapper.comment.ApCommentMapper;
+import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
+import com.zhuri.coding.content.utils.NotificationHelper;
+import com.zhuri.coding.model.comment.pojos.ApComment;
+import com.zhuri.coding.model.audit.AuditContext;
+import com.zhuri.coding.model.audit.AuditEntityType;
+import com.zhuri.coding.model.audit.AuditResult;
+import com.zhuri.coding.model.audit.pojos.ApCommentAuditTask;
+import com.zhuri.coding.model.behavior.pojos.UserBehaviorRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
@@ -61,7 +61,7 @@ public class CommentAuditService extends AbstractAuditService {
      * 模型选择交由网关内的 AiModelRouter 按 feature 路由（comment_audit → 低成本模型）。
      */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     /**
      * 评论入队并触发异步审核（延迟约 5-10 秒）
@@ -302,7 +302,7 @@ public class CommentAuditService extends AbstractAuditService {
                 + "正常的不同意见、批评、调侃、表情/梗不算。仅输出 JSON：{\"action\":\"pass\"|\"hide\"}";
             // 模型按 feature(comment_audit) 经 AiModelRouter 路由：未装配时网关返回 null → 走下方"判定失败默认放行"
             String ans = llmGateway.generateOrNull(
-                com.heima.content.service.ai.AiFeatures.COMMENT_AUDIT,
+                com.zhuri.coding.content.service.ai.AiFeatures.COMMENT_AUDIT,
                 sys, "评论内容：" + (content.length() > 500 ? content.substring(0, 500) : content), null, null);
             return ans != null && ans.contains("\"hide\"");
         } catch (Exception e) {

@@ -1,4 +1,4 @@
-package com.heima.model.achievement.pojos;
+package com.zhuri.coding.model.achievement.pojos;
 
 import java.util.Date;
 import lombok.Data;

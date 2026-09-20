@@ -1,4 +1,4 @@
-package com.heima.reward.util;
+package com.zhuri.coding.reward.util;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

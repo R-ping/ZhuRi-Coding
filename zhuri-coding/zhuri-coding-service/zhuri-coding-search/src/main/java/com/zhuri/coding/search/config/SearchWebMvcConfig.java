@@ -1,7 +1,7 @@
-package com.heima.search.config;
+package com.zhuri.coding.search.config;
 
 
-import com.heima.search.interceptor.AppTokenInterceptor;
+import com.zhuri.coding.search.interceptor.AppTokenInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;

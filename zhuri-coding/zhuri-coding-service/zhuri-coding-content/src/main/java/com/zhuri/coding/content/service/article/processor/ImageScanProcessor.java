@@ -1,8 +1,8 @@
-package com.heima.content.service.article.processor;
+package com.zhuri.coding.content.service.article.processor;
 
-import com.heima.common.aliyun.util.GreenImageScanPlusForOss;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleDraft.ContPic;
+import com.zhuri.coding.common.aliyun.util.GreenImageScanPlusForOss;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticleDraft.ContPic;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

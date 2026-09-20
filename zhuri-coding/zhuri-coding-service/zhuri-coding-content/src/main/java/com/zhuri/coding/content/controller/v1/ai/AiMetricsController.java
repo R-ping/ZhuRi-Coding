@@ -1,10 +1,10 @@
-package com.heima.content.controller.v1.ai;
+package com.zhuri.coding.content.controller.v1.ai;
 
-import com.heima.content.mapper.ai.AiFeedbackMapper;
-import com.heima.content.service.ai.AiMetricsCollector;
-import com.heima.model.ai.pojos.AiFeedback;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.content.mapper.ai.AiFeedbackMapper;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
+import com.zhuri.coding.model.ai.pojos.AiFeedback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,14 +27,14 @@ public class AiMetricsController {
     private AiMetricsCollector aiMetricsCollector;
 
     @Autowired
-    private com.heima.content.service.ai.AiTokenMeter aiTokenMeter;
+    private com.zhuri.coding.content.service.ai.AiTokenMeter aiTokenMeter;
 
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiCircuitBreaker circuitBreaker;
+    private com.zhuri.coding.content.service.ai.AiCircuitBreaker circuitBreaker;
 
     /** 消费漏斗计（发起/缓存命中/检索/生成/反馈 按天聚合 + 转化率） */
     @Autowired
-    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+    private com.zhuri.coding.content.service.ai.AiFunnelMeter funnelMeter;
 
     @Autowired
     private AiFeedbackMapper aiFeedbackMapper;
@@ -46,8 +46,8 @@ public class AiMetricsController {
      * 只有按 token 维度拆开看才能做成本决策（模型路由选型、额度包定价）。
      */
     @GetMapping("/metrics/tokens")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult tokens(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "7") int days) {
         Map<String, Object> data = new HashMap<>();
         data.put("processSnapshot", aiTokenMeter.snapshot());
@@ -62,8 +62,8 @@ public class AiMetricsController {
      * 此时 RAG 会退化为无 AI 能力的路径，与"业务代码 bug"区分开。
      */
     @GetMapping("/metrics/circuit")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult circuit() {
         Map<String, Object> data = new HashMap<>();
         data.put("circuit", circuitBreaker == null ? "unavailable" : circuitBreaker.snapshot());
@@ -79,8 +79,8 @@ public class AiMetricsController {
      * days 越界由 {@code AiFunnelMeter.summary} 内部收敛到 1~30。
      */
     @GetMapping("/metrics/funnel")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult funnel(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "7") int days) {
         Map<String, Object> data = new HashMap<>();
         data.put("funnel", funnelMeter.summary(days));
@@ -88,8 +88,8 @@ public class AiMetricsController {
     }
 
     @GetMapping("/metrics")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.IP,
-        count = 10, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 10, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult metrics() {
         Map<String, Object> data = new HashMap<>();
         data.put("counters", aiMetricsCollector.snapshot());

@@ -1,7 +1,7 @@
-package com.heima.content.mapper.achievement;
+package com.zhuri.coding.content.mapper.achievement;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.achievement.pojos.ApUserAchievement;
+import com.zhuri.coding.model.achievement.pojos.ApUserAchievement;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;

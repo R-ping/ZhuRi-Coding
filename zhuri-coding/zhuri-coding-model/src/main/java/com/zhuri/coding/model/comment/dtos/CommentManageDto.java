@@ -1,4 +1,4 @@
-package com.heima.model.comment.dtos;
+package com.zhuri.coding.model.comment.dtos;
 
 import lombok.Data;
 

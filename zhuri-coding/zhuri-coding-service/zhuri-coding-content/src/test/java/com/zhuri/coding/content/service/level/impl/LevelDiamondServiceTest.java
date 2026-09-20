@@ -1,13 +1,13 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
-import com.heima.apis.reward.IRewardClient;
-import com.heima.content.mapper.level.ApLevelConfigMapper;
-import com.heima.content.mapper.user.ApUserDiamondLogMapper;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.level.pojos.ApLevelConfig;
-import com.heima.model.user.pojos.ApUserDiamondLog;
+import com.zhuri.coding.apis.reward.IRewardClient;
+import com.zhuri.coding.content.mapper.level.ApLevelConfigMapper;
+import com.zhuri.coding.content.mapper.user.ApUserDiamondLogMapper;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.level.pojos.ApLevelConfig;
+import com.zhuri.coding.model.user.pojos.ApUserDiamondLog;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

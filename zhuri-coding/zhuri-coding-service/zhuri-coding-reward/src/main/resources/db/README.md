@@ -1,6 +1,6 @@
-# leadnews-reward 数据库脚本
+# zhuri-coding-reward 数据库脚本
 
-本目录集中管理 `leadnews-reward` 服务连接的数据库脚本。
+本目录集中管理 `zhuri-coding-reward` 服务连接的数据库脚本。
 
 ## 数据库
 

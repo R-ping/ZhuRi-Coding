@@ -1,6 +1,6 @@
-package com.heima.common.exception;
+package com.zhuri.coding.common.exception;
 
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 
 /**
  * 限流超出异常

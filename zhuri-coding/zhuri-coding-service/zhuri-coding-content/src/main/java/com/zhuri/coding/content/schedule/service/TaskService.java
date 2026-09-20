@@ -1,6 +1,6 @@
-package com.heima.content.schedule.service;
+package com.zhuri.coding.content.schedule.service;
 
-import com.heima.model.schedule.dtos.Task;
+import com.zhuri.coding.model.schedule.dtos.Task;
 
 public interface TaskService {
 

@@ -1,11 +1,11 @@
 
-package com.heima.content.controller.v1.circle;
+package com.zhuri.coding.content.controller.v1.circle;
 
-import com.heima.content.service.circle.CircleService;
-import com.heima.model.circle.vos.CircleVO;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.circle.CircleService;
+import com.zhuri.coding.model.circle.vos.CircleVO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

@@ -1,9 +1,9 @@
-package com.heima.notification.service;
+package com.zhuri.coding.notification.service;
 
-import com.heima.apis.article.IFollowClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.notification.pojos.ImSession;
-import com.heima.notification.mapper.ImMessageMapper;
+import com.zhuri.coding.apis.article.IFollowClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.notification.pojos.ImSession;
+import com.zhuri.coding.notification.mapper.ImMessageMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

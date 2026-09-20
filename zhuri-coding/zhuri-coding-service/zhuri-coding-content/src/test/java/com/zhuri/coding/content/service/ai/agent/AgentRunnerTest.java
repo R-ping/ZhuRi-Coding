@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.agent;
+package com.zhuri.coding.content.service.ai.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -8,8 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
-import com.heima.content.service.ai.spring.SafetyGuardException;
+import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,7 +53,7 @@ class AgentRunnerTest {
         Executor sync = Runnable::run;
         // tokenMeter 用 mock：逐轮计量是旁路能力，不影响 Agent 收敛语义的断言
         return new AgentRunner(chatModel, noop, sync, org.mockito.Mockito.mock(
-                com.heima.content.service.ai.AiTokenMeter.class));
+                com.zhuri.coding.content.service.ai.AiTokenMeter.class));
     }
 
     private static AssistantMessage toolCallMsg(String callId, String name, String args) {

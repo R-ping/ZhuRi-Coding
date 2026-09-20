@@ -1,4 +1,4 @@
-package com.heima.file.config;
+package com.zhuri.coding.file.config;
 //
 //@Configuration
 //@ConditionalOnProperty(prefix = "spring.rabbitmq.listener.simple.retry",name = "enabled",havingValue = "true")

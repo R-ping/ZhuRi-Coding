@@ -1,7 +1,7 @@
-package com.heima.content.mapper.pins;
+package com.zhuri.coding.content.mapper.pins;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.pins.pojos.ApPins;
+import com.zhuri.coding.model.pins.pojos.ApPins;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;

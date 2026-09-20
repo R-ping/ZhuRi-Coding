@@ -1,7 +1,7 @@
-package com.heima.user.service;
+package com.zhuri.coding.user.service;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.dto.BlockDTO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.dto.BlockDTO;
 
 public interface BlockService {
     ResponseResult getBlocks(Integer type, Integer page, Integer size);

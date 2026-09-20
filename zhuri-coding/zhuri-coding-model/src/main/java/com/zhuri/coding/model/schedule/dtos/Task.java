@@ -1,4 +1,4 @@
-package com.heima.model.schedule.dtos;
+package com.zhuri.coding.model.schedule.dtos;
 
 import java.util.Date;
 import lombok.Data;

@@ -1,4 +1,4 @@
-package com.heima.content.service.article;
+package com.zhuri.coding.content.service.article;
 
 import java.util.Date;
 

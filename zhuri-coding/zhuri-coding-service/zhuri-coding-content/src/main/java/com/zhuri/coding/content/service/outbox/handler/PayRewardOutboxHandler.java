@@ -1,10 +1,10 @@
-package com.heima.content.service.outbox.handler;
+package com.zhuri.coding.content.service.outbox.handler;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.service.outbox.OutboxDispatcher;
-import com.heima.content.service.outbox.OutboxHandler;
-import com.heima.content.service.payment.PaymentRewardService;
+import com.zhuri.coding.content.service.outbox.OutboxDispatcher;
+import com.zhuri.coding.content.service.outbox.OutboxHandler;
+import com.zhuri.coding.content.service.payment.PaymentRewardService;
 import java.math.BigDecimal;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;

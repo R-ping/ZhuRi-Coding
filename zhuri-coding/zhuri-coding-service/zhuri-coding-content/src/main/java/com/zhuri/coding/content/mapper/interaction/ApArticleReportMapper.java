@@ -1,7 +1,7 @@
-package com.heima.content.mapper.interaction;
+package com.zhuri.coding.content.mapper.interaction;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.behavior.pojos.ApArticleReport;
+import com.zhuri.coding.model.behavior.pojos.ApArticleReport;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

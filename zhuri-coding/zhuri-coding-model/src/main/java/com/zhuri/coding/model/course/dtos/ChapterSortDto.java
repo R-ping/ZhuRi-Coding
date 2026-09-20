@@ -1,4 +1,4 @@
-package com.heima.model.course.dtos;
+package com.zhuri.coding.model.course.dtos;
 
 import lombok.Data;
 import java.util.List;

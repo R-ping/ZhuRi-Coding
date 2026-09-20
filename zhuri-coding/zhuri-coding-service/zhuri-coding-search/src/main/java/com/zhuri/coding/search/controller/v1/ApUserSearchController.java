@@ -1,8 +1,8 @@
-package com.heima.search.controller.v1;
+package com.zhuri.coding.search.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.HistorySearchDto;
-import com.heima.search.service.ApUserSearchService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.HistorySearchDto;
+import com.zhuri.coding.search.service.ApUserSearchService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

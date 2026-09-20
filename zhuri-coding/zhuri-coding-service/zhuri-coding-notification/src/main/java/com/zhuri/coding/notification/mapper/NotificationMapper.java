@@ -1,7 +1,7 @@
-package com.heima.notification.mapper;
+package com.zhuri.coding.notification.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.notification.pojos.Notification;
+import com.zhuri.coding.model.notification.pojos.Notification;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;

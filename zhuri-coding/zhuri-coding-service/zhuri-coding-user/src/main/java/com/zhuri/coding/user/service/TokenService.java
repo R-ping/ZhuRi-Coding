@@ -1,6 +1,6 @@
-package com.heima.user.service;
+package com.zhuri.coding.user.service;
 
-import com.heima.model.user.dtos.LoginResultVo;
+import com.zhuri.coding.model.user.dtos.LoginResultVo;
 
 /**
  * 双Token认证服务

@@ -1,4 +1,4 @@
-package com.heima.model.behavior;
+package com.zhuri.coding.model.behavior;
 
 /**
  * 用户行为类型枚举

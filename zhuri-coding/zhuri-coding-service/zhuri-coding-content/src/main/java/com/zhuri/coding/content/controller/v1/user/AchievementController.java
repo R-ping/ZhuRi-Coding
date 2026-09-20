@@ -1,8 +1,8 @@
-package com.heima.content.controller.v1.user;
+package com.zhuri.coding.content.controller.v1.user;
 
-import com.heima.content.service.achievement.AchievementService;
-import com.heima.model.achievement.vos.AchievementDataVO;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.service.achievement.AchievementService;
+import com.zhuri.coding.model.achievement.vos.AchievementDataVO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

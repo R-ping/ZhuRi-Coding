@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.memory;
+package com.zhuri.coding.content.service.ai.memory;
 
 import java.util.List;
 
@@ -7,7 +7,7 @@ import java.util.List;
  *
  * <p>将用户兴趣轨迹（如提问过的问题）向量化后沉淀到 PGVector（ap_user_memory 表），
  * 提问时按余弦相似度召回与当前问题最相近的历史记忆片段，注入提示词做个性化参考。
- * 语义记忆不依赖显式标签，检索由向量语义驱动——这是区别于 {@link com.heima.content.service.ai.UserInterestService}
+ * 语义记忆不依赖显式标签，检索由向量语义驱动——这是区别于 {@link com.zhuri.coding.content.service.ai.UserInterestService}
  * （规则式标签聚合）的核心差异。
  */
 public interface UserMemoryService {

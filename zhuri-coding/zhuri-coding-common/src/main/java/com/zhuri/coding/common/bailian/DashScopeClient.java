@@ -1,4 +1,4 @@
-package com.heima.common.bailian;
+package com.zhuri.coding.common.bailian;
 
 import com.alibaba.dashscope.aigc.generation.Generation;
 import com.alibaba.dashscope.aigc.generation.GenerationParam;

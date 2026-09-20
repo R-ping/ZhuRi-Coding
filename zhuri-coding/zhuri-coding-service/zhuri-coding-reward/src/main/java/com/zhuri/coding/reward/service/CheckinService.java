@@ -1,6 +1,6 @@
-package com.heima.reward.service;
+package com.zhuri.coding.reward.service;
 
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 public interface CheckinService {
     /** 获取签到状态与日历数据（新接口） */

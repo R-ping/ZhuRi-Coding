@@ -1,7 +1,7 @@
-package com.heima.notification.config;
+package com.zhuri.coding.notification.config;
 
-import com.heima.notification.websocket.AuthHandshakeInterceptor;
-import com.heima.notification.websocket.UserInterceptor;
+import com.zhuri.coding.notification.websocket.AuthHandshakeInterceptor;
+import com.zhuri.coding.notification.websocket.UserInterceptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

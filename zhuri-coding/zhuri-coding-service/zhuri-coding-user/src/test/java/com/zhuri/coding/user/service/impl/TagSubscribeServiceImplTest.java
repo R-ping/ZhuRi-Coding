@@ -1,17 +1,17 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.model.user.pojos.SysTag;
-import com.heima.model.user.pojos.UserTagRelation;
-import com.heima.user.mapper.SysTagMapper;
-import com.heima.user.mapper.UserTagRelationMapper;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.model.user.pojos.SysTag;
+import com.zhuri.coding.model.user.pojos.UserTagRelation;
+import com.zhuri.coding.user.mapper.SysTagMapper;
+import com.zhuri.coding.user.mapper.UserTagRelationMapper;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

@@ -1,4 +1,4 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
 import org.springframework.ai.chat.model.ChatResponse;
 
@@ -11,7 +11,7 @@ import java.util.Map;
  * （rerank 是短 prompt、创作复盘是长输出），导致：
  * <ul>
  *   <li>无法回答"哪个功能最烧钱"；</li>
- *   <li>模型路由（{@link com.heima.content.service.ai.router.AiModelRouter}）无法按成本决策；</li>
+ *   <li>模型路由（{@link com.zhuri.coding.content.service.ai.router.AiModelRouter}）无法按成本决策；</li>
  *   <li>额度包只能按次数卖，对用户不公平、对平台不可控。</li>
  * </ul>
  *

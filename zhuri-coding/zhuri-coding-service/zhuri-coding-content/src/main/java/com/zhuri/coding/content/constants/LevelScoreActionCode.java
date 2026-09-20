@@ -1,4 +1,4 @@
-package com.heima.content.constants;
+package com.zhuri.coding.content.constants;
 
 /**
  * 逐日等级行为（action_code）唯一编码常量。

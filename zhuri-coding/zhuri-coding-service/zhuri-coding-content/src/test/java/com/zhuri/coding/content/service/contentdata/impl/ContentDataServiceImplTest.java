@@ -1,14 +1,14 @@
-package com.heima.content.service.contentdata.impl;
+package com.zhuri.coding.content.service.contentdata.impl;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.column.ApColumnMapper;
-import com.heima.content.mapper.pins.ApPinsMapper;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.column.pojos.ApColumn;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.pins.pojos.ApPins;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.column.ApColumnMapper;
+import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.column.pojos.ApColumn;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.pins.pojos.ApPins;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

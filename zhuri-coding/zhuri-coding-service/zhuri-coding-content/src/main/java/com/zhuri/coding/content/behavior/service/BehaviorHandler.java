@@ -1,8 +1,8 @@
-package com.heima.content.behavior.service;
+package com.zhuri.coding.content.behavior.service;
 
-import com.heima.model.behavior.BehaviorContext;
-import com.heima.model.behavior.BehaviorResult;
-import com.heima.model.behavior.BehaviorType;
+import com.zhuri.coding.model.behavior.BehaviorContext;
+import com.zhuri.coding.model.behavior.BehaviorResult;
+import com.zhuri.coding.model.behavior.BehaviorType;
 
 /**
  * 行为处理器接口

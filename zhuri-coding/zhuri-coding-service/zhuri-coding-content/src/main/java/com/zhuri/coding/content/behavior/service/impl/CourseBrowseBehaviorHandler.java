@@ -1,6 +1,6 @@
-package com.heima.content.behavior.service.impl;
+package com.zhuri.coding.content.behavior.service.impl;
 
-import com.heima.model.behavior.BehaviorType;
+import com.zhuri.coding.model.behavior.BehaviorType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

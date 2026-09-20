@@ -1,4 +1,4 @@
-package com.heima.content.utils;
+package com.zhuri.coding.content.utils;
 
 /**
  * pgvector 文本字面量工具。

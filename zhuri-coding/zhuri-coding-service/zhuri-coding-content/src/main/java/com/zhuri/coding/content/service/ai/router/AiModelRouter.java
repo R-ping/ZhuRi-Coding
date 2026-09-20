@@ -1,6 +1,6 @@
-package com.heima.content.service.ai.router;
+package com.zhuri.coding.content.service.ai.router;
 
-import com.heima.content.service.ai.AiMetricsCollector;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,11 +50,11 @@ public class AiModelRouter {
     private final AiMetricsCollector metrics;
 
     /** token 计量（成本报表数据源） */
-    private final com.heima.content.service.ai.AiTokenMeter tokenMeter;
+    private final com.zhuri.coding.content.service.ai.AiTokenMeter tokenMeter;
 
     @Autowired
     public AiModelRouter(Map<String, ChatModel> models, AiMetricsCollector metrics,
-                         com.heima.content.service.ai.AiTokenMeter tokenMeter) {
+                         com.zhuri.coding.content.service.ai.AiTokenMeter tokenMeter) {
         this.models = models;
         this.metrics = metrics;
         this.tokenMeter = tokenMeter;

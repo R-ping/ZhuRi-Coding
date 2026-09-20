@@ -1,4 +1,4 @@
-package com.heima.content.event;
+package com.zhuri.coding.content.event;
 
 import lombok.Getter;
 

@@ -1,28 +1,28 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.ai.AiAskService;
-import com.heima.content.service.ai.AiFeatures;
-import com.heima.content.service.ai.AiLlmGateway;
-import com.heima.content.service.ai.AiSemanticCacheService;
-import com.heima.content.service.ai.AnswerFaithfulnessService;
-import com.heima.content.service.ai.HybridRecallService;
-import com.heima.content.service.ai.memory.AiConversationMemoryService;
-import com.heima.content.service.ai.memory.UserMemoryService;
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
-import com.heima.content.service.ai.spring.SafetyGuardException;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.content.utils.MarkdownUtils;
-import com.heima.content.utils.TextChunker;
-import com.heima.model.article.dtos.AiAnswerVo;
-import com.heima.model.article.dtos.AiSourceVo;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ApArticleContent;
-import com.heima.model.user.pojos.ApUser;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.ai.AiAskService;
+import com.zhuri.coding.content.service.ai.AiFeatures;
+import com.zhuri.coding.content.service.ai.AiLlmGateway;
+import com.zhuri.coding.content.service.ai.AiSemanticCacheService;
+import com.zhuri.coding.content.service.ai.AnswerFaithfulnessService;
+import com.zhuri.coding.content.service.ai.HybridRecallService;
+import com.zhuri.coding.content.service.ai.memory.AiConversationMemoryService;
+import com.zhuri.coding.content.service.ai.memory.UserMemoryService;
+import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.content.utils.MarkdownUtils;
+import com.zhuri.coding.content.utils.TextChunker;
+import com.zhuri.coding.model.article.dtos.AiAnswerVo;
+import com.zhuri.coding.model.article.dtos.AiSourceVo;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.model.user.pojos.ApUser;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -101,7 +101,7 @@ public class AiAskServiceImpl implements AiAskService {
 
     /** Prompt 注册表（P2-1）：DB 版本化 + 灰度 + 代码兜底；单测未注入时走兜底 */
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+    private com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
 
     @Autowired
     private HybridRecallService hybridRecallService;
@@ -119,7 +119,7 @@ public class AiAskServiceImpl implements AiAskService {
     private Executor aiSseExecutor;
 
     @Autowired
-    private com.heima.content.service.ai.UserInterestService userInterestService;
+    private com.zhuri.coding.content.service.ai.UserInterestService userInterestService;
 
     @Autowired
     private AiConversationMemoryService conversationMemoryService;
@@ -139,23 +139,23 @@ public class AiAskServiceImpl implements AiAskService {
 
     /** 统一 LLM 出口：安全横切 + token 计量（P0-2 成本观测） */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     /** 业务指标（调用计数 + TTFT 等延迟观测） */
     @Autowired
-    private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
+    private com.zhuri.coding.content.service.ai.AiMetricsCollector aiMetricsCollector;
 
     /** 消费漏斗计（缓存命中/检索/生成 阶段打点） */
     @Autowired
-    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+    private com.zhuri.coding.content.service.ai.AiFunnelMeter funnelMeter;
 
     /** Redis（向量轮转同步游标） */
     @Autowired
-    private com.heima.common.redis.CacheService cacheService;
+    private com.zhuri.coding.common.redis.CacheService cacheService;
 
     /** 检索管线显式链（P2 Prompt Chaining）：向量化→召回→过滤→精排→组装 */
     @Autowired
-    private com.heima.content.service.ai.pipeline.AskRetrievalChain retrievalChain;
+    private com.zhuri.coding.content.service.ai.pipeline.AskRetrievalChain retrievalChain;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -174,7 +174,7 @@ public class AiAskServiceImpl implements AiAskService {
         if (cached != null) {
             // 消费漏斗：缓存命中（省掉检索与生成）
             funnelMeter.incr(Boolean.TRUE.equals(fast) ? AiFeatures.ASK_FAST : AiFeatures.ASK,
-                    com.heima.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
+                    com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
             cached.setLatencyMs(System.currentTimeMillis() - start);
             log.info("[AiAsk] 语义缓存命中, q={}, latency={}ms", truncate(q, 40), cached.getLatencyMs());
             return cached;
@@ -202,14 +202,14 @@ public class AiAskServiceImpl implements AiAskService {
             return null;
         }
         // 消费漏斗：检索管线执行完毕（含 hits==0）
-        funnelMeter.incr(AiFeatures.ASK, com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        funnelMeter.incr(AiFeatures.ASK, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
         if (r.hits == 0) {
             return emptyAnswer(start);
         }
 
         // 3. 生成回答（安全三层防御由 PromptSafetyAdvisor 横切处理；长期记忆/兴趣画像注入见 buildUser）
         String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, currentUserId());
-        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
             prompt("ai_ask_system", SYSTEM_PROMPT, currentUserId());
         String answer;
         try {
@@ -240,7 +240,7 @@ public class AiAskServiceImpl implements AiAskService {
         log.info("[AiAsk] question={}, hits={}, sources={}, latency={}ms, promptVersions={}",
             truncate(q, 50), r.hits, r.sources.size(), vo.getLatencyMs(), pv);
         // 消费漏斗：生成成功（vo 返回给用户）
-        funnelMeter.incr(AiFeatures.ASK, com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        funnelMeter.incr(AiFeatures.ASK, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
         return vo;
     }
 
@@ -258,7 +258,7 @@ public class AiAskServiceImpl implements AiAskService {
         AiAnswerVo cachedStream = semanticCacheService.lookup(q, userId);
         if (cachedStream != null) {
             // 消费漏斗：缓存命中（省掉检索与生成）
-            funnelMeter.incr(AiFeatures.ASK_STREAM, com.heima.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
+            funnelMeter.incr(AiFeatures.ASK_STREAM, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
             replayDelta(cachedStream.getAnswer(), onDelta);
             // 命中路径不重复 embedding 沉淀，仅补记会话记忆，保持多轮上下文连续
             try {
@@ -276,12 +276,12 @@ public class AiAskServiceImpl implements AiAskService {
             return null;
         }
         // 消费漏斗：检索管线执行完毕（含 hits==0）
-        funnelMeter.incr(AiFeatures.ASK_STREAM, com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        funnelMeter.incr(AiFeatures.ASK_STREAM, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
         if (r.hits == 0) {
             return emptyAnswer(start);
         }
         String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, userId);
-        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
             prompt("ai_ask_system", SYSTEM_PROMPT, userId);
         StringBuilder acc = new StringBuilder();
         boolean cancelled = false;
@@ -330,7 +330,7 @@ public class AiAskServiceImpl implements AiAskService {
         checkFaithfulness(vo, r);
         log.info("[AiAsk-stream] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
         // 消费漏斗：生成成功（vo 返回给用户）
-        funnelMeter.incr(AiFeatures.ASK_STREAM, com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        funnelMeter.incr(AiFeatures.ASK_STREAM, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
         return vo;
     }
 
@@ -343,12 +343,12 @@ public class AiAskServiceImpl implements AiAskService {
             return null;
         }
         // 消费漏斗：检索管线执行完毕（含 hits==0）
-        funnelMeter.incr(AiFeatures.ASK_FAST, com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        funnelMeter.incr(AiFeatures.ASK_FAST, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
         if (r.hits == 0) {
             return emptyAnswer(start);
         }
         String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, currentUserId());
-        com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
             prompt("ai_ask_system", SYSTEM_PROMPT, currentUserId());
         String answer;
         try {
@@ -372,7 +372,7 @@ public class AiAskServiceImpl implements AiAskService {
         checkFaithfulness(vo, r);
         log.info("[AiAsk-fast] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
         // 消费漏斗：生成成功（vo 返回给用户）
-        funnelMeter.incr(AiFeatures.ASK_FAST, com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        funnelMeter.incr(AiFeatures.ASK_FAST, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
         return vo;
     }
 
@@ -621,7 +621,7 @@ public class AiAskServiceImpl implements AiAskService {
 
 
     /**
-     * 同步文本生成统一入口（P0-2 改造）：委托 {@link com.heima.content.service.ai.AiLlmGateway}，
+     * 同步文本生成统一入口（P0-2 改造）：委托 {@link com.zhuri.coding.content.service.ai.AiLlmGateway}，
      * 由 gateway 装配安全三层防御 advisor + 自动计量 token；本方法只负责构建请求级会话记忆窗口。
      *
      * @param feature 功能标识（成本归因维度，见 {@link AiFeatures}）
@@ -661,7 +661,7 @@ public class AiAskServiceImpl implements AiAskService {
     }
 
     /**
-     * 统一检索管线（显式链版）：委托 {@link com.heima.content.service.ai.pipeline.AskRetrievalChain}
+     * 统一检索管线（显式链版）：委托 {@link com.zhuri.coding.content.service.ai.pipeline.AskRetrievalChain}
      * 按「向量化 → 混合召回 → 过滤已发布 → LLM Rerank → 组装」五阶段执行（Prompt Chaining 落地）。
      *
      * <p>ask / askFast / streamFastAsk 三处共用；运行期常量（召回宽口径/精排阈值/正文截断等）
@@ -674,8 +674,8 @@ public class AiAskServiceImpl implements AiAskService {
      * @return null=向量化失败（调用方降级）；hits==0 表示无命中（调用方返回空答案）
      */
     private Retrieval retrieveAndAssemble(String searchQuery, String userQuestion, int topK, boolean doRerank) {
-        com.heima.content.service.ai.pipeline.AskRetrievalChain.ChainResult cr =
-            retrievalChain.run(new com.heima.content.service.ai.pipeline.AskRetrievalChain.ChainCtx(
+        com.zhuri.coding.content.service.ai.pipeline.AskRetrievalChain.ChainResult cr =
+            retrievalChain.run(new com.zhuri.coding.content.service.ai.pipeline.AskRetrievalChain.ChainCtx(
                 searchQuery, userQuestion, topK, doRerank, RECALL_TOPK, RERANK_MIN_CANDIDATES, CONTEXT_CHARS, RERANK_PROMPT));
         if (cr == null) {
             return null;
@@ -704,7 +704,7 @@ public class AiAskServiceImpl implements AiAskService {
         }
         // 个性化：注入用户近期阅读兴趣（收藏聚合标签），仅在相关时辅助理解；画像失败/无数据跳过
         try {
-            ApUser u = com.heima.utils.thread.AppThreadLocalUtil.getUser();
+            ApUser u = com.zhuri.coding.utils.thread.AppThreadLocalUtil.getUser();
             if (u != null && u.getId() != null) {
                 java.util.List<String> tags = userInterestService.buildInterestTags(u.getId());
                 if (tags != null && !tags.isEmpty()) {
@@ -775,7 +775,7 @@ public class AiAskServiceImpl implements AiAskService {
     }
 
     private Integer currentUserId() {
-        ApUser u = com.heima.utils.thread.AppThreadLocalUtil.getUser();
+        ApUser u = com.zhuri.coding.utils.thread.AppThreadLocalUtil.getUser();
         return u == null ? null : u.getId();
     }
 
@@ -798,7 +798,7 @@ public class AiAskServiceImpl implements AiAskService {
                 return;
             }
             final String answer = vo.getAnswer();
-            final java.util.List<com.heima.model.article.dtos.AiSourceVo> sources = r.sources;
+            final java.util.List<com.zhuri.coding.model.article.dtos.AiSourceVo> sources = r.sources;
             final String docs = r.docsText;
             CompletableFuture.runAsync(() -> {
                 try {
@@ -899,16 +899,16 @@ public class AiAskServiceImpl implements AiAskService {
     /**
      * Prompt 注册表解析（P2-1）：注册表未注入（纯单测）或解析失败时退回代码常量（version=0）。
      */
-    private com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
+    private com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
         String key, String fallback, Integer userId) {
         if (promptRegistry == null) {
-            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+            return new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
         }
         try {
             return promptRegistry.resolve(key, fallback, userId);
         } catch (Exception e) {
             log.warn("[AiAsk] prompt 注册表解析异常，走代码兜底, key={}", key);
-            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+            return new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
         }
     }
 

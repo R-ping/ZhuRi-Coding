@@ -1,6 +1,6 @@
-package com.heima.user.service;
+package com.zhuri.coding.user.service;
 
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 public interface TagSubscribeService {
     ResponseResult discover(String sort, String keyword, Integer page, Integer size);

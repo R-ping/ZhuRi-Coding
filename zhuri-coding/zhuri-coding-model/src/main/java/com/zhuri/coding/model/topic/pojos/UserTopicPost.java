@@ -1,4 +1,4 @@
-package com.heima.model.topic.pojos;
+package com.zhuri.coding.model.topic.pojos;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;

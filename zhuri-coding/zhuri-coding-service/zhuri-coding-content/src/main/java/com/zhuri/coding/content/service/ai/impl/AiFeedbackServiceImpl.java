@@ -1,10 +1,10 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.ai.AiFeedbackMapper;
-import com.heima.content.service.ai.AiFeedbackService;
-import com.heima.model.ai.pojos.AiFeedback;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.mapper.ai.AiFeedbackMapper;
+import com.zhuri.coding.content.service.ai.AiFeedbackService;
+import com.zhuri.coding.model.ai.pojos.AiFeedback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -30,14 +30,14 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
 
     /** 消费漏斗计（反馈阶段打点：feedback_up / feedback_down） */
     @Autowired
-    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+    private com.zhuri.coding.content.service.ai.AiFunnelMeter funnelMeter;
 
     @Override
     public ResponseResult record(Integer userId, String feature, String sceneId,
                                  String question, String answer, Integer feedback) {
         if (userId == null || feature == null || feedback == null
             || (feedback != AiFeedback.FEEDBACK_UP && feedback != AiFeedback.FEEDBACK_DOWN)) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.PARAM_INVALID);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.PARAM_INVALID);
         }
         try {
             String q = question == null ? "" : question.trim();
@@ -79,8 +79,8 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
             // 消费漏斗：反馈阶段（feature 映射到 AiFeatures 口径，未识别归 OTHER）
             funnelMeter.incr(mapFunnelFeature(feature),
                 feedback == AiFeedback.FEEDBACK_UP
-                        ? com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP
-                        : com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_DOWN);
+                        ? com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP
+                        : com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_DOWN);
             Map<String, Object> data = new HashMap<>();
             data.put("feedback", feedback);
             return ResponseResult.okResult(data);
@@ -96,12 +96,12 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
      */
     private static String mapFunnelFeature(String feature) {
         if (AiFeedback.FEATURE_AIASK_GLOBAL.equals(feature)) {
-            return com.heima.content.service.ai.AiFeatures.ASK;
+            return com.zhuri.coding.content.service.ai.AiFeatures.ASK;
         }
         if (AiFeedback.FEATURE_AIASK_ARTICLE.equals(feature)) {
-            return com.heima.content.service.ai.AiFeatures.ASK_ARTICLE;
+            return com.zhuri.coding.content.service.ai.AiFeatures.ASK_ARTICLE;
         }
-        return com.heima.content.service.ai.AiFeatures.OTHER;
+        return com.zhuri.coding.content.service.ai.AiFeatures.OTHER;
     }
 
     private static String md5(String s) {
@@ -128,7 +128,7 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
     private static final int ALERT_MIN_SAMPLES = 5;
 
     @Autowired
-    private com.heima.content.service.ai.AiMetricsCollector metrics;
+    private com.zhuri.coding.content.service.ai.AiMetricsCollector metrics;
 
     @Override
     public List<AiFeedback> badCases(String feature, int limit) {

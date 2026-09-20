@@ -1,4 +1,4 @@
-package com.heima.common.bailian;
+package com.zhuri.coding.common.bailian;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;

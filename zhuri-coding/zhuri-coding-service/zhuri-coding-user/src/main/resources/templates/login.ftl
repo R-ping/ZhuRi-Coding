@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>黑马头条 - 用户登录</title>
+    <title>逐日 Coding - 用户登录</title>
     <style>
         * {
             margin: 0;
@@ -268,7 +268,7 @@
 <body>
     <div class="login-container">
         <div class="login-header">
-            <h1>登录黑马头条</h1>
+            <h1>登录逐日 Coding</h1>
         </div>
 
         <!-- Tab切换 -->

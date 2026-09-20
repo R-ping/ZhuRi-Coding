@@ -1,7 +1,7 @@
-package com.heima.content.mapper.channel;
+package com.zhuri.coding.content.mapper.channel;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.channel.pojos.ApChannel;
+import com.zhuri.coding.model.channel.pojos.ApChannel;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper

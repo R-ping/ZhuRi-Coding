@@ -1,10 +1,10 @@
-package com.heima.user.controller.v1;
+package com.zhuri.coding.user.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.model.user.pojos.UserProfile;
-import com.heima.user.mapper.ApUserMapper;
-import com.heima.user.mapper.UserProfileMapper;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.model.user.pojos.UserProfile;
+import com.zhuri.coding.user.mapper.ApUserMapper;
+import com.zhuri.coding.user.mapper.UserProfileMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;

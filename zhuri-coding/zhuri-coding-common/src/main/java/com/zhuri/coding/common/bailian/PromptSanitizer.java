@@ -1,4 +1,4 @@
-package com.heima.common.bailian;
+package com.zhuri.coding.common.bailian;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

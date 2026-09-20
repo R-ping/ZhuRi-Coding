@@ -1,9 +1,9 @@
-package com.heima.content.controller.v1.comment;
+package com.zhuri.coding.content.controller.v1.comment;
 
-import com.heima.content.service.comment.ApCommentService;
-import com.heima.model.comment.dtos.CommentDto;
-import com.heima.model.comment.dtos.CommentManageDto;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.service.comment.ApCommentService;
+import com.zhuri.coding.model.comment.dtos.CommentDto;
+import com.zhuri.coding.model.comment.dtos.CommentManageDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

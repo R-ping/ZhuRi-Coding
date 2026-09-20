@@ -1,15 +1,15 @@
-package com.heima.reward.service.impl;
+package com.zhuri.coding.reward.service.impl;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.reward.entity.LotteryBroadcastMessage;
-import com.heima.reward.entity.LotteryDrawRecord;
-import com.heima.reward.mapper.LotteryBroadcastMessageMapper;
-import com.heima.reward.mapper.LotteryDailyStateMapper;
-import com.heima.reward.mapper.LotteryDrawRecordMapper;
-import com.heima.reward.mapper.LotteryPhysicalOrderMapper;
-import com.heima.reward.mapper.LotteryPrizePoolMapper;
-import com.heima.reward.mapper.UserAssetsMapper;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.reward.entity.LotteryBroadcastMessage;
+import com.zhuri.coding.reward.entity.LotteryDrawRecord;
+import com.zhuri.coding.reward.mapper.LotteryBroadcastMessageMapper;
+import com.zhuri.coding.reward.mapper.LotteryDailyStateMapper;
+import com.zhuri.coding.reward.mapper.LotteryDrawRecordMapper;
+import com.zhuri.coding.reward.mapper.LotteryPhysicalOrderMapper;
+import com.zhuri.coding.reward.mapper.LotteryPrizePoolMapper;
+import com.zhuri.coding.reward.mapper.UserAssetsMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

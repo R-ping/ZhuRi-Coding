@@ -1,8 +1,8 @@
-package com.heima.content.service.pins;
+package com.zhuri.coding.content.service.pins;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.heima.model.pins.pojos.ApPins;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.pins.pojos.ApPins;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 import java.util.Map;
 

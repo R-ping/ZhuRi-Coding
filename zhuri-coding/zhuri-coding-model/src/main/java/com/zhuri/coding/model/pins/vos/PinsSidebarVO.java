@@ -1,9 +1,9 @@
-package com.heima.model.pins.vos;
+package com.zhuri.coding.model.pins.vos;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import com.heima.model.topic.vos.TopicRecommendVO;
+import com.zhuri.coding.model.topic.vos.TopicRecommendVO;
 import java.util.ArrayList;
 import java.util.List;
 

@@ -1,9 +1,9 @@
-package com.heima.content.service.ai.memory.impl;
+package com.zhuri.coding.content.service.ai.memory.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.common.redis.CacheService;
-import com.heima.content.service.ai.memory.AiConversationMemoryService;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.content.service.ai.memory.AiConversationMemoryService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -70,11 +70,11 @@ public class RedisConversationMemoryService implements AiConversationMemoryServi
 
     /** 统一 LLM 出口（P2-3b 摘要压缩走 gateway：安全横切 + token 计量）；未注入（纯单测）时跳过压缩 */
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     /** Prompt 注册表（P2-1）：memory_compress 提示词可热更；未注入时走代码兜底 */
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+    private com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
 
     /** 压缩专用单线程池（串行化；超载丢弃任务，下次 appendTurn 再触发） */
     @Autowired
@@ -204,7 +204,7 @@ public class RedisConversationMemoryService implements AiConversationMemoryServi
             String sys = COMPRESS_SYSTEM_FALLBACK;
             if (promptRegistry != null) {
                 try {
-                    com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt p =
+                    com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt p =
                         promptRegistry.resolve("memory_compress", COMPRESS_SYSTEM_FALLBACK, userId);
                     if (p != null && p.content != null && !p.content.isBlank()) {
                         sys = p.content;
@@ -213,7 +213,7 @@ public class RedisConversationMemoryService implements AiConversationMemoryServi
                     // 注册表异常走代码兜底
                 }
             }
-            String summary = llmGateway.generateOrNull(com.heima.content.service.ai.AiFeatures.MEMORY_COMPRESS,
+            String summary = llmGateway.generateOrNull(com.zhuri.coding.content.service.ai.AiFeatures.MEMORY_COMPRESS,
                 sys, truncate(dialog.toString(), DIALOG_MAX_CHARS), null, null);
             if (summary == null || summary.isBlank()) {
                 log.info("[AiMemory] 摘要生成失败，本次放弃压缩（下次再触发），userId={}", userId);

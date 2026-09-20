@@ -1,4 +1,4 @@
-package com.heima.common.redis;
+package com.zhuri.coding.common.redis;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;

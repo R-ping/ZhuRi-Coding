@@ -1,8 +1,8 @@
-package com.heima.user.controller.v1;
+package com.zhuri.coding.user.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.UserSearchDto;
-import com.heima.user.service.ApUserService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.UserSearchDto;
+import com.zhuri.coding.user.service.ApUserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

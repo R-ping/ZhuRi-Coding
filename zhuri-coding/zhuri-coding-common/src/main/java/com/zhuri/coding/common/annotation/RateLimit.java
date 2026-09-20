@@ -1,4 +1,4 @@
-package com.heima.common.annotation;
+package com.zhuri.coding.common.annotation;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Repeatable;

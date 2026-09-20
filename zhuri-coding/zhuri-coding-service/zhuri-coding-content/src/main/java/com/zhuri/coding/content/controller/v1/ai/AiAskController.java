@@ -1,15 +1,15 @@
-package com.heima.content.controller.v1.ai;
+package com.zhuri.coding.content.controller.v1.ai;
 
-import com.heima.common.annotation.RateLimit;
-import com.heima.content.service.ai.AiAskService;
-import com.heima.content.service.ai.PublishAssistantService;
-import com.heima.model.article.dtos.AiAnswerVo;
-import com.heima.model.article.dtos.AiAskDto;
-import com.heima.model.article.dtos.AiPrecheckDto;
-import com.heima.model.article.dtos.AiPrecheckVo;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.content.service.ai.AiAskService;
+import com.zhuri.coding.content.service.ai.PublishAssistantService;
+import com.zhuri.coding.model.article.dtos.AiAnswerVo;
+import com.zhuri.coding.model.article.dtos.AiAskDto;
+import com.zhuri.coding.model.article.dtos.AiPrecheckDto;
+import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,38 +31,38 @@ public class AiAskController {
     private AiAskService aiAskService;
 
     @Autowired
-    private com.heima.content.service.ai.impl.AiAskServiceImpl aiAskServiceImpl;
+    private com.zhuri.coding.content.service.ai.impl.AiAskServiceImpl aiAskServiceImpl;
 
     @Autowired
     private PublishAssistantService publishAssistantService;
 
     /** 意图路由（P2 Routing：闲聊/技术问答二分类，闲聊短路不消耗配额） */
     @Autowired
-    private com.heima.content.service.ai.AskQueryRouter askQueryRouter;
+    private com.zhuri.coding.content.service.ai.AskQueryRouter askQueryRouter;
 
     /** 统一 LLM 出口（探针端点 frame-ping/tools-ping 走这里，保持全仓库 LLM 调用单一出口） */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     /** 消费漏斗计（发起/缓存命中/检索/生成/反馈 按天聚合） */
     @Autowired
-    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+    private com.zhuri.coding.content.service.ai.AiFunnelMeter funnelMeter;
 
     @Autowired
-    private com.heima.content.service.ai.spring.AiSafetyTools aiSafetyTools;
+    private com.zhuri.coding.content.service.ai.spring.AiSafetyTools aiSafetyTools;
 
     /** MCP 工具目录（P2-8）：fail-open 聚合社区 stdio server 暴露的外部工具 */
     @Autowired
-    private com.heima.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
+    private com.zhuri.coding.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
 
     @Autowired
-    private com.heima.content.service.ai.AiQuotaService aiQuotaService;
+    private com.zhuri.coding.content.service.ai.AiQuotaService aiQuotaService;
 
     @Autowired
-    private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
+    private com.zhuri.coding.content.service.ai.AiMetricsCollector aiMetricsCollector;
 
     @Autowired
-    private com.heima.content.service.ai.memory.AiConversationMemoryService conversationMemoryService;
+    private com.zhuri.coding.content.service.ai.memory.AiConversationMemoryService conversationMemoryService;
 
     /** SSE 流式问答专用线程池（见 AiAsyncConfig），隔离 LLM 长时间阻塞与公共 ForkJoinPool */
     @org.springframework.beans.factory.annotation.Autowired
@@ -138,8 +138,8 @@ public class AiAskController {
             return emitter;
         }
         // 消费漏斗：入口打点（配额通过 = 真正开始消耗；SSE 也不记 precheck）
-        funnelMeter.incr(com.heima.content.service.ai.AiFeatures.ASK_STREAM,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_STARTED);
+        funnelMeter.incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK_STREAM,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_STARTED);
         // 异步执行：立即返回 emitter，流式事件在工作线程逐步发送
         String question = dto.getQuestion();
         Integer topK = dto.getTopK();
@@ -154,7 +154,7 @@ public class AiAskController {
         emitter.onError(t -> cancelled.set(true));
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
-                com.heima.model.article.dtos.AiAnswerVo vo = aiAskService.streamFastAsk(question, topK, dto.getHistory(),
+                com.zhuri.coding.model.article.dtos.AiAnswerVo vo = aiAskService.streamFastAsk(question, topK, dto.getHistory(),
                     delta -> {
                         if (cancelled.get()) {
                             throw new java.util.concurrent.CancellationException("client aborted");
@@ -304,7 +304,7 @@ public class AiAskController {
         }
         // Routing（二分类）：闲聊短路——不消耗配额、不打漏斗、不落记忆，仅给引导话术；fast 保持快通道不受影响
         if (!Boolean.TRUE.equals(dto.getFast())
-                && askQueryRouter.intent(dto.getQuestion()) == com.heima.content.service.ai.AskQueryRouter.Intent.CHAT) {
+                && askQueryRouter.intent(dto.getQuestion()) == com.zhuri.coding.content.service.ai.AskQueryRouter.Intent.CHAT) {
             return ResponseResult.okResult(chatHintVo());
         }
         // AI 每日免费配额 → 钱包额度包（免费优先）
@@ -314,9 +314,9 @@ public class AiAskController {
         }
         // 消费漏斗：入口打点（配额通过且参数合法 = 真正开始消耗；fast 模式记 ask_fast 便于区分成本档位）
         funnelMeter.incr(Boolean.TRUE.equals(dto.getFast())
-                        ? com.heima.content.service.ai.AiFeatures.ASK_FAST
-                        : com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_STARTED);
+                        ? com.zhuri.coding.content.service.ai.AiFeatures.ASK_FAST
+                        : com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_STARTED);
         try {
             AiAnswerVo vo = aiAskService.ask(dto.getQuestion(), dto.getTopK(), dto.getFast(), dto.getHistory());
             if (vo == null) {
@@ -330,8 +330,8 @@ public class AiAskController {
     }
 
     /** 闲聊引导话术（Routing 短路）：不消耗配额/不打漏斗/不落记忆 */
-    private com.heima.model.article.dtos.AiAnswerVo chatHintVo() {
-        com.heima.model.article.dtos.AiAnswerVo vo = new com.heima.model.article.dtos.AiAnswerVo();
+    private com.zhuri.coding.model.article.dtos.AiAnswerVo chatHintVo() {
+        com.zhuri.coding.model.article.dtos.AiAnswerVo vo = new com.zhuri.coding.model.article.dtos.AiAnswerVo();
         vo.setAnswer("我是《逐日 Coding》社区的知识助手，专注技术问答（覆盖社区文章与课程相关知识点）。"
             + "刚才这句看起来像寒暄，我不消耗你的免费额度——换个技术问题试试吧，例如“Redis 分布式锁怎么实现？”");
         vo.setSources(new java.util.ArrayList<>());

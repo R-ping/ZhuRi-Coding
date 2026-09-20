@@ -1,4 +1,4 @@
-package com.heima.reward.entity;
+package com.zhuri.coding.reward.entity;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;

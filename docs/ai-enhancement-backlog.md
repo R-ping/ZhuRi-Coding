@@ -115,7 +115,7 @@
 
 ### 🥈 P1-1 无熔断：LLM 挂了每个请求都走满超时
 
-**证据**：`heima-leadnews-service/pom.xml:72` Sentinel 依赖**被注释**；全仓无 resilience4j / CircuitBreaker。
+**证据**：`zhuri-coding-service/pom.xml:72` Sentinel 依赖**被注释**；全仓无 resilience4j / CircuitBreaker。
 **影响**：AI 链路全靠 try-catch fail-open（正确），但**故障期间每个请求仍会建立连接→等超时**，Tomcat 线程被拖满，进而**拖垮非 AI 接口**（AI 故障扩散成全站故障）。
 **落地**（半天）
 - 轻量自研（推荐，零新依赖）：Redis 记连续失败数，阈值触发「打开 30s → 半开单请求试探 → 成功即关闭」；LLM 与 embedding **分别独立熔断**（embedding 挂了不代表 LLM 挂）；

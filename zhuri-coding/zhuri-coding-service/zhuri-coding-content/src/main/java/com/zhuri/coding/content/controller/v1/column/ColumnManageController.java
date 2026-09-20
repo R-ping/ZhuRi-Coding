@@ -1,8 +1,8 @@
-package com.heima.content.controller.v1.column;
+package com.zhuri.coding.content.controller.v1.column;
 
-import com.heima.content.service.column.ColumnService;
-import com.heima.model.column.pojos.ApColumn;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.service.column.ColumnService;
+import com.zhuri.coding.model.column.pojos.ApColumn;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

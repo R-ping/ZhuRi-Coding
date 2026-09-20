@@ -1,9 +1,9 @@
-package com.heima.reward.controller.v1;
+package com.zhuri.coding.reward.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.reward.service.CheckinService;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.reward.service.CheckinService;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

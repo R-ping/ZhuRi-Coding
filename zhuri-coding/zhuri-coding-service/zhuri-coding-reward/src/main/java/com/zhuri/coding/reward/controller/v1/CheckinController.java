@@ -1,9 +1,9 @@
-package com.heima.reward.controller.v1;
+package com.zhuri.coding.reward.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.utils.thread.AppThreadLocalUtil;
-import com.heima.reward.service.CheckinService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.reward.service.CheckinService;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;

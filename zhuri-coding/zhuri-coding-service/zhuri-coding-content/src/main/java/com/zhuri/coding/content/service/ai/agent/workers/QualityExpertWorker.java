@@ -1,7 +1,7 @@
-package com.heima.content.service.ai.agent.workers;
+package com.zhuri.coding.content.service.ai.agent.workers;
 
-import com.heima.content.service.ai.skill.AiSkill;
-import com.heima.content.service.ai.skill.AiSkillRegistry;
+import com.zhuri.coding.content.service.ai.skill.AiSkill;
+import com.zhuri.coding.content.service.ai.skill.AiSkillRegistry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;

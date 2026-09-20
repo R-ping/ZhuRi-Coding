@@ -1,8 +1,8 @@
-package com.heima.content.mapper.interaction;
+package com.zhuri.coding.content.mapper.interaction;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.article.dtos.ArticleInteractionCountDTO;
-import com.heima.model.behavior.pojos.ApArticleExposure;
+import com.zhuri.coding.model.article.dtos.ArticleInteractionCountDTO;
+import com.zhuri.coding.model.behavior.pojos.ApArticleExposure;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;

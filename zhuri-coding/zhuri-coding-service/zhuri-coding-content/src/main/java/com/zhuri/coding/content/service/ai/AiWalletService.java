@@ -1,4 +1,4 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
 /**
  * AI 额度钱包（免费额度优先兜底：每日免费额度用尽后扣减钱包余额）

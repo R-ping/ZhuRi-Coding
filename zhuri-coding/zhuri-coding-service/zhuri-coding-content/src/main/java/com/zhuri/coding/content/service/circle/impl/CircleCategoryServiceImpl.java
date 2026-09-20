@@ -1,12 +1,12 @@
-package com.heima.content.service.circle.impl;
+package com.zhuri.coding.content.service.circle.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.circle.ApCircleCategoryMapper;
-import com.heima.content.mapper.circle.ApCircleMapper;
-import com.heima.content.service.circle.CircleCategoryService;
-import com.heima.model.circle.pojos.ApCircle;
-import com.heima.model.circle.pojos.ApCircleCategory;
-import com.heima.model.circle.vos.CircleCategoryVO;
+import com.zhuri.coding.content.mapper.circle.ApCircleCategoryMapper;
+import com.zhuri.coding.content.mapper.circle.ApCircleMapper;
+import com.zhuri.coding.content.service.circle.CircleCategoryService;
+import com.zhuri.coding.model.circle.pojos.ApCircle;
+import com.zhuri.coding.model.circle.pojos.ApCircleCategory;
+import com.zhuri.coding.model.circle.vos.CircleCategoryVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

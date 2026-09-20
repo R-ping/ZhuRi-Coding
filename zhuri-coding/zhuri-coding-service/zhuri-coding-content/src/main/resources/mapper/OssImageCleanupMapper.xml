@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.heima.content.mapper.OssImageCleanupMapper">
+<mapper namespace="com.zhuri.coding.content.mapper.OssImageCleanupMapper">
 
     <select id="findArticleCoverImages" resultType="java.lang.String">
         <!-- 已发布/将要发布的文章封面才需保留；用 publish_time 而非 created_time，

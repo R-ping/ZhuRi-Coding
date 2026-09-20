@@ -1,4 +1,4 @@
-package com.heima.model.search.vos;
+package com.zhuri.coding.model.search.vos;
 
 import lombok.Data;
 

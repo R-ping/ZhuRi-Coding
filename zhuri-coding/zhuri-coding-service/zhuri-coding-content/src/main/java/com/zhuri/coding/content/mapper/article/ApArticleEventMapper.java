@@ -1,7 +1,7 @@
-package com.heima.content.mapper.article;
+package com.zhuri.coding.content.mapper.article;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.article.pojos.ArticleEvent;
+import com.zhuri.coding.model.article.pojos.ArticleEvent;
 import java.util.List;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;

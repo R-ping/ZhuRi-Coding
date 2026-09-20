@@ -1,15 +1,15 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
 import cn.hutool.json.JSONUtil;
-import com.heima.apis.search.ISearchClient;
-import com.heima.common.constants.ArticleConstants;
-import com.heima.content.mapper.article.ApArticleEventMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.article.ApArticleEventService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ArticleEvent;
-import com.heima.model.search.vos.SearchArticleVo;
+import com.zhuri.coding.apis.search.ISearchClient;
+import com.zhuri.coding.common.constants.ArticleConstants;
+import com.zhuri.coding.content.mapper.article.ApArticleEventMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.article.ApArticleEventService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.article.pojos.ArticleEvent;
+import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.util.Date;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -2,7 +2,7 @@ server:
   port: 51807
 spring:
   application:
-    name: leadnews-notification
+    name: zhuri-coding-notification
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/leadnews_notification?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
@@ -29,7 +29,7 @@ mybatis-plus:
       update-strategy: not_null
       id-type: auto
   mapper-locations: classpath*:mapper/*.xml
-  type-aliases-package: com.heima.model.notification.pojos
+  type-aliases-package: com.zhuri.coding.model.notification.pojos
 
 # 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
 management:
@@ -46,4 +46,4 @@ management:
 # 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
 app:
   internal-auth:
-    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}

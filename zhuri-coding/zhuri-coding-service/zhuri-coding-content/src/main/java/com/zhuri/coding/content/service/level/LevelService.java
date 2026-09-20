@@ -1,7 +1,7 @@
-package com.heima.content.service.level;
+package com.zhuri.coding.content.service.level;
 
-import com.heima.model.level.pojos.ApLevelConfig;
-import com.heima.model.level.pojos.ApUserLevel;
+import com.zhuri.coding.model.level.pojos.ApLevelConfig;
+import com.zhuri.coding.model.level.pojos.ApUserLevel;
 
 import java.math.BigDecimal;
 import java.util.List;

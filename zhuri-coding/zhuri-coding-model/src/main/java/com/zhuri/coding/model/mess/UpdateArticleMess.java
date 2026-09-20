@@ -1,4 +1,4 @@
-package com.heima.model.mess;
+package com.zhuri.coding.model.mess;
 
 import lombok.Data;
 

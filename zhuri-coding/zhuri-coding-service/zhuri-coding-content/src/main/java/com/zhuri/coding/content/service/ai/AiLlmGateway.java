@@ -1,7 +1,7 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
-import com.heima.content.service.ai.spring.SafetyGuardException;
+import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -49,7 +49,7 @@ public class AiLlmGateway {
 
     /** 功能级模型路由（feature → 模型）；未装配时回退注入的默认 chatModel */
     @Autowired(required = false)
-    private com.heima.content.service.ai.router.AiModelRouter modelRouter;
+    private com.zhuri.coding.content.service.ai.router.AiModelRouter modelRouter;
 
     @Autowired
     private PromptSafetyAdvisor promptSafetyAdvisor;
@@ -408,7 +408,7 @@ public class AiLlmGateway {
 
     /** 当前登录用户（网关/控制器已把用户放入 ThreadLocal） */
     private Integer currentUserId() {
-        com.heima.model.user.pojos.ApUser u = com.heima.utils.thread.AppThreadLocalUtil.getUser();
+        com.zhuri.coding.model.user.pojos.ApUser u = com.zhuri.coding.utils.thread.AppThreadLocalUtil.getUser();
         return u == null ? null : u.getId();
     }
 

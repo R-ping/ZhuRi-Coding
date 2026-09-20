@@ -1,12 +1,12 @@
-package com.heima.content.controller.v1.article;
+package com.zhuri.coding.content.controller.v1.article;
 
-import com.heima.common.annotation.RateLimit;
-import com.heima.content.service.article.ApArticleRecommendService;
-import com.heima.content.service.article.ApArticleService;
-import com.heima.common.constants.ArticleConstants;
-import com.heima.model.article.dtos.ArticleHomeDto;
-import com.heima.model.article.dtos.ArticleRecommendDto;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.content.service.article.ApArticleRecommendService;
+import com.zhuri.coding.content.service.article.ApArticleService;
+import com.zhuri.coding.common.constants.ArticleConstants;
+import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
+import com.zhuri.coding.model.article.dtos.ArticleRecommendDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

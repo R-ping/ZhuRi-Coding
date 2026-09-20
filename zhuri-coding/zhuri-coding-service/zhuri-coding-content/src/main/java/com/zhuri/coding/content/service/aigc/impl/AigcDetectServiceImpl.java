@@ -1,22 +1,22 @@
-package com.heima.content.service.aigc.impl;
+package com.zhuri.coding.content.service.aigc.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.mapper.aigc.AigcRecordMapper;
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.course.ApCourseChapterMapper;
-import com.heima.content.mapper.pins.ApPinsMapper;
-import com.heima.content.service.aigc.AigcDetectService;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.model.aigc.pojos.AigcRecord;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ApArticleContent;
-import com.heima.model.article.pojos.ApArticleEmbedding;
-import com.heima.model.course.pojos.ApCourseChapter;
-import com.heima.model.pins.pojos.ApPins;
+import com.zhuri.coding.content.mapper.aigc.AigcRecordMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.course.ApCourseChapterMapper;
+import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
+import com.zhuri.coding.content.service.aigc.AigcDetectService;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.model.aigc.pojos.AigcRecord;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.model.article.pojos.ApArticleEmbedding;
+import com.zhuri.coding.model.course.pojos.ApCourseChapter;
+import com.zhuri.coding.model.pins.pojos.ApPins;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -91,7 +91,7 @@ public class AigcDetectServiceImpl implements AigcDetectService {
 
     /** 统一 LLM 出口（安全横切 + token 计量） */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
     @Autowired
     @Qualifier("aiSseExecutor")
     private Executor aiSseExecutor;
@@ -298,7 +298,7 @@ public class AigcDetectServiceImpl implements AigcDetectService {
                 + "{\"verdict\":\"normal\"|\"suspicious\",\"score\":0-100,\"reason\":\"不超过40字理由\"}";
             String user = (title == null || title.isBlank() ? "" : "标题：" + title + "\n")
                 + (text.length() > REVIEW_CHARS ? text.substring(0, REVIEW_CHARS) : text);
-            String raw = llmGateway.generateOrNull(com.heima.content.service.ai.AiFeatures.AIGC_DETECT,
+            String raw = llmGateway.generateOrNull(com.zhuri.coding.content.service.ai.AiFeatures.AIGC_DETECT,
                 sys, user, null, null);
             if (raw == null || raw.isBlank()) {
                 return null;

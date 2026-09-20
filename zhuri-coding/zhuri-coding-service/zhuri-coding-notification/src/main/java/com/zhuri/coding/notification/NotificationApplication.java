@@ -1,4 +1,4 @@
-package com.heima.notification;
+package com.zhuri.coding.notification;
 
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -11,11 +11,11 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableAsync;
 
-@SpringBootApplication(scanBasePackages = "com.heima")
+@SpringBootApplication(scanBasePackages = "com.zhuri.coding")
 @EnableDiscoveryClient
-@MapperScan("com.heima.notification.mapper")
+@MapperScan("com.zhuri.coding.notification.mapper")
 @EnableAsync
-@EnableFeignClients(basePackages = "com.heima.apis")
+@EnableFeignClients(basePackages = "com.zhuri.coding.apis")
 public class NotificationApplication {
     public static void main(String[] args) {
         SpringApplication.run(NotificationApplication.class, args);

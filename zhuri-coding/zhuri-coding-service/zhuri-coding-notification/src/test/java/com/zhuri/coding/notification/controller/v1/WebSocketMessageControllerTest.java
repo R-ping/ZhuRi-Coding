@@ -1,9 +1,9 @@
-package com.heima.notification.controller.v1;
+package com.zhuri.coding.notification.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.notification.service.ImService;
-import com.heima.notification.websocket.SessionManager;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.notification.service.ImService;
+import com.zhuri.coding.notification.websocket.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

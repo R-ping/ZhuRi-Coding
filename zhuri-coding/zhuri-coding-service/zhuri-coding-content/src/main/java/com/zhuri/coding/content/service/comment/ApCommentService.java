@@ -1,8 +1,8 @@
-package com.heima.content.service.comment;
+package com.zhuri.coding.content.service.comment;
 
-import com.heima.model.comment.dtos.CommentDto;
-import com.heima.model.comment.dtos.CommentManageDto;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.comment.dtos.CommentDto;
+import com.zhuri.coding.model.comment.dtos.CommentManageDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 import java.util.List;
 

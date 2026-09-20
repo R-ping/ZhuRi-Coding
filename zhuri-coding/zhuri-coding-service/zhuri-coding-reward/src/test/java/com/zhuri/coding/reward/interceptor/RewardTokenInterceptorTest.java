@@ -1,8 +1,8 @@
-package com.heima.reward.interceptor;
+package com.zhuri.coding.reward.interceptor;
 
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.common.AppJwtUtil;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.common.AppJwtUtil;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;

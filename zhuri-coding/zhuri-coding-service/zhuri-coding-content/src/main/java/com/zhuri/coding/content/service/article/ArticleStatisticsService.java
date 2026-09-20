@@ -1,6 +1,6 @@
-package com.heima.content.service.article;
+package com.zhuri.coding.content.service.article;
 
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 public interface ArticleStatisticsService {
 

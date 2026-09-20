@@ -1,9 +1,9 @@
-package com.heima.content.mapper.article;
+package com.zhuri.coding.content.mapper.article;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.article.dtos.ArticleHomeDto;
-import com.heima.model.article.dtos.TagCountDTO;
-import com.heima.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
+import com.zhuri.coding.model.article.dtos.TagCountDTO;
+import com.zhuri.coding.model.article.pojos.ApArticle;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;

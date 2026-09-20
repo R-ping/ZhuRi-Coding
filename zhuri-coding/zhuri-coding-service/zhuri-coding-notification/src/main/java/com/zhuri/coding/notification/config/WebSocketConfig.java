@@ -1,7 +1,7 @@
-package com.heima.notification.config;
+package com.zhuri.coding.notification.config;
 
-import com.heima.notification.websocket.AuthHandshakeInterceptor;
-import com.heima.notification.websocket.UserInterceptor;
+import com.zhuri.coding.notification.websocket.AuthHandshakeInterceptor;
+import com.zhuri.coding.notification.websocket.UserInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;

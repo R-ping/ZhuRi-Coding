@@ -1,11 +1,11 @@
-package com.heima.content.service.hot.impl;
+package com.zhuri.coding.content.service.hot.impl;
 
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.mapper.interaction.ApCollectionMapper;
-import com.heima.model.article.vos.HotArticleVo;
-import com.heima.model.article.vos.HotAuthorVo;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
+import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
+import com.zhuri.coding.model.article.vos.HotArticleVo;
+import com.zhuri.coding.model.article.vos.HotAuthorVo;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

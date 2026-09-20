@@ -1,8 +1,8 @@
-package com.heima.search.interceptor;
+package com.zhuri.coding.search.interceptor;
 
-import com.heima.common.auth.InternalAuthSigner;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.common.auth.InternalAuthSigner;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;

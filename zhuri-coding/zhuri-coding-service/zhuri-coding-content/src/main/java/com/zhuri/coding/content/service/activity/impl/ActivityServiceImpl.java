@@ -1,12 +1,12 @@
-package com.heima.content.service.activity.impl;
+package com.zhuri.coding.content.service.activity.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.heima.content.mapper.activity.ApActivityMapper;
-import com.heima.content.service.activity.ActivityService;
-import com.heima.model.activity.pojos.ApActivity;
-import com.heima.model.activity.vos.ActivityVO;
+import com.zhuri.coding.content.mapper.activity.ApActivityMapper;
+import com.zhuri.coding.content.service.activity.ActivityService;
+import com.zhuri.coding.model.activity.pojos.ApActivity;
+import com.zhuri.coding.model.activity.vos.ActivityVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,4 +1,4 @@
-package com.heima.content.controller.v1.comment;
+package com.zhuri.coding.content.controller.v1.comment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -11,13 +11,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.common.auth.InternalAuthSigner;
-import com.heima.content.mapper.comment.ApCommentLikeMapper;
-import com.heima.content.mapper.comment.ApCommentMapper;
-import com.heima.content.service.comment.impl.CommentAuditService;
-import com.heima.model.comment.pojos.ApComment;
-import com.heima.model.comment.pojos.ApCommentLike;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.common.auth.InternalAuthSigner;
+import com.zhuri.coding.content.mapper.comment.ApCommentLikeMapper;
+import com.zhuri.coding.content.mapper.comment.ApCommentMapper;
+import com.zhuri.coding.content.service.comment.impl.CommentAuditService;
+import com.zhuri.coding.model.comment.pojos.ApComment;
+import com.zhuri.coding.model.comment.pojos.ApCommentLike;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -76,10 +76,10 @@ class ArticleCommentE2ETest {
 
     /** 替换延迟/关单消费组件，避免其 @PostConstruct 启动真实消费者线程（测试环境无 Redis，也无需这些任务消费者） */
     @MockBean
-    private com.heima.content.schedule.listener.RedissonDelayQueue redissonDelayQueue;
+    private com.zhuri.coding.content.schedule.listener.RedissonDelayQueue redissonDelayQueue;
 
     @MockBean
-    private com.heima.content.service.order.impl.OrderTimeoutTask orderTimeoutTask;
+    private com.zhuri.coding.content.service.order.impl.OrderTimeoutTask orderTimeoutTask;
 
     /** 独立测试文章ID（虚拟值，不与真实数据冲突） */
     private static final Long TEST_ARTICLE_ID = 9000000000000000001L;

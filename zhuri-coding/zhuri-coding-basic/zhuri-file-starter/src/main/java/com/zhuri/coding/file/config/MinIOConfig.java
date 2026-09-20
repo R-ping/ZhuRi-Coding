@@ -1,4 +1,4 @@
-package com.heima.file.config;
+package com.zhuri.coding.file.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

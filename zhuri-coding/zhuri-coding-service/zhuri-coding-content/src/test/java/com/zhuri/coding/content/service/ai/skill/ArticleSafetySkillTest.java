@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.skill;
+package com.zhuri.coding.content.service.ai.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -9,10 +9,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.content.service.ai.AiFeatures;
-import com.heima.content.service.ai.AiLlmGateway;
-import com.heima.content.service.ai.AiPromptRegistry;
-import com.heima.content.service.ai.agent.tools.ContentSafetyTool;
+import com.zhuri.coding.content.service.ai.AiFeatures;
+import com.zhuri.coding.content.service.ai.AiLlmGateway;
+import com.zhuri.coding.content.service.ai.AiPromptRegistry;
+import com.zhuri.coding.content.service.ai.agent.tools.ContentSafetyTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,6 +1,6 @@
-package com.heima.content.config;
+package com.zhuri.coding.content.config;
 
-import com.heima.content.interceptor.ContentTokenInterceptor;
+import com.zhuri.coding.content.interceptor.ContentTokenInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;

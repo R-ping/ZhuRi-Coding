@@ -1,12 +1,12 @@
-package com.heima.content.service.article;
+package com.zhuri.coding.content.service.article;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.heima.common.constants.ArticleConstants;
-import com.heima.content.mapper.article.ApArticleAuditRecordMapper;
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleAuditRecord;
-import com.heima.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.common.constants.ArticleConstants;
+import com.zhuri.coding.content.mapper.article.ApArticleAuditRecordMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticleAuditRecord;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

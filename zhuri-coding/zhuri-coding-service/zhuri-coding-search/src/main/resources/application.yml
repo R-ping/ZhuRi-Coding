@@ -2,7 +2,7 @@ server:
   port: 51804
 spring:
   application:
-    name: leadnews-search
+    name: zhuri-coding-search
   autoconfigure:
     exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
   data:
@@ -11,7 +11,7 @@ spring:
 #      password: 123456
       host: 127.0.0.1
       port: 27017
-      database: leadnews-history
+      database: zhuri-coding-history
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
@@ -42,4 +42,4 @@ management:
 # 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
 app:
   internal-auth:
-    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}

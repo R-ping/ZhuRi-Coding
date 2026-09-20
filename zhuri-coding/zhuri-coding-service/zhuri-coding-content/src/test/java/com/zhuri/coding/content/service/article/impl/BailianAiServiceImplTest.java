@@ -1,12 +1,12 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
-import com.heima.content.mapper.article.ApArticleAiAnalysisMapper;
-import com.heima.content.model.ai.ArticleAuditResult;
-import com.heima.content.model.ai.ViolationCheckResult;
-import com.heima.common.bailian.PromptSanitizer;
-import com.heima.common.bailian.StructuredOutputInvoker;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleAiAnalysis;
+import com.zhuri.coding.content.mapper.article.ApArticleAiAnalysisMapper;
+import com.zhuri.coding.content.model.ai.ArticleAuditResult;
+import com.zhuri.coding.content.model.ai.ViolationCheckResult;
+import com.zhuri.coding.common.bailian.PromptSanitizer;
+import com.zhuri.coding.common.bailian.StructuredOutputInvoker;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticleAiAnalysis;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,4 +1,4 @@
-package com.heima.model.audit.dtos;
+package com.zhuri.coding.model.audit.dtos;
 
 import lombok.Data;
 

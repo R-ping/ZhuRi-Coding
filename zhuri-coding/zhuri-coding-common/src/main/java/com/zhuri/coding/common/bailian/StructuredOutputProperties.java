@@ -1,4 +1,4 @@
-package com.heima.common.bailian;
+package com.zhuri.coding.common.bailian;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

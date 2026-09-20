@@ -1,24 +1,24 @@
-package com.heima.content.service.order.impl;
+package com.zhuri.coding.content.service.order.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.heima.content.mapper.course.ApCourseMapper;
-import com.heima.content.mapper.course.ApCourseOrderMapper;
-import com.heima.content.mapper.course.ApUserCourseMapper;
-import com.heima.apis.reward.IRewardClient;
-import com.heima.content.service.order.DiscountService;
-import com.heima.content.service.order.OrderService;
-import com.heima.content.service.outbox.OutboxService;
-import com.heima.content.service.outbox.handler.PayRewardOutboxHandler;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.course.pojos.ApCourse;
-import com.heima.model.course.pojos.ApCourseDiscount;
-import com.heima.model.course.pojos.ApCourseOrder;
-import com.heima.model.course.pojos.ApCourseOrder.PayType;
-import com.heima.model.user.pojos.ApUserCourse;
+import com.zhuri.coding.content.mapper.course.ApCourseMapper;
+import com.zhuri.coding.content.mapper.course.ApCourseOrderMapper;
+import com.zhuri.coding.content.mapper.course.ApUserCourseMapper;
+import com.zhuri.coding.apis.reward.IRewardClient;
+import com.zhuri.coding.content.service.order.DiscountService;
+import com.zhuri.coding.content.service.order.OrderService;
+import com.zhuri.coding.content.service.outbox.OutboxService;
+import com.zhuri.coding.content.service.outbox.handler.PayRewardOutboxHandler;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.course.pojos.ApCourse;
+import com.zhuri.coding.model.course.pojos.ApCourseDiscount;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder.PayType;
+import com.zhuri.coding.model.user.pojos.ApUserCourse;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -61,7 +61,7 @@ class OrderServiceImplTest {
     @Mock
     private ApCourseMapper courseMapper;
     @Mock
-    private com.heima.content.mapper.course.ApCourseChapterMapper courseChapterMapper;
+    private com.zhuri.coding.content.mapper.course.ApCourseChapterMapper courseChapterMapper;
     @Mock
     private ApUserCourseMapper userCourseMapper;
     @Mock

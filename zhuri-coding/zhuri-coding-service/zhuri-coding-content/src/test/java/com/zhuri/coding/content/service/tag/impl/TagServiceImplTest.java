@@ -1,13 +1,13 @@
-package com.heima.content.service.tag.impl;
+package com.zhuri.coding.content.service.tag.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.tag.TagMapper;
-import com.heima.model.article.dtos.TagCountDTO;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.tag.pojos.ApTag;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.tag.TagMapper;
+import com.zhuri.coding.model.article.dtos.TagCountDTO;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.tag.pojos.ApTag;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

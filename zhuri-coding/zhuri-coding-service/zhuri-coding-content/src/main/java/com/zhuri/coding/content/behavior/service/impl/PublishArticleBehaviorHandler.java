@@ -1,12 +1,12 @@
-package com.heima.content.behavior.service.impl;
+package com.zhuri.coding.content.behavior.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.behavior.service.BehaviorHandler;
-import com.heima.content.mapper.user.UserBehaviorRecordMapper;
-import com.heima.model.behavior.BehaviorContext;
-import com.heima.model.behavior.BehaviorResult;
-import com.heima.model.behavior.BehaviorType;
-import com.heima.model.behavior.pojos.UserBehaviorRecord;
+import com.zhuri.coding.content.behavior.service.BehaviorHandler;
+import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
+import com.zhuri.coding.model.behavior.BehaviorContext;
+import com.zhuri.coding.model.behavior.BehaviorResult;
+import com.zhuri.coding.model.behavior.BehaviorType;
+import com.zhuri.coding.model.behavior.pojos.UserBehaviorRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;

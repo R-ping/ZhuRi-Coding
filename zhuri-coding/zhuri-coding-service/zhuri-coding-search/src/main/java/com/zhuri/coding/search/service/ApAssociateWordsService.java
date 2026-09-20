@@ -1,7 +1,7 @@
-package com.heima.search.service;
+package com.zhuri.coding.search.service;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.UserSearchDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.UserSearchDto;
 
 public interface ApAssociateWordsService {
 

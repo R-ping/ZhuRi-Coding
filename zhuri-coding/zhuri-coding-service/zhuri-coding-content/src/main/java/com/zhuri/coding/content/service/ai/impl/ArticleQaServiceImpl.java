@@ -1,13 +1,13 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.common.redis.CacheService;
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.ai.ArticleQaService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.ai.ArticleQaService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -73,22 +73,22 @@ public class ArticleQaServiceImpl implements ArticleQaService {
     private CacheService cacheService;
 
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     /** Prompt 注册表（P2-1）：单篇问答 prompt 版本化 + 兜底；单测未注入时走代码常量 */
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+    private com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
 
     /** 注册表解析（带 null 兜底） */
-    private com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
+    private com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt prompt(
         String key, String fallback) {
         if (promptRegistry == null) {
-            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+            return new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
         }
         try {
             return promptRegistry.resolve(key, fallback, null);
         } catch (Exception e) {
-            return new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
+            return new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(key, fallback, 0);
         }
     }
 
@@ -246,7 +246,7 @@ public class ArticleQaServiceImpl implements ArticleQaService {
     /** 同步生成统一入口（P0-2）：委托 gateway（安全 advisor + token 计量），本方法只构建记忆窗口 */
     private String genText(String systemPrompt, String user,
                            List<Map<String, String>> history) {
-        return llmGateway.generateOrNull(com.heima.content.service.ai.AiFeatures.ASK_ARTICLE,
+        return llmGateway.generateOrNull(com.zhuri.coding.content.service.ai.AiFeatures.ASK_ARTICLE,
             systemPrompt, user, buildConversationMemory(history), MEMORY_CONVERSATION_ID);
     }
 
@@ -254,7 +254,7 @@ public class ArticleQaServiceImpl implements ArticleQaService {
     private String genStream(String systemPrompt, String user,
                              List<Map<String, String>> history,
                              Consumer<String> onDelta) {
-        return llmGateway.generateStreamOrNull(com.heima.content.service.ai.AiFeatures.ASK_ARTICLE,
+        return llmGateway.generateStreamOrNull(com.zhuri.coding.content.service.ai.AiFeatures.ASK_ARTICLE,
             systemPrompt, user, buildConversationMemory(history), MEMORY_CONVERSATION_ID, onDelta);
     }
 

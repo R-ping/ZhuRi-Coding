@@ -1,11 +1,11 @@
-package com.heima.content.service.article;
+package com.zhuri.coding.content.service.article;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.heima.model.article.dtos.ArticleDto;
-import com.heima.model.article.dtos.ArticleHomeDto;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.mess.UpdateArticleMess;
+import com.zhuri.coding.model.article.dtos.ArticleDto;
+import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.mess.UpdateArticleMess;
 import java.util.List;
 import java.util.Map;
 

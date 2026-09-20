@@ -1,4 +1,4 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -36,10 +36,10 @@ class LevelActionServiceTransactionRegressionTest {
     private RedissonClient redissonClient;
 
     @MockBean
-    private com.heima.content.schedule.listener.RedissonDelayQueue redissonDelayQueue;
+    private com.zhuri.coding.content.schedule.listener.RedissonDelayQueue redissonDelayQueue;
 
     @MockBean
-    private com.heima.content.service.order.impl.OrderTimeoutTask orderTimeoutTask;
+    private com.zhuri.coding.content.service.order.impl.OrderTimeoutTask orderTimeoutTask;
 
     @Test
     @DisplayName("回归：@Transactional 必须标注在 public 入口而非内部重载（防事务自调用复发）")

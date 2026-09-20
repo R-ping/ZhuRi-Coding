@@ -1,8 +1,8 @@
-package com.heima.notification.service;
+package com.zhuri.coding.notification.service;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.notification.dtos.ImMessageDto;
-import com.heima.model.notification.dtos.ImReadDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.notification.dtos.ImMessageDto;
+import com.zhuri.coding.model.notification.dtos.ImReadDto;
 
 public interface ImService {
 

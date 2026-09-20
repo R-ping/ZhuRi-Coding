@@ -1,4 +1,4 @@
-package com.heima.model.pins.dtos;
+package com.zhuri.coding.model.pins.dtos;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;

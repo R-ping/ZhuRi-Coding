@@ -1,6 +1,6 @@
-package com.heima.content.service.order.impl;
+package com.zhuri.coding.content.service.order.impl;
 
-import com.heima.content.service.order.OrderService;
+import com.zhuri.coding.content.service.order.OrderService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.util.concurrent.ExecutorService;

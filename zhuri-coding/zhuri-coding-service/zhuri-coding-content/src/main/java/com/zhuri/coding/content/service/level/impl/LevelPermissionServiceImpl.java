@@ -1,11 +1,11 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.level.ApPermissionDefinitionMapper;
-import com.heima.content.mapper.level.ApUserPermissionMapper;
-import com.heima.content.service.level.LevelPermissionService;
-import com.heima.model.level.pojos.ApPermissionDefinition;
-import com.heima.model.level.pojos.ApUserPermission;
+import com.zhuri.coding.content.mapper.level.ApPermissionDefinitionMapper;
+import com.zhuri.coding.content.mapper.level.ApUserPermissionMapper;
+import com.zhuri.coding.content.service.level.LevelPermissionService;
+import com.zhuri.coding.model.level.pojos.ApPermissionDefinition;
+import com.zhuri.coding.model.level.pojos.ApUserPermission;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

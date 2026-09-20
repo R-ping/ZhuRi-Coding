@@ -1,6 +1,6 @@
-package com.heima.content.service.achievement;
+package com.zhuri.coding.content.service.achievement;
 
-import com.heima.model.achievement.vos.AchievementDataVO;
+import com.zhuri.coding.model.achievement.vos.AchievementDataVO;
 
 /**
  * 成就勋章判定服务 — 实时统计各维度数据与 ap_achievement 定义比对得出解锁状态

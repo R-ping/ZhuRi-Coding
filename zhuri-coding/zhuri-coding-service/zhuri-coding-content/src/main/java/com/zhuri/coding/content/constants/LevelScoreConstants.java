@@ -1,4 +1,4 @@
-package com.heima.content.constants;
+package com.zhuri.coding.content.constants;
 
 import java.util.HashMap;
 import java.util.Map;

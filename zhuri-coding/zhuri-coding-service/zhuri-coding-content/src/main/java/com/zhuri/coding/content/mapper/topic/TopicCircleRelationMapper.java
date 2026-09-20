@@ -1,7 +1,7 @@
-package com.heima.content.mapper.topic;
+package com.zhuri.coding.content.mapper.topic;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.article.pojos.TopicCircleRelation;
+import com.zhuri.coding.model.article.pojos.TopicCircleRelation;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper

@@ -1,8 +1,8 @@
 
-package com.heima.content.controller.v1.fans;
+package com.zhuri.coding.content.controller.v1.fans;
 
-import com.heima.content.service.fans.FansDataService;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.service.fans.FansDataService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

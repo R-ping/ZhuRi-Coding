@@ -1,6 +1,6 @@
-# leadnews-content 数据库脚本
+# zhuri-coding-content 数据库脚本
 
-本目录集中管理 `leadnews-content` 服务连接的数据库脚本。
+本目录集中管理 `zhuri-coding-content` 服务连接的数据库脚本。
 
 ## 数据库
 

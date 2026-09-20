@@ -1,4 +1,4 @@
-package com.heima.user.service;
+package com.zhuri.coding.user.service;
 
 /**
  * 手机验证码的发放、校验与消费。

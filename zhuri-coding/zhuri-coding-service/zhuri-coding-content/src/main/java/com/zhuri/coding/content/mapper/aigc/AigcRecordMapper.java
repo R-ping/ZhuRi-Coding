@@ -1,7 +1,7 @@
-package com.heima.content.mapper.aigc;
+package com.zhuri.coding.content.mapper.aigc;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.aigc.pojos.AigcRecord;
+import com.zhuri.coding.model.aigc.pojos.AigcRecord;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

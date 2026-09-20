@@ -1,9 +1,9 @@
-package com.heima.content.controller.v1;
+package com.zhuri.coding.content.controller.v1;
 
-import com.heima.content.service.course.ApCourseService;
-import com.heima.content.service.tag.TagService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.UserSearchDto;
+import com.zhuri.coding.content.service.course.ApCourseService;
+import com.zhuri.coding.content.service.tag.TagService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.UserSearchDto;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

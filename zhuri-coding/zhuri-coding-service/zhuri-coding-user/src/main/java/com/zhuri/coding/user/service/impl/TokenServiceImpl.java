@@ -1,10 +1,10 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
 import com.alibaba.fastjson.JSON;
-import com.heima.common.redis.CacheService;
-import com.heima.model.user.dtos.LoginResultVo;
-import com.heima.user.service.TokenService;
-import com.heima.utils.common.AppJwtUtil;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.model.user.dtos.LoginResultVo;
+import com.zhuri.coding.user.service.TokenService;
+import com.zhuri.coding.utils.common.AppJwtUtil;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;

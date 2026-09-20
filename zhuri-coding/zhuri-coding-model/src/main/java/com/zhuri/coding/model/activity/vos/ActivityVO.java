@@ -1,4 +1,4 @@
-package com.heima.model.activity.vos;
+package com.zhuri.coding.model.activity.vos;
 
 import lombok.Data;
 

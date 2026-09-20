@@ -1,9 +1,9 @@
-package com.heima.notification.controller.v1;
+package com.zhuri.coding.notification.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.notification.dtos.ImMessageDto;
-import com.heima.notification.service.ImService;
-import com.heima.notification.websocket.SessionManager;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.notification.dtos.ImMessageDto;
+import com.zhuri.coding.notification.service.ImService;
+import com.zhuri.coding.notification.websocket.SessionManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;

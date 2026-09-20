@@ -1,8 +1,8 @@
-//package com.heima.file.utils;
+//package com.zhuri.coding.file.utils;
 //
 //import cn.hutool.core.util.StrUtil;
-//import com.heima.file.config.MinIOConfig;
-//import com.heima.model.search.vos.SearchArticleVo;
+//import com.zhuri.coding.file.config.MinIOConfig;
+//import com.zhuri.coding.model.search.vos.SearchArticleVo;
 //import freemarker.template.Configuration;
 //import io.minio.GetObjectArgs;
 //import io.minio.MinioClient;

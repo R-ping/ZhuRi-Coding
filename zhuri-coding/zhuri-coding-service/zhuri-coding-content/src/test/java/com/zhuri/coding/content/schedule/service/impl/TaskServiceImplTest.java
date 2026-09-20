@@ -1,10 +1,10 @@
-package com.heima.content.schedule.service.impl;
+package com.zhuri.coding.content.schedule.service.impl;
 
-import com.heima.common.redis.CacheService;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.schedule.listener.RedissonDelayQueue;
-import com.heima.content.schedule.mapper.TaskinfoLogsMapper;
-import com.heima.model.schedule.pojos.TaskinfoLogs;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.schedule.listener.RedissonDelayQueue;
+import com.zhuri.coding.content.schedule.mapper.TaskinfoLogsMapper;
+import com.zhuri.coding.model.schedule.pojos.TaskinfoLogs;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;

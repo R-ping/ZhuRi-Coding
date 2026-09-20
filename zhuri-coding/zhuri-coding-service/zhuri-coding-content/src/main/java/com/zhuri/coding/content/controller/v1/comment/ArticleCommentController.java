@@ -1,9 +1,9 @@
-package com.heima.content.controller.v1.comment;
+package com.zhuri.coding.content.controller.v1.comment;
 
-import com.heima.content.service.comment.ApCommentService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.comment.ApCommentService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;

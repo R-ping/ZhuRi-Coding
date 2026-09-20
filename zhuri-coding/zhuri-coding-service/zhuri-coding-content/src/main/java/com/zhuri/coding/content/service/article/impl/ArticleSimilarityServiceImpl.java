@@ -1,9 +1,9 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
-import com.heima.content.service.article.ArticleSimilarityService;
-import com.heima.content.utils.MarkdownUtils;
-import com.heima.content.utils.TextChunker;
-import com.heima.model.article.pojos.ApArticle;
+import com.zhuri.coding.content.service.article.ArticleSimilarityService;
+import com.zhuri.coding.content.utils.MarkdownUtils;
+import com.zhuri.coding.content.utils.TextChunker;
+import com.zhuri.coding.model.article.pojos.ApArticle;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

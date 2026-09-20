@@ -1,4 +1,4 @@
-package com.heima.content.controller.v1.article;
+package com.zhuri.coding.content.controller.v1.article;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -11,16 +11,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
-import com.heima.content.mapper.interaction.ApCollectionMapper;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.behavior.pojos.ApBehaviorLikes;
-import com.heima.model.behavior.pojos.ApCollection;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.interaction.ApBehaviorLikesMapper;
+import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.behavior.pojos.ApBehaviorLikes;
+import com.zhuri.coding.model.behavior.pojos.ApCollection;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import java.util.Date;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;

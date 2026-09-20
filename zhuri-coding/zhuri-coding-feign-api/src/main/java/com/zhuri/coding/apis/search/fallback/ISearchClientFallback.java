@@ -1,9 +1,9 @@
-package com.heima.apis.search.fallback;
+package com.zhuri.coding.apis.search.fallback;
 
-import com.heima.apis.search.ISearchClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.Bm25RecallDto;
-import com.heima.model.search.vos.SearchArticleVo;
+import com.zhuri.coding.apis.search.ISearchClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
+import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.util.ArrayList;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

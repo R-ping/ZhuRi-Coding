@@ -1,10 +1,10 @@
-package com.heima.content.service.article.processor;
+package com.zhuri.coding.content.service.article.processor;
 
-import com.heima.common.constants.ArticleConstants;
-import com.heima.content.mapper.article.ApArticleConfigMapper;
-import com.heima.content.service.article.ArticleSimilarityService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleConfig;
+import com.zhuri.coding.common.constants.ArticleConstants;
+import com.zhuri.coding.content.mapper.article.ApArticleConfigMapper;
+import com.zhuri.coding.content.service.article.ArticleSimilarityService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticleConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

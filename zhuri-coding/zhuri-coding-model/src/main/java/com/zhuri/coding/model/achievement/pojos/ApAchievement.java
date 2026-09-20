@@ -1,4 +1,4 @@
-package com.heima.model.achievement.pojos;
+package com.zhuri.coding.model.achievement.pojos;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

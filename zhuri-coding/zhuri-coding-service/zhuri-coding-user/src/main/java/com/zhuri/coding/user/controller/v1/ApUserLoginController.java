@@ -1,14 +1,14 @@
-package com.heima.user.controller.v1;
+package com.zhuri.coding.user.controller.v1;
 
 import cn.hutool.core.util.StrUtil;
-import com.heima.common.annotation.RateLimit;
-import com.heima.common.redis.CacheService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.dtos.LoginDto;
-import com.heima.model.user.dtos.SocialBindDto;
-import com.heima.user.service.ApUserService;
-import com.heima.user.service.SocialLoginService;
+import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.dtos.LoginDto;
+import com.zhuri.coding.model.user.dtos.SocialBindDto;
+import com.zhuri.coding.user.service.ApUserService;
+import com.zhuri.coding.user.service.SocialLoginService;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;

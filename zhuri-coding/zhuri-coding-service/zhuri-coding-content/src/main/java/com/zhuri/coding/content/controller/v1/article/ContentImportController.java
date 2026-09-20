@@ -1,7 +1,7 @@
-package com.heima.content.controller.v1.article;
+package com.zhuri.coding.content.controller.v1.article;
 
-import com.heima.content.service.article.ContentImportService;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.service.article.ContentImportService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;

@@ -1,10 +1,10 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.ai.AiFeedbackMapper;
-import com.heima.content.service.ai.AiMetricsCollector;
-import com.heima.model.ai.pojos.AiFeedback;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.mapper.ai.AiFeedbackMapper;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
+import com.zhuri.coding.model.ai.pojos.AiFeedback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,7 +46,7 @@ class AiFeedbackServiceImplTest {
     @Mock
     private AiMetricsCollector metrics;
     @Mock
-    private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+    private com.zhuri.coding.content.service.ai.AiFunnelMeter funnelMeter;
 
     private AiFeedbackServiceImpl service;
 
@@ -78,9 +78,9 @@ class AiFeedbackServiceImplTest {
     @Test
     @DisplayName("record：非法参数（未登录/无效反馈值）→ PARAM_INVALID 且不落库")
     void testRecordInvalidParams() {
-        assertEquals(com.heima.model.common.enums.AppHttpCodeEnum.PARAM_INVALID.getCode(),
+        assertEquals(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.PARAM_INVALID.getCode(),
                 service.record(null, "ask", "", "q", "a", 1).getCode());
-        assertEquals(com.heima.model.common.enums.AppHttpCodeEnum.PARAM_INVALID.getCode(),
+        assertEquals(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.PARAM_INVALID.getCode(),
                 service.record(userId, "ask", "", "q", "a", 0).getCode());
         verify(feedbackMapper, times(0)).insert(any(AiFeedback.class));
     }
@@ -104,12 +104,12 @@ class AiFeedbackServiceImplTest {
     void testRecordFunnelUp() {
         when(feedbackMapper.selectOne(any())).thenReturn(null);
 
-        ResponseResult r = service.record(userId, com.heima.model.ai.pojos.AiFeedback.FEATURE_AIASK_GLOBAL,
-                "", "问题", "回答", com.heima.model.ai.pojos.AiFeedback.FEEDBACK_UP);
+        ResponseResult r = service.record(userId, com.zhuri.coding.model.ai.pojos.AiFeedback.FEATURE_AIASK_GLOBAL,
+                "", "问题", "回答", com.zhuri.coding.model.ai.pojos.AiFeedback.FEEDBACK_UP);
 
         assertEquals(200, r.getCode());
-        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP);
+        verify(funnelMeter).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP);
     }
 
     @Test
@@ -117,18 +117,18 @@ class AiFeedbackServiceImplTest {
     void testRecordFunnelDownAndOtherMapping() {
         when(feedbackMapper.selectOne(any())).thenReturn(null);
 
-        ResponseResult r = service.record(userId, com.heima.model.ai.pojos.AiFeedback.FEATURE_AIASK_ARTICLE,
-                "", "问题", "回答", com.heima.model.ai.pojos.AiFeedback.FEEDBACK_DOWN);
+        ResponseResult r = service.record(userId, com.zhuri.coding.model.ai.pojos.AiFeedback.FEATURE_AIASK_ARTICLE,
+                "", "问题", "回答", com.zhuri.coding.model.ai.pojos.AiFeedback.FEEDBACK_DOWN);
         assertEquals(200, r.getCode());
-        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK_ARTICLE,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_DOWN);
+        verify(funnelMeter).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK_ARTICLE,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_DOWN);
 
         // 未识别的 feature 兜底至 other，且 👍 映射 feedback_up
         r = service.record(userId, "unknown_feature", "", "问题", "回答",
-                com.heima.model.ai.pojos.AiFeedback.FEEDBACK_UP);
+                com.zhuri.coding.model.ai.pojos.AiFeedback.FEEDBACK_UP);
         assertEquals(200, r.getCode());
-        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.OTHER,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP);
+        verify(funnelMeter).incr(com.zhuri.coding.content.service.ai.AiFeatures.OTHER,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_FEEDBACK_UP);
     }
 
     // ==================== badCases ====================

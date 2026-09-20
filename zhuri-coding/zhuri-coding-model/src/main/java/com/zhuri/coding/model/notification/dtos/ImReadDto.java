@@ -1,4 +1,4 @@
-package com.heima.model.notification.dtos;
+package com.zhuri.coding.model.notification.dtos;
 
 import lombok.Data;
 

@@ -1,10 +1,10 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
-import com.heima.apis.article.IArticleClient;
-import com.heima.apis.article.ILevelClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.apis.article.IArticleClient;
+import com.zhuri.coding.apis.article.ILevelClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

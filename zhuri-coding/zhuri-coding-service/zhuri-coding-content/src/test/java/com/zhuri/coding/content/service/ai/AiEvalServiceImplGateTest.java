@@ -1,6 +1,6 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
-import com.heima.content.service.ai.impl.AiEvalServiceImpl;
+import com.zhuri.coding.content.service.ai.impl.AiEvalServiceImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;

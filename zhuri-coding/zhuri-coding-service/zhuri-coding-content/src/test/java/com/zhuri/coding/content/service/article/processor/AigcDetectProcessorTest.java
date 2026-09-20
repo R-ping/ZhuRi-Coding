@@ -1,7 +1,7 @@
-package com.heima.content.service.article.processor;
+package com.zhuri.coding.content.service.article.processor;
 
-import com.heima.content.service.aigc.AigcDetectService;
-import com.heima.model.article.pojos.ApArticle;
+import com.zhuri.coding.content.service.aigc.AigcDetectService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

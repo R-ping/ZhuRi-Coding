@@ -1,12 +1,12 @@
-package com.heima.content.service.ai.agent.tools;
+package com.zhuri.coding.content.service.ai.agent.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.ai.agent.AgentTool;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.ai.agent.AgentTool;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

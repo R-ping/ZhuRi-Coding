@@ -1,8 +1,8 @@
-package com.heima.content.controller.v1.inspiration;
+package com.zhuri.coding.content.controller.v1.inspiration;
 
-import com.heima.content.service.activity.ActivityService;
-import com.heima.content.service.topic.TopicService;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.service.activity.ActivityService;
+import com.zhuri.coding.content.service.topic.TopicService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

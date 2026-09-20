@@ -1,4 +1,4 @@
-package com.heima.model.circle.vos;
+package com.zhuri.coding.model.circle.vos;
 
 import lombok.Data;
 

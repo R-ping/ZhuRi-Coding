@@ -1,4 +1,4 @@
-package com.heima.notification.websocket;
+package com.zhuri.coding.notification.websocket;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;

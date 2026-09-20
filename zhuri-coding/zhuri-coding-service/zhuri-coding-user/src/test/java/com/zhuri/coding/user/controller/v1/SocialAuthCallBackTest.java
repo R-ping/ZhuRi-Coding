@@ -1,9 +1,9 @@
-package com.heima.user.controller.v1;
+package com.zhuri.coding.user.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.dtos.SocialAuthDto;
-import com.heima.user.service.SocialAuthService;
-import com.heima.user.service.SocialLoginService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.dtos.SocialAuthDto;
+import com.zhuri.coding.user.service.SocialAuthService;
+import com.zhuri.coding.user.service.SocialLoginService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

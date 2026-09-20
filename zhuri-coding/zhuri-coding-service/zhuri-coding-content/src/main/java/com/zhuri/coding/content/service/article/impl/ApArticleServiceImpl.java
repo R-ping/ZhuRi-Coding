@@ -1,21 +1,21 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
 import cn.hutool.json.JSONUtil;
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.common.constants.ArticleConstants;
-import com.heima.content.event.ArticlePublishEvent;
-import com.heima.content.mapper.article.ApArticleEventMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.article.ApArticleService;
-import com.heima.model.article.dtos.ArticleDto;
-import com.heima.model.article.dtos.ArticleHomeDto;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ArticleEvent;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.mess.UpdateArticleMess;
-import com.heima.model.search.vos.SearchArticleVo;
+import com.zhuri.coding.common.constants.ArticleConstants;
+import com.zhuri.coding.content.event.ArticlePublishEvent;
+import com.zhuri.coding.content.mapper.article.ApArticleEventMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.article.ApArticleService;
+import com.zhuri.coding.model.article.dtos.ArticleDto;
+import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ArticleEvent;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.mess.UpdateArticleMess;
+import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -82,7 +82,7 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     /**
      * 创建文章发布事件（延迟任务消费的同步部分，仅落锚）
      * <p>单延迟方案 · 异步解耦版：本方法只负责「校验 + 本地消息表落锚(INIT) + 发布执行事件」，
-     * 置 DB 发布态与 ES 同步由 {@link com.heima.content.event.ArticlePublishEventListener} 异步执行，
+     * 置 DB 发布态与 ES 同步由 {@link com.zhuri.coding.content.event.ArticlePublishEventListener} 异步执行，
      * 未完成事件由 20s 扫描补偿收敛。落锚失败返回 false 由调用方记日志（任务仍会消费完成，不回滚重投）。
      */
     @Override

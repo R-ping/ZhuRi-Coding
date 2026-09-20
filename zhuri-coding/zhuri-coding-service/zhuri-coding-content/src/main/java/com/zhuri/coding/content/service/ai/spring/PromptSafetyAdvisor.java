@@ -1,8 +1,8 @@
-package com.heima.content.service.ai.spring;
+package com.zhuri.coding.content.service.ai.spring;
 
-import com.heima.common.bailian.ComplianceGuard;
-import com.heima.common.bailian.PromptSanitizer;
-import com.heima.common.bailian.PromptSecurityConstants;
+import com.zhuri.coding.common.bailian.ComplianceGuard;
+import com.zhuri.coding.common.bailian.PromptSanitizer;
+import com.zhuri.coding.common.bailian.PromptSecurityConstants;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;

@@ -1,4 +1,4 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,21 +13,21 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.article.ArticleTaskService;
-import com.heima.content.service.article.AuditRecordService;
-import com.heima.content.service.article.processor.AIViolationProcessor;
-import com.heima.content.service.article.processor.AuditFailProcessor;
-import com.heima.content.service.article.processor.AuditProcessorContext;
-import com.heima.content.service.article.processor.AuditRetryableException;
-import com.heima.content.service.article.processor.BehaviorEventProcessor;
-import com.heima.content.service.article.processor.ImageScanProcessor;
-import com.heima.content.service.article.processor.PowerBonusProcessor;
-import com.heima.content.service.article.processor.SimilarityProcessor;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.article.ArticleTaskService;
+import com.zhuri.coding.content.service.article.AuditRecordService;
+import com.zhuri.coding.content.service.article.processor.AIViolationProcessor;
+import com.zhuri.coding.content.service.article.processor.AuditFailProcessor;
+import com.zhuri.coding.content.service.article.processor.AuditProcessorContext;
+import com.zhuri.coding.content.service.article.processor.AuditRetryableException;
+import com.zhuri.coding.content.service.article.processor.BehaviorEventProcessor;
+import com.zhuri.coding.content.service.article.processor.ImageScanProcessor;
+import com.zhuri.coding.content.service.article.processor.PowerBonusProcessor;
+import com.zhuri.coding.content.service.article.processor.SimilarityProcessor;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -349,6 +349,6 @@ class ArticleAutoScanServiceImplTest {
         verify(articleTaskService).addArticleToTask(eq(TEST_ARTICLE_ID), any());
         verify(auditFailProcessor, never()).handleFail(any(), anyString());
         // 审核通过：写入 PASS 审计轨迹
-        verify(auditRecordService).record(any(), anyString(), eq(com.heima.common.constants.ArticleConstants.AUDIT_STATUS_PASS), anyString());
+        verify(auditRecordService).record(any(), anyString(), eq(com.zhuri.coding.common.constants.ArticleConstants.AUDIT_STATUS_PASS), anyString());
     }
 }

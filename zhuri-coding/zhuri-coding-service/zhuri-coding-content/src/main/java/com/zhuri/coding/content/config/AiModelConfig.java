@@ -1,4 +1,4 @@
-package com.heima.content.config;
+package com.zhuri.coding.content.config;
 
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;

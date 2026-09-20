@@ -1,12 +1,12 @@
-package com.heima.reward.service.impl;
+package com.zhuri.coding.reward.service.impl;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.reward.entity.SignRecord;
-import com.heima.reward.entity.UserAssets;
-import com.heima.reward.entity.UserCheckinState;
-import com.heima.reward.mapper.SignRecordMapper;
-import com.heima.reward.mapper.UserAssetsMapper;
-import com.heima.reward.mapper.UserCheckinStateMapper;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.reward.entity.SignRecord;
+import com.zhuri.coding.reward.entity.UserAssets;
+import com.zhuri.coding.reward.entity.UserCheckinState;
+import com.zhuri.coding.reward.mapper.SignRecordMapper;
+import com.zhuri.coding.reward.mapper.UserAssetsMapper;
+import com.zhuri.coding.reward.mapper.UserCheckinStateMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

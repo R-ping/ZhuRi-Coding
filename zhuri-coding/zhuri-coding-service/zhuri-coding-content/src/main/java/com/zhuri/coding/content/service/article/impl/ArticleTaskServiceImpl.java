@@ -1,12 +1,12 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.schedule.service.TaskService;
-import com.heima.content.service.article.ArticleTaskService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.schedule.dtos.Task;
-import com.heima.utils.common.ProtostuffUtil;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.schedule.service.TaskService;
+import com.zhuri.coding.content.service.article.ArticleTaskService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.schedule.dtos.Task;
+import com.zhuri.coding.utils.common.ProtostuffUtil;
 import java.util.Date;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,7 +1,7 @@
-package com.heima.apis.notification;
+package com.zhuri.coding.apis.notification;
 
-import com.heima.apis.notification.fallback.INotificationClientFallback;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.notification.fallback.INotificationClientFallback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.Map;
 
-@FeignClient(value = "leadnews-notification", fallback = INotificationClientFallback.class)
+@FeignClient(value = "zhuri-coding-notification", fallback = INotificationClientFallback.class)
 public interface INotificationClient {
 
     /**

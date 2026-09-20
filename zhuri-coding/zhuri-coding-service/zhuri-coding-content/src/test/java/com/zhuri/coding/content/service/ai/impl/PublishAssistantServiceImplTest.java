@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -16,20 +16,20 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.common.bailian.DashScopeClient;
-import com.heima.content.service.ai.agent.AgentResult;
-import com.heima.content.service.ai.agent.AgentRunner;
-import com.heima.content.service.ai.agent.tools.SimilaritySearchTool;
-import com.heima.content.service.ai.agent.tools.SimilaritySearchTool.SimilarArticle;
-import com.heima.content.service.ai.agent.workers.CriticExpertWorker;
-import com.heima.content.service.ai.agent.workers.QualityExpertWorker;
-import com.heima.content.service.ai.agent.workers.SafetyExpertWorker;
-import com.heima.content.service.ai.agent.workers.SeoExpertWorker;
-import com.heima.content.service.ai.spring.AiSimilarityTools;
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
-import com.heima.content.service.ai.spring.SafetyGuardException;
-import com.heima.model.article.dtos.AiPrecheckVo;
-import com.heima.model.article.pojos.ApArticle;
+import com.zhuri.coding.common.bailian.DashScopeClient;
+import com.zhuri.coding.content.service.ai.agent.AgentResult;
+import com.zhuri.coding.content.service.ai.agent.AgentRunner;
+import com.zhuri.coding.content.service.ai.agent.tools.SimilaritySearchTool;
+import com.zhuri.coding.content.service.ai.agent.tools.SimilaritySearchTool.SimilarArticle;
+import com.zhuri.coding.content.service.ai.agent.workers.CriticExpertWorker;
+import com.zhuri.coding.content.service.ai.agent.workers.QualityExpertWorker;
+import com.zhuri.coding.content.service.ai.agent.workers.SafetyExpertWorker;
+import com.zhuri.coding.content.service.ai.agent.workers.SeoExpertWorker;
+import com.zhuri.coding.content.service.ai.spring.AiSimilarityTools;
+import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
+import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
+import com.zhuri.coding.model.article.pojos.ApArticle;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -75,7 +75,7 @@ class PublishAssistantServiceImplTest {
     @Mock private DashScopeClient dashScopeClient;
     @Mock private ChatModel chatModel;
     /** 统一 LLM 出口（P0-2）：兜底直答已改为委托 gateway */
-    @Mock private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    @Mock private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
     @Mock private AgentRunner agentRunner;
     @Mock private SafetyExpertWorker safetyExpertWorker;
     @Mock private QualityExpertWorker qualityExpertWorker;
@@ -84,13 +84,13 @@ class PublishAssistantServiceImplTest {
     @Mock private AiSimilarityTools aiSimilarityTools;
     @Mock private SimilaritySearchTool similaritySearchTool;
 /** Prompt 注册表（P2-1 补齐）：默认回显 fallback（version=0），特定用例按 key 重打桩 */
-    @Mock private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+    @Mock private com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
 
     /** 结构化输出 Skill（P2）：兜底直答 Bean 化优先（parsePrecheckBeanOrNull） */
-    @Mock private com.heima.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
+    @Mock private com.zhuri.coding.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
 
     /** MCP 工具目录（P2-8）：主编 Agent 透传其 provider；默认 mock 返回 null（fail-open 路径） */
-    @Mock private com.heima.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
+    @Mock private com.zhuri.coding.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
 
     @InjectMocks
     private PublishAssistantServiceImpl service;
@@ -102,7 +102,7 @@ class PublishAssistantServiceImplTest {
         ReflectionTestUtils.setField(service, "promptSafetyAdvisor", new PromptSafetyAdvisor(null, null));
         // 注册表默认「回显 fallback」：既有用例不感知注册表存在（行为与改造前一致）
         lenient().when(promptRegistry.resolve(anyString(), anyString(), any()))
-            .thenAnswer(inv -> new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+            .thenAnswer(inv -> new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(
                 inv.getArgument(0), inv.getArgument(1), 0));
     }
 
@@ -188,7 +188,7 @@ class PublishAssistantServiceImplTest {
     @DisplayName("主编主 prompt 走注册表：resolve 出的 content 传给 AgentRunner")
     void agentPathUsesResolvedAgentPrompt() {
         when(promptRegistry.resolve(eq("publish_precheck_agent"), anyString(), any()))
-            .thenReturn(new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+            .thenReturn(new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(
                 "publish_precheck_agent", "已解析主编prompt", 2));
         when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(FINAL_JSON, 1, true));
@@ -236,7 +236,7 @@ class PublishAssistantServiceImplTest {
     @DisplayName("兜底直答 prompt 走注册表：resolve 出的 content 传给 LlmGateway")
     void directPathUsesResolvedDirectPrompt() {
         when(promptRegistry.resolve(eq("publish_precheck_direct"), anyString(), any()))
-            .thenReturn(new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+            .thenReturn(new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(
                 "publish_precheck_direct", "已解析直答prompt", 3));
         when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(null, 6, false)); // Agent 未收敛 → 降级直答
@@ -248,7 +248,7 @@ class PublishAssistantServiceImplTest {
         assertNotNull(vo);
         assertEquals(88, vo.getQualityScore());
         verify(llmGateway).generateOrNull(
-            eq(com.heima.content.service.ai.AiFeatures.PRECHECK), eq("已解析直答prompt"), anyString(), any(), any());
+            eq(com.zhuri.coding.content.service.ai.AiFeatures.PRECHECK), eq("已解析直答prompt"), anyString(), any(), any());
         verify(promptRegistry).resolve(eq("publish_precheck_direct"), anyString(), any());
     }
 

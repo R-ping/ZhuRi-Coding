@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.skill;
+package com.zhuri.coding.content.service.ai.skill;
 
 import java.util.List;
 import java.util.Map;

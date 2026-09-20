@@ -1,4 +1,4 @@
-package com.heima.notification.websocket;
+package com.zhuri.coding.notification.websocket;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

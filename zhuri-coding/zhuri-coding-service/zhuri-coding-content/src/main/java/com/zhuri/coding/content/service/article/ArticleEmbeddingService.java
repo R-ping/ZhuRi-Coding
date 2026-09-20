@@ -1,6 +1,6 @@
-package com.heima.content.service.article;
+package com.zhuri.coding.content.service.article;
 
-import com.heima.model.article.pojos.ApArticleEmbedding;
+import com.zhuri.coding.model.article.pojos.ApArticleEmbedding;
 
 import java.util.List;
 

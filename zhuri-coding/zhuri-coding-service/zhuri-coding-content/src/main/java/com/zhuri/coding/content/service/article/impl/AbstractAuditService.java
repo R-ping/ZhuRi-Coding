@@ -1,12 +1,12 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
-import com.heima.common.aliyun.util.GreenImageScanPlusForOss;
-import com.heima.content.service.article.AuditService;
-import com.heima.content.service.article.BailianAiService;
-import com.heima.model.audit.AuditContext;
-import com.heima.model.audit.AuditResult;
-import com.heima.model.audit.AuditServiceUnavailableException;
-import com.heima.model.audit.ImageScanResult;
+import com.zhuri.coding.common.aliyun.util.GreenImageScanPlusForOss;
+import com.zhuri.coding.content.service.article.AuditService;
+import com.zhuri.coding.content.service.article.BailianAiService;
+import com.zhuri.coding.model.audit.AuditContext;
+import com.zhuri.coding.model.audit.AuditResult;
+import com.zhuri.coding.model.audit.AuditServiceUnavailableException;
+import com.zhuri.coding.model.audit.ImageScanResult;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;

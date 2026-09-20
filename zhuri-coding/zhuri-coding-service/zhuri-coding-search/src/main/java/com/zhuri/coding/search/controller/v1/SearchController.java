@@ -1,13 +1,13 @@
-package com.heima.search.controller.v1;
+package com.zhuri.coding.search.controller.v1;
 
-import com.heima.apis.search.IContentSearchClient;
-import com.heima.apis.search.IUserSearchClient;
-import com.heima.common.annotation.RateLimit;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.search.dtos.SearchDto;
-import com.heima.model.search.dtos.UserSearchDto;
-import com.heima.search.service.ArticleSearchService;
+import com.zhuri.coding.apis.search.IContentSearchClient;
+import com.zhuri.coding.apis.search.IUserSearchClient;
+import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.search.dtos.SearchDto;
+import com.zhuri.coding.model.search.dtos.UserSearchDto;
+import com.zhuri.coding.search.service.ArticleSearchService;
 import java.io.IOException;
 import java.util.Date;
 import org.apache.commons.lang3.StringUtils;

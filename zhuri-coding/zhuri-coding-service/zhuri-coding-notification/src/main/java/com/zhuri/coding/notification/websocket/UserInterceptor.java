@@ -1,4 +1,4 @@
-package com.heima.notification.websocket;
+package com.zhuri.coding.notification.websocket;
 
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;

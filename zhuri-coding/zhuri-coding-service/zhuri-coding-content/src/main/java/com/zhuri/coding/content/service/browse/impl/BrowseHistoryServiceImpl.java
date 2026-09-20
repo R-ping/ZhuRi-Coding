@@ -1,15 +1,15 @@
-package com.heima.content.service.browse.impl;
+package com.zhuri.coding.content.service.browse.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.content.mapper.interaction.ApBrowseHistoryMapper;
-import com.heima.content.service.browse.BrowseHistoryService;
-import com.heima.model.behavior.pojos.ApBrowseHistory;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.content.mapper.interaction.ApBrowseHistoryMapper;
+import com.zhuri.coding.content.service.browse.BrowseHistoryService;
+import com.zhuri.coding.model.behavior.pojos.ApBrowseHistory;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

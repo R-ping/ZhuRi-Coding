@@ -1,16 +1,16 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
-import com.heima.content.mapper.level.ApBehaviorConfigMapper;
-import com.heima.content.mapper.level.ApUserDailyProgressMapper;
-import com.heima.content.mapper.level.ApUserLevelMapper;
-import com.heima.content.mapper.pins.ApUserActionLogMapper;
-import com.heima.content.service.level.LevelPermissionService;
-import com.heima.model.level.pojos.ApBehaviorConfig;
-import com.heima.model.level.pojos.ApUserDailyProgress;
-import com.heima.model.level.pojos.ApUserLevel;
-import com.heima.model.user.pojos.ApUserActionLog;
+import com.zhuri.coding.content.mapper.level.ApBehaviorConfigMapper;
+import com.zhuri.coding.content.mapper.level.ApUserDailyProgressMapper;
+import com.zhuri.coding.content.mapper.level.ApUserLevelMapper;
+import com.zhuri.coding.content.mapper.pins.ApUserActionLogMapper;
+import com.zhuri.coding.content.service.level.LevelPermissionService;
+import com.zhuri.coding.model.level.pojos.ApBehaviorConfig;
+import com.zhuri.coding.model.level.pojos.ApUserDailyProgress;
+import com.zhuri.coding.model.level.pojos.ApUserLevel;
+import com.zhuri.coding.model.user.pojos.ApUserActionLog;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

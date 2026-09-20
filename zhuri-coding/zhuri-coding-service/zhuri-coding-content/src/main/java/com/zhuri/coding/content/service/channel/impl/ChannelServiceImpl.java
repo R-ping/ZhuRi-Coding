@@ -1,10 +1,10 @@
-package com.heima.content.service.channel.impl;
+package com.zhuri.coding.content.service.channel.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.heima.content.mapper.channel.ChannelMapper;
-import com.heima.content.service.channel.ChannelService;
-import com.heima.model.channel.pojos.ApChannel;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.mapper.channel.ChannelMapper;
+import com.zhuri.coding.content.service.channel.ChannelService;
+import com.zhuri.coding.model.channel.pojos.ApChannel;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

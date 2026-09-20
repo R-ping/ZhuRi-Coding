@@ -2,7 +2,7 @@ server:
   port: 51780
 spring:
   application:
-    name: leadnews-user
+    name: zhuri-coding-user
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/leadnews_user?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
@@ -32,11 +32,11 @@ mybatis-plus:
       id-type: auto
   mapper-locations: classpath*:mapper/*.xml
   # 设置别名包扫描路径，通过该属性可以给包中的类注册别名
-  type-aliases-package: com.heima.model.user.pojos
+  type-aliases-package: com.zhuri.coding.model.user.pojos
 # 日志
 logging:
   level:
-    com.heima: debug
+    com.zhuri.coding: debug
 
 # 第三方登录 OAuth 配置（通过环境变量注入，禁止硬编码敏感信息）
 oauth:
@@ -85,7 +85,7 @@ wechat:
 # 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
 app:
   internal-auth:
-    secret: ${INTERNAL_AUTH_SECRET:leadnews-internal-dev-secret}
+    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
   auth:
     # 是否在响应体中回传登录验证码：仅为本地/演示环境缺少真实短信通道时的联调便利。
     # 生产环境必须设为 false（AUTH_EXPOSE_LOGIN_CODE=false），否则无需收短信即可登录/绑定他人手机号。

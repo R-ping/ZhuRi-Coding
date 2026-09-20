@@ -1,13 +1,13 @@
-package com.heima.content.controller.v1.audit;
+package com.zhuri.coding.content.controller.v1.audit;
 
-import com.heima.content.service.audit.ContentAppealService;
-import com.heima.model.audit.dtos.AppealReviewDto;
-import com.heima.model.audit.dtos.AppealSubmitDto;
-import com.heima.model.audit.pojos.ApContentAppeal;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.audit.ContentAppealService;
+import com.zhuri.coding.model.audit.dtos.AppealReviewDto;
+import com.zhuri.coding.model.audit.dtos.AppealSubmitDto;
+import com.zhuri.coding.model.audit.pojos.ApContentAppeal;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,8 +34,8 @@ public class ContentAppealController {
 
     /** 提交申诉（登录 + 归属校验） */
     @PostMapping("/submit")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.USER,
-        count = 5, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.USER,
+        count = 5, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult submit(@RequestBody AppealSubmitDto dto) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null || user.getId() == null) {
@@ -55,8 +55,8 @@ public class ContentAppealController {
 
     /** 人工终审（运营/审核员；防申诉人自审） */
     @PostMapping("/review")
-    @com.heima.common.annotation.RateLimit(dimension = com.heima.common.annotation.RateLimit.Dimension.USER,
-        count = 20, interval = 1, timeUnit = com.heima.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.USER,
+        count = 20, interval = 1, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
     public ResponseResult review(@RequestBody AppealReviewDto dto) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null || user.getId() == null) {

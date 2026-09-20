@@ -1,7 +1,7 @@
-package com.heima.apis.notification.fallback;
+package com.zhuri.coding.apis.notification.fallback;
 
-import com.heima.apis.notification.INotificationClient;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;

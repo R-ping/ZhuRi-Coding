@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -12,11 +12,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.common.redis.CacheService;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.interaction.ApCollectionMapper;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.behavior.pojos.ApCollection;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.behavior.pojos.ApCollection;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;

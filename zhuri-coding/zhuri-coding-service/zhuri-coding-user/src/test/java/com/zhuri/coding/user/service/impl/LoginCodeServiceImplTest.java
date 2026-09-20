@@ -1,4 +1,4 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -6,8 +6,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.common.redis.CacheService;
-import com.heima.user.service.LoginCodeService;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.user.service.LoginCodeService;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

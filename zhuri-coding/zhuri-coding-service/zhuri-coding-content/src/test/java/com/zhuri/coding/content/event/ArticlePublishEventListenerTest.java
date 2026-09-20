@@ -1,6 +1,6 @@
-package com.heima.content.event;
+package com.zhuri.coding.content.event;
 
-import com.heima.content.service.article.ApArticleEventService;
+import com.zhuri.coding.content.service.article.ApArticleEventService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

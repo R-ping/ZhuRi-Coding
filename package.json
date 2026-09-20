@@ -1,7 +1,7 @@
 {
-  "name": "heima-leadnews-app",
+  "name": "zhuri-coding-app",
   "version": "1.0.0",
-  "description": "黑马头条-移动端",
+  "description": "逐日 Coding - 内容社区与创作者变现平台",
   "private": true,
   "type": "module",
   "scripts": {

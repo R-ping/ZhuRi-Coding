@@ -1,4 +1,4 @@
-package com.heima.content.model.ai;
+package com.zhuri.coding.content.model.ai;
 
 import com.alibaba.fastjson.annotation.JSONField;
 import lombok.Data;

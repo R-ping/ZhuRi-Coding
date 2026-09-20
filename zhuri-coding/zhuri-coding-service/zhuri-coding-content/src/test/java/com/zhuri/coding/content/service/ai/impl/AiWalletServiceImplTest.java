@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -8,8 +8,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.content.mapper.ai.AiQuotaWalletMapper;
-import com.heima.model.ai.pojos.AiQuotaWallet;
+import com.zhuri.coding.content.mapper.ai.AiQuotaWalletMapper;
+import com.zhuri.coding.model.ai.pojos.AiQuotaWallet;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -1,9 +1,9 @@
-package com.heima.content.service.outbox;
+package com.zhuri.coding.content.service.outbox;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.heima.content.mapper.outbox.OutboxEventMapper;
-import com.heima.model.outbox.pojos.OutboxEvent;
+import com.zhuri.coding.content.mapper.outbox.OutboxEventMapper;
+import com.zhuri.coding.model.outbox.pojos.OutboxEvent;
 import jakarta.annotation.PostConstruct;
 import java.util.Date;
 import java.util.List;

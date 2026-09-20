@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.skill;
+package com.zhuri.coding.content.service.ai.skill;
 
 /**
  * AI 可复用技能（Skill）模块（P2：把「安全审查 / 质量评审 / 格式化输出」沉淀为跨会话、跨流程可复用与组合的原子能力）。

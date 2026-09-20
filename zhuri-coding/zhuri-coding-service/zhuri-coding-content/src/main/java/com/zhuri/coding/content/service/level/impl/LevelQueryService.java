@@ -1,13 +1,13 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.apis.reward.IRewardClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.content.mapper.level.ApLevelConfigMapper;
-import com.heima.content.mapper.level.ApUserLevelMapper;
-import com.heima.content.service.level.LevelPermissionService;
-import com.heima.model.level.pojos.ApLevelConfig;
-import com.heima.model.level.pojos.ApUserLevel;
+import com.zhuri.coding.apis.reward.IRewardClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.mapper.level.ApLevelConfigMapper;
+import com.zhuri.coding.content.mapper.level.ApUserLevelMapper;
+import com.zhuri.coding.content.service.level.LevelPermissionService;
+import com.zhuri.coding.model.level.pojos.ApLevelConfig;
+import com.zhuri.coding.model.level.pojos.ApUserLevel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

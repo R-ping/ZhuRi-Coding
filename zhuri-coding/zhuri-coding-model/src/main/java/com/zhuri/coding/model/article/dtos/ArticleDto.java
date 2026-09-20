@@ -1,6 +1,6 @@
-package com.heima.model.article.dtos;
+package com.zhuri.coding.model.article.dtos;
 
-import com.heima.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

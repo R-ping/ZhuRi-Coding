@@ -1,4 +1,4 @@
-package com.heima.model.tag.pojos;
+package com.zhuri.coding.model.tag.pojos;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

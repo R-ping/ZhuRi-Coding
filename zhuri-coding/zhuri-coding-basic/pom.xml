@@ -3,16 +3,16 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>heima-leadnews</artifactId>
-        <groupId>com.heima</groupId>
+        <artifactId>zhuri-coding</artifactId>
+        <groupId>com.zhuri.coding</groupId>
         <version>1.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>heima-leadnews-basic</artifactId>
+    <artifactId>zhuri-coding-basic</artifactId>
     <packaging>pom</packaging>
     <modules>
-        <module>heima-file-starter</module>
+        <module>zhuri-file-starter</module>
     </modules>
 
     <properties>

@@ -1,9 +1,9 @@
-package com.heima.content.controller.v1.user;
+package com.zhuri.coding.content.controller.v1.user;
 
-import com.heima.content.service.level.LevelService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.level.LevelService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

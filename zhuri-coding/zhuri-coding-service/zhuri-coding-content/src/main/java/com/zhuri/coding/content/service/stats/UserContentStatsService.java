@@ -1,6 +1,6 @@
-package com.heima.content.service.stats;
+package com.zhuri.coding.content.service.stats;
 
-import com.heima.model.user.vo.UserStatsVO;
+import com.zhuri.coding.model.user.vo.UserStatsVO;
 
 /**
  * 用户/作者内容统计聚合服务。

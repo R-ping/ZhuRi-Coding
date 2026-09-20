@@ -1,4 +1,4 @@
-package com.heima.utils.common;
+package com.zhuri.coding.utils.common;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;

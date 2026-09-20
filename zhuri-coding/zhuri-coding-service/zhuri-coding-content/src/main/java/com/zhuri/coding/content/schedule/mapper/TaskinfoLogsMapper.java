@@ -1,7 +1,7 @@
-package com.heima.content.schedule.mapper;
+package com.zhuri.coding.content.schedule.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.schedule.pojos.TaskinfoLogs;
+import com.zhuri.coding.model.schedule.pojos.TaskinfoLogs;
 import java.util.Date;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;

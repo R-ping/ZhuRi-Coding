@@ -1,6 +1,6 @@
-package com.heima.content.service.tip;
+package com.zhuri.coding.content.service.tip;
 
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import java.math.BigDecimal;
 
 /**

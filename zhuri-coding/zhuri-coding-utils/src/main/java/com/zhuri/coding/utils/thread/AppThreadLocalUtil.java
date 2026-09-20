@@ -1,6 +1,6 @@
-package com.heima.utils.thread;
+package com.zhuri.coding.utils.thread;
 
-import com.heima.model.user.pojos.ApUser;
+import com.zhuri.coding.model.user.pojos.ApUser;
 
 public class AppThreadLocalUtil {
 

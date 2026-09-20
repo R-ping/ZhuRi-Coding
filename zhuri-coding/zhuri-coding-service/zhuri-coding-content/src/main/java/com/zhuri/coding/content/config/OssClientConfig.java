@@ -1,4 +1,4 @@
-package com.heima.content.config;
+package com.zhuri.coding.content.config;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;

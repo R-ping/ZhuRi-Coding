@@ -1,16 +1,16 @@
-package com.heima.content.service.fans.impl;
+package com.zhuri.coding.content.service.fans.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.heima.content.constants.LevelScoreActionCode;
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.service.fans.FansDataService;
-import com.heima.content.service.level.impl.LevelActionService;
-import com.heima.model.follow.pojos.ApFollow;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.constants.LevelScoreActionCode;
+import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
+import com.zhuri.coding.content.service.fans.FansDataService;
+import com.zhuri.coding.content.service.level.impl.LevelActionService;
+import com.zhuri.coding.model.follow.pojos.ApFollow;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;

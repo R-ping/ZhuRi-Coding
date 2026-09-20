@@ -1,7 +1,7 @@
-package com.heima.content.service.ai.router;
+package com.zhuri.coding.content.service.ai.router;
 
-import com.heima.content.service.ai.AiMetricsCollector;
-import com.heima.content.service.ai.AiTokenMeter;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
+import com.zhuri.coding.content.service.ai.AiTokenMeter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

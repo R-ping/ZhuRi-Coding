@@ -1,15 +1,15 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.heima.content.mapper.ai.AiTopupOrderMapper;
-import com.heima.content.service.ai.AiQuotaPackages;
-import com.heima.content.service.ai.AiTopupService;
-import com.heima.content.service.ai.AiWalletService;
-import com.heima.content.service.pay.AlipayService;
-import com.heima.model.ai.pojos.AiTopupOrder;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.content.mapper.ai.AiTopupOrderMapper;
+import com.zhuri.coding.content.service.ai.AiQuotaPackages;
+import com.zhuri.coding.content.service.ai.AiTopupService;
+import com.zhuri.coding.content.service.ai.AiWalletService;
+import com.zhuri.coding.content.service.pay.AlipayService;
+import com.zhuri.coding.model.ai.pojos.AiTopupOrder;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

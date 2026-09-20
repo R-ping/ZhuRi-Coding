@@ -1,6 +1,6 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
-import com.heima.model.article.dtos.AiSourceVo;
+import com.zhuri.coding.model.article.dtos.AiSourceVo;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

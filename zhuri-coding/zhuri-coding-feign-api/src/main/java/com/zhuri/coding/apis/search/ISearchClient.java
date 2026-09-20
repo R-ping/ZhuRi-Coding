@@ -1,14 +1,14 @@
-package com.heima.apis.search;
+package com.zhuri.coding.apis.search;
 
-import com.heima.apis.search.fallback.ISearchClientFallback;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.Bm25RecallDto;
-import com.heima.model.search.vos.SearchArticleVo;
+import com.zhuri.coding.apis.search.fallback.ISearchClientFallback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
+import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@FeignClient(value = "leadnews-search", contextId = "leadnews-search-searchClient", fallback = ISearchClientFallback.class)
+@FeignClient(value = "zhuri-coding-search", contextId = "zhuri-coding-search-searchClient", fallback = ISearchClientFallback.class)
 public interface ISearchClient {
 
     /** 同步文章到 ES 索引 */

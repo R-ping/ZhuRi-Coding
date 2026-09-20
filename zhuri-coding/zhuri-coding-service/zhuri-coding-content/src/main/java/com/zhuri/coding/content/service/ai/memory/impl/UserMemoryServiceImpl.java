@@ -1,6 +1,6 @@
-package com.heima.content.service.ai.memory.impl;
+package com.zhuri.coding.content.service.ai.memory.impl;
 
-import com.heima.content.service.ai.memory.UserMemoryService;
+import com.zhuri.coding.content.service.ai.memory.UserMemoryService;
 import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

@@ -1,10 +1,10 @@
-package com.heima.user.controller.v1;
+package com.zhuri.coding.user.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.dtos.LoginResultVo;
-import com.heima.model.user.dtos.RefreshTokenDto;
-import com.heima.user.service.TokenService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.dtos.LoginResultVo;
+import com.zhuri.coding.model.user.dtos.RefreshTokenDto;
+import com.zhuri.coding.user.service.TokenService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

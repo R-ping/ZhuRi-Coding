@@ -1,4 +1,4 @@
-package com.heima.content.utils;
+package com.zhuri.coding.content.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

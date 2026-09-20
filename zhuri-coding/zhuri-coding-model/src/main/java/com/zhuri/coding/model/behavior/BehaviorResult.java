@@ -1,4 +1,4 @@
-package com.heima.model.behavior;
+package com.zhuri.coding.model.behavior;
 
 import java.util.HashMap;
 import java.util.Map;

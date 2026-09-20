@@ -1,12 +1,12 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.service.ai.AiMetricsCollector;
-import com.heima.content.service.ai.AnswerFaithfulnessService;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.content.utils.CitationParser;
-import com.heima.model.article.dtos.AiSourceVo;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
+import com.zhuri.coding.content.service.ai.AnswerFaithfulnessService;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.content.utils.CitationParser;
+import com.zhuri.coding.model.article.dtos.AiSourceVo;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,11 +54,11 @@ public class AnswerFaithfulnessServiceImpl implements AnswerFaithfulnessService 
 
     /** 统一 LLM 出口（安全横切 + token 计量） */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     /** Prompt 注册表（P2-1）：复核 prompt 版本化 + 兜底；单测未注入时走代码常量 */
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiPromptRegistry promptRegistry;
+    private com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
 
     @Autowired
     private AiMetricsCollector metrics;
@@ -188,13 +188,13 @@ public class AnswerFaithfulnessServiceImpl implements AnswerFaithfulnessService 
                     .append("引用资料[").append(srcNo).append("]片段：")
                     .append(truncate(snippet, SNIPPET_CHARS)).append("\n\n");
             }
-            com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt sys =
+            com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sys =
                 promptRegistry == null
-                    ? new com.heima.content.service.ai.AiPromptRegistry.ResolvedPrompt(
+                    ? new com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt(
                         "faithfulness_review", REVIEW_PROMPT, 0)
                     : promptRegistry.resolve("faithfulness_review", REVIEW_PROMPT, null);
             String raw = llmGateway.generateOrNull(
-                com.heima.content.service.ai.AiFeatures.FAITHFULNESS,
+                com.zhuri.coding.content.service.ai.AiFeatures.FAITHFULNESS,
                 sys.content, user.toString(), null, null);
             if (raw == null || raw.isBlank()) {
                 return null;

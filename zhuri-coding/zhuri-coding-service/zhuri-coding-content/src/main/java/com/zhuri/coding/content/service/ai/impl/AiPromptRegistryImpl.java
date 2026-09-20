@@ -1,6 +1,6 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
-import com.heima.content.service.ai.AiPromptRegistry;
+import com.zhuri.coding.content.service.ai.AiPromptRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

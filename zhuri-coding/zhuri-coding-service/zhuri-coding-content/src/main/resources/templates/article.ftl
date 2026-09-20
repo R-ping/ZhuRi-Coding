@@ -2977,7 +2977,7 @@
                     </a>
                     <div class="author-info">
                         <div class="author-name-row">
-                            <a class="author-name" href="/user/${(authorId!0)?c}">${authorName!'黑马头条'}</a>
+                            <a class="author-name" href="/user/${(authorId!0)?c}">${authorName!'逐日 Coding'}</a>
                             <#if authorLevel?? && authorLevelTitle??>
                             <span class="author-level-badge" title="${authorLevelTitle}">
                                 <svg viewBox="0 0 24 24"><path d="M12 2l2.4 2.4L12 6.8 9.6 4.4 12 2zM6.4 8.4L12 14l5.6-5.6L12 2.8 6.4 8.4zm0 5.2L12 19.2l5.6-5.6L12 8 6.4 13.6z"/></svg>
@@ -3040,7 +3040,7 @@
                 <div class="end-author-card" id="endAuthorCard">
                     <img src="${authorAvatar!'https://p3.pstatp.com/thumb/1480/7186611868'}" class="ea-avatar" id="endAuthorAvatar" alt="avatar">
                     <div class="ea-info">
-                        <div class="ea-name" id="endAuthorName">${authorName!'黑马头条'}</div>
+                        <div class="ea-name" id="endAuthorName">${authorName!'逐日 Coding'}</div>
                         <div class="ea-desc" id="endAuthorDesc"></div>
                         <div class="ea-followers"><b id="endAuthorFollowers">0</b> 粉丝</div>
                     </div>
@@ -3160,7 +3160,7 @@
                     </a>
                     <div class="author-head-info">
                         <div class="name-row">
-                            <a class="name" href="/user/${(authorId!0)?c}">${authorName!'黑马头条'}</a>
+                            <a class="name" href="/user/${(authorId!0)?c}">${authorName!'逐日 Coding'}</a>
                             <#if authorLevel?? && authorLevelTitle??>
                             <span class="badge" title="${authorLevelTitle}">Lv.${authorLevel}</span>
                             </#if>

@@ -34,10 +34,7 @@ export default defineConfig({
       'localhost'
     ],
     proxy: {
-      '/server_85': {
-        target: 'http://heima-app-java.research.itcast.cn',
-        changeOrigin: true
-      },
+      // 注：模板遗留的远程代理已移除（所有服务均走下方网关 51601 本地直连）
       '/content': {
         target: 'http://127.0.0.1:51601/',
         changeOrigin: true,

@@ -1,7 +1,7 @@
-package com.heima.content.service.order;
+package com.zhuri.coding.content.service.order;
 
-import com.heima.model.course.pojos.ApCourseOrder;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 public interface OrderService {
 

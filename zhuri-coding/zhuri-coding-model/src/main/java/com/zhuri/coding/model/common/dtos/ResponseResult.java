@@ -1,7 +1,7 @@
-package com.heima.model.common.dtos;
+package com.zhuri.coding.model.common.dtos;
 
 import com.alibaba.fastjson.JSON;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;

@@ -1,4 +1,4 @@
-package com.heima.common.jackson;
+package com.zhuri.coding.common.jackson;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.BeanDescription;

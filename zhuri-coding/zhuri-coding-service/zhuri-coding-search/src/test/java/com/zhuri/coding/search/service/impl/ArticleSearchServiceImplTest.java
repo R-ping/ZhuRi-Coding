@@ -1,13 +1,13 @@
-package com.heima.search.service.impl;
+package com.zhuri.coding.search.service.impl;
 
-import com.heima.apis.article.IArticleClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.search.dtos.UserSearchDto;
-import com.heima.model.search.vos.SearchArticleVo;
-import com.heima.model.search.vos.TocItem;
-import com.heima.search.entity.SearchArticle;
-import com.heima.search.service.ApAssociateWordsService;
+import com.zhuri.coding.apis.article.IArticleClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.search.dtos.UserSearchDto;
+import com.zhuri.coding.model.search.vos.SearchArticleVo;
+import com.zhuri.coding.model.search.vos.TocItem;
+import com.zhuri.coding.search.entity.SearchArticle;
+import com.zhuri.coding.search.service.ApAssociateWordsService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

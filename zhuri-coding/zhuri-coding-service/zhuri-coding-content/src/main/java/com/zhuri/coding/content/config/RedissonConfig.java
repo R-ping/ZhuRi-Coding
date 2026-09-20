@@ -1,4 +1,4 @@
-package com.heima.content.config;
+package com.zhuri.coding.content.config;
 
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;

@@ -1,11 +1,11 @@
-package com.heima.content.service.pins.impl;
+package com.zhuri.coding.content.service.pins.impl;
 
-import com.heima.content.service.article.impl.AbstractAuditService;
-import com.heima.apis.notification.INotificationClient;
-import com.heima.content.mapper.pins.ApPinsMapper;
-import com.heima.content.utils.NotificationHelper;
-import com.heima.model.pins.pojos.ApPins;
-import com.heima.model.audit.AuditContext;
+import com.zhuri.coding.content.service.article.impl.AbstractAuditService;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
+import com.zhuri.coding.content.utils.NotificationHelper;
+import com.zhuri.coding.model.pins.pojos.ApPins;
+import com.zhuri.coding.model.audit.AuditContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

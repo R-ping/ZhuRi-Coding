@@ -1,4 +1,4 @@
-package com.heima.content.service.aigc.impl;
+package com.zhuri.coding.content.service.aigc.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -13,19 +13,19 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.content.mapper.aigc.AigcRecordMapper;
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.course.ApCourseChapterMapper;
-import com.heima.content.mapper.pins.ApPinsMapper;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.model.aigc.pojos.AigcRecord;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ApArticleContent;
-import com.heima.model.article.pojos.ApArticleEmbedding;
-import com.heima.model.course.pojos.ApCourseChapter;
-import com.heima.model.pins.pojos.ApPins;
+import com.zhuri.coding.content.mapper.aigc.AigcRecordMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.course.ApCourseChapterMapper;
+import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.model.aigc.pojos.AigcRecord;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.model.article.pojos.ApArticleEmbedding;
+import com.zhuri.coding.model.course.pojos.ApCourseChapter;
+import com.zhuri.coding.model.pins.pojos.ApPins;
 import java.util.List;
 import java.util.concurrent.Executor;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,7 +75,7 @@ class AigcDetectServiceImplTest {
     @Mock private ArticleEmbeddingServiceImpl embeddingService;
     @Mock private ChatModel chatModel;
     /** 统一 LLM 出口（P0-2）：L3 复核已改为委托 gateway */
-    @Mock private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    @Mock private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
     @Mock private Executor aiSseExecutor;
 
     @InjectMocks

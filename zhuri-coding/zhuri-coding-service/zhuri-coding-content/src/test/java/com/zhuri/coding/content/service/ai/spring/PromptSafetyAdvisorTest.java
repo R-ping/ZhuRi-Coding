@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.spring;
+package com.zhuri.coding.content.service.ai.spring;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,8 +10,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.heima.common.bailian.ComplianceGuard;
-import com.heima.common.bailian.PromptSanitizer;
+import com.zhuri.coding.common.bailian.ComplianceGuard;
+import com.zhuri.coding.common.bailian.PromptSanitizer;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;

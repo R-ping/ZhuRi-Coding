@@ -1,8 +1,8 @@
-package com.heima.content.service.course;
+package com.zhuri.coding.content.service.course;
 
-import com.heima.model.course.dtos.ChapterDto;
-import com.heima.model.course.dtos.ChapterSortDto;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.course.dtos.ChapterDto;
+import com.zhuri.coding.model.course.dtos.ChapterSortDto;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 public interface ApCourseChapterService {
 

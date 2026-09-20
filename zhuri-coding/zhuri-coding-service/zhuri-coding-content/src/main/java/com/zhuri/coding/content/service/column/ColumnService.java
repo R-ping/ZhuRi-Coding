@@ -1,8 +1,8 @@
-package com.heima.content.service.column;
+package com.zhuri.coding.content.service.column;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.heima.model.column.pojos.ApColumn;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.column.pojos.ApColumn;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 public interface ColumnService extends IService<ApColumn> {
 

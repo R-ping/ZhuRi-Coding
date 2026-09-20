@@ -1,4 +1,4 @@
-package com.heima.model.achievement.vos;
+package com.zhuri.coding.model.achievement.vos;
 
 import lombok.Data;
 

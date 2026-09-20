@@ -1,13 +1,13 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
-import static com.heima.content.constants.LevelScoreConstants.POWER_ACTION_LIMIT;
+import static com.zhuri.coding.content.constants.LevelScoreConstants.POWER_ACTION_LIMIT;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.level.ApUserLevelMapper;
-import com.heima.content.mapper.user.ApUserDailyLogMapper;
-import com.heima.content.service.level.LevelPermissionService;
-import com.heima.model.level.pojos.ApUserLevel;
-import com.heima.model.user.pojos.ApUserDailyLog;
+import com.zhuri.coding.content.mapper.level.ApUserLevelMapper;
+import com.zhuri.coding.content.mapper.user.ApUserDailyLogMapper;
+import com.zhuri.coding.content.service.level.LevelPermissionService;
+import com.zhuri.coding.model.level.pojos.ApUserLevel;
+import com.zhuri.coding.model.user.pojos.ApUserDailyLog;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

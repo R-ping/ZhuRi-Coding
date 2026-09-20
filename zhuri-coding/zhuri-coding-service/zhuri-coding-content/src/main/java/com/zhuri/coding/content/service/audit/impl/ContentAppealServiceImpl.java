@@ -1,20 +1,20 @@
-package com.heima.content.service.audit.impl;
+package com.zhuri.coding.content.service.audit.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.audit.ApContentAppealMapper;
-import com.heima.content.mapper.comment.ApCommentMapper;
-import com.heima.content.service.audit.ContentAppealService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleContent;
-import com.heima.model.audit.pojos.ApContentAppeal;
-import com.heima.model.comment.pojos.ApComment;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.audit.ApContentAppealMapper;
+import com.zhuri.coding.content.mapper.comment.ApCommentMapper;
+import com.zhuri.coding.content.service.audit.ContentAppealService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.model.audit.pojos.ApContentAppeal;
+import com.zhuri.coding.model.comment.pojos.ApComment;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -53,7 +53,7 @@ public class ContentAppealServiceImpl implements ContentAppealService {
 
     /** 统一 LLM 出口（安全横切 + token 计量） */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     @Autowired
     @Qualifier("aiSseExecutor")
@@ -223,7 +223,7 @@ public class ContentAppealServiceImpl implements ContentAppealService {
                     + "{\"suggest\":\"allow\"|\"uphold\",\"score\":0-100,\"reason\":\"不超过40字\"}（allow=建议解除误标，uphold=维持标注）";
                 user = "申诉理由：" + reason + "\n\n文章原文：\n" + source;
             }
-            String raw = llmGateway.generateOrNull(com.heima.content.service.ai.AiFeatures.APPEAL_AUDIT,
+            String raw = llmGateway.generateOrNull(com.zhuri.coding.content.service.ai.AiFeatures.APPEAL_AUDIT,
                 sys, user, null, null);
             String verdict = normalizeVerdict(raw);
             if (verdict != null) {

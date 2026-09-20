@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -12,22 +12,22 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.content.mapper.article.ApArticleContentMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.ai.AnswerFaithfulnessService;
-import com.heima.content.service.ai.AiSemanticCacheService;
-import com.heima.content.service.ai.HybridRecallService;
-import com.heima.content.service.ai.HybridRecallService.Recall;
-import com.heima.content.service.ai.memory.AiConversationMemoryService;
-import com.heima.content.service.ai.memory.UserMemoryService;
-import com.heima.content.service.ai.pipeline.AskRetrievalChain;
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.model.article.dtos.AiAnswerVo;
-import com.heima.model.article.dtos.AiSourceVo;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.ai.AnswerFaithfulnessService;
+import com.zhuri.coding.content.service.ai.AiSemanticCacheService;
+import com.zhuri.coding.content.service.ai.HybridRecallService;
+import com.zhuri.coding.content.service.ai.HybridRecallService.Recall;
+import com.zhuri.coding.content.service.ai.memory.AiConversationMemoryService;
+import com.zhuri.coding.content.service.ai.memory.UserMemoryService;
+import com.zhuri.coding.content.service.ai.pipeline.AskRetrievalChain;
+import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.model.article.dtos.AiAnswerVo;
+import com.zhuri.coding.model.article.dtos.AiSourceVo;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
@@ -76,11 +76,11 @@ class AiAskServiceImplTest {
     @Mock private ApArticleMapper apArticleMapper;
     @Mock private ApArticleContentMapper contentMapper;
     /** 统一 LLM 出口（P0-2）：AiAsk 已改为委托 gateway，模型调用桩打在这里 */
-    @Mock private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    @Mock private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
-    @Mock private com.heima.content.service.ai.AiMetricsCollector aiMetricsCollector;
+    @Mock private com.zhuri.coding.content.service.ai.AiMetricsCollector aiMetricsCollector;
 
-    @Mock private com.heima.content.service.ai.AiFunnelMeter funnelMeter;
+    @Mock private com.zhuri.coding.content.service.ai.AiFunnelMeter funnelMeter;
 
     @InjectMocks
     private AiAskServiceImpl service;
@@ -214,12 +214,12 @@ class AiAskServiceImplTest {
         AiAnswerVo vo = service.ask("Redis 分布式锁怎么实现", null, false, null);
 
         assertNotNull(vo);
-        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
-        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
-        verify(funnelMeter, never()).incr(com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
+        verify(funnelMeter).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        verify(funnelMeter).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        verify(funnelMeter, never()).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
     }
 
     @Test
@@ -233,12 +233,12 @@ class AiAskServiceImplTest {
         AiAnswerVo vo = service.ask("缓存命中问题", null, null, null);
 
         assertNotNull(vo);
-        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
-        verify(funnelMeter, never()).incr(com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
-        verify(funnelMeter, never()).incr(com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        verify(funnelMeter).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
+        verify(funnelMeter, never()).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        verify(funnelMeter, never()).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
     }
 
     @Test
@@ -251,12 +251,12 @@ class AiAskServiceImplTest {
         AiAnswerVo vo = service.ask("Redis 锁怎么实现", null, true, null);
 
         assertNotNull(vo);
-        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK_FAST,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
-        verify(funnelMeter).incr(com.heima.content.service.ai.AiFeatures.ASK_FAST,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
-        verify(funnelMeter, never()).incr(com.heima.content.service.ai.AiFeatures.ASK,
-                com.heima.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        verify(funnelMeter).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK_FAST,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        verify(funnelMeter).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK_FAST,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        verify(funnelMeter, never()).incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
     }
 
     // ==================== streamFastAsk ====================
@@ -344,20 +344,20 @@ class AiAskServiceImplTest {
         String bodyNow = "编辑后的正文内容，与向量里的版本不同。";
         when(contentMapper.selectOne(any())).thenReturn(contentOf(bodyNow));
         // 向量记录里存的是"编辑前"的指纹 → 判定过期，应重算
-        String outdatedHash = com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl
+        String outdatedHash = com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl
                 .contentHash("编辑前的正文内容。");
         java.util.Date srcTime = new java.util.Date();
         when(embeddingService.getEmbeddingMeta(5L)).thenReturn(
-            new com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(outdatedHash, srcTime));
+            new com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(outdatedHash, srcTime));
         when(embeddingService.getChunksMeta(5L)).thenReturn(
-            new com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(outdatedHash, srcTime));
+            new com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(outdatedHash, srcTime));
         when(embeddingService.generateEmbedding(anyString())).thenReturn(VEC);
         when(embeddingService.getChunkMaxPerArticle()).thenReturn(20);
 
         service.backfillEmbeddings();
 
         // 重算并以"当前正文指纹"覆盖写入
-        String expectedHash = com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.contentHash(bodyNow);
+        String expectedHash = com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl.contentHash(bodyNow);
         verify(embeddingService).saveEmbedding(eq(5L), eq(VEC), eq(expectedHash), any());
         verify(embeddingService).saveChunks(eq(5L), any(List.class), eq(expectedHash), any());
     }
@@ -372,11 +372,11 @@ class AiAskServiceImplTest {
         String body = "新文章正文内容，用于向量化。";
         when(contentMapper.selectOne(any())).thenReturn(contentOf(body));
         // 向量记录里的指纹与当前正文一致 → 版本新鲜，跳过
-        String freshHash = com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.contentHash(body);
+        String freshHash = com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl.contentHash(body);
         when(embeddingService.getEmbeddingMeta(5L)).thenReturn(
-            new com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(freshHash, new java.util.Date()));
+            new com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(freshHash, new java.util.Date()));
         when(embeddingService.getChunksMeta(5L)).thenReturn(
-            new com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(freshHash, new java.util.Date()));
+            new com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl.EmbeddingMeta(freshHash, new java.util.Date()));
 
         service.backfillEmbeddings();
 

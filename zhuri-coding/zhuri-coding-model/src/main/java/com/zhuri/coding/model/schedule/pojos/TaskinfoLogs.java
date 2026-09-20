@@ -1,4 +1,4 @@
-package com.heima.model.schedule.pojos;
+package com.zhuri.coding.model.schedule.pojos;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;

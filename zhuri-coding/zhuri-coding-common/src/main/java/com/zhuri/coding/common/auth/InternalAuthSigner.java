@@ -1,4 +1,4 @@
-package com.heima.common.auth;
+package com.zhuri.coding.common.auth;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -27,10 +27,10 @@ public final class InternalAuthSigner {
      * 本地开发用的公开默认密钥。它已随源码进入版本库，因此不具备任何防伪能力；
      * 生产环境必须通过 {@code INTERNAL_AUTH_SECRET} 覆盖，否则任何人可据此伪造签名。
      */
-    public static final String DEFAULT_DEV_SECRET = "leadnews-internal-dev-secret";
+    public static final String DEFAULT_DEV_SECRET = "zhuri-coding-internal-dev-secret";
 
     /** 防篡改固定前缀（防止对空 parts 的平凡签名碰撞） */
-    private static final String PREFIX = "heima-leadnews-internal-v1";
+    private static final String PREFIX = "zhuri-coding-internal-v1";
 
     private InternalAuthSigner() {
     }

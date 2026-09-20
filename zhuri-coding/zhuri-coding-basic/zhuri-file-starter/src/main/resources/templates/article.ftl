@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
-    <title>${title!''} - 黑马头条</title>
+    <title>${title!''} - 逐日 Coding</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -617,7 +617,7 @@
                         <img src="${authorAvatar!'https://p3.pstatp.com/thumb/1480/7186611868'}" alt="avatar">
                     </div>
                     <div class="author-info">
-                        <div class="author-name">${authorName!'黑马头条'}</div>
+                        <div class="author-name">${authorName!'逐日 Coding'}</div>
                         <div class="publish-meta">
                             <span class="publish-time">
                                 <#if publishTime??>${publishTime?string('yyyy-MM-dd HH:mm')}</#if>
@@ -654,7 +654,7 @@
             <div class="author-info-card">
                 <div class="author-avatar-wrap">
                     <img src="${authorAvatar!'https://p3.pstatp.com/thumb/1480/7186611868'}" class="avatar" alt="avatar">
-                    <div class="name">${authorName!'黑马头条'}</div>
+                    <div class="name">${authorName!'逐日 Coding'}</div>
                     <div class="badge">AI + 全栈开发工程师</div>
                     <div class="job-title">${authorJobTitle!'全栈开发工程师'}</div>
                     <div class="company">${authorCompany!'某科技公司'}</div>

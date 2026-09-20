@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.skill;
+package com.zhuri.coding.content.service.ai.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.heima.model.article.dtos.AiPrecheckVo;
+import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

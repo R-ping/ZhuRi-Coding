@@ -1,4 +1,4 @@
-package com.heima.common.jackson;
+package com.zhuri.coding.common.jackson;
 
 import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.DeserializationConfig;
@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.deser.BeanDeserializerBuilder;
 import com.fasterxml.jackson.databind.deser.BeanDeserializerModifier;
 import com.fasterxml.jackson.databind.deser.SettableBeanProperty;
-import com.heima.model.common.annotation.IdEncrypt;
+import com.zhuri.coding.model.common.annotation.IdEncrypt;
 
 import java.util.Iterator;
 

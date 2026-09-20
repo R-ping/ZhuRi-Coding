@@ -1,4 +1,4 @@
-package com.heima.reward.util;
+package com.zhuri.coding.reward.util;
 
 import java.util.ArrayList;
 import java.util.HashMap;

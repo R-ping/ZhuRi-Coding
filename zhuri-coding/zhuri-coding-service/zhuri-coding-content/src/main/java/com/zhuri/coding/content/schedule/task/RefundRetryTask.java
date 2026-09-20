@@ -1,8 +1,8 @@
-package com.heima.content.schedule.task;
+package com.zhuri.coding.content.schedule.task;
 
-import com.heima.content.service.order.OrderService;
-import com.heima.content.service.pay.AlipayService;
-import com.heima.model.course.pojos.ApCourseOrder;
+import com.zhuri.coding.content.service.order.OrderService;
+import com.zhuri.coding.content.service.pay.AlipayService;
+import com.zhuri.coding.model.course.pojos.ApCourseOrder;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

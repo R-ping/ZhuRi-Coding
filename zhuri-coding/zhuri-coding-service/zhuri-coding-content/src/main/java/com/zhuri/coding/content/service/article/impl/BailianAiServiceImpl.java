@@ -1,16 +1,16 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.heima.content.mapper.article.ApArticleAiAnalysisMapper;
-import com.heima.content.model.ai.ArticleAuditResult;
-import com.heima.content.model.ai.ViolationCheckResult;
-import com.heima.content.service.article.BailianAiService;
-import com.heima.common.bailian.PromptSanitizer;
-import com.heima.common.bailian.StructuredOutputInvoker;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticleAiAnalysis;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.content.mapper.article.ApArticleAiAnalysisMapper;
+import com.zhuri.coding.content.model.ai.ArticleAuditResult;
+import com.zhuri.coding.content.model.ai.ViolationCheckResult;
+import com.zhuri.coding.content.service.article.BailianAiService;
+import com.zhuri.coding.common.bailian.PromptSanitizer;
+import com.zhuri.coding.common.bailian.StructuredOutputInvoker;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticleAiAnalysis;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

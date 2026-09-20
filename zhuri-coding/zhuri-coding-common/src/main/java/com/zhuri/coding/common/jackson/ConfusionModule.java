@@ -1,4 +1,4 @@
-package com.heima.common.jackson;
+package com.zhuri.coding.common.jackson;
 
 import com.fasterxml.jackson.core.Version;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -8,7 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class ConfusionModule extends Module {
 
     public final static String MODULE_NAME = "jackson-confusion-encryption";
-    public final static Version VERSION = new Version(1,0,0,null,"heima",MODULE_NAME);
+    // 序列化模块归属标识（品牌化，与方 Package 名一致）
+    public final static Version VERSION = new Version(1, 0, 0, null, "zhuri-coding", MODULE_NAME);
 
     @Override
     public String getModuleName() {

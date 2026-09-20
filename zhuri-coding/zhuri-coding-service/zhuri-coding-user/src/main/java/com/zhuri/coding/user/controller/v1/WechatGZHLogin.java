@@ -1,8 +1,8 @@
-package com.heima.user.controller.v1;
+package com.zhuri.coding.user.controller.v1;
 
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
-import com.heima.common.redis.CacheService;
+import com.zhuri.coding.common.redis.CacheService;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.BufferedReader;

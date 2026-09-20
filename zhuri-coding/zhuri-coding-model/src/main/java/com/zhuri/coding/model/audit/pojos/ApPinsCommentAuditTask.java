@@ -1,4 +1,4 @@
-package com.heima.model.audit.pojos;
+package com.zhuri.coding.model.audit.pojos;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

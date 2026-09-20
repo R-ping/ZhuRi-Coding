@@ -1,6 +1,6 @@
-package com.heima.content.service.ai;
+package com.zhuri.coding.content.service.ai;
 
-import com.heima.model.article.dtos.AiPrecheckVo;
+import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
 
 /**
  * AI 发布助手（precheck）

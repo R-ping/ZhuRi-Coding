@@ -1,16 +1,16 @@
-package com.heima.content.controller.v1.pins;
+package com.zhuri.coding.content.controller.v1.pins;
 
 import com.aliyun.oss.OSS;
-import com.heima.common.annotation.RateLimit;
-import com.heima.content.config.OssConfig;
-import com.heima.content.service.pins.PinsPublicService;
-import com.heima.model.pins.dtos.PinsCommentDTO;
-import com.heima.model.pins.dtos.PinsLikeDTO;
-import com.heima.model.pins.dtos.PinsLinkPreviewDTO;
-import com.heima.model.pins.dtos.PinsPublishDTO;
-import com.heima.model.pins.dtos.PinsShareDTO;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.content.config.OssConfig;
+import com.zhuri.coding.content.service.pins.PinsPublicService;
+import com.zhuri.coding.model.pins.dtos.PinsCommentDTO;
+import com.zhuri.coding.model.pins.dtos.PinsLikeDTO;
+import com.zhuri.coding.model.pins.dtos.PinsLinkPreviewDTO;
+import com.zhuri.coding.model.pins.dtos.PinsPublishDTO;
+import com.zhuri.coding.model.pins.dtos.PinsShareDTO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;

@@ -1,7 +1,7 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
-import com.heima.common.redis.CacheService;
-import com.heima.model.user.dtos.LoginResultVo;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.model.user.dtos.LoginResultVo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

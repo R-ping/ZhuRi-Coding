@@ -1,8 +1,8 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
 import cn.hutool.core.util.StrUtil;
-import com.heima.common.redis.CacheService;
-import com.heima.user.service.LoginCodeService;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.user.service.LoginCodeService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

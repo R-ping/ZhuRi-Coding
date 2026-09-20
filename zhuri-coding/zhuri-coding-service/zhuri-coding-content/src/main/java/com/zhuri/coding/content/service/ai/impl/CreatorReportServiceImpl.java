@@ -1,14 +1,14 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.common.redis.CacheService;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.ai.CreatorReportService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.ai.CreatorReportService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -46,11 +46,11 @@ public class CreatorReportServiceImpl implements CreatorReportService {
     private CacheService cacheService;
 
     @Autowired
-    private com.heima.content.service.ai.router.AiModelRouter aiModelRouter;
+    private com.zhuri.coding.content.service.ai.router.AiModelRouter aiModelRouter;
 
     /** 统一 LLM 出口（安全横切 + token 计量；模型仍由内部按 feature 路由） */
     @Autowired
-    private com.heima.content.service.ai.AiLlmGateway llmGateway;
+    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     @Override
     public ResponseResult buildReport(Integer userId, int days) {
@@ -238,7 +238,7 @@ public class CreatorReportServiceImpl implements CreatorReportService {
             String user = "【创作数据】\n" + json;
             // 模型仍由路由层按 feature=creator_report 解析（gateway 内部 resolve，语义不变）
             String raw = llmGateway.generateOrNull(
-                com.heima.content.service.ai.AiFeatures.CREATOR_REPORT, sys, user, null, null);
+                com.zhuri.coding.content.service.ai.AiFeatures.CREATOR_REPORT, sys, user, null, null);
             return raw == null || raw.isBlank() ? null : raw.trim();
         } catch (Exception e) {
             log.error("[CreatorReport] 报告生成异常", e);

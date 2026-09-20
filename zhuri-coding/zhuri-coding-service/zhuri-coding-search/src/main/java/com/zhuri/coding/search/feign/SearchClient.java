@@ -1,10 +1,10 @@
-package com.heima.search.feign;
+package com.zhuri.coding.search.feign;
 
-import com.heima.apis.search.ISearchClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.Bm25RecallDto;
-import com.heima.model.search.vos.SearchArticleVo;
-import com.heima.search.service.ArticleSearchService;
+import com.zhuri.coding.apis.search.ISearchClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
+import com.zhuri.coding.model.search.vos.SearchArticleVo;
+import com.zhuri.coding.search.service.ArticleSearchService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

@@ -1,7 +1,7 @@
-package com.heima.content.utils;
+package com.zhuri.coding.content.utils;
 
 import com.alibaba.fastjson.JSONArray;
-import com.heima.model.search.vos.TocItem;
+import com.zhuri.coding.model.search.vos.TocItem;
 import com.vladsch.flexmark.html.HtmlRenderer;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.ast.Node;

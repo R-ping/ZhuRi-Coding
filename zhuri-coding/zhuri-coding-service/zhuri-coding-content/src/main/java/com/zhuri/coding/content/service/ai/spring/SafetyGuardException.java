@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.spring;
+package com.zhuri.coding.content.service.ai.spring;
 
 /**
  * 提示词安全护栏触发异常。

@@ -1,11 +1,11 @@
-package com.heima.content.event;
+package com.zhuri.coding.content.event;
 
 import com.alibaba.fastjson.JSON;
-import com.heima.content.schedule.service.TaskService;
-import com.heima.content.service.article.ApArticleService;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.schedule.dtos.Task;
-import com.heima.utils.common.ProtostuffUtil;
+import com.zhuri.coding.content.schedule.service.TaskService;
+import com.zhuri.coding.content.service.article.ApArticleService;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.schedule.dtos.Task;
+import com.zhuri.coding.utils.common.ProtostuffUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;

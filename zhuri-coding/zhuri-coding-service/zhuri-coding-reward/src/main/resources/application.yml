@@ -2,7 +2,7 @@ server:
   port: 51905
 spring:
   application:
-    name: leadnews-reward
+    name: zhuri-coding-reward
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/leadnews_reward?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
@@ -24,10 +24,10 @@ mybatis-plus:
       update-strategy: not_null
       id-type: auto
   mapper-locations: classpath*:mapper/*.xml
-  type-aliases-package: com.heima.reward.entity
+  type-aliases-package: com.zhuri.coding.reward.entity
 logging:
   level:
-    com.heima: debug
+    com.zhuri.coding: debug
 
 # 可观测性：指标监控（/actuator/prometheus 供 Prometheus 抓取）+ 分布式链路追踪（Zipkin）
 management:

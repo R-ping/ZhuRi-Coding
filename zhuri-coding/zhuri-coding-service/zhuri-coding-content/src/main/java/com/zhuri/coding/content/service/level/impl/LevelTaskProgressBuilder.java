@@ -1,10 +1,10 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.heima.content.mapper.level.ApBehaviorConfigMapper;
-import com.heima.content.mapper.level.ApUserDailyProgressMapper;
-import com.heima.model.level.pojos.ApBehaviorConfig;
-import com.heima.model.level.pojos.ApUserDailyProgress;
+import com.zhuri.coding.content.mapper.level.ApBehaviorConfigMapper;
+import com.zhuri.coding.content.mapper.level.ApUserDailyProgressMapper;
+import com.zhuri.coding.model.level.pojos.ApBehaviorConfig;
+import com.zhuri.coding.model.level.pojos.ApUserDailyProgress;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 

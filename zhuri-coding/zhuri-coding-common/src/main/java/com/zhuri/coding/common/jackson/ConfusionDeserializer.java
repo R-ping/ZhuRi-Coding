@@ -1,10 +1,10 @@
-package com.heima.common.jackson;
+package com.zhuri.coding.common.jackson;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonDeserializer;
-import com.heima.utils.common.IdsUtils;
+import com.zhuri.coding.utils.common.IdsUtils;
 
 import java.io.IOException;
 

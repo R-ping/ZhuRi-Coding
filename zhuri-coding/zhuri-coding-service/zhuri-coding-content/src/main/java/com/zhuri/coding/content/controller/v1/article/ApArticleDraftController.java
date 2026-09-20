@@ -1,8 +1,8 @@
-package com.heima.content.controller.v1.article;
+package com.zhuri.coding.content.controller.v1.article;
 
-import com.heima.content.service.article.ApArticleDraftService;
-import com.heima.model.article.pojos.ApArticleDraft;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.service.article.ApArticleDraftService;
+import com.zhuri.coding.model.article.pojos.ApArticleDraft;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

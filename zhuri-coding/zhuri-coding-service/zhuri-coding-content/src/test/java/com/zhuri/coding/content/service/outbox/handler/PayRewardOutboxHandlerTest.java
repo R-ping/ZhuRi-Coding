@@ -1,7 +1,7 @@
-package com.heima.content.service.outbox.handler;
+package com.zhuri.coding.content.service.outbox.handler;
 
-import com.heima.content.service.outbox.OutboxDispatcher;
-import com.heima.content.service.payment.PaymentRewardService;
+import com.zhuri.coding.content.service.outbox.OutboxDispatcher;
+import com.zhuri.coding.content.service.payment.PaymentRewardService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

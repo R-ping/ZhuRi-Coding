@@ -1,11 +1,11 @@
-package com.heima.content.service.level.impl;
+package com.zhuri.coding.content.service.level.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
-import com.heima.content.mapper.level.ApPermissionDefinitionMapper;
-import com.heima.content.mapper.level.ApUserPermissionMapper;
-import com.heima.model.level.pojos.ApPermissionDefinition;
-import com.heima.model.level.pojos.ApUserPermission;
+import com.zhuri.coding.content.mapper.level.ApPermissionDefinitionMapper;
+import com.zhuri.coding.content.mapper.level.ApUserPermissionMapper;
+import com.zhuri.coding.model.level.pojos.ApPermissionDefinition;
+import com.zhuri.coding.model.level.pojos.ApUserPermission;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

@@ -1,8 +1,8 @@
-package com.heima.apis.article;
+package com.zhuri.coding.apis.article;
 
-import com.heima.apis.article.fallback.ISemanticSearchClientFallback;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.SemanticSearchDto;
+import com.zhuri.coding.apis.article.fallback.ISemanticSearchClientFallback;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.search.dtos.SemanticSearchDto;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  * 返回 data = List&lt;Map&lt;String,Object&gt;&gt;，字段与 ES 搜索结果 map 对齐：
  * id(String)/title/h_title/publishTime/authorId(String)/authorName/images/staticUrl。
  */
-@FeignClient(value = "leadnews-content", contextId = "leadnews-content-semanticClient",
+@FeignClient(value = "zhuri-coding-content", contextId = "zhuri-coding-content-semanticClient",
     fallback = ISemanticSearchClientFallback.class)
 public interface ISemanticSearchClient {
 

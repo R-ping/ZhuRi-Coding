@@ -1,5 +1,5 @@
 
-package com.heima.content.controller.v1.oss;
+package com.zhuri.coding.content.controller.v1.oss;
 
 import com.alibaba.fastjson.JSONObject;
 import com.aliyun.oss.ClientException;
@@ -8,9 +8,9 @@ import com.aliyun.oss.OSSException;
 import com.aliyun.oss.common.utils.BinaryUtil;
 import com.aliyun.oss.model.MatchMode;
 import com.aliyun.oss.model.PolicyConditions;
-import com.heima.common.annotation.RateLimit;
-import com.heima.content.config.OssConfig;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.content.config.OssConfig;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

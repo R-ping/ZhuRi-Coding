@@ -1,10 +1,10 @@
-package com.heima.content.controller.v1.topic;
+package com.zhuri.coding.content.controller.v1.topic;
 
-import com.heima.content.service.topic.TopicService;
-import com.heima.model.topic.dtos.TopicSquareDto;
-import com.heima.model.topic.vos.TopicDetailVO;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.content.service.topic.TopicService;
+import com.zhuri.coding.model.topic.dtos.TopicSquareDto;
+import com.zhuri.coding.model.topic.vos.TopicDetailVO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

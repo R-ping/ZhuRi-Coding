@@ -1,17 +1,17 @@
-package com.heima.content.service.ai.impl;
+package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.service.ai.AiMetricsCollector;
-import com.heima.content.service.ai.AiSemanticCacheService;
-import com.heima.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.heima.content.utils.PgVectorUtil;
-import com.heima.model.article.dtos.AiAnswerVo;
-import com.heima.model.article.dtos.AiSourceVo;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
+import com.zhuri.coding.content.service.ai.AiSemanticCacheService;
+import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.content.utils.PgVectorUtil;
+import com.zhuri.coding.model.article.dtos.AiAnswerVo;
+import com.zhuri.coding.model.article.dtos.AiSourceVo;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle.Status;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Collections;

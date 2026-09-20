@@ -1,19 +1,19 @@
-package com.heima.search.service.impl;
+package com.zhuri.coding.search.service.impl;
 
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 import co.elastic.clients.json.JsonData;
-import com.heima.apis.article.IArticleClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.search.dtos.Bm25RecallDto;
-import com.heima.model.search.dtos.UserSearchDto;
-import com.heima.model.search.vos.SearchArticleVo;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.search.entity.SearchArticle;
-import com.heima.search.service.ApAssociateWordsService;
-import com.heima.search.service.ApUserSearchService;
-import com.heima.search.service.ArticleSearchService;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.apis.article.IArticleClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
+import com.zhuri.coding.model.search.dtos.UserSearchDto;
+import com.zhuri.coding.model.search.vos.SearchArticleVo;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.search.entity.SearchArticle;
+import com.zhuri.coding.search.service.ApAssociateWordsService;
+import com.zhuri.coding.search.service.ApUserSearchService;
+import com.zhuri.coding.search.service.ArticleSearchService;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,7 +49,7 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
     private IArticleClient articleClient;
 
     @Autowired(required = false)
-    private com.heima.apis.article.ISemanticSearchClient semanticSearchClient;
+    private com.zhuri.coding.apis.article.ISemanticSearchClient semanticSearchClient;
 
     /** 语义召回兜底：每页最多补充条数 */
     private static final int SEMANTIC_FILL_MAX = 10;
@@ -144,8 +144,8 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
         if (semanticEnabled && pageNum == 1 && list.size() < pageSize
             && semanticSearchClient != null) {
             try {
-                com.heima.model.search.dtos.SemanticSearchDto sdto =
-                    new com.heima.model.search.dtos.SemanticSearchDto();
+                com.zhuri.coding.model.search.dtos.SemanticSearchDto sdto =
+                    new com.zhuri.coding.model.search.dtos.SemanticSearchDto();
                 sdto.setSearchWords(dto.getSearchWords());
                 sdto.setTopK(Math.min(pageSize + SEMANTIC_FILL_MAX, 20));
                 ResponseResult sr = semanticSearchClient.semanticSearch(sdto);

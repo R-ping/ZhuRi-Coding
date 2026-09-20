@@ -1,8 +1,8 @@
-package com.heima.content.utils;
+package com.zhuri.coding.content.utils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heima.apis.notification.INotificationClient;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;

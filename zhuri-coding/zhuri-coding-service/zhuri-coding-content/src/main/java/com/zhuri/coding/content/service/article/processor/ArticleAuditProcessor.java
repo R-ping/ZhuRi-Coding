@@ -1,6 +1,6 @@
-package com.heima.content.service.article.processor;
+package com.zhuri.coding.content.service.article.processor;
 
-import com.heima.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ApArticle;
 
 /**
  * 文章审核处理器接口 - 责任链模式

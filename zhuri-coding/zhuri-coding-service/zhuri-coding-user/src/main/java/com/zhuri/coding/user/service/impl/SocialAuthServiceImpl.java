@@ -1,12 +1,12 @@
-package com.heima.user.service.impl;
+package com.zhuri.coding.user.service.impl;
 
 import static org.springframework.http.HttpMethod.GET;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.heima.model.user.pojos.ApUserSocial;
-import com.heima.user.config.OAuthProperties;
-import com.heima.user.mapper.ApUserSocialMapper;
-import com.heima.user.service.SocialAuthService;
+import com.zhuri.coding.model.user.pojos.ApUserSocial;
+import com.zhuri.coding.user.config.OAuthProperties;
+import com.zhuri.coding.user.mapper.ApUserSocialMapper;
+import com.zhuri.coding.user.service.SocialAuthService;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

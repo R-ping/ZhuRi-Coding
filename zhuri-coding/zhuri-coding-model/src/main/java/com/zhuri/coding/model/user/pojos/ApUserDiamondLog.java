@@ -1,4 +1,4 @@
-package com.heima.model.user.pojos;
+package com.zhuri.coding.model.user.pojos;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;

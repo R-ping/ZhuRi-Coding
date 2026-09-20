@@ -1,7 +1,7 @@
-package com.heima.content.service.ai.agent;
+package com.zhuri.coding.content.service.ai.agent;
 
-import com.heima.content.service.ai.spring.PromptSafetyAdvisor;
-import com.heima.content.service.ai.spring.SafetyGuardException;
+import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -48,12 +48,12 @@ public class AgentRunner {
     private final Executor toolExecutor;
 
     /** token 计量（Agent 有界循环每轮一次 LLM 调用，多轮成本必须逐轮计入） */
-    private final com.heima.content.service.ai.AiTokenMeter tokenMeter;
+    private final com.zhuri.coding.content.service.ai.AiTokenMeter tokenMeter;
 
     public AgentRunner(@Qualifier("openAiChatModel") ChatModel chatModel,
                        PromptSafetyAdvisor promptSafetyAdvisor,
                        @Qualifier("aiAgentToolExecutor") Executor toolExecutor,
-                       com.heima.content.service.ai.AiTokenMeter tokenMeter) {
+                       com.zhuri.coding.content.service.ai.AiTokenMeter tokenMeter) {
         this.chatClient = ChatClient.builder(chatModel)
             .defaultAdvisors(promptSafetyAdvisor)
             .build();
@@ -110,7 +110,7 @@ public class AgentRunner {
                     .chatResponse();
                 // 逐轮计量：ReAct 每轮都是一次真实 LLM 调用（多轮 Agent 的成本主要在这里）
                 try {
-                    tokenMeter.record(com.heima.content.service.ai.AiFeatures.AGENT_EXPERT, response);
+                    tokenMeter.record(com.zhuri.coding.content.service.ai.AiFeatures.AGENT_EXPERT, response);
                 } catch (Exception ignore) {
                     // 计量失败不影响 Agent 主流程
                 }

@@ -1,6 +1,6 @@
-package com.heima.common.bailian;
+package com.zhuri.coding.common.bailian;
 
-import com.heima.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

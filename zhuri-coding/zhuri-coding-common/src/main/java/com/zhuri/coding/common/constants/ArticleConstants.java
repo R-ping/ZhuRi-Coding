@@ -1,4 +1,4 @@
-package com.heima.common.constants;
+package com.zhuri.coding.common.constants;
 
 public class ArticleConstants {
     public static final Short LOADTYPE_LOAD_MORE = 1;

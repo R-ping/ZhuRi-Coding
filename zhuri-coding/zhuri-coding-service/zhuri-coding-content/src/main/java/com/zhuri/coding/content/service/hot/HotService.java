@@ -1,7 +1,7 @@
-package com.heima.content.service.hot;
+package com.zhuri.coding.content.service.hot;
 
-import com.heima.model.article.vos.HotArticleVo;
-import com.heima.model.article.vos.HotAuthorVo;
+import com.zhuri.coding.model.article.vos.HotArticleVo;
+import com.zhuri.coding.model.article.vos.HotAuthorVo;
 
 import java.util.List;
 import java.util.Map;

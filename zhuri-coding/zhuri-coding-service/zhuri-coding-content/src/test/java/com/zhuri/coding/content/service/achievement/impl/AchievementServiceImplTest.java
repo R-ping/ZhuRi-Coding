@@ -1,4 +1,4 @@
-package com.heima.content.service.achievement.impl;
+package com.zhuri.coding.content.service.achievement.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -7,14 +7,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
-import com.heima.apis.reward.IRewardClient;
-import com.heima.content.mapper.achievement.ApAchievementMapper;
-import com.heima.content.mapper.achievement.ApUserAchievementMapper;
-import com.heima.content.service.level.LevelService;
-import com.heima.model.achievement.pojos.ApAchievement;
-import com.heima.model.achievement.pojos.ApUserAchievement;
-import com.heima.model.achievement.vos.AchievementDataVO;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.reward.IRewardClient;
+import com.zhuri.coding.content.mapper.achievement.ApAchievementMapper;
+import com.zhuri.coding.content.mapper.achievement.ApUserAchievementMapper;
+import com.zhuri.coding.content.service.level.LevelService;
+import com.zhuri.coding.model.achievement.pojos.ApAchievement;
+import com.zhuri.coding.model.achievement.pojos.ApUserAchievement;
+import com.zhuri.coding.model.achievement.vos.AchievementDataVO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;

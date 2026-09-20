@@ -1,10 +1,10 @@
-package com.heima.content.controller.v1.order;
+package com.zhuri.coding.content.controller.v1.order;
 
-import com.heima.content.service.order.DiscountService;
-import com.heima.model.course.dtos.CourseDiscountDto;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.service.order.DiscountService;
+import com.zhuri.coding.model.course.dtos.CourseDiscountDto;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,7 +22,7 @@ public class DiscountController {
     public ResponseResult createDiscount(@RequestBody CourseDiscountDto dto) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return discountService.createDiscount(dto, user.getId().longValue());
     }
@@ -32,7 +32,7 @@ public class DiscountController {
     public ResponseResult listDiscounts(@RequestParam Long courseId) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         return discountService.listDiscounts(courseId, user.getId().longValue());
     }
@@ -42,7 +42,7 @@ public class DiscountController {
     public ResponseResult disableDiscount(@RequestBody Map<String, Object> params) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
-            return ResponseResult.errorResult(com.heima.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
+            return ResponseResult.errorResult(com.zhuri.coding.model.common.enums.AppHttpCodeEnum.NEED_LOGIN);
         }
         Long discountId = params.get("discountId") != null ? Long.parseLong(params.get("discountId").toString()) : null;
         return discountService.disableDiscount(discountId, user.getId().longValue());

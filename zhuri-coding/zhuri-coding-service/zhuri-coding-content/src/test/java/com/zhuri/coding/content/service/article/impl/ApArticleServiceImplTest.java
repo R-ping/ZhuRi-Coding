@@ -1,16 +1,16 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
-import com.heima.content.event.ArticlePublishEvent;
-import com.heima.content.mapper.article.ApArticleEventMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.model.article.dtos.ArticleDto;
-import com.heima.model.article.dtos.ArticleHomeDto;
-import com.heima.model.article.pojos.ApArticle;
-import com.heima.model.article.pojos.ArticleEvent;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.content.event.ArticlePublishEvent;
+import com.zhuri.coding.content.mapper.article.ApArticleEventMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.model.article.dtos.ArticleDto;
+import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
+import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.model.article.pojos.ArticleEvent;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -96,7 +96,7 @@ class ApArticleServiceImplTest {
         assertEquals(200, r.getCode());
         // size<=50 且 tag 被补默认
         assertTrue(dto.getSize() <= 50);
-        assertEquals(com.heima.common.constants.ArticleConstants.DEFAULT_TAG, dto.getTag());
+        assertEquals(com.zhuri.coding.common.constants.ArticleConstants.DEFAULT_TAG, dto.getTag());
         List<?> list = (List<?>) r.getData();
         assertEquals(1, list.size());
     }

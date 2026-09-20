@@ -1,7 +1,7 @@
-package com.heima.content.schedule;
+package com.zhuri.coding.content.schedule;
 
-import com.heima.content.service.pins.impl.PinsReviewService;
-import com.heima.model.audit.pojos.ApPinsAuditTask;
+import com.zhuri.coding.content.service.pins.impl.PinsReviewService;
+import com.zhuri.coding.model.audit.pojos.ApPinsAuditTask;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;

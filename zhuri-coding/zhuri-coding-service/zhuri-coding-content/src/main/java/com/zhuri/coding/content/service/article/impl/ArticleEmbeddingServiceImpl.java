@@ -1,9 +1,9 @@
-package com.heima.content.service.article.impl;
+package com.zhuri.coding.content.service.article.impl;
 
-import com.heima.content.service.article.ArticleEmbeddingService;
-import com.heima.content.utils.PgVectorUtil;
+import com.zhuri.coding.content.service.article.ArticleEmbeddingService;
+import com.zhuri.coding.content.utils.PgVectorUtil;
 import org.springframework.ai.embedding.EmbeddingModel;
-import com.heima.model.article.pojos.ApArticleEmbedding;
+import com.zhuri.coding.model.article.pojos.ApArticleEmbedding;
 import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -48,11 +48,11 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
 
     /** 熔断器（P1-1：向量服务故障时快速失败；可空注入，单测上下文为 null） */
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiCircuitBreaker circuitBreaker;
+    private com.zhuri.coding.content.service.ai.AiCircuitBreaker circuitBreaker;
 
     /** 指标（熔断拒绝计数） */
     @Autowired(required = false)
-    private com.heima.content.service.ai.AiMetricsCollector metrics;
+    private com.zhuri.coding.content.service.ai.AiMetricsCollector metrics;
 
     @Override
     public void saveEmbedding(Long articleId, double[] embedding) {
@@ -304,7 +304,7 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
         if (content == null || content.isEmpty()) {
             return null;
         }
-        if (circuitBreaker != null && !circuitBreaker.allow(com.heima.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING)) {
+        if (circuitBreaker != null && !circuitBreaker.allow(com.zhuri.coding.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING)) {
             if (metrics != null) {
                 metrics.incr("ai_circuit_rejected_embedding");
             }
@@ -319,12 +319,12 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
         } catch (RuntimeException e) {
             // 依赖不可用类失败才计入熔断（参数类错误不会走到这里）
             if (circuitBreaker != null) {
-                circuitBreaker.onFailure(com.heima.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING);
+                circuitBreaker.onFailure(com.zhuri.coding.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING);
             }
             throw e;
         }
         if (circuitBreaker != null) {
-            circuitBreaker.onSuccess(com.heima.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING);
+            circuitBreaker.onSuccess(com.zhuri.coding.content.service.ai.AiCircuitBreaker.TARGET_EMBEDDING);
         }
         if (emb == null || emb.length == 0) {
             return null;

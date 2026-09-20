@@ -1,7 +1,7 @@
-package com.heima.content.service.level;
+package com.zhuri.coding.content.service.level;
 
-import com.heima.model.level.dtos.JScoreDetailVO;
-import com.heima.model.level.dtos.JScoreOverviewVO;
+import com.zhuri.coding.model.level.dtos.JScoreDetailVO;
+import com.zhuri.coding.model.level.dtos.JScoreOverviewVO;
 
 public interface JScoreService {
     /**

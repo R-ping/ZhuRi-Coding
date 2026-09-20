@@ -1,6 +1,6 @@
-package com.heima.notification.config;
+package com.zhuri.coding.notification.config;
 
-import com.heima.notification.interceptor.AppTokenInterceptor;
+import com.zhuri.coding.notification.interceptor.AppTokenInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistration;

@@ -1,4 +1,4 @@
-package com.heima.content.service.achievement.impl;
+package com.zhuri.coding.content.service.achievement.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -9,19 +9,19 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.heima.apis.notification.INotificationClient;
-import com.heima.content.mapper.achievement.ApAchievementMapper;
-import com.heima.content.mapper.achievement.ApUserAchievementMapper;
-import com.heima.content.mapper.article.ApArticleMapper;
-import com.heima.content.mapper.follow.ApFollowMapper;
-import com.heima.content.mapper.interaction.ApBehaviorLikesMapper;
-import com.heima.content.mapper.pins.ApPinsMapper;
-import com.heima.model.achievement.pojos.ApAchievement;
-import com.heima.model.achievement.pojos.ApUserAchievement;
-import com.heima.model.behavior.BehaviorContext;
-import com.heima.model.behavior.BehaviorResult;
-import com.heima.model.behavior.BehaviorType;
-import com.heima.model.common.dtos.ResponseResult;
+import com.zhuri.coding.apis.notification.INotificationClient;
+import com.zhuri.coding.content.mapper.achievement.ApAchievementMapper;
+import com.zhuri.coding.content.mapper.achievement.ApUserAchievementMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
+import com.zhuri.coding.content.mapper.interaction.ApBehaviorLikesMapper;
+import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
+import com.zhuri.coding.model.achievement.pojos.ApAchievement;
+import com.zhuri.coding.model.achievement.pojos.ApUserAchievement;
+import com.zhuri.coding.model.behavior.BehaviorContext;
+import com.zhuri.coding.model.behavior.BehaviorResult;
+import com.zhuri.coding.model.behavior.BehaviorType;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
 import java.util.Arrays;
 import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
@@ -178,7 +178,7 @@ class AchievementProcessorTest {
         when(achievementMapper.selectList(any())).thenReturn(
             Collections.singletonList(def("likes_100", "likes", 100)));
         // 作者有 1 篇文章，获 100 赞
-        com.heima.model.article.pojos.ApArticle article = new com.heima.model.article.pojos.ApArticle();
+        com.zhuri.coding.model.article.pojos.ApArticle article = new com.zhuri.coding.model.article.pojos.ApArticle();
         article.setId(300L);
         when(apArticleMapper.selectList(any())).thenReturn(Arrays.asList(article));
         when(apBehaviorLikesMapper.selectCount(any())).thenReturn(100L);

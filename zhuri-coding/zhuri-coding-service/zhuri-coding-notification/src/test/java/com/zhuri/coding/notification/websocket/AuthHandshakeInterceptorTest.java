@@ -1,6 +1,6 @@
-package com.heima.notification.websocket;
+package com.zhuri.coding.notification.websocket;
 
-import com.heima.utils.common.AppJwtUtil;
+import com.zhuri.coding.utils.common.AppJwtUtil;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

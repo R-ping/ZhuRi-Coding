@@ -1,11 +1,11 @@
-package com.heima.content.controller.v1.pins;
+package com.zhuri.coding.content.controller.v1.pins;
 
-import com.heima.content.config.EditorConfig;
-import com.heima.content.service.pins.ApPinsService;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.utils.thread.AppThreadLocalUtil;
+import com.zhuri.coding.content.config.EditorConfig;
+import com.zhuri.coding.content.service.pins.ApPinsService;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

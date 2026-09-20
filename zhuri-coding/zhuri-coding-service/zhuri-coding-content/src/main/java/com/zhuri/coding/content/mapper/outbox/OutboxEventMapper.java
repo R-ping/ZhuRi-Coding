@@ -1,7 +1,7 @@
-package com.heima.content.mapper.outbox;
+package com.zhuri.coding.content.mapper.outbox;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.heima.model.outbox.pojos.OutboxEvent;
+import com.zhuri.coding.model.outbox.pojos.OutboxEvent;
 import org.apache.ibatis.annotations.Mapper;
 
 /** 本地消息表 Mapper（Outbox） */

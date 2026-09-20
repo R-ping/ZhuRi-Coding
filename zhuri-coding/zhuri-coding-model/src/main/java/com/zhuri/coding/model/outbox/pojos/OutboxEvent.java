@@ -1,4 +1,4 @@
-package com.heima.model.outbox.pojos;
+package com.zhuri.coding.model.outbox.pojos;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

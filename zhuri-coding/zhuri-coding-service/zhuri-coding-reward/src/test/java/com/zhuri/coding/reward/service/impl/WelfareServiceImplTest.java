@@ -1,15 +1,15 @@
-package com.heima.reward.service.impl;
+package com.zhuri.coding.reward.service.impl;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.reward.entity.UserAssets;
-import com.heima.reward.entity.WelfareStockLog;
-import com.heima.reward.entity.WelfareExchangeOrder;
-import com.heima.reward.entity.WelfareGoods;
-import com.heima.reward.mapper.WelfareExchangeOrderMapper;
-import com.heima.reward.mapper.WelfareGoodsMapper;
-import com.heima.reward.mapper.WelfareStockLogMapper;
-import com.heima.reward.mapper.UserAssetsMapper;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.reward.entity.UserAssets;
+import com.zhuri.coding.reward.entity.WelfareStockLog;
+import com.zhuri.coding.reward.entity.WelfareExchangeOrder;
+import com.zhuri.coding.reward.entity.WelfareGoods;
+import com.zhuri.coding.reward.mapper.WelfareExchangeOrderMapper;
+import com.zhuri.coding.reward.mapper.WelfareGoodsMapper;
+import com.zhuri.coding.reward.mapper.WelfareStockLogMapper;
+import com.zhuri.coding.reward.mapper.UserAssetsMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

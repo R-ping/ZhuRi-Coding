@@ -1,4 +1,4 @@
-package com.heima.content.service.ai.memory.impl;
+package com.zhuri.coding.content.service.ai.memory.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

@@ -1,4 +1,4 @@
-package com.heima.user.config;
+package com.zhuri.coding.user.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

@@ -1,7 +1,7 @@
-package com.heima.user.service;
+package com.zhuri.coding.user.service;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.user.dto.ProfileUpdateDTO;
+import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.user.dto.ProfileUpdateDTO;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface UserProfileService {

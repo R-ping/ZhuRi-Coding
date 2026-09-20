@@ -1,4 +1,4 @@
-package com.heima.content.mapper;
+package com.zhuri.coding.content.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
