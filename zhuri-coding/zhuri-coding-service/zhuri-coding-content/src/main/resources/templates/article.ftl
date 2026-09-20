@@ -423,23 +423,12 @@
             padding: 16px 0;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
-        /* 侧边栏随滚动切换卡片（阅读进度阶段） */
+        /* 侧边栏卡片：全部常驻展示（作者卡 + 目录 + 相关推荐 + 相似文章），
+           不再按阅读进度切换（切换会使滚动中卡片消失/跳动，参考稀土掘金整体跟随视口） */
         .toc-sidebar .stage-toc,
         .toc-sidebar .stage-related,
         .toc-sidebar .stage-featured {
-            display: none;
-            animation: sidebarFadeIn 0.35s ease;
-        }
-        .toc-sidebar[data-stage="toc"] .stage-toc { display: block; }
-        .toc-sidebar[data-stage="related"] .stage-related { display: block; }
-        .toc-sidebar[data-stage="featured"] .stage-featured { display: block; }
-        .toc-sidebar[data-stage="toc-related"] .stage-toc,
-        .toc-sidebar[data-stage="toc-related"] .stage-related { display: block; }
-        .toc-sidebar[data-stage="end"] .stage-related,
-        .toc-sidebar[data-stage="end"] .stage-featured { display: block; }
-        @keyframes sidebarFadeIn {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
+            display: block;
         }
         .toc-title {
             font-size: 15px;
@@ -1481,15 +1470,15 @@
             font-size: 12px;
             color: #98a0ab;
         }
-        /* 行为元素语义化配色：弱化“全黑”一致感，让彼此有区分度 */
-        .action-sidebar #sideLikeBtn .action-icon { color: #f55d5d; }    /* 点赞=红 */
-        .action-sidebar #sideShareBtn .action-icon { color: #00a870; }    /* 分享=绿 */
-        .action-sidebar #sideReportBtn .action-icon { color: #f53f3f; }   /* 举报=红(警示) */
+        /* 行为元素统一中性灰 + 悬停/激活变蓝（稀土掘金风格），不再按语义着色高亮 */
+        .action-sidebar #sideLikeBtn .action-icon,
+        .action-sidebar #sideCommentBtn .action-icon,
+        .action-sidebar #sideCollectBtn .action-icon,
+        .action-sidebar #sideShareBtn .action-icon,
+        .action-sidebar #sideReportBtn .action-icon,
         .action-sidebar #sideImmersiveBtn .action-icon,
         .action-sidebar #sideSettingsBtn .action-icon,
-        .action-sidebar #sideBackTopBtn .action-icon { color: #6e7681; }  /* 工具类=中性灰 */
-        .action-sidebar #sideCommentBtn .action-icon { color: #4e7ff2; }  /* 评论=蓝 */
-        .action-sidebar #sideCollectBtn .action-icon { color: #ffae33; }  /* 收藏=金 */
+        .action-sidebar #sideBackTopBtn .action-icon { color: #8a919f; }  /* 统一中性灰 */
         .action-sidebar .author-mini-avatar {
             width: 36px;
             height: 36px;
@@ -2552,15 +2541,15 @@
         body.dark .action-sidebar .action-item:hover,
         body.dark .action-sidebar .action-item.active { background: #1c2a44; color: #4d9fff; }
         body.dark .action-item .action-count { color: #8a919f; }
-        /* 暗色下行为图标提亮，保持语义区分度 */
-        body.dark .action-sidebar #sideLikeBtn .action-icon { color: #ff7b7b; }
-        body.dark .action-sidebar #sideCommentBtn .action-icon { color: #7aa2ff; }
-        body.dark .action-sidebar #sideCollectBtn .action-icon { color: #ffc04d; }
-        body.dark .action-sidebar #sideShareBtn .action-icon { color: #11c97a; }
-        body.dark .action-sidebar #sideReportBtn .action-icon { color: #ff6b6b; }
+        /* 暗色下行为图标提亮统一中性灰（与亮色策略一致） */
+        body.dark .action-sidebar #sideLikeBtn .action-icon,
+        body.dark .action-sidebar #sideCommentBtn .action-icon,
+        body.dark .action-sidebar #sideCollectBtn .action-icon,
+        body.dark .action-sidebar #sideShareBtn .action-icon,
+        body.dark .action-sidebar #sideReportBtn .action-icon,
         body.dark .action-sidebar #sideImmersiveBtn .action-icon,
         body.dark .action-sidebar #sideSettingsBtn .action-icon,
-        body.dark .action-sidebar #sideBackTopBtn .action-icon { color: #9aa4b2; }
+        body.dark .action-sidebar #sideBackTopBtn .action-icon { color: #9aa4b2; }  /* dark 统一中性灰 */
         body.dark .modal-container { background: #1e1e1e; }
         body.dark .modal-title,
         body.dark .modal-subtitle { color: #e4e6eb; }
@@ -2858,6 +2847,24 @@
         .ai-rq-loading { color: #8a919f; font-size: 13px; padding: 4px 0; }
         body.dark .ai-related-questions { background: #1c1e22; border-color: #2d333b; }
         body.dark .ai-rq-item { color: #e6e8eb; border-top-color: #2d333b; }
+        /* 弹框内的"读完想问"（ai-ask-rq）：无外框，浅灰底填满空态，问题组垂直居中，提问后收起 */
+        .ai-ask-body .ai-related-questions.ai-ask-rq {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            margin: 0;
+            border: none;
+            padding: 14px;
+            overflow-y: auto;
+            background: #f0f2f5;
+            border-radius: 8px;
+        }
+        .ai-ask-body .ai-rq-title { margin-bottom: 2px; }
+        .ai-ask-body .ai-rq-item { padding: 13px 6px; font-size: 15px; line-height: 1.7; }
+        .ai-rq-tip { font-size: 12px; color: #8a919f; margin: 2px 0 6px; }
+        body.dark .ai-rq-tip { color: #9aa4b2; }
+        body.dark .ai-ask-body .ai-related-questions.ai-ask-rq { background: #26292e; }
     </style>
 </head>
 <body>
@@ -3029,12 +3036,6 @@
 
                 <!-- 读完提示 -->
                 <div class="read-end-hint" id="readEndHint">— 已读完，感谢阅读 —</div>
-
-                <!-- 相关问答：读完想问（Step3·①；LLM 生成本文可答问题，点击进"问这篇文章"浮层） -->
-                <div class="ai-related-questions" id="aiRelatedQuestions" style="display:none;">
-                    <div class="ai-rq-title">读完想问</div>
-                    <div class="ai-rq-list" id="aiRqList"></div>
-                </div>
 
                 <!-- 正文尾部作者卡片 -->
                 <div class="end-author-card" id="endAuthorCard">
@@ -3511,6 +3512,12 @@
             <button class="ai-ask-close" id="aiAskClose" type="button">×</button>
         </div>
         <div class="ai-ask-body" id="aiAskBody">
+            <!-- 读完想问（从正文搬入弹框空态；LLM 生成本文可答问题，点击自动提问） -->
+            <div class="ai-related-questions ai-ask-rq" id="aiRelatedQuestions" style="display:none;">
+                <div class="ai-rq-title">读完想问</div>
+                <div class="ai-rq-tip">点击问题即可向本文提问</div>
+                <div class="ai-rq-list" id="aiRqList"></div>
+            </div>
             <div class="ai-ask-empty" id="aiAskEmpty">基于本文回答你的问题 · AI 生成内容仅供参考，请以原文为准</div>
         </div>
         <div class="ai-ask-footer" id="aiAskFooter">
