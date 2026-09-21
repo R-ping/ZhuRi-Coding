@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -134,18 +135,17 @@ class PrecheckWorkflowTest {
     }
 
     @Test
-    @DisplayName("阻断：安全评审缺失 → merge 无法合成草稿 → 返回 null 由调用方降级")
+    @DisplayName("阻断：安全评审缺失 → 短路质量/SEO/终审 → 返回 null 由调用方降级")
     void block_safetyMissing() {
         when(safetyWorker.review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
             .thenReturn("");
-        when(qualityWorker.review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
-            .thenReturn("{\"quality_score\":60,\"is_tech\":true,\"suggestions\":[]}");
-        when(seoWorker.review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
-            .thenReturn("{\"tags\":[\"A\"],\"summary\":\"概要。\"}");
 
         AiPrecheckVo vo = workflow().run("标题", "正文", null);
 
+        // 安全缺失属阻断：即便 quality/seo 可达也不产出 VO（DAG 短路 + FORMAT 判阻断）
         assertNull(vo);
+        verify(qualityWorker, never()).review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+        verify(seoWorker, never()).review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
@@ -295,5 +295,37 @@ class PrecheckWorkflowTest {
         assertTrue(events.contains("CRITIC:degraded"), "终审崩溃应派发 degraded：" + events);
         // degraded 紧跟 done 之后
         assertTrue(events.indexOf("CRITIC:done") < events.indexOf("CRITIC:degraded"));
+    }
+
+    @Test
+    @DisplayName("DAG 短跑：安全判定违规 → 短路跳过 质量/SEO/查重/终审，仍产出 violation VO 且六阶段事件齐备")
+    void dag_shortCircuitOnViolation() {
+        when(safetyWorker.review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn("{\"is_violation\":true,\"violation_type\":\"违法违规\",\"violation_reason\":\"包含禁止内容\"}");
+        // 不 stub 其余 worker/查重：短路发生时不应被调用
+
+        Executor sync = Runnable::run;
+        PrecheckWorkflow wf = new PrecheckWorkflow(safetyWorker, qualityWorker, seoWorker,
+            criticWorker, similarityTool, sync);
+        java.util.List<String> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        wf.addStageListener((type, detail) -> events.add(type + ":" + detail.get()));
+
+        AiPrecheckVo vo = wf.run("标题", "正文", null);
+
+        assertNotNull(vo);
+        assertTrue(vo.getViolation());
+        assertEquals("违法违规", vo.getViolationType());
+        assertTrue(vo.getTags().isEmpty());
+        // 违规短路：质量/SEO/查重/终审均不被调用（避免无谓的高成本评估）
+        verify(qualityWorker, never()).review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+        verify(seoWorker, never()).review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+        verify(criticWorker, never()).review(org.mockito.ArgumentMatchers.anyString());
+        verify(similarityTool, never()).searchSimilar(org.mockito.ArgumentMatchers.anyString());
+        // 即便被裁剪的阶段也必须派发 running→done（令前端各阶段进度条均收口、不悬挂），末端 FORMAT:done 收尾
+        for (StageType t : StageType.values()) {
+            assertTrue(events.contains(t + ":running"), "缺少 " + t + " running：" + events);
+            assertTrue(events.contains(t + ":done"), "缺少 " + t + " done：" + events);
+        }
+        assertEquals("FORMAT:done", events.get(events.size() - 1));
     }
 }

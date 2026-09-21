@@ -13,7 +13,6 @@ import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -25,21 +24,26 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 发布预检「显式工作流」编排器。
+ * 发布预检「DAG 显式编排」器。
  *
- * <p>相较旧路径（主编 Agent 在 ReAct 里授意模型临场调用专家工具），本编排器把
- * 阶段显式化为代码控制：SAFETY/QUALITY/SEO 三个独立专家经 {@code aiAgentToolExecutor}
- * 并行执行（互不依赖），DUPLICATE 查重并行进行；随后将各专家产物合成为完整草稿，
- * 交 CRITIC 终审校验修正，最后 FORMAT 结构化输出 {@link AiPrecheckVo}。
+ * <p>相较旧路径（主编 Agent 在 ReAct 里授意模型临场调用专家工具），本编排器把阶段显式化为
+ * 有向无环图（DAG）：{@link DagExecutor} 依据阶段间依赖拓扑分层、层内并行、层间串行，
+ * 并支持<b>条件门控短路</b>——安全审查判定违规即裁剪质量/SEO/查重/终审，直接结构化输出，
+ * 避免对违规内容做无谓的高成本评估。
+ *
+ * <p>图结构：SAFETY（无依赖，首层）→ 若违规则短路至 FORMAT；非违规则 QUALITY/SEO/DUPLICATE
+ * 并行（依赖 SAFETY 放行）→ CRITIC（终审，依赖质量/SEO 产物）→ FORMAT（结构化输出 VO）。
  *
  * <p>阶段独立降级（增量2：分级降级 + 失败自愈）：每个专家/终审都带单次超时上限与失败重试；
  * 重试耗尽后，非阻断阶段（质量/SEO/查重）仅 SKIPPED 该阶段、其余照常；仅当阻断性阶段
- * （安全缺失、终审崩溃）重试后仍失败时才返回 null，交由调用方走直答兜底（fail-open），
+ * （安全缺失、终审崩溃）仍失败时才返回 null，交由调用方走直答兜底（fail-open），
  * 避免单点故障级联导致整体不可用。
  *
  * <p>可配置项（application.yml）：{@code app.ai.precheck.stage-timeout-ms}（单专家超时）、
- * {@code app.ai.precheck.stage-max-retry}（非阻断重试）、{@code app.ai.precheck.critic-max-retry}（终审重试）、
- * {@code app.ai.precheck.parallel-timeout-ms}（并行批次整体等待上限）。
+ * {@code app.ai.precheck.stage-max-retry}（非阻断重试）、{@code app.ai.precheck.critic-max-retry}（终审重试）。
+ *
+ * <p>超时语义：每个专家经 {@code runSafe} 在 stage-timeout-ms 内单次超时+重试；DAG 波次有
+ * 60s 硬上限兜底，防止单波次异常卡死整体。
  */
 @Slf4j
 @Component
@@ -126,14 +130,13 @@ public class PrecheckWorkflow {
     @Value("${app.ai.precheck.critic-max-retry:2}")
     private int criticMaxRetry = 2;
 
-    /** 并行专家批次整体等待超时上限（毫秒），防止单一专家卡死拖垮整体，默认 45s */
-    @Value("${app.ai.precheck.parallel-timeout-ms:45000}")
-    private long parallelTimeoutMs = 45000;
-
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** 通用 DAG 编排器（无状态）：负责阶段依赖分层、层内并行与条件门控短路。 */
+    private final DagExecutor<StageType> dagExecutor = new DagExecutor<>();
+
     /**
-     * 运行显式预检工作流。
+     * 运行 DAG 预检工作流。
      *
      * @param title   文章标题
      * @param content 文章正文（已截断）
@@ -143,100 +146,168 @@ public class PrecheckWorkflow {
     public AiPrecheckVo run(String title, String content, Long articleId) {
         StageContext ctx = new StageContext(title, content, articleId, null);
         long wfStart = System.currentTimeMillis();
-
-        // 阶段 1：独立专家并行（安全/质量/SEO）+ 查重
-        runParallelBatch(ctx);
-
-        // 阶段 2：把专家产物合成为完整草稿 JSON（供 Critic 终审）
-        String draft = mergeDraft(ctx);
-        if (draft == null) {
-            log.warn("[PrecheckWorkflow] 关键专家产物缺失，无法合成草稿，直接降级");
-            return null;
-        }
-        // 终审 Critic（阻断性）：进入前通知 running，产出后通知 done
-        notifyStage(StageType.CRITIC, () -> "running");
-        StageResult criticResult = runCritic(draft);
-        ctx.put(StageType.CRITIC, criticResult);
-        notifyStage(StageType.CRITIC, () -> "done");
-
-        // 阶段 3：结构化输出 VO（含相似度填充）
-        notifyStage(StageType.FORMAT, () -> "running");
-        AiPrecheckVo vo = formatVo(ctx);
-        if (vo == null) {
-            // 终审崩溃/结构化失败 → 整体降级（fail-open），异常降级前通知监听器进入 degraded 态
-            if (criticResult != null && criticResult.status() == StageResult.Status.FAILED) {
-                notifyStage(StageType.CRITIC, () -> "degraded");
+        try {
+            // 阶段图编排：SAFETY→(违规则短路 | 非违规并行 QUALITY/SEO/DUPLICATE)→CRITIC
+            DagExecutor.DagResult<StageType> dag = executeDag(ctx);
+            // FORMAT 终态序列化：在 DAG 全部完成后读取各阶段产物产最终 VO（须后于 CRITIC，故不入图）
+            notifyStage(StageType.FORMAT, () -> "running");
+            AiPrecheckVo vo = buildFinalVo(ctx, dag);
+            if (vo == null) {
+                // 阻断性阶段失败/安全缺失 → 整体降级（fail-open），降级前通知监听器进入 degraded 态
+                StageResult critic = ctx.get(StageType.CRITIC);
+                if (critic != null && critic.status() == StageResult.Status.FAILED) {
+                    notifyStage(StageType.CRITIC, () -> "degraded");
+                }
+                log.warn("[PrecheckWorkflow] 预检未产出 VO（阻断性阶段失败/安全缺失），向下游降级");
+                return null;
             }
-            log.warn("[PrecheckWorkflow] 终审产出无法解析为 VO，记录失败上下文");
+            vo.setLatencyMs(System.currentTimeMillis() - wfStart);
+            notifyStage(StageType.FORMAT, () -> "done");
+            log.info("[PrecheckWorkflow] 完成：violation={}, quality={}, tags={}",
+                vo.getViolation(), vo.getQualityScore(), vo.getTags() == null ? 0 : vo.getTags().size());
+            return vo;
+        } catch (Exception e) {
+            log.warn("[PrecheckWorkflow] DAG 编排异常，整体降级（fail-open）: {}", e.getMessage());
             return null;
         }
-        vo.setLatencyMs(System.currentTimeMillis() - wfStart);
-        notifyStage(StageType.FORMAT, () -> "done");
-        log.info("[PrecheckWorkflow] 完成：violation={}, quality={}, tags={}",
-            vo.getViolation(), vo.getQualityScore(), vo.getTags() == null ? 0 : vo.getTags().size());
-        return vo;
-    }
-
-    /** 并行执行 安全/质量/SEO/查重 四步，各自独立带超时+重试并独立降级；整体等待受 parallelTimeoutMs 约束，防止单专家卡死 */
-    private void runParallelBatch(StageContext ctx) {
-        // 阶段事件：四个并行专家进入前通知 running（前端据此归位各阶段进行态）
-        notifyStage(StageType.SAFETY, () -> "running");
-        notifyStage(StageType.QUALITY, () -> "running");
-        notifyStage(StageType.SEO, () -> "running");
-        notifyStage(StageType.DUPLICATE, () -> "running");
-        List<CompletableFuture<StageResult>> futures = new ArrayList<>(4);
-        futures.add(CompletableFuture.supplyAsync(() -> runSafe("safety", () -> safetyWorker.review(ctx.title(), ctx.content()), StageType.SAFETY), toolExecutor));
-        futures.add(CompletableFuture.supplyAsync(() -> runSafe("quality", () -> qualityWorker.review(ctx.title(), ctx.content()), StageType.QUALITY), toolExecutor));
-        futures.add(CompletableFuture.supplyAsync(() -> runSafe("seo", () -> seoWorker.review(ctx.title(), ctx.content()), StageType.SEO), toolExecutor));
-        futures.add(CompletableFuture.supplyAsync(() -> runSimilarity(ctx), toolExecutor));
-        collectFutureResults(ctx, futures);
-        // 阶段事件：并行批次汇总完成，四个阶段统一通知 done（无论成功/SKIPPED）
-        notifyStage(StageType.SAFETY, () -> "done");
-        notifyStage(StageType.QUALITY, () -> "done");
-        notifyStage(StageType.SEO, () -> "done");
-        notifyStage(StageType.DUPLICATE, () -> "done");
     }
 
     /**
-     * 在 bounded timeout 内等待子任务完成并按阶段归档；超时/中断/未完成的任务按 SKIPPED 记入，
-     * 保证任一步骤卡死都不拖垮整体（各阶段仍先走各自内部超时+重试）。
+     * 组装并执行预检 DAG 阶段图。
+     *
+     * <p>节点依赖：SAFETY 无依赖且始终运行（产出安全判定，阻塞性）；QUALITY/SEO/DUPLICATE 依赖
+     * SAFETY 且仅当其放行（非违规）才允许执行，违规则被门控裁剪；CRITIC 依赖 QUALITY/SEO 产物
+     * 合成草稿后终审；FORMAT 依赖 SAFETY 并始终执行，产出最终 VO。
+     *
+     * <p>被裁剪（短路）的阶段经 onCut 同步派发 running→done，保证前端进度条各阶段都有收口事件。
      */
-    private void collectFutureResults(StageContext ctx, List<CompletableFuture<StageResult>> futures) {
-        boolean interrupted = false;
-        try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                .get(parallelTimeoutMs, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            log.warn("[PrecheckWorkflow] 并行批次等待超时 {}ms，未完成阶段按 SKIPPED 归档", parallelTimeoutMs);
-        } catch (InterruptedException e) {
-            interrupted = true;
-            Thread.currentThread().interrupt();
-        } catch (ExecutionException e) {
-            log.warn("[PrecheckWorkflow] 并行批次执行异常，按已返回结果继续", e);
-        }
-        for (CompletableFuture<StageResult> f : futures) {
-            try {
-                StageResult r = f.getNow(null);
-                if (r == null) {
-                    // 超时或异常导致无结果：归档为对应阶段 SKIPPED
-                    log.warn("[PrecheckWorkflow] 阶段无结果（超时/异常），SKIPPED 归档");
-                    continue;
+    private DagExecutor.DagResult<StageType> executeDag(StageContext ctx) {
+        List<DagExecutor.Node<StageType>> nodes = new ArrayList<>(6);
+        // SAFETY：无依赖 → 首个执行；阻断性阶段，产物为安全评审 JSON
+        nodes.add(DagExecutor.Node.<StageType>node(StageType.SAFETY)
+            .then(r -> {
+                notifyStage(StageType.SAFETY, () -> "running");
+                StageResult res = runSafe("safety",
+                    () -> safetyWorker.review(ctx.title(), ctx.content()), StageType.SAFETY);
+                ctx.put(StageType.SAFETY, res);
+                notifyStage(StageType.SAFETY, () -> "done");
+                return res;
+            }).build());
+        // QUALITY / SEO：依赖 SAFETY 放行才执行；违规 → 裁剪
+        nodes.add(textStage(ctx, StageType.QUALITY, "quality",
+            () -> qualityWorker.review(ctx.title(), ctx.content())));
+        nodes.add(textStage(ctx, StageType.SEO, "seo",
+            () -> seoWorker.review(ctx.title(), ctx.content())));
+        // DUPLICATE：同样依赖 SAFETY 放行才查重（违规内容无需查重）
+        nodes.add(DagExecutor.Node.<StageType>node(StageType.DUPLICATE)
+            .dependsOn(StageType.SAFETY)
+            .gate(this::safetyAllowsProceed)
+            .then(r -> {
+                notifyStage(StageType.DUPLICATE, () -> "running");
+                StageResult res = runSimilarity(ctx);
+                ctx.put(StageType.DUPLICATE, res);
+                notifyStage(StageType.DUPLICATE, () -> "done");
+                return res;
+            }).build());
+        // CRITIC：依赖 QUALITY/SEO；前置被裁剪（违规/安全缺失）→ 整支短路跳过终审
+        nodes.add(DagExecutor.Node.<StageType>node(StageType.CRITIC)
+            .dependsOn(StageType.QUALITY, StageType.SEO)
+            .gate(this::safetyAllowsProceed)
+            .then(r -> {
+                notifyStage(StageType.CRITIC, () -> "running");
+                String draft = mergeDraft(ctx);
+                StageResult res;
+                if (draft == null) {
+                    // 关键专家产物缺失（防御性：正常已被门控裁剪拦截），按阻断处理
+                    log.warn("[PrecheckWorkflow] 关键专家产物缺失，无法合成草稿，标记终审阻断");
+                    res = StageResult.failed(StageType.CRITIC, 0);
+                } else {
+                    res = runCritic(draft);
                 }
-                ctx.put(r.stage(), r);
-            } catch (Exception e) {
-                log.warn("[PrecheckWorkflow] 单阶段结果读取异常，跳过", e);
-            }
+                ctx.put(StageType.CRITIC, res);
+                notifyStage(StageType.CRITIC, () -> "done");
+                return res;
+            }).build());
+        // FORMAT 不入图：其作为 DAG 完成后的终态序列化步骤在 run() 中执行（须读取 CRITIC 终态，
+        // 且违规短路时仍需产出 VO，故不能依赖会被裁剪的 CRITIC 节点）。
+
+        return dagExecutor.execute(nodes, toolExecutor,
+            cutStage -> {
+                // 被裁剪（短路跳过）的阶段：派发 running→done，令前端进度条不悬挂
+                notifyStage(cutStage, () -> "running");
+                notifyStage(cutStage, () -> "done");
+            });
+    }
+
+    /** 质量/SEO 类「文本评审、非阻断、受安全门控」阶段的公共声明。 */
+    private DagExecutor.Node<StageType> textStage(StageContext ctx, StageType type, String name,
+                                                  java.util.function.Supplier<String> review) {
+        return DagExecutor.Node.<StageType>node(type)
+            .dependsOn(StageType.SAFETY)
+            .gate(this::safetyAllowsProceed)
+            .then(r -> {
+                notifyStage(type, () -> "running");
+                StageResult res = runSafe(name, review, type);
+                ctx.put(type, res);
+                notifyStage(type, () -> "done");
+                return res;
+            })
+            .build();
+    }
+
+    /** 安全门控：仅当 SAFETY 产出有效且未判定违规时才放行后续（非阻断）阶段。 */
+    private boolean safetyAllowsProceed(DagExecutor.DagResult<StageType> r) {
+        Object s = r.valueOf(StageType.SAFETY);
+        if (!(s instanceof StageResult sr) || sr.status() != StageResult.Status.OK) {
+            return false; // 安全缺失：不放行
         }
-        if (interrupted) {
-            log.warn("[PrecheckWorkflow] 并行等待被中断，Workflow 可能被上层取消");
+        JsonNode safety = parseOnNull(sr.payload());
+        return safety != null && !safety.path("is_violation").asBoolean(true);
+    }
+
+    /** FORMAT 阶段产出 VO：安全缺失/终审阻断 → null（fail-open）；终审被裁剪（违规短路）→ 直接合成。 */
+    private AiPrecheckVo buildFinalVo(StageContext ctx, DagExecutor.DagResult<StageType> r) {
+        StageResult safety = stageResultOf(r, StageType.SAFETY);
+        // 安全缺失（SKIPPED/空）→ 阻断，无法产出 VO
+        if (safety == null || safety.status() != StageResult.Status.OK || parseOnNull(safety.payload()) == null) {
+            return null;
         }
+        DagExecutor.DagResult.Status criticStatus = r.statusOf(StageType.CRITIC);
+        if (criticStatus == DagExecutor.DagResult.Status.FAILED) {
+            return null; // 终审阻断
+        }
+        if (criticStatus == DagExecutor.DagResult.Status.OK) {
+            return formatVo(ctx); // 正常路径：解析终审产物
+        }
+        // critic 被裁剪（违规短路）→ 用安全结果直接合成 VO（violation=true）
+        return formatShortCircuited(ctx);
+    }
+
+    private StageResult stageResultOf(DagExecutor.DagResult<StageType> r, StageType t) {
+        Object v = r.valueOf(t);
+        return v instanceof StageResult sr ? sr : null;
+    }
+
+    /** 违规短路分支的结构化：仅依据安全评审合成 VO，质量/SEO/终审字段取默认值。 */
+    private AiPrecheckVo formatShortCircuited(StageContext ctx) {
+        JsonNode safety = parseOnNull(ctx.payload(StageType.SAFETY));
+        AiPrecheckVo vo = new AiPrecheckVo();
+        vo.setViolation(safety != null && safety.path("is_violation").asBoolean(false));
+        vo.setViolationType(trimToNull(safety == null ? "" : safety.path("violation_type").asText()));
+        vo.setViolationReason(trimToNull(safety == null ? "" : safety.path("violation_reason").asText()));
+        vo.setTech(true); // 短路未评估质量，默认技术内容
+        vo.setSuggestions(new ArrayList<>());
+        vo.setTags(new ArrayList<>());
+        vo.setSummary(null);
+        fillSimilarity(vo, ctx);
+        return vo;
     }
 
     private StageResult runSimilarity(StageContext ctx) {
         long t = System.currentTimeMillis();
         try {
             // 查重直接调用（对象级，不序列化——内部 ApArticle 大小/枚举字段不适合 JSON 往返）。
-            // 单次超时由外层并行批次整体等待 parallelTimeoutMs 兜底，避免专门包装引入序列化问题。
+            // 查重自身无重试；单次执行若异常按 SKIPPED 处理，不拖垮 DAG 其余分支。
             List<SimilaritySearchTool.SimilarArticle> hits = similarityTool.searchSimilar(ctx.content());
             return StageResult.ok(StageType.DUPLICATE, filterSelf(hits, ctx.articleId()), System.currentTimeMillis() - t);
         } catch (Exception e) {
