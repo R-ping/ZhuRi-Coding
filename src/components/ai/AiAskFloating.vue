@@ -49,7 +49,7 @@
                                     <span class="a-error">{{ m.error }}</span>
                                 </template>
                                 <template v-else>
-                                    <div class="a-text" v-html="renderAnswer(m.answer)" @click="onAnswerClick($event, mi)"></div>
+                                    <div class="a-text" v-html="renderAnswer(m.answer, m.sources)" @click="onAnswerClick($event, mi)"></div>
                                     <div class="a-feedback" v-if="m.answer && !m.loading && !m.streaming && !m.error">
                                         <template v-if="!m.feedbackGiven">
                                             <span class="fb-label">这个回答有帮助吗？</span>
@@ -341,12 +341,24 @@
                 this.loadQuota()
                 this.scrollBottom()
             },
-            /** 回答中的 [n] 引用 → 高亮序号（点击经事件委托定位来源） */
-            renderAnswer(text) {
+            /**
+             * 回答渲染：先整体转义防 XSS，再把「有对应来源」的 [N] 包成可点击角标；
+             * 无对应来源（sources 为空或序号越界）的 [N] 保留为普通文本、不渲染角标，
+             * 纯文本照常展示不报错。因转义在前、标签在后注入，用户/模型文本不会成为 HTML。
+             */
+            renderAnswer(text, sources) {
                 if (!text) return ''
-                return text
+                // 第一步：把文本视为纯文本转义（杜绝任何用户/模型内容被当作 HTML 解析）
+                const safe = text
                     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                    .replace(/\[(\d{1,2})\]/g, '<span class="a-ref" data-idx="$1">[$1]</span>')
+                // 第二步：仅在序号有对应来源时才替换成可点角标，否则原样输出 [N]
+                return safe.replace(/\[(\d{1,2})\]/g, (_, n) => {
+                    const idx = parseInt(n, 10)
+                    if (Array.isArray(sources) && sources[idx - 1]) {
+                        return '<span class="a-ref" data-idx="' + n + '">[' + n + ']</span>'
+                    }
+                    return '[' + n + ']'
+                })
             },
             /** 点击回答中的 [n] 引用：高亮并滚动到对应来源卡片 */
             onAnswerClick(event, msgIndex) {
