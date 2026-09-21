@@ -13,11 +13,15 @@ import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.follow.pojos.ApFollow;
 import com.zhuri.coding.model.search.vos.TocItem;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import jakarta.servlet.http.HttpServletResponse;
@@ -56,6 +60,10 @@ public class ArticlePageController {
 
     @Autowired
     private ApFollowMapper apFollowMapper;
+
+    /** 站点对外域名（canonical / OG 绝对 URL 前缀；空时在模板输出相对路径便于本地调试） */
+    @Value("${app.seo.base-url:}")
+    private String seoBaseUrl;
 
     /**
      * 渲染文章详情页
@@ -102,6 +110,13 @@ public class ArticlePageController {
         model.addAttribute("collectCount", article.getCollection() != null ? article.getCollection() : 0);
         model.addAttribute("tocList", tocList);
         model.addAttribute("articleContentHtml", contentHtml);
+
+        // 2.1 SEO 元数据（meta description / canonical / OG / JSON-LD 结构化数据）
+        model.addAttribute("seoBaseUrl", nullSafe(seoBaseUrl));
+        // 描述优先复用 AI 预检回填的 summary，缺省则从正文纯文本截取，保证 <meta description> 非空
+        model.addAttribute("metaDescription", buildMetaDescription(article.getSummary(), content));
+        model.addAttribute("coverImage", article.getCoverImage() != null ? article.getCoverImage() : "");
+        model.addAttribute("publishTimeIso", toIso(article.getPublishTime()));
 
         // 3. 补充作者信息：逐力值等级（创作等级）、职位、公司、文章数、粉丝数
         fillAuthorExtras(article, model);
@@ -180,18 +195,46 @@ public class ArticlePageController {
      * 计算阅读时间（分钟）：按每分钟阅读 500 字估算
      */
     private String calculateReadTime(String content) {
+        return String.valueOf(Math.max(1, (int) Math.ceil(plainText(content).length() / 500.0)));
+    }
+
+    /**
+     * 提取正文纯文本（去掉 Markdown 语法、代码块与 HTML 标签）
+     */
+    private String plainText(String content) {
         if (StringUtils.isBlank(content)) {
-            return "1";
+            return "";
         }
-        String plainText = content.replaceAll("#+\\s*", "")
+        return content.replaceAll("#+\\s*", "")
             .replaceAll("!\\[.*?\\]\\(.*?\\)", "")
             .replaceAll("\\[.*?\\]\\(.*?\\)", "")
             .replaceAll("```[\\s\\S]*?```", "")
             .replaceAll("`[^`]*`", "")
             .replaceAll("<[^>]+>", "")
             .replaceAll("\\s+", "");
-        int minutes = Math.max(1, (int) Math.ceil(plainText.length() / 500.0));
-        return String.valueOf(minutes);
+    }
+
+    /**
+     * 构建文章 meta description：优先 AI 预检回填的 summary，缺省时从正文纯文本截取，最长 150 字
+     */
+    private String buildMetaDescription(String summary, String content) {
+        String base = StringUtils.isNotBlank(summary)
+            ? plainText(summary)
+            : plainText(content);
+        if (StringUtils.isBlank(base)) {
+            return "逐日 Coding 开发者技术社区";
+        }
+        return base.length() > 150 ? base.substring(0, 150) + "…" : base;
+    }
+
+    /** 发布时间转 ISO-8601（Asia/Shanghai，供 JSON-LD datePublished / sitemap lastmod 使用） */
+    private String toIso(Date date) {
+        if (date == null) {
+            return "";
+        }
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX");
+        sdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+        return sdf.format(date);
     }
 
     private String nullSafe(String value) {
