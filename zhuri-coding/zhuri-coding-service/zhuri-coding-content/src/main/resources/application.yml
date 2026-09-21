@@ -288,6 +288,16 @@ app:
   # 本地开发为空 → 输出相对路径便于调试；正式部署用环境变量 SEO_BASE_URL 覆盖，如 https://www.zhuri-coding.com
   seo:
     base-url: ${SEO_BASE_URL:}
+  # 发布预检「显式工作流」可调参数（增量2：失败自愈 + 分级降级）
+  ai-precheck:
+    # 单专家一次 LLM 调用超时上限（毫秒，含重试各次）
+    stage-timeout-ms: 15000
+    # 非阻断专家阶段（质量/SEO 等）失败重试次数（含首调）
+    stage-max-retry: 2
+    # 终审 Critic 失败重试次数（含首调）
+    critic-max-retry: 2
+    # 并行专家批次整体等待超时上限（毫秒），防止单专家卡死拖垮整体
+    parallel-timeout-ms: 45000
   internal-auth:
     secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
 

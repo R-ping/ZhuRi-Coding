@@ -103,6 +103,10 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     @Autowired
     private AgentRunner agentRunner;
 
+    /** 显式工作流编排器（增量1）：安全/质量/SEO/查重并行 + 终审 + 结构化，取代主编 ReAct 作为主路径 */
+    @Autowired
+    private com.zhuri.coding.content.service.ai.agent.workflow.PrecheckWorkflow precheckWorkflow;
+
     @Autowired
     private SafetyExpertWorker safetyExpertWorker;
 
@@ -187,21 +191,37 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         // 提示词安全（净化 user + system 加固 + 输出护栏）由 PromptSafetyAdvisor 声明式处理；
         // Agent 主路径走 AgentRunner 内嵌的 Advisor，兜底路径在下方 ChatClient 上注册同一 Advisor。
         try {
-            // 主路径：主编 Agent 调度专家团队（安全/质量/SEO 并行 + 查重 + 可选终审 Critic）
-            List<Object> tools = java.util.Arrays.asList(safetyExpertWorker, qualityExpertWorker,
-                seoExpertWorker, criticExpertWorker, aiSimilarityTools);
-            // 透传 MCP provider：MCP 工具（文档读写等）并入工具回调集；未启用时 providerOrNull() 返回 null，
-            // AgentRunner 内部退化为仅方法型工具，行为与未接入 MCP 时一致（fail-open）
-            AgentResult result = agentRunner.run(agentP.content, user, tools,
-                mcpToolCatalog == null ? null : mcpToolCatalog.providerOrNull(), AGENT_MAX_STEPS);
-            if (result.isCompleted() && result.getFinalAnswer() != null) {
-                JsonNode root = parseJson(result.getFinalAnswer());
-                if (root != null) {
-                    vo = fromJson(root);
-                    log.info("[AiPrecheck-Agent] steps={}, FINAL 解析成功", result.getSteps());
+            // 主路径一（增量1）：显式工作流——安全/质量/SEO/查重并行 + 终审 Critic + 结构化。
+            // 相比主编 ReAct（让模型临场挑选工具），阶段顺序由代码确定，可独立降级、可观测；
+            // 成功即返回，失败（返回 null）则落入主编 ReAct 兜底。
+            try {
+                com.zhuri.coding.model.article.dtos.AiPrecheckVo wfVo =
+                    precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
+                if (wfVo != null) {
+                    vo = wfVo;
+                    log.info("[AiPrecheck-Workflow] 显式工作流产出成功");
                 }
-            } else {
-                log.warn("[AiPrecheck-Agent] 未收敛(completed={}, steps={})，降级直答", result.isCompleted(), result.getSteps());
+            } catch (Exception we) {
+                log.warn("[AiPrecheck-Workflow] 显式工作流异常，转主编 ReAct 兜底: {}", we.getMessage());
+            }
+
+            if (vo == null) {
+                // 主路径二（兜底）：主编 Agent 调度专家团队（安全/质量/SEO 并行 + 查重 + 可选终审 Critic）
+                List<Object> tools = java.util.Arrays.asList(safetyExpertWorker, qualityExpertWorker,
+                    seoExpertWorker, criticExpertWorker, aiSimilarityTools);
+                // 透传 MCP provider：MCP 工具（文档读写等）并入工具回调集；未启用时 providerOrNull() 返回 null，
+                // AgentRunner 内部退化为仅方法型工具，行为与未接入 MCP 时一致（fail-open）
+                AgentResult result = agentRunner.run(agentP.content, user, tools,
+                    mcpToolCatalog == null ? null : mcpToolCatalog.providerOrNull(), AGENT_MAX_STEPS);
+                if (result.isCompleted() && result.getFinalAnswer() != null) {
+                    JsonNode root = parseJson(result.getFinalAnswer());
+                    if (root != null) {
+                        vo = fromJson(root);
+                        log.info("[AiPrecheck-Agent] steps={}, FINAL 解析成功", result.getSteps());
+                    }
+                } else {
+                    log.warn("[AiPrecheck-Agent] 未收敛(completed={}, steps={})，降级直答", result.isCompleted(), result.getSteps());
+                }
             }
         } catch (Exception e) {
             log.warn("[AiPrecheck-Agent] 循环异常，降级直答", e);
@@ -251,6 +271,66 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
             vo.getTags() == null ? 0 : vo.getTags().size(),
             agentP.version, directP.version, vo.getLatencyMs());
         return vo;
+    }
+
+    /**
+     * 发布前预检测（SSE 流式可观测版）：复用显式工作流，把阶段进度经 {@code onEvent} 实时回传，
+     * 最终 VO 经 {@code onDone} 回调。为保持对外契约并发隔离，必须只移除本次注册的那一个监听器。
+     */
+    @Override
+    public void precheckStream(String title, String content, Long articleId, String coverImageUrl,
+                               java.util.function.BiConsumer<com.zhuri.coding.content.service.ai.agent.workflow.StageType, String> onEvent,
+                               java.util.function.Consumer<AiPrecheckVo> onDone) {
+        // 与 precheck 一致的轻量兜底：空入参直接回调 null（由 controller 决定发 done 还是 error）
+        String t = title == null ? "" : title.trim();
+        String c = content == null ? "" : content.trim();
+        if (t.isEmpty() || c.isEmpty()) {
+            safeDone(onDone, null);
+            return;
+        }
+        if (t.length() > MAX_TITLE) {
+            t = t.substring(0, MAX_TITLE);
+        }
+        if (c.length() > MAX_CONTENT) {
+            c = c.substring(0, MAX_CONTENT);
+        }
+        AiPrecheckVo vo = null;
+        // 本次调用专属的监听器：转发阶段事件到 SSE。仅 onEvent 非空才注册，避免空回调白占监听器。
+        if (onEvent != null) {
+            java.util.function.BiConsumer<com.zhuri.coding.content.service.ai.agent.workflow.StageType,
+                java.util.function.Supplier<String>> listener =
+                (type, supplier) -> onEvent.accept(type, supplier.get());
+            precheckWorkflow.addStageListener(listener);
+            try {
+                // 显式工作流主路径：成功即返回 VO；降级则返回 null（监听器侧已收到各阶段状态）
+                vo = precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
+            } catch (Exception e) {
+                log.warn("[AiPrecheck-Workflow] 流式预检异常: {}", e.getMessage());
+            } finally {
+                // 并发隔离铁律：仅移除本次注册的监听器，绝不 clearStageListeners() 全清，否则串扰并发用户
+                precheckWorkflow.removeStageListener(listener);
+            }
+        } else {
+            try {
+                vo = precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
+            } catch (Exception e) {
+                log.warn("[AiPrecheck-Workflow] 流式预检异常: {}", e.getMessage());
+            }
+        }
+        // 结束回调：无论成功或 null，一律通知上层收尾（done 或 error 由 controller 决定）
+        safeDone(onDone, vo);
+    }
+
+    /** 安全地回调 onDone（吞掉回调自身异常，避免破坏 finally 清理顺序语义） */
+    private void safeDone(java.util.function.Consumer<AiPrecheckVo> onDone, AiPrecheckVo vo) {
+        if (onDone == null) {
+            return;
+        }
+        try {
+            onDone.accept(vo);
+        } catch (Exception e) {
+            log.warn("[AiPrecheck-Workflow] 流式 onDone 回调异常: {}", e.getMessage());
+        }
     }
 
     /** 将 FINAL JSON 映射为 VO（容错：字段缺失不报错） */
