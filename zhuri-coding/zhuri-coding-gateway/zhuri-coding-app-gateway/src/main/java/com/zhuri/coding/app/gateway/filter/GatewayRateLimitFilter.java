@@ -106,23 +106,60 @@ public class GatewayRateLimitFilter implements GlobalFilter, Ordered {
         return response.writeWith(Mono.just(buffer));
     }
 
-    /** 解析客户端 IP：优先取代理头，回退到 remoteAddress */
+    /**
+     * 解析客户端 IP。
+     *
+     * <p><b>安全约定</b>：X-Forwarded-For 可被客户端自行伪造，无条件采信等于 IP 维度限流形同虚设
+     * （换一个伪造值就是一个新限流桶）。故仅在直连对端为我方受信代理（回环/内网）时才采信代理头，
+     * 并从右往左取第一个非受信地址（我方代理把观测到的对端追加在最右，最左可能是伪造值）。
+     */
     private String resolveClientIp(ServerHttpRequest request) {
-        String forwarded = request.getHeaders().getFirst("X-Forwarded-For");
-        if (StringUtils.hasText(forwarded)) {
-            int comma = forwarded.indexOf(',');
-            String first = comma >= 0 ? forwarded.substring(0, comma) : forwarded;
-            if (StringUtils.hasText(first)) {
-                return first.trim();
+        String remoteAddr = request.getRemoteAddress() != null
+            ? request.getRemoteAddress().getAddress().getHostAddress() : null;
+        if (isTrustedProxy(remoteAddr)) {
+            String forwarded = request.getHeaders().getFirst("X-Forwarded-For");
+            if (StringUtils.hasText(forwarded)) {
+                String[] parts = forwarded.split(",");
+                for (int i = parts.length - 1; i >= 0; i--) {
+                    String candidate = parts[i].trim();
+                    if (!candidate.isEmpty() && !isTrustedProxy(candidate)) {
+                        return candidate;
+                    }
+                }
+            }
+            String realIp = request.getHeaders().getFirst("X-Real-IP");
+            if (StringUtils.hasText(realIp)) {
+                return realIp.trim();
             }
         }
-        String realIp = request.getHeaders().getFirst("X-Real-IP");
-        if (StringUtils.hasText(realIp)) {
-            return realIp.trim();
+        return remoteAddr != null && !remoteAddr.isEmpty() ? remoteAddr : "unknown";
+    }
+
+    /** 是否为受信代理地址（回环 / 内网 / 链路本地），需与部署拓扑保持一致 */
+    private static boolean isTrustedProxy(String ip) {
+        if (ip == null || ip.isEmpty()) {
+            return false;
         }
-        if (request.getRemoteAddress() != null) {
-            return request.getRemoteAddress().getAddress().getHostAddress();
+        if ("127.0.0.1".equals(ip) || "::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip)) {
+            return true;
         }
-        return "unknown";
+        if (ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.")) {
+            return true;
+        }
+        if (ip.startsWith("172.")) {
+            int second = secondOctet(ip);
+            return second >= 16 && second <= 31;
+        }
+        return false;
+    }
+
+    /** 取 IPv4 第二段（判断 172.16.0.0/12 私有网段），非法格式返回 -1 */
+    private static int secondOctet(String ip) {
+        try {
+            String[] parts = ip.split("\\.");
+            return parts.length > 1 ? Integer.parseInt(parts[1]) : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 }

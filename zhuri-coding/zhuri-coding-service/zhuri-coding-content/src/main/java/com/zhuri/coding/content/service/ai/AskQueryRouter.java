@@ -1,7 +1,9 @@
 package com.zhuri.coding.content.service.ai;
 
+import jakarta.annotation.PostConstruct;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -51,6 +53,18 @@ public class AskQueryRouter {
     @Value("${ai.router.chat.tech-words:}")
     private String techWordsCfg;
 
+    /** 生效词表：启动时解析一次（词表是静态内容，避免每次问答重复 split + 分配） */
+    private List<String> techWords = DEFAULT_TECH_WORDS;
+    private List<String> chatWords = DEFAULT_CHAT_WORDS;
+
+    @PostConstruct
+    void init() {
+        techWords = split(techWordsCfg, DEFAULT_TECH_WORDS);
+        chatWords = split(chatWordsCfg, DEFAULT_CHAT_WORDS);
+        log.info("[AskQueryRouter] 意图路由词表加载完成: enabled={}, techWords={} 条, chatWords={} 条",
+                enabled, techWords.size(), chatWords.size());
+    }
+
     /** 意图判定（null/空白按 TECH 处理，保证知识问答不被误伤） */
     public Intent intent(String question) {
         if (!enabled || question == null) {
@@ -60,13 +74,11 @@ public class AskQueryRouter {
         if (q.isEmpty()) {
             return Intent.TECH;
         }
-        List<String> techWords = split(techWordsCfg, DEFAULT_TECH_WORDS);
         for (String w : techWords) {
             if (q.contains(w)) {
                 return Intent.TECH;
             }
         }
-        List<String> chatWords = split(chatWordsCfg, DEFAULT_CHAT_WORDS);
         for (String w : chatWords) {
             if (q.contains(w)) {
                 return q.length() <= CHAT_MAX_LEN ? Intent.CHAT : Intent.TECH;
@@ -82,6 +94,6 @@ public class AskQueryRouter {
         return Arrays.stream(cfg.split(","))
             .map(String::trim)
             .filter(s -> !s.isEmpty())
-            .collect(java.util.stream.Collectors.toList());
+            .collect(Collectors.toList());
     }
 }

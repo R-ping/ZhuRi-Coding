@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -15,7 +15,6 @@ import static org.mockito.Mockito.when;
 import com.zhuri.coding.common.redis.CacheService;
 import com.zhuri.coding.content.service.ai.AiQuotaService;
 import com.zhuri.coding.content.service.ai.AiWalletService;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +24,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 /**
  * AI 每日免费配额（Redis 计数）单测。
@@ -71,32 +71,31 @@ class AiQuotaServiceImplTest {
     }
 
     @Test
-    @DisplayName("首次计数：设置当日过期并放行（免费内）")
+    @DisplayName("首次计数：Lua 原子累加并补当日过期，免费内放行")
     void tryConsumeFirstCountExpiresKey() {
-        when(valueOps.increment(anyString())).thenReturn(1L);
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(1L);
 
         assertTrue(service.tryConsume(UID));
 
-        verify(valueOps).increment(anyString());
-        verify(stringRedisTemplate).expire(anyString(), anyLong(), eq(TimeUnit.SECONDS));
+        // 计数与过期已在同一 Lua 脚本内完成（不再有独立 expire 调用），故断言脚本入参为「当日剩余秒数 + 增量 1」
+        verify(stringRedisTemplate).execute(any(RedisScript.class), anyList(), anyString(), eq("1"));
         verify(walletService, never()).deductOne(any());
     }
 
     @Test
     @DisplayName("当日免费额度内直接放行（不触碰钱包）")
     void tryConsumeWithinFreeQuota() {
-        when(valueOps.increment(anyString())).thenReturn(19L);
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(19L);
 
         assertTrue(service.tryConsume(UID));
 
-        verify(stringRedisTemplate, never()).expire(anyString(), anyLong(), eq(TimeUnit.SECONDS));
         verify(walletService, never()).deductOne(any());
     }
 
     @Test
     @DisplayName("免费用尽：回补计数防虚高，转钱包扣减成功放行")
     void tryConsumeFreeExhaustedFallsBackToWallet() {
-        when(valueOps.increment(anyString())).thenReturn(21L);
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(21L);
         when(valueOps.decrement(anyString())).thenReturn(20L);
         when(walletService.deductOne(UID)).thenReturn(true);
 
@@ -109,7 +108,7 @@ class AiQuotaServiceImplTest {
     @Test
     @DisplayName("免费与钱包均用尽 → 不放行")
     void tryConsumeExhaustedAll() {
-        when(valueOps.increment(anyString())).thenReturn(21L);
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(21L);
         when(walletService.deductOne(UID)).thenReturn(false);
 
         assertFalse(service.tryConsume(UID));
@@ -119,7 +118,8 @@ class AiQuotaServiceImplTest {
     @Test
     @DisplayName("Redis 计数异常 fail-open 放行（不阻断问答主链路）")
     void tryConsumeRedisFailOpen() {
-        when(valueOps.increment(anyString())).thenThrow(new RuntimeException("redis down"));
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any()))
+            .thenThrow(new RuntimeException("redis down"));
 
         assertTrue(service.tryConsume(UID));
         verify(walletService, never()).deductOne(any());

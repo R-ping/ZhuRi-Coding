@@ -1,5 +1,6 @@
 package com.zhuri.coding.content.controller.v1.audit;
 
+import com.zhuri.coding.content.service.audit.AuditReviewerGuard;
 import com.zhuri.coding.content.service.audit.ContentAppealService;
 import com.zhuri.coding.model.audit.dtos.AppealReviewDto;
 import com.zhuri.coding.model.audit.dtos.AppealSubmitDto;
@@ -21,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 内容治理申诉端点（AI 预审 + 人工终审）
  *
  * <p>submit：内容归属者对被折叠评论 / 被 AIGC 标注的文章发起申诉；
- * review：人工终审（allow 解除 / uphold 维持；防自审，生产需接运营权限）；
+ * review：人工终审（allow 解除 / uphold 维持；**需授权审核员** —— 见 {@link AuditReviewerGuard}，另有防自审兜底）；
  * status：申诉人查询自己申诉的处理状态与 AI 预审建议。
  */
 @Slf4j
@@ -31,6 +32,9 @@ public class ContentAppealController {
 
     @Autowired
     private ContentAppealService contentAppealService;
+
+    @Autowired
+    private AuditReviewerGuard auditReviewerGuard;
 
     /** 提交申诉（登录 + 归属校验） */
     @PostMapping("/submit")
@@ -64,6 +68,12 @@ public class ContentAppealController {
         }
         if (dto == null || dto.getAppealId() == null || dto.getAction() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+        // 授权校验：终审会改变治理结论，必须限定为授权审核员（配置 audit.reviewer-user-ids；未配置则一律拒绝）
+        // 服务层另有"防自审"兜底，两层各自独立，缺一不可
+        if (!auditReviewerGuard.isReviewer(user.getId())) {
+            log.warn("非审核员尝试终审申诉，已拒绝, userId={}, appealId={}", user.getId(), dto.getAppealId());
+            return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH);
         }
         return contentAppealService.review(dto.getAppealId(), dto.getAction(), user.getId());
     }

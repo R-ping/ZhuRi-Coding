@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -109,7 +110,16 @@ public class AiTopupServiceImpl implements AiTopupService {
         return ResponseResult.okResult(data);
     }
 
+    /**
+     * 支付宝额度包回调处理（幂等入账）。
+     *
+     * <p><b>事务边界（必须）</b>：本方法内包含「订单置已支付」+「次数入账」+「token 入账」三次写库，
+     * 三者必须同事务提交/回滚。否则一旦入账环节抛异常，订单已落 PAID，而支付宝重试时会命中
+     * 上方幂等短路直接确认成功 → <b>用户已付款但额度永久缺失且无法自愈</b>。
+     * 加上事务后异常整体回滚、订单回到 PENDING，重试即可正常补账。
+     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean handleNotify(String orderNo, String totalAmount, String tradeNo) {
         AiTopupOrder order = topupOrderMapper.selectOne(new LambdaQueryWrapper<AiTopupOrder>()
             .eq(AiTopupOrder::getOrderNo, orderNo).last("LIMIT 1"));

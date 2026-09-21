@@ -7,8 +7,10 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -16,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -35,6 +38,14 @@ import static org.mockito.Mockito.when;
  *   <li><b>Redis 异常/未装配 → fail-open 放行</b>（熔断器自身不能成为新故障点）；</li>
  *   <li>llm 与 embedding 目标互不影响。</li>
  * </ol>
+ *
+ * <p><b>原子性约定（2026-09-21 修复后）</b>：
+ * <ul>
+ *   <li>失败计数与窗口过期由 <b>Lua 脚本</b>（INCR+EXPIRE）一次完成 —— 断言脚本调用而非两步命令，
+ *       避免"INCR 成功而 EXPIRE 失败导致计数键永不过期"；</li>
+ *   <li>打开熔断用 <b>SET NX EX</b>（{@code setIfAbsent}）—— 并发判定下只有首个线程真正打开，
+ *       避免反复 {@code set} 刷新 TTL 延长熔断时长。</li>
+ * </ul>
  */
 class AiCircuitBreakerTest {
 
@@ -58,7 +69,8 @@ class AiCircuitBreakerTest {
         ReflectionTestUtils.setField(breaker, "windowSeconds", 60L);
         ReflectionTestUtils.setField(breaker, "openSeconds", 30L);
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        lenient().when(valueOps.increment(anyString())).thenReturn(1L);
+        // 失败计数走 Lua 脚本（INCR+EXPIRE 原子）：默认返回 1（首次失败）
+        lenient().when(redisTemplate.execute(any(RedisScript.class), anyList(), any())).thenReturn(1L);
     }
 
     // ==================== allow ====================
@@ -96,53 +108,56 @@ class AiCircuitBreakerTest {
     // ==================== onFailure ====================
 
     @Test
-    @DisplayName("首次失败：计数 +1 并设置窗口 TTL（避免历史陈账累积）")
+    @DisplayName("首次失败：经 Lua 脚本计数 +1 并原子设置窗口 TTL（避免历史陈账累积）")
     void testFirstFailureSetsWindowTtl() {
-        when(valueOps.increment(FAIL_KEY)).thenReturn(1L);
-        when(redisTemplate.hasKey(OPEN_KEY)).thenReturn(false);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any())).thenReturn(1L);
 
         breaker.onFailure(TARGET);
 
-        verify(redisTemplate).expire(eq(FAIL_KEY), eq(60L), eq(TimeUnit.SECONDS));
-        verify(valueOps, never()).set(eq(OPEN_KEY), anyString(), anyLong(), any(TimeUnit.class));
+        // INCR 与 EXPIRE 在同一脚本内完成：断言脚本调用携带失败键与窗口秒数
+        verify(redisTemplate).execute(any(RedisScript.class), eq(Collections.singletonList(FAIL_KEY)), eq("60"));
+        verify(valueOps, never()).setIfAbsent(eq(OPEN_KEY), anyString(), anyLong(), any(TimeUnit.class));
     }
 
     @Test
     @DisplayName("窗口内失败达阈值 → 打开熔断并设置打开时长")
     void testOpenWhenThresholdReached() {
-        when(valueOps.increment(FAIL_KEY)).thenReturn(5L);   // = threshold
-        when(redisTemplate.hasKey(OPEN_KEY)).thenReturn(false);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any())).thenReturn(5L);   // = threshold
+        when(valueOps.setIfAbsent(eq(OPEN_KEY), eq("1"), eq(30L), eq(TimeUnit.SECONDS))).thenReturn(true);
 
         breaker.onFailure(TARGET);
 
-        verify(valueOps).set(eq(OPEN_KEY), eq("1"), eq(30L), eq(TimeUnit.SECONDS));
+        verify(valueOps).setIfAbsent(eq(OPEN_KEY), eq("1"), eq(30L), eq(TimeUnit.SECONDS));
     }
 
     @Test
     @DisplayName("未达阈值 → 不打开")
     void testNotOpenBelowThreshold() {
-        when(valueOps.increment(FAIL_KEY)).thenReturn(4L);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any())).thenReturn(4L);
 
         breaker.onFailure(TARGET);
 
-        verify(valueOps, never()).set(eq(OPEN_KEY), anyString(), anyLong(), any(TimeUnit.class));
+        verify(valueOps, never()).setIfAbsent(eq(OPEN_KEY), anyString(), anyLong(), any(TimeUnit.class));
     }
 
     @Test
-    @DisplayName("已打开时不重复写 open（避免反复续期导致永不半开）")
+    @DisplayName("已打开时 NX 不生效（不覆盖、不续期，避免永不半开）")
     void testNoDuplicateOpen() {
-        when(valueOps.increment(FAIL_KEY)).thenReturn(9L);
-        when(redisTemplate.hasKey(OPEN_KEY)).thenReturn(true);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any())).thenReturn(9L);
+        // SET NX EX 已存在 → 返回 false，表示本次未打开（也不刷新 TTL）
+        when(valueOps.setIfAbsent(eq(OPEN_KEY), eq("1"), eq(30L), eq(TimeUnit.SECONDS))).thenReturn(false);
 
         breaker.onFailure(TARGET);
 
-        verify(valueOps, never()).set(eq(OPEN_KEY), anyString(), anyLong(), any(TimeUnit.class));
+        // 断言的是 NX 语义：命令被调用但结果为"未生效"，TTL 不会被续期
+        verify(valueOps).setIfAbsent(eq(OPEN_KEY), eq("1"), eq(30L), eq(TimeUnit.SECONDS));
     }
 
     @Test
     @DisplayName("计数写入异常 → 吞掉不抛")
     void testFailureCountErrorSwallowed() {
-        when(valueOps.increment(FAIL_KEY)).thenThrow(new RuntimeException("redis down"));
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any()))
+                .thenThrow(new RuntimeException("redis down"));
         breaker.onFailure(TARGET);   // 不应抛
     }
 

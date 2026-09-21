@@ -27,6 +27,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/ai")
 public class AiAskController {
 
+    /** MCP 探针自定义 prompt 上限（对齐 AI 问答入口的 200 字口径，防止超长 prompt 放大单次 token 成本与诱导空间） */
+    private static final int MCP_PING_PROMPT_MAX_LEN = 200;
+
     @Autowired
     private AiAskService aiAskService;
 
@@ -262,7 +265,11 @@ public class AiAskController {
         }
         String prompt = body == null ? null : body.get("prompt");
         if (prompt == null || prompt.trim().isEmpty()) {
-            prompt = "请调用 MCP 的文件系统工具（list_directory）查看 docs 目录，并回答该目录下有哪些 .md 文件。";
+            // 默认探针只列 public 目录：MCP 可读范围已限定在 docs/public，避免暴露其余文件清单
+            prompt = "请调用 MCP 的文件系统工具（list_directory）查看 public 目录，并回答该目录下有哪些 .md 文件。";
+        } else if (prompt.length() > MCP_PING_PROMPT_MAX_LEN) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID,
+                "prompt 超长（上限 " + MCP_PING_PROMPT_MAX_LEN + " 字）");
         }
         org.springframework.ai.tool.ToolCallbackProvider provider = mcpToolCatalog.providerOrNull();
         if (provider == null) {

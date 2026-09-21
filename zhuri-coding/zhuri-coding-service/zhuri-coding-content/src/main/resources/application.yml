@@ -55,11 +55,15 @@ spring:
               # 实测均导致 "Error processing inbound message" 使初始化握手失败/fail-open）。
               # 未放置文档/MCP 不可用时为 fail-open，不影响业务链路与服务启动
               command: npx.cmd
-              # 默认目录用 ../docs：服务工作目录为 ...\zhuri-coding-app\zhuri-coding，
+              # 默认目录用 ../docs/public：服务工作目录为 ...\zhuri-coding-app\zhuri-coding，
               # ./docs 会解析到不存在路径使 filesystem server 启动失败（"None of the specified
-              # directories are accessible"→初始化握手失败）；../docs 即 ...\zhuri-coding-app\docs。
+              # directories are accessible"→初始化握手失败）；../docs/public 即
+              # ...\zhuri-coding-app\docs\public（MCP 专用公开目录，只放允许模型读取的设计文档）。
+              # ⚠️ 安全约束：MCP 文件工具的可读范围必须限定在 docs/public 之内。
+              #    docs 根目录下含个人求职材料与面试准备文档，而 /mcp/ping 支持自定义 prompt，
+              #    一旦指向 docs 根即可被诱导读取 → 勿改回 ../docs。
               # 可用系统环境变量 MCP_DOCS_PATH 覆盖（注意：需在服务进程启动前设置才生效）
-              args: ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_DOCS_PATH:../docs}"]
+              args: ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_DOCS_PATH:../docs/public}"]
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
@@ -153,7 +157,18 @@ bailian:
 #   - qwen3.8-flash 输入 0.8 元/百万、输出 2.7 元/百万（开发者社区对比文，2026）
 # 注意：以上为"无阶梯/最低档"单价，实际存在阶梯计费、Batch 半价、上下文缓存折扣与限时活动，
 # 请以百炼控制台账单为准；未配价的模型会在成本报表里列入 unpricedModels（不静默当免费）。
+# 内容治理人工终审授权：终审（解除折叠 / 撤销 AIGC 标注）会直接改变治理结论，必须限定为运营账号。
+# 白名单为空 → 一律拒绝终审（fail-closed）；后续接入运营角色表时只需替换 AuditReviewerGuard 实现。
+audit:
+  reviewer-user-ids: ${AUDIT_REVIEWER_USER_IDS:}   # 逗号分隔的用户 id，例如 1001,1002
+
 ai:
+  # 熔断器（AiCircuitBreaker）：LLM 与 embedding 双目标独立熔断，故障期快速失败避免拖满线程池；
+  # 阈值显式入配置 —— 此前只存在于代码 @Value 默认值，运维调参须改代码。
+  circuit:
+    failure-threshold: ${AI_CIRCUIT_FAILURE_THRESHOLD:5}   # 窗口内失败累计达该值即打开熔断
+    window-seconds: ${AI_CIRCUIT_WINDOW_SECONDS:60}        # 失败统计窗口（秒）
+    open-seconds: ${AI_CIRCUIT_OPEN_SECONDS:30}            # 打开时长（秒），到期进入半开试探
   model-router:
     default: openAiChatModel      # 默认模型 key（spring-ai 自动配置主模型 bean 名；原 "primary" 指向不存在的名称）
     flash-model: ${AI_FLASH_MODEL:qwen3.8-flash}  # 低成本模型名（配 AiModelConfig 的 qwenFlashChatModel）

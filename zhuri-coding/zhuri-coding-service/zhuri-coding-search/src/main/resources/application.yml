@@ -20,7 +20,7 @@ spring:
     connection-timeout: 10000
     socket-timeout: 3000
     username: elastic
-    password: ${ES_PASSWORD:x8YMlQeWvd4IGPnrb-4k}
+    password: ${ES_PASSWORD:}
 elasticsearch:
   article:
     index: ${ES_ARTICLE_INDEX:app_info_article}

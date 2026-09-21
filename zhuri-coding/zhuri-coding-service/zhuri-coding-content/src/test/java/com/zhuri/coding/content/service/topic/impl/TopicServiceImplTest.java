@@ -142,6 +142,32 @@ class TopicServiceImplTest {
     // ==================== recommend ====================
 
     @Test
+    @DisplayName("recommend - size 超上限被收口（该接口匿名可达，防止构造海量对象耗尽内存）")
+    void testRecommendClampsOversizedSize() {
+        List<ApTopic> topics = Arrays.asList(topic(1L, "A"), topic(2L, "B"), topic(3L, "C"));
+        when(topicMapper.selectList(any(Wrapper.class))).thenReturn(topics);
+
+        Map<String, Object> r = topicService.recommend(0, Integer.MAX_VALUE);
+
+        List<TopicRecommendVO> list = (List<TopicRecommendVO>) r.get("list");
+        assertNotNull(list);
+        assertEquals(50, list.size()); // 收口到默认单页上限，而非按原始 size 循环
+    }
+
+    @Test
+    @DisplayName("recommend - 负数 page 归一为 0（环形缓冲从第一页开始，不能抬到 1）")
+    void testRecommendNegativePage() {
+        List<ApTopic> topics = Arrays.asList(topic(1L, "A"), topic(2L, "B"), topic(3L, "C"));
+        when(topicMapper.selectList(any(Wrapper.class))).thenReturn(topics);
+
+        Map<String, Object> r = topicService.recommend(-5, 2);
+
+        assertEquals(0, r.get("page"));
+        List<TopicRecommendVO> list = (List<TopicRecommendVO>) r.get("list");
+        assertEquals(1L, list.get(0).getId());
+    }
+
+    @Test
     @DisplayName("recommend - 环形缓冲返回分页话题")
     void testRecommend() {
         List<ApTopic> topics = Arrays.asList(topic(1L, "A"), topic(2L, "B"), topic(3L, "C"));

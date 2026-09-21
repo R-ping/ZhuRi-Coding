@@ -100,7 +100,8 @@ public class JsonOutputSkill implements AiSkill {
         vo.setViolation(b.violation() != null ? b.violation() : Boolean.FALSE);
         vo.setViolationType(trimToNull(b.violationType()));
         vo.setViolationReason(trimToNull(b.violationReason()));
-        vo.setQualityScore(b.qualityScore());
+        // 模型可能返回越界值（>100 / <0）：钳制到 0–100，避免前端评分/进度条失真
+        vo.setQualityScore(normalizeScore(b.qualityScore()));
         vo.setTech(b.tech() == null ? Boolean.TRUE : b.tech());
         vo.setSuggestions(b.suggestions() == null ? new ArrayList<>() : b.suggestions());
         vo.setTags(b.tags() == null ? new ArrayList<>() : b.tags());
@@ -108,7 +109,8 @@ public class JsonOutputSkill implements AiSkill {
         if (b.similarArticleId() != null && b.similarArticleId() > 0) {
             vo.setSimilarArticleId(b.similarArticleId());
             vo.setSimilarTitle(trimToNull(b.similarTitle()));
-            vo.setSimilarity(b.similarity());
+            // 相似度越界（>1 / <0）会让前端"相似度 x%"失真，统一钳制到 0–1
+            vo.setSimilarity(normalizeSimilarity(b.similarity()));
         }
         return vo;
     }
@@ -134,5 +136,15 @@ public class JsonOutputSkill implements AiSkill {
 
     private static String truncate(String s, int max) {
         return s == null ? "" : (s.length() <= max ? s : s.substring(0, max));
+    }
+
+    /** 质量分归一化到 0–100（模型可能越界；缺省 0） */
+    private static int normalizeScore(Integer score) {
+        return score == null ? 0 : Math.max(0, Math.min(100, score));
+    }
+
+    /** 相似度归一化到 0–1（模型可能返回 >1 或负数；null 原样保留，由调用方兜底） */
+    private static Double normalizeSimilarity(Double similarity) {
+        return similarity == null ? null : Math.max(0d, Math.min(1d, similarity));
     }
 }
