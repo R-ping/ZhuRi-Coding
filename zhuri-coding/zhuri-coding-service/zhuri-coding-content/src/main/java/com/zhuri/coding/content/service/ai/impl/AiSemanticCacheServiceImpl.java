@@ -1,6 +1,5 @@
 package com.zhuri.coding.content.service.ai.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;

@@ -5,6 +5,35 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
     <title>${title!''} - 逐日Coding</title>
+    <!-- 站点 SEO：服务端渲染动态元数据（description 复用 AI 预检 summary，无则正文截断） -->
+    <meta name="description" content="<#if metaDescription?has_content>${metaDescription?html}<#else>逐日 Coding 开发者技术社区</#if>">
+    <meta name="keywords" content="${title?html},逐日Coding,开发者技术社区,后端,前端,AI">
+<#if authorName?has_content><meta name="author" content="${authorName?html}"></#if>
+    <link rel="canonical" href="<#if seoBaseUrl?has_content>${seoBaseUrl?html}<#else></#if>/content/article/${articleId?c}">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="逐日Coding">
+    <meta property="og:title" content="${title?html}">
+    <meta property="og:description" content="<#if metaDescription?has_content>${metaDescription?html}<#else></#if>">
+<#if coverImage?has_content><meta property="og:image" content="${coverImage?html}"></#if>
+    <meta property="og:url" content="<#if seoBaseUrl?has_content>${seoBaseUrl?html}<#else></#if>/content/article/${articleId?c}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="${title?html}">
+    <meta name="twitter:description" content="<#if metaDescription?has_content>${metaDescription?html}<#else></#if>">
+<#if coverImage?has_content><meta name="twitter:image" content="${coverImage?html}"></#if>
+    <!-- Article 结构化数据（JSON-LD，供搜索引擎富摘要展示） -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "${title?j_string}",
+        "description": "<#if metaDescription?has_content>${metaDescription?j_string}<#else></#if>",
+<#if coverImage?has_content>        "image": "${coverImage?j_string}",</#if>
+<#if publishTimeIso?has_content>        "datePublished": "${publishTimeIso}",</#if>
+<#if authorName?has_content>        "author": { "@type": "Person", "name": "${authorName?j_string}" },</#if>
+        "publisher": { "@type": "Organization", "name": "逐日 Coding" },
+        "mainEntityOfPage": "<#if seoBaseUrl?has_content>${seoBaseUrl?j_string}<#else></#if>/content/article/${articleId?c}"
+    }
+    </script>
     <style>
         * { box-sizing: border-box; }
         body {

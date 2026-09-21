@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## 2026-09-20 — 站点 SEO P0 基础收录：详情页元数据 + robots + sitemap
+
+### 变更内容
+- **文章详情页 head 动态元数据**（服务端渲染，利于爬虫收录与富摘要）：
+  - `meta description` / `keywords` / `author`：描述优先复用 AI 预检回填的 `ap_article.summary`，缺失时从正文纯文本截断（≤150 字），保证非空；
+  - `canonical` / `og:url`：统一以 `/content/article/{id}` 输出，绝对前缀由 `app.seo.base-url`（`SEO_BASE_URL` 环境变量）注入，本地为空输出相对路径；
+  - OG / Twitter 卡片标签（title/description/image，image 复用文章封面 `coverImage`）；
+  - **JSON-LD Article 结构化数据**（headline/description/datePublished/author/publisher/mainEntityOfPage）。
+- **新增 `SeoPageController`**：
+  - `/robots.txt`（对外 `/content/robots.txt`）：Allow all + Sitemap 声明；
+  - `/sitemap.xml`（对外 `/content/sitemap.xml`）：动态生成，仅收录已发布未删除文章（status=9），按发布时间倒序，上限 10k 条，`lastmod` 取发布日。
+- **网关白名单放行** `/content/robots.txt`、`/content/sitemap.xml`（爬虫无 token 匿名访问）。
+- **评审修复**（open-code-review 工作区评审 5 条）：article.ftl 中 `coverImage`/`seoBaseUrl` 在 HTML 属性与 JSON-LD 内插值补全 `?html`/`?j_string` 转义（3 条 high XSS + 1 条 low）；sitemap 查询由全行改为仅 `select(id, publish_time)` 窄列（1 条 medium 性能）。
+
+### 验证
+- content 与 gateway 模块 `mvn compile` 通过。
+- 临时实例（端口 51803，避免干扰 IDE 托管的运行态）实测：robots.txt 正常输出；sitemap.xml 收录文章并带 lastmod；详情页 head 元数据齐全，canonical/og:url 无雪花 ID 千分位截断（Freemarker `?c` 格式化）。
+
+### 变更文件
+- `zhuri-coding-content/.../controller/page/ArticlePageController.java`（新增 SEO model 字段：metaDescription/coverImage/publishTimeIso/seoBaseUrl，抽取 plainText 复用）
+- `zhuri-coding-content/.../controller/page/SeoPageController.java`（新增：robots.txt / sitemap.xml）
+- `zhuri-coding-content/.../resources/templates/article.ftl`（head 注入 meta/canonical/OG/JSON-LD）
+- `zhuri-coding-content/.../resources/application.yml`（新增 `app.seo.base-url` 配置）
+- `zhuri-coding-app-gateway/.../AuthorizeFilter.java`（白名单放行 robots/sitemap）
+
 ## 2026-09-20 — 文章详情页：右侧栏常驻 + 操作栏中性灰 + 「问这篇文章」弹框搬入「读完想问」
 
 ### 变更内容

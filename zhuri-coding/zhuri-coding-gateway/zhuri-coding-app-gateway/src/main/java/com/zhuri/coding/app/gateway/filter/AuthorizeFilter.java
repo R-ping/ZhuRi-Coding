@@ -232,7 +232,10 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             // 课程/标签/用户搜索已收敛进该统一入口，不再单独放行 content/user 的搜索路径。
             || path.startsWith("/search/api/v1/search")
             // 详情页 AI 摘要（只读展示，未登录也可浏览；生成有 IP 限频 + Redis 缓存 24h 兜底）
-            || path.startsWith("/content/api/v1/ai/summary/");
+            || path.startsWith("/content/api/v1/ai/summary/")
+            // 站点 SEO 基础文件（robots.txt / sitemap.xml）：爬虫无 token，公开放行
+            || path.startsWith("/content/robots.txt")
+            || path.startsWith("/content/sitemap.xml");
     }
 
     /**

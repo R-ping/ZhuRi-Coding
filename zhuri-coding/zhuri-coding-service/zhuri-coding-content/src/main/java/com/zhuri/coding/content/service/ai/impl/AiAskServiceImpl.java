@@ -6,7 +6,6 @@ import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.ai.AiAskService;
 import com.zhuri.coding.content.service.ai.AiFeatures;
-import com.zhuri.coding.content.service.ai.AiLlmGateway;
 import com.zhuri.coding.content.service.ai.AiSemanticCacheService;
 import com.zhuri.coding.content.service.ai.AnswerFaithfulnessService;
 import com.zhuri.coding.content.service.ai.HybridRecallService;
@@ -25,14 +24,10 @@ import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import com.zhuri.coding.model.user.pojos.ApUser;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
@@ -760,7 +755,7 @@ public class AiAskServiceImpl implements AiAskService {
         } catch (Exception e) {
             log.debug("[AiAsk] 语义记忆沉淀失败, userId={}", userId, e);
         }
-        // 冷启动即时兴趣：画像为空的用户从本次召回文章标签沉淀，第二问起即有个性化参考
+        // 冷启动即时兴趣：画像为空的用户从本次召回文章标签沉淀，第二问起既有个性化参考
         try {
             if (r.articles != null && !r.articles.isEmpty()) {
                 List<Long> ids = new ArrayList<>();
