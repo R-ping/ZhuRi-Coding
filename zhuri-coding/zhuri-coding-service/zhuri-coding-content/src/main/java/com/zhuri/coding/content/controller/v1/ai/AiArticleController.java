@@ -145,6 +145,15 @@ public class AiArticleController {
                         .data(e.getMessage(), MediaType.TEXT_PLAIN));
                 } catch (Exception ignore) {
                 }
+            } catch (com.zhuri.coding.content.service.ai.AiLlmGateway.QuotaExhaustedException qe) {
+                // 额度到线被动中断：不是服务故障，给用户可理解的原因（已下发的增量文本保留）
+                log.warn("AI 单篇问答额度耗尽中断, articleId={}, msg={}", articleId, qe.getMessage());
+                try {
+                    emitter.send(SseEmitter.event().name("error")
+                        .data("本次 AI 额度已用完，回答已中断；已生成内容仍然可用，可购买额度包或次日再试",
+                            MediaType.TEXT_PLAIN));
+                } catch (Exception ignore) {
+                }
             } catch (Exception e) {
                 log.error("AI 单篇问答异常, articleId={}", articleId, e);
                 try {

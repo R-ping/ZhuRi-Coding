@@ -152,13 +152,14 @@ export function precheckArticleStream(payload, handlers) {
  * 查询 AI 额度总览（登录后调用）
  *
  * 计费口径为 **tokens**（不同功能 token 成本差异大，按次计费不公平也不可控）：
- * - freeTokens：今日免费 tokens 的额度/已用/剩余
+ * - freeTokens：今日免费 tokens 的额度/已用/剩余（唯一口径）
  * - walletTokenBalance：已购 tokens 余额
  * - packages[code].tokenQuota：该套餐到账 tokens
- * - freeQuota / walletBalance：次数口径（历史兼容，每日次数闸门仍在生效，可作兜底展示）
+ *
+ * 注：原「次数」口径的 freeQuota / walletBalance 已随该维度下线，后端不再返回。
  *
  * @returns data: { freeTokens:{dailyLimit,usedToday,remainToday}, walletTokenBalance:int,
- *                   freeQuota:{...}, walletBalance:int, packages:{code:{quota,priceFen,tokenQuota}} }
+ *                   packages:{code:{priceFen,tokenQuota}} }
  */
 export function getAiQuotaStatus() {
     return request.get('/content/api/v1/ai/quota/status')

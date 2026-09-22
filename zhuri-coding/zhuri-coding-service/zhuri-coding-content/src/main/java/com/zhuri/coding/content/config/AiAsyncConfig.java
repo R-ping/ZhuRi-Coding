@@ -25,6 +25,9 @@ public class AiAsyncConfig {
         executor.setQueueCapacity(50);
         executor.setThreadNamePrefix("ai-sse-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
+        // 传递请求线程的用户上下文：否则子线程里 AppThreadLocalUtil 为空，
+        // 会让 AiLlmGateway 的配额结算（依赖 userId）被静默跳过
+        executor.setTaskDecorator(new AppUserTaskDecorator());
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         return executor;
@@ -45,6 +48,9 @@ public class AiAsyncConfig {
         executor.setQueueCapacity(50);
         executor.setThreadNamePrefix("ai-agent-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
+        // 传递请求线程的用户上下文：否则子线程里 AppThreadLocalUtil 为空，
+        // 会让 AiLlmGateway 的配额结算（依赖 userId）被静默跳过
+        executor.setTaskDecorator(new AppUserTaskDecorator());
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         return executor;
@@ -62,7 +68,38 @@ public class AiAsyncConfig {
         executor.setQueueCapacity(20);
         executor.setThreadNamePrefix("ai-mem-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
+        // 传递请求线程的用户上下文：否则子线程里 AppThreadLocalUtil 为空，
+        // 会让 AiLlmGateway 的配额结算（依赖 userId）被静默跳过
+        executor.setTaskDecorator(new AppUserTaskDecorator());
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * 评论/沸点审核「尽快执行」触发池。
+     *
+     * <p>背景：审核任务原先用 {@code CompletableFuture.delayedExecutor(delay, unit)} 触发，
+     * 它背后是 {@link java.util.concurrent.ForkJoinPool#commonPool()} —— 正是本类要避免的公共池；
+     * 而审核任务内部含 LLM 调用（秒级阻塞），会与 public 池里其它任务互相干扰。
+     * 改用 {@code delayedExecutor(delay, unit, executor)} 后**延迟语义不变，仅把任务体挪到本池**。
+     *
+     * <p>注意：这里只是「尽快执行一次」的优化触发；审核不丢失的真保证是任务落库 +
+     * 定时补偿（CommentAuditRecoveryTask / PinsCommentAuditRecoveryTask）+ CAS 抢占。
+     * 因此超载拒绝只会让该条审核改由定时补偿拉起，不影响正确性。
+     */
+    @Bean("aiAuditTriggerExecutor")
+    public Executor aiAuditTriggerExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("ai-audit-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        // 传递请求线程的用户上下文：否则子线程里 AppThreadLocalUtil 为空，
+        // 会让 AiLlmGateway 的配额结算（依赖 userId）被静默跳过
+        executor.setTaskDecorator(new AppUserTaskDecorator());
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         return executor;
     }

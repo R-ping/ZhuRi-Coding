@@ -200,6 +200,8 @@ class AiCircuitBreakerTest {
         Map<String, Object> targets = (Map<String, Object>) snap.get("targets");
         assertTrue(targets.containsKey(AiCircuitBreaker.TARGET_LLM));
         assertTrue(targets.containsKey(AiCircuitBreaker.TARGET_EMBEDDING));
+        // 新增熔断目标必须同时登记进 ALL_TARGETS，否则会漏出观测端点（本断言即为此护栏）
+        assertTrue(targets.containsKey(AiCircuitBreaker.TARGET_SEARCH));
         @SuppressWarnings("unchecked")
         Map<String, Object> llm = (Map<String, Object>) targets.get(AiCircuitBreaker.TARGET_LLM);
         assertEquals(3L, llm.get("recentFailures"));

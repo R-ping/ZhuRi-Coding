@@ -19,8 +19,14 @@ import java.util.Collections;
 @Service
 public class AiQuotaServiceImpl implements AiQuotaService {
 
-    private static final String QUOTA_KEY_PREFIX = "ai:quota:daily:";
-    /** 今日免费已用 tokens（与次数分离计数：次数防刷，tokens 控成本） */
+    /**
+     * 今日免费已用 tokens 计数 key 前缀。
+     *
+     * <p><b>为什么只剩 token 一个口径</b>：原先为「次数防刷 + tokens 控成本」双轨，但频次防刷
+     * 早已由分层限流承担（每个 AI 端点 USER 5/分 + IP 20/分），"次"在闸门上是重复手段；
+     * 而且它无法表达真实成本（一次短问答与一次多智能体预检的开销差一个量级）。
+     * 故统一为 token 单一口径：准入看 token、结算算 token、流式按 token 到线即停。
+     */
     private static final String TOKEN_KEY_PREFIX = "ai:quota:tokens:";
 
     /**
@@ -37,18 +43,9 @@ public class AiQuotaServiceImpl implements AiQuotaService {
             + "return n",
         Long.class);
 
-    /** 每日免费次数（配置可调；默认 20） */
-    @org.springframework.beans.factory.annotation.Value("${ai-quota.daily-requests:20}")
-    private int dailyRequestLimit = DEFAULT_DAILY_QUOTA;
-
     /** 每日免费 tokens（配置可调；默认 2 万，按主模型折算约 0.4 元/用户/天） */
     @org.springframework.beans.factory.annotation.Value("${ai-quota.daily-tokens:20000}")
     private long dailyTokenLimit = DEFAULT_DAILY_TOKEN_QUOTA;
-
-    @Override
-    public int dailyRequestLimit() {
-        return dailyRequestLimit;
-    }
 
     @Override
     public long dailyTokenLimit() {
@@ -60,11 +57,6 @@ public class AiQuotaServiceImpl implements AiQuotaService {
 
     @Autowired
     private com.zhuri.coding.content.service.ai.AiWalletService walletService;
-
-    private String keyOf(Integer userId) {
-        String day = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
-        return QUOTA_KEY_PREFIX + userId + ":" + day;
-    }
 
     private String tokenKeyOf(Integer userId) {
         String day = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
@@ -81,31 +73,16 @@ public class AiQuotaServiceImpl implements AiQuotaService {
             // 防御：接口层已要求登录；未登录不放行也不计（由调用方决定）
             return false;
         }
-        // 先做 token 维度预检（不消耗计数）：tokens 已用尽即拒，避免白扣一次次数
-        if (!precheckTokens(userId)) {
-            return false;
-        }
-        // 免费额度优先（产品决策）：每日免费次数用尽后才扣减钱包（购买的额度包）
-        try {
-            String key = keyOf(userId);
-            // 原子计数 + 过期（Lua）：避免 INCR 成功而 EXPIRE 未执行时 key 永不过期
-            Long count = redis().execute(INCRBY_WITH_TTL_SCRIPT,
-                Collections.singletonList(key),
-                String.valueOf(secondsUntilEndOfDay()), "1");
-            if (count != null && count <= dailyRequestLimit) {
-                return true; // 仍处于今日免费额度内，放行
-            }
-            if (count != null) {
-                // 免费已用尽：回补一次计数，保证 usedToday 展示不虚高（封顶 DAILY_QUOTA）
-                redis().opsForValue().decrement(key);
-            }
-        } catch (Exception e) {
-            // Redis 异常 fail-open：不因配额故障阻断 AI 主链路
-            log.warn("[AiQuota] 配额计数异常，放行, userId={}", userId, e);
-            return true;
-        }
-        // 免费额度用尽 → 扣减钱包余额（余额不足返回 false）
-        return walletService.deductOne(userId);
+        // 单一口径准入：今日免费 tokens 未用尽，或钱包还有 token 余额。
+        //
+        // 这里**刻意不做预扣**，理由有据：
+        //  ① 钱包扣减本身就是原子的（WHERE token_balance >= N，不足则扣光）→ 不可能扣成负数，
+        //     "超支"不可能发生在钱包侧；
+        //  ② 免费额度侧的并发重叠上界被限流（USER 5/分）压到极小；
+        //  ③ 若为此引入"预扣 + 找零"（免费 Redis 计数 ↔ 钱包 DB 列之间做双向差额补偿），
+        //     复杂度与出错面远大于收益。
+        // 真正的超额由两步兜住：结算按真实用量扣减（settleTokens）+ 流式"到线即停"（availableTokens）。
+        return precheckTokens(userId);
     }
 
     // ==================== token 维度（新计费口径） ====================
@@ -176,21 +153,20 @@ public class AiQuotaServiceImpl implements AiQuotaService {
     }
 
     @Override
-    public long usedToday(Integer userId) {
+    public long availableTokens(Integer userId) {
         if (userId == null) {
-            return 0;
+            // 无用户上下文（如未登录的公开只读接口）→ 不做流式限额
+            return Long.MAX_VALUE;
         }
         try {
-            String v = redis().opsForValue().get(keyOf(userId));
-            return v == null ? 0L : Long.parseLong(v);
+            long free = Math.max(0L, tokensRemainToday(userId));
+            long wallet = Math.max(0L, walletService.tokenBalanceOf(userId));
+            return free + wallet;
         } catch (Exception e) {
-            return 0;
+            // fail-open：额度查询故障不应阻断生成（与 tryConsume / precheckTokens 的降级口径一致）
+            log.warn("[AiQuota] 可用额度查询异常，本次不做流式限额（fail-open）, userId={}", userId, e);
+            return Long.MAX_VALUE;
         }
-    }
-
-    @Override
-    public long remainToday(Integer userId) {
-        return Math.max(0, dailyRequestLimit - usedToday(userId));
     }
 
     private long secondsUntilEndOfDay() {

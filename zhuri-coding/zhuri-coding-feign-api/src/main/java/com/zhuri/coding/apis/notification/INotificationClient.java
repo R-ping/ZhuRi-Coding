@@ -9,7 +9,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.Map;
 
-@FeignClient(value = "zhuri-coding-notification", fallback = INotificationClientFallback.class)
+/**
+ * 通知服务 Feign 客户端。
+ *
+ * <p><b>注意 fallback 与 fallbackFactory 的区别</b>：{@code INotificationClientFallback} 实现的是
+ * {@code FallbackFactory<INotificationClient>}，因此这里必须用 {@code fallbackFactory} 属性，
+ * 用 {@code fallback} 会在创建 Bean 时抛
+ * {@code Incompatible fallback instance ... is not assignable to interface}（本仓曾如此，
+ * 因 fallback 全程未生效而长期未被发现）。
+ */
+@FeignClient(value = "zhuri-coding-notification", fallbackFactory = INotificationClientFallback.class)
 public interface INotificationClient {
 
     /**

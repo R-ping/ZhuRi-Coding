@@ -20,7 +20,7 @@
                         <div class="ov-bar">
                             <div class="ov-bar-inner" :style="{ width: freePercent }"></div>
                         </div>
-                        <div class="ov-tip">每日 {{ formatTokens(freeTokens.dailyLimit) }} tokens（≈ {{ free.dailyLimit }} 次问答），次日 0 点重置</div>
+                        <div class="ov-tip">每日 {{ formatTokens(freeTokens.dailyLimit) }} tokens 免费额度，次日 0 点重置</div>
                     </div>
                     <div class="ov-item">
                         <div class="ov-label">已购额度</div>
@@ -90,8 +90,7 @@ export default {
     data() {
         return {
             // 次数维度（保留：每日免费次数闸门仍在生效，用于兜底提示）
-            free: { dailyLimit: 0, usedToday: 0, remainToday: 0 },
-            // tokens 维度（主展示口径）：用量与余额均按 token 计费
+            // token 单一口径（原「次数」维度已下线）：用量与余额均按 token 计费
             freeTokens: { dailyLimit: 0, usedToday: 0, remainToday: 0 },
             walletTokens: 0,
             packages: [],
@@ -103,8 +102,8 @@ export default {
     },
     computed: {
         freePercent() {
-            const limit = this.freeTokens.dailyLimit || this.free.dailyLimit
-            const remain = this.freeTokens.dailyLimit ? this.freeTokens.remainToday : this.free.remainToday
+            const limit = this.freeTokens.dailyLimit
+            const remain = this.freeTokens.remainToday
             if (!limit) return '0%'
             const pct = Math.round((remain / limit) * 100)
             return Math.max(0, Math.min(100, pct)) + '%'
@@ -128,19 +127,14 @@ export default {
         loadQuota() {
             getAiQuotaStatus().then(res => {
                 if (res && res.code === 200 && res.data) {
-                    this.free = res.data.freeQuota || this.free
-                    // tokens 口径优先；老后端未返回时降级用次数展示（不报错）
+                    // token 单一口径（原「次数」维度已下线，后端不再返回 freeQuota / walletBalance）
                     if (res.data.freeTokens) {
                         this.freeTokens = res.data.freeTokens
                         this.walletTokens = Number(res.data.walletTokenBalance) || 0
-                    } else {
-                        this.freeTokens = this.free
-                        this.walletTokens = Number(res.data.walletBalance) || 0
                     }
                     const pkgs = res.data.packages || {}
                     this.packages = Object.keys(pkgs).map(code => ({
                         code,
-                        quota: (pkgs[code] && pkgs[code].quota) || 0,
                         priceFen: (pkgs[code] && pkgs[code].priceFen) || 0,
                         tokenQuota: (pkgs[code] && pkgs[code].tokenQuota) || 0
                     }))

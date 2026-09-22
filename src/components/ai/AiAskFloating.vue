@@ -144,14 +144,10 @@
                     if (res && res.code === 200 && res.data) {
                         this.quotaLoaded = true
                         const ft = res.data.freeTokens
-                        // 兼容：老后端只返回 freeQuota（次数）时降级展示次数口径
+                        // token 单一口径（原「次数」维度已下线，后端不再返回 freeQuota / walletBalance）
                         if (ft) {
                             this.freeTokens = Object.assign({ dailyLimit: 0, usedToday: 0, remainToday: 0 }, ft)
                             this.walletTokens = Number(res.data.walletTokenBalance) || 0
-                        } else if (res.data.freeQuota) {
-                            const fq = res.data.freeQuota
-                            this.freeTokens = { dailyLimit: fq.dailyLimit, usedToday: fq.usedToday, remainToday: fq.remainToday }
-                            this.walletTokens = Number(res.data.walletBalance) || 0
                         }
                         // 免费与已购双双用尽才在面板提示充值（免费额度未满时不做干扰）
                         this.quotaExhausted = (this.freeTokens.remainToday <= 0) && this.walletTokens <= 0

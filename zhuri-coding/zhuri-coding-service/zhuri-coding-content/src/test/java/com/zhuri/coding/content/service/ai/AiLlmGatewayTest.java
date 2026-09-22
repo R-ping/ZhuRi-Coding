@@ -1,6 +1,8 @@
 package com.zhuri.coding.content.service.ai;
 
 import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,8 +25,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -309,5 +316,83 @@ class AiLlmGatewayTest {
 
         assertEquals("is_violation: true", out);
         verify(tokenMeter, never()).record(any(), any(ChatResponse.class));
+    }
+
+    @Test
+    @DisplayName("流式：触达可用额度 → 中断并抛 QuotaExhaustedException，且已生成部分仍计量+结算")
+    void testStreamQuotaExhaustedInterrupts() {
+        AiQuotaService quota = mock(AiQuotaService.class);
+        AiMetricsCollector metrics = mock(AiMetricsCollector.class);
+        ReflectionTestUtils.setField(gateway, "quotaService", quota);
+        ReflectionTestUtils.setField(gateway, "metrics", metrics);
+
+        // 额度快照依赖 currentUserId()（ThreadLocal），故必须设置用户上下文
+        ApUser user = new ApUser();
+        user.setId(7);
+        AppThreadLocalUtil.setUser(user);
+        try {
+            // 可用额度 8：prompt 侧("sys"+"u"=4 字符 → 2 token) 先计入，
+            // 第 1 块 10 字符(→5) 累计 7 未触线；第 2 块后累计 9 ≥ 8 → 中断，第 3 块不应下发
+            when(quota.availableTokens(7)).thenReturn(8L);
+            when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
+                    textResponse("一二三四五六七八九十", null, null, "qwen"),
+                    textResponse("甲乙丙丁", null, null, "qwen"),
+                    textResponse("不应下发的第三块", null, null, "qwen")));
+
+            StringBuilder deltas = new StringBuilder();
+            assertThrows(AiLlmGateway.QuotaExhaustedException.class,
+                    () -> gateway.generateStreamOrNull(AiFeatures.ASK_STREAM, "sys", "u", null, null,
+                            deltas::append));
+
+            // 已生成部分仍要计量与结算（成本面板不留空洞），且与「客户端取消」指标区分。
+            // estimated=true 是真实预期：中断发生在流中途，通常尚未收到含 usage 的末块 → 按字符估算
+            verify(tokenMeter).record(eq(AiFeatures.ASK_STREAM), any(), anyInt(), anyInt(), eq(true));
+            verify(quota).settleTokens(eq(7), anyLong());
+            verify(metrics).incr("aiask_stream_quota_exhausted");
+            assertFalse(deltas.toString().contains("不应下发的第三块"), "触线后不应继续下发增量");
+        } finally {
+            AppThreadLocalUtil.clear();
+        }
+    }
+
+    @Test
+    @DisplayName("流式：额度充足 → 不受影响，正常返回并照常结算")
+    void testStreamQuotaSufficientNoInterrupt() {
+        AiQuotaService quota = mock(AiQuotaService.class);
+        ReflectionTestUtils.setField(gateway, "quotaService", quota);
+
+        ApUser user = new ApUser();
+        user.setId(7);
+        AppThreadLocalUtil.setUser(user);
+        try {
+            when(quota.availableTokens(7)).thenReturn(100_000L);
+            when(chatModel.stream(any(Prompt.class)))
+                    .thenReturn(Flux.just(textResponse("正常回答", 10, 4, "qwen")));
+
+            String full = gateway.generateStreamOrNull(AiFeatures.ASK_STREAM, "sys", "u", null, null, d -> {
+            });
+
+            assertEquals("正常回答", full);
+            // 未触发中断：走正常收尾，仍按真实 usage 结算
+            verify(quota).settleTokens(eq(7), anyLong());
+        } finally {
+            AppThreadLocalUtil.clear();
+        }
+    }
+
+    @Test
+    @DisplayName("流式：无用户上下文（ThreadLocal 为空）→ 不做额度中断，行为与改造前一致")
+    void testStreamWithoutUserContextNoInterrupt() {
+        AiQuotaService quota = mock(AiQuotaService.class);
+        ReflectionTestUtils.setField(gateway, "quotaService", quota);
+        // 未登录：currentUserId() 为 null → availableTokens(null) 由实现返回"不限"
+        when(quota.availableTokens(null)).thenReturn(Long.MAX_VALUE);
+        when(chatModel.stream(any(Prompt.class)))
+                .thenReturn(Flux.just(textResponse("匿名回答", 10, 4, "qwen")));
+
+        String full = gateway.generateStreamOrNull(AiFeatures.ASK_STREAM, "sys", "u", null, null, d -> {
+        });
+
+        assertEquals("匿名回答", full);
     }
 }

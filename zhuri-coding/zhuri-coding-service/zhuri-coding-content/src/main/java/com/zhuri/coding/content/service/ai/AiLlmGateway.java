@@ -182,6 +182,11 @@ public class AiLlmGateway {
         StringBuilder acc = new StringBuilder();
         Usage[] lastUsage = new Usage[1];
         String[] model = new String[1];
+        // 额度“到线即停”：开始前取一次可用额度快照，并把 prompt 侧估算先计入
+        // （否则“还没输出就已超额度”的情况仍会白跑一轮）；后续在内存累计比对，不查存储
+        final long quotaLimit = resolveStreamQuotaLimit();
+        final int promptTokens = estimateTokens(
+                (systemPrompt == null ? 0 : systemPrompt.length()) + (user == null ? 0 : user.length()));
         try {
             ChatClient.ChatClientRequestSpec spec = client(explicitModel, memory, conversationId)
                     .prompt().system(systemPrompt).user(user == null ? "" : user);
@@ -206,6 +211,15 @@ public class AiLlmGateway {
                             if (onDelta != null) {
                                 onDelta.accept(delta);
                             }
+                            // 触达可用额度即中断流迭代（沿途为本地纯计算、无 I/O，故可逐 chunk 判断）。
+                            // 抛异常是本工程既有的中断手段——客户端断开也走 onDelta 抛异常这条路。
+                            if (quotaLimit != Long.MAX_VALUE) {
+                                long estimated = promptTokens + estimateTokens(acc.length());
+                                if (estimated >= quotaLimit) {
+                                    throw new QuotaExhaustedException("流式生成额度耗尽: feature=" + feature
+                                            + ", 估算已用 " + estimated + " tokens >= 可用 " + quotaLimit);
+                                }
+                            }
                         }
                     })
                     .blockLast();
@@ -217,6 +231,11 @@ public class AiLlmGateway {
         } catch (SafetyGuardException e) {
             log.warn("[AiLlmGateway] 流式输出护栏命中，丢弃该回答并降级: feature={}, {}", feature, e.getMessage());
             return null;
+        } catch (QuotaExhaustedException e) {
+            // 额度耗尽：非故障（不计熔断失败）、也非用户取消——按已生成部分计量并结算后向上抛出。
+            // 抛给调用方的原因：调用方必须知道"这是截断答案"，从而不写记忆、不落语义缓存，并给用户明确提示。
+            handleQuotaExhausted(feature, model[0], lastUsage[0], systemPrompt, user, acc.toString());
+            throw e;
         } catch (java.util.concurrent.CancellationException e) {
             // P2-3 流式取消：客户端断开导致 onDelta 抛取消异常中断流迭代。
             // 取消不是故障——不计熔断失败；已生成部分按字符估算计量（成本面板不留空洞）后丢弃
@@ -224,7 +243,11 @@ public class AiLlmGateway {
             log.info("[AiLlmGateway] 流式生成被客户端取消: feature={}, 已生成 {} 字符", feature, acc.length());
             return null;
         } catch (Exception e) {
-            // 兜底：部分响应框架会包装取消异常，识别 cause 链同样按取消处理
+            // 兜底：部分响应框架会包装取消/额度异常，识别 cause 链分别处理
+            if (isQuotaExhausted(e)) {
+                handleQuotaExhausted(feature, model[0], lastUsage[0], systemPrompt, user, acc.toString());
+                throw new QuotaExhaustedException("流式生成额度耗尽（包装异常）: feature=" + feature);
+            }
             if (isCancellation(e)) {
                 recordCancelledUsage(feature, model[0], lastUsage[0], systemPrompt, user, acc.length());
                 log.info("[AiLlmGateway] 流式生成被客户端取消（包装异常）: feature={}, 已生成 {} 字符",
@@ -330,6 +353,70 @@ public class AiLlmGateway {
             depth++;
         }
         return false;
+    }
+
+    /** 识别「额度耗尽」中断（含被响应式框架包装的情况，与 {@link #isCancellation} 同款 cause 链遍历） */
+    private static boolean isQuotaExhausted(Throwable t) {
+        Throwable cur = t;
+        int depth = 0;
+        while (cur != null && depth < 5) {
+            if (cur instanceof QuotaExhaustedException) {
+                return true;
+            }
+            cur = cur.getCause();
+            depth++;
+        }
+        return false;
+    }
+
+    /**
+     * 流式额度上限快照：可用 = 今日免费剩余 + 钱包 token 余额。
+     *
+     * <p>只在流开始前取<b>一次</b>（之后由 {@code doOnNext} 在内存里累计比对，避免逐 chunk 查 Redis/DB）。
+     * 返回 {@link Long#MAX_VALUE} 表示不做流式限额——包括未装配配额服务、无用户上下文、查询异常三种情况。
+     * 代价（已知）：并发请求可能各持同一份快照，属<b>并发超支</b>，需靠闸门侧原子预扣收敛。
+     */
+    private long resolveStreamQuotaLimit() {
+        if (quotaService == null) {
+            return Long.MAX_VALUE;
+        }
+        try {
+            return quotaService.availableTokens(currentUserId());
+        } catch (Exception e) {
+            log.debug("[AiLlmGateway] 流式额度快照获取失败，本次不限额: {}", e.getMessage());
+            return Long.MAX_VALUE;
+        }
+    }
+
+    /**
+     * 流式额度耗尽收尾：按已生成部分计量 + 结算（成本面板不留空洞）+ 打指标。
+     *
+     * <p>与「客户端取消」的区别：取消是用户主动放弃，这里是额度到线被动中断。两者都不计熔断失败，
+     * 但<b>指标与用户提示必须分开</b>，否则无法区分"该扩容"还是"查客户端"。由调用方负责告知前端。
+     */
+    private void handleQuotaExhausted(String feature, String model, Usage usage,
+                                      String systemPrompt, String user, String generated) {
+        long settled = recordStreamUsage(feature, model, usage, systemPrompt, user, generated);
+        settleQuotaByTokens(settled);
+        if (metrics != null) {
+            metrics.incr("aiask_stream_quota_exhausted");
+        }
+        log.warn("[AiLlmGateway] 流式生成额度耗尽已中断: feature={}, 已生成 {} 字符, 结算 {} tokens",
+                feature, generated == null ? 0 : generated.length(), settled);
+    }
+
+    /**
+     * 流式生成过程中「额度到线」的信号异常。
+     *
+     * <p>为什么用异常而不是返回标记：中断流迭代的唯一通道就是回调抛异常
+     * （框架本身也用它处理客户端断开，见 {@code onDelta} 抛 CancellationException 的既有用法）。
+     * 且它<b>必须与取消区分开</b>——网关内部完成计量/结算后<b>向上抛出</b>，
+     * 由调用方决定"不写记忆、不落语义缓存、并给用户明确提示"，避免把截断答案当成完整答案沉淀。
+     */
+    public static class QuotaExhaustedException extends RuntimeException {
+        public QuotaExhaustedException(String message) {
+            super(message);
+        }
     }
 
     /**
