@@ -16,6 +16,7 @@ import com.zhuri.coding.model.circle.pojos.ApUserCircle;
 import com.zhuri.coding.model.circle.pojos.ClubFeaturedPin;
 import com.zhuri.coding.model.pins.pojos.ApPins;
 import com.zhuri.coding.model.circle.vos.CircleVO;
+import com.zhuri.coding.utils.common.PageParamUtil;
 import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,7 +54,11 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
 
     @Override
     public Map<String, Object> square(int page, int size) {
-        int offset = (page - 1) * size;
+        // 该接口在网关公开只读白名单内（未登录可达）：page/size 必须收口，
+        // 否则 size=100000 会一次拉全表，page/size 过大还会让 (page-1)*size 溢出为负导致 SQL 报错
+        page = PageParamUtil.normalizePage(page);
+        size = PageParamUtil.normalizeSize(size);
+        int offset = PageParamUtil.offset(page, size);
         List<ApCircle> circles = apCircleMapper.selectSquareCircles(offset, size);
         long total = apCircleMapper.selectSquareCirclesCount();
         Integer userId = getCurrentUserId();
@@ -144,14 +149,18 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
     public Map<String, Object> feed(Long circleId, String tab, int page, int size) {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> list = new ArrayList<>();
+        // 公开只读接口：先收口分页参数，避免 size 直传导致一次拉全表
+        page = PageParamUtil.normalizePage(page);
+        size = PageParamUtil.normalizeSize(size);
 
         if ("featured".equals(tab)) {
             LambdaQueryWrapper<ClubFeaturedPin> fpWrapper = new LambdaQueryWrapper<>();
             fpWrapper.eq(ClubFeaturedPin::getCircleId, circleId)
                      .orderByAsc(ClubFeaturedPin::getSortOrder);
-            int offset = (page - 1) * size;
-            fpWrapper.last("LIMIT " + offset + "," + size);
-            List<ClubFeaturedPin> featuredPins = clubFeaturedPinMapper.selectList(fpWrapper);
+            // 改用分页插件：原先用 last("LIMIT " + offset + "," + size) 做字符串拼接，
+            // 破坏了 MyBatis-Plus 的参数绑定惯例（且 offset 溢出为负时会拼出非法 SQL）
+            List<ClubFeaturedPin> featuredPins = clubFeaturedPinMapper
+                .selectPage(new Page<>(page, size), fpWrapper).getRecords();
             if (!featuredPins.isEmpty()) {
                 List<Long> pinIds = featuredPins.stream().map(ClubFeaturedPin::getPinId).collect(Collectors.toList());
                 List<ApPins> pins = apPinsMapper.selectBatchIds(pinIds);
@@ -234,6 +243,9 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
 
     @Override
     public List<CircleVO> listByCategory(Long categoryId, int page, int size) {
+        // 公开只读接口：收口分页参数（防 size 直传拉全表）
+        page = PageParamUtil.normalizePage(page);
+        size = PageParamUtil.normalizeSize(size);
         LambdaQueryWrapper<ApCircle> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApCircle::getCategoryId, categoryId);
         wrapper.orderByAsc(ApCircle::getSortOrder);

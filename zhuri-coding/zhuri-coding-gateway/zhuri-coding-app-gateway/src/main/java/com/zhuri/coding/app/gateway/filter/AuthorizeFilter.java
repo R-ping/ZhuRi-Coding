@@ -189,7 +189,14 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/content/api/v1/tag/by-category")
             || path.startsWith("/content/api/v1/tag/category-top")
             || path.startsWith("/content/api/v1/article/load")
-            || path.startsWith("/content/api/v1/circle")
+            // 圈子广场/圈子详情/分类列表公开只读（未登录也可浏览，利于 SEO）。
+            // 注意：此处刻意**不使用裸前缀** "/content/api/v1/circle" —— 它会把 /{id}/join、/{id}/leave
+            // 等写接口一并放行（含匿名调用），与"仅放行只读查询"的本意相悖。
+            || path.startsWith("/content/api/v1/circle/square")
+            || path.startsWith("/content/api/v1/circle/hot")
+            || path.startsWith("/content/api/v1/circle/categories/")
+            || path.matches("/content/api/v1/circle/\\d+")
+            || path.matches("/content/api/v1/circle/\\d+/feed")
             // 文章详情页（FTL 服务端渲染）浏览器导航加载，无法携带 accToken，公开访问利于 SEO
             || path.startsWith("/content/article/")
             // 文章详情页共用交互脚本（静态资源）

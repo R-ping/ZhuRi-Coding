@@ -169,8 +169,12 @@ public class RateLimitAspect {
     }
 
     /**
-     * 获取客户端真实 IP
-     * 处理 X-Forwarded-For 头，支持代理服务器场景
+     * 获取客户端真实 IP。
+     *
+     * <p><b>安全约定</b>：{@code X-Forwarded-For} 是客户端可自行伪造的头。若无条件采信，
+     * 攻击者每次请求换一个值即可拿到全新的限流桶，等于让 IP 维度限流失效（登录、短信、上传签名
+     * 等防刷场景首当其冲）。因此此处**仅当直连对端是我方受信代理（回环/内网）时**才采信代理头，
+     * 且从右往左取第一个非受信地址 —— 我方代理会把观测到的对端追加到最右，最左可能是伪造值。
      */
     private String getClientIp() {
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
@@ -179,27 +183,56 @@ public class RateLimitAspect {
         }
 
         HttpServletRequest request = attributes.getRequest();
-        String ip = request.getHeader("X-Forwarded-For");
-
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-
-        // 处理多个 IP 的情况（X-Forwarded-For 可能包含多个 IP）
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
+        String remoteAddr = request.getRemoteAddr();
+        if (isTrustedProxy(remoteAddr)) {
+            String forwarded = request.getHeader("X-Forwarded-For");
+            if (forwarded != null && !forwarded.isBlank()) {
+                String[] parts = forwarded.split(",");
+                for (int i = parts.length - 1; i >= 0; i--) {
+                    String candidate = parts[i].trim();
+                    if (!candidate.isEmpty() && !isTrustedProxy(candidate)) {
+                        return candidate;
+                    }
+                }
+            }
+            String realIp = request.getHeader("X-Real-IP");
+            if (realIp != null && !realIp.isBlank()) {
+                return realIp.trim();
+            }
         }
 
-        return ip != null ? ip : "unknown";
+        return remoteAddr != null && !remoteAddr.isEmpty() ? remoteAddr : "unknown";
+    }
+
+    /**
+     * 是否为受信代理地址（回环 / 内网 / 链路本地）。
+     * 需与部署拓扑保持一致：只有来自这些网段的请求才被视为"经过我方代理"。
+     */
+    private static boolean isTrustedProxy(String ip) {
+        if (ip == null || ip.isEmpty()) {
+            return false;
+        }
+        if ("127.0.0.1".equals(ip) || "::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip)) {
+            return true;
+        }
+        if (ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.")) {
+            return true;
+        }
+        if (ip.startsWith("172.")) {
+            int second = secondOctet(ip);
+            return second >= 16 && second <= 31;
+        }
+        return false;
+    }
+
+    /** 取 IPv4 第二段（用于判断 172.16.0.0/12 私有网段），非法格式返回 -1 */
+    private static int secondOctet(String ip) {
+        try {
+            String[] parts = ip.split("\\.");
+            return parts.length > 1 ? Integer.parseInt(parts[1]) : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     /**

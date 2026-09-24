@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -268,7 +269,10 @@ class CircleServiceImplTest {
     void testFeedFeatured() {
         ClubFeaturedPin fp1 = featuredPin(1L, 11L, 1);
         ClubFeaturedPin fp2 = featuredPin(1L, 22L, 2);
-        when(clubFeaturedPinMapper.selectList(any(Wrapper.class))).thenReturn(Arrays.asList(fp1, fp2));
+        // 实现已由 last("LIMIT ...") 拼串改为分页插件，故此处 stub selectPage
+        Page<ClubFeaturedPin> fpPage = new Page<>(1, 10);
+        fpPage.setRecords(Arrays.asList(fp1, fp2));
+        when(clubFeaturedPinMapper.selectPage(any(IPage.class), any(Wrapper.class))).thenReturn(fpPage);
         when(apPinsMapper.selectBatchIds(any()))
                 .thenReturn(Arrays.asList(pin(22L, 2L, "乙", "b", "正文2", 5, 1, 1L),
                         pin(11L, 1L, "甲", "a", "正文1", 3, 0, 1L)));
@@ -284,9 +288,24 @@ class CircleServiceImplTest {
     @Test
     @DisplayName("feed - featured 无精选时为空")
     void testFeedFeaturedEmpty() {
-        when(clubFeaturedPinMapper.selectList(any(Wrapper.class))).thenReturn(Collections.emptyList());
+        Page<ClubFeaturedPin> emptyPage = new Page<>(1, 10);
+        emptyPage.setRecords(Collections.emptyList());
+        when(clubFeaturedPinMapper.selectPage(any(IPage.class), any(Wrapper.class))).thenReturn(emptyPage);
         Map<String, Object> r = circleService.feed(1L, "featured", 1, 10);
         assertTrue(((List<?>) r.get("list")).isEmpty());
+    }
+
+    @Test
+    @DisplayName("feed - size 超上限被收口（该接口匿名可达，防止一次拉全表）")
+    void testFeedClampsOversizedSize() {
+        Page<ApPins> emptyPage = new Page<>(1, 50);
+        emptyPage.setRecords(Collections.emptyList());
+        ArgumentCaptor<IPage<ApPins>> captor = ArgumentCaptor.forClass(IPage.class);
+        when(apPinsMapper.selectPage(captor.capture(), any(Wrapper.class))).thenReturn(emptyPage);
+
+        circleService.feed(1L, "hot", 1, 100000);
+
+        assertEquals(50, captor.getValue().getSize());
     }
 
     @Test

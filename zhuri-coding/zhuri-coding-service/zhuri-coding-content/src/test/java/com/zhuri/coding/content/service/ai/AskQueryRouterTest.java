@@ -79,6 +79,8 @@ class AskQueryRouterTest {
         AskQueryRouter r = router();
         ReflectionTestUtils.setField(r, "chatWordsCfg", "嗨,在么");
         ReflectionTestUtils.setField(r, "techWordsCfg", "压测");
+        // 模拟 Spring 生命周期：字段注入完成后由 @PostConstruct 解析词表（词表改为启动时构建一次）
+        r.init();
         // 自定义闲聊词命中（短句）
         assertEquals(AskQueryRouter.Intent.CHAT, r.intent("在么？"));
         // 自定义技术词优先

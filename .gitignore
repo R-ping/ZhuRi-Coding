@@ -57,8 +57,21 @@ article_*.html
 # 覆盖率报告
 jacoco-0.8.15/
 
-# 环境变量配置（含敏感密钥，禁止提交）
+# 环境变量配置与本地覆盖（含敏感密钥，禁止提交）
 .env
+.env.*
+!.env.example
+# Spring Boot 本地凭据覆盖文件（真实口令只允许存在本地磁盘）
+application-local.yml
+application-local.yaml
+application-*-local.yml
+application-*-local.yaml
+*-local.properties
+# 证书与密钥
+*.pem
+*.p12
+*.jks
+*.key
 
 # 本地监控组件（Prometheus/Loki/Grafana/Promtail 及其运行数据、安装包，均不入库）
 monitoring/
@@ -100,6 +113,9 @@ docs/resume-project-*.md
 # 本地临时输出与日志目录
 _*.txt
 nacos-logs/
+
+# ---------- 截图目录（README 已改用 OSS 图床，本地留档不入库）----------
+screenshots/
 
 # ---------- docs/ 文档目录（项目运行不依赖，仅本地阅读）----------
 # 说明：docs/ 下是设计文档、AI 增强记录与个人求职材料，代码与运行链路均不引用它。

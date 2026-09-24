@@ -42,8 +42,9 @@ public class AiTokenMeterImpl implements AiTokenMeter {
     private static final Duration TTL = Duration.ofDays(40);
     private static final String UNKNOWN_MODEL = "unknown";
 
-    /** 估算口径：中文为主的文本约 1 token ≈ 1.5 字符（保守取小，宁可低估不虚报成本） */
-    static final int CHARS_PER_TOKEN = 2;
+    // 说明：字符→token 的估算口径不在本类 —— 真实估算发生在 AiLlmGateway#estimateTokens
+    //（中文约 1 token ≈ 2 字符，宁低估不虚报成本）。本类只负责累计与存储，
+    //  避免在两处各留一份常量导致口径漂移。
 
     @Autowired(required = false)
     private StringRedisTemplate redisTemplate;

@@ -272,6 +272,65 @@ class AuthorizeFilterTest {
     }
 
     @Test
+    @DisplayName("圈子 feed 只读、无 token → 匿名放行")
+    void testCircleFeedPublicNoToken() {
+        ServerWebExchange exchange = exchange("/content/api/v1/circle/1/feed", null);
+        ServerHttpResponse response = exchange.getResponse();
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(exchange)).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(chain).filter(exchange);
+        verify(response, never()).setComplete();
+    }
+
+    @Test
+    @DisplayName("圈子详情只读、无 token → 匿名放行")
+    void testCircleDetailPublicNoToken() {
+        ServerWebExchange exchange = exchange("/content/api/v1/circle/123", null);
+        ServerHttpResponse response = exchange.getResponse();
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(exchange)).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(chain).filter(exchange);
+        verify(response, never()).setComplete();
+    }
+
+    @Test
+    @DisplayName("圈子写接口（join）、无 token → 拦截（返回 444）")
+    void testCircleJoinWriteNoToken() {
+        // 回归：曾用裸前缀 /content/api/v1/circle 放行，把 join/leave 一并公开，此处守住边界
+        ServerWebExchange exchange = exchange("/content/api/v1/circle/1/join", null);
+        ServerHttpResponse response = exchange.getResponse();
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(any())).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(response).setStatusCode(HttpStatusCode.valueOf(444));
+        verify(response).setComplete();
+        verify(chain, never()).filter(any());
+    }
+
+    @Test
+    @DisplayName("圈子写接口（leave）、无 token → 拦截（返回 444）")
+    void testCircleLeaveWriteNoToken() {
+        ServerWebExchange exchange = exchange("/content/api/v1/circle/1/leave", null);
+        ServerHttpResponse response = exchange.getResponse();
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(any())).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(response).setStatusCode(HttpStatusCode.valueOf(444));
+        verify(response).setComplete();
+        verify(chain, never()).filter(any());
+    }
+
+    @Test
     @DisplayName("getOrder → 返回 0（最高优先级）")
     void testOrder() {
         assertEquals(0, filter.getOrder());

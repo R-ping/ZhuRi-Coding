@@ -104,7 +104,9 @@ public class ArticlePageController {
         model.addAttribute("authorId", article.getAuthorId() != null ? article.getAuthorId() : 0L);
         model.addAttribute("publishTime", article.getPublishTime());
         model.addAttribute("readCount", article.getViews() != null ? article.getViews() : 0);
-        model.addAttribute("readTime", calculateReadTime(content));
+        // 正文纯文本只清洗一次：阅读时长与 meta description 共用，避免同一请求内重复执行全文正则
+        String plainContent = plainText(content);
+        model.addAttribute("readTime", calculateReadTime(plainContent));
         model.addAttribute("likeCount", article.getLikes() != null ? article.getLikes() : 0);
         model.addAttribute("commentCount", apCommentService.countTopComments(id));
         model.addAttribute("collectCount", article.getCollection() != null ? article.getCollection() : 0);
@@ -114,7 +116,7 @@ public class ArticlePageController {
         // 2.1 SEO 元数据（meta description / canonical / OG / JSON-LD 结构化数据）
         model.addAttribute("seoBaseUrl", nullSafe(seoBaseUrl));
         // 描述优先复用 AI 预检回填的 summary，缺省则从正文纯文本截取，保证 <meta description> 非空
-        model.addAttribute("metaDescription", buildMetaDescription(article.getSummary(), content));
+        model.addAttribute("metaDescription", buildMetaDescription(article.getSummary(), plainContent));
         model.addAttribute("coverImage", article.getCoverImage() != null ? article.getCoverImage() : "");
         model.addAttribute("publishTimeIso", toIso(article.getPublishTime()));
 
@@ -193,9 +195,11 @@ public class ArticlePageController {
 
     /**
      * 计算阅读时间（分钟）：按每分钟阅读 500 字估算
+     *
+     * @param plainContent 已清洗的正文纯文本（由调用方统一计算一次，避免重复正则开销）
      */
-    private String calculateReadTime(String content) {
-        return String.valueOf(Math.max(1, (int) Math.ceil(plainText(content).length() / 500.0)));
+    private String calculateReadTime(String plainContent) {
+        return String.valueOf(Math.max(1, (int) Math.ceil(plainContent.length() / 500.0)));
     }
 
     /**
@@ -216,11 +220,13 @@ public class ArticlePageController {
 
     /**
      * 构建文章 meta description：优先 AI 预检回填的 summary，缺省时从正文纯文本截取，最长 150 字
+     *
+     * @param plainContent 已清洗的正文纯文本（由调用方统一计算一次，避免重复正则开销）
      */
-    private String buildMetaDescription(String summary, String content) {
+    private String buildMetaDescription(String summary, String plainContent) {
         String base = StringUtils.isNotBlank(summary)
             ? plainText(summary)
-            : plainText(content);
+            : plainContent;
         if (StringUtils.isBlank(base)) {
             return "逐日 Coding 开发者技术社区";
         }

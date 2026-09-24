@@ -4,8 +4,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -38,6 +40,18 @@ public class AiCircuitBreaker {
     public static final String TARGET_LLM = "llm";
     /** 目标：向量化模型（RAG 召回与缓存的关键路径） */
     public static final String TARGET_EMBEDDING = "embedding";
+
+    /**
+     * 失败计数 + 窗口过期原子化脚本（INCR 与 EXPIRE 必须在同一脚本内执行）：
+     * 分两步调用时，若 INCR 成功而 EXPIRE 未生效（进程中断 / 连接断开 / 命令被丢弃），
+     * 失败计数键将永不过期 → 计数无限累积，熔断反复被提前触发，
+     * 与"只统计窗口内失败、避免历史陈账"的设计意图相悖。
+     */
+    private static final DefaultRedisScript<Long> INCR_WITH_TTL_SCRIPT = new DefaultRedisScript<>(
+        "local n = redis.call('INCR', KEYS[1]) "
+            + "if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end "
+            + "return n",
+        Long.class);
 
     private static final String FAIL_KEY = "ai:cb:%s:fail";
     private static final String OPEN_KEY = "ai:cb:%s:open";
@@ -94,8 +108,8 @@ public class AiCircuitBreaker {
     /**
      * 报告失败：窗口内失败累计达阈值则打开熔断。
      *
-     * <p>调用方传 {@code openHint=true}（如鉴权失败、参数错误）可跳过计数 —— 只统计
-     * "依赖不可用"类失败，避免把用户侧错误算成下游故障。
+     * <p>只应由"依赖不可用"类失败调用 —— 护栏命中、参数错误、鉴权失败等用户侧问题不应计入，
+     * 避免把调用方错误算成下游故障（由各调用点决定是否上报）。
      */
     public void onFailure(String target) {
         if (redisTemplate == null) {
@@ -103,15 +117,17 @@ public class AiCircuitBreaker {
         }
         try {
             String fk = failKey(target);
-            Long fails = redisTemplate.opsForValue().increment(fk);
-            if (fails != null && fails == 1L) {
-                redisTemplate.expire(fk, windowSeconds, TimeUnit.SECONDS);
-            }
-            if (fails != null && fails >= failureThreshold
-                    && !Boolean.TRUE.equals(redisTemplate.hasKey(openKey(target)))) {
-                redisTemplate.opsForValue().set(openKey(target), "1", openSeconds, TimeUnit.SECONDS);
-                log.warn("[AiCircuit] 熔断打开: target={}, 窗口内失败={}次, 打开时长={}s（期间快速失败，到期半开试探）",
-                        target, fails, openSeconds);
+            // 计数与窗口过期原子完成（Lua）：避免 INCR 成功而 EXPIRE 失败导致计数键永不过期
+            Long fails = redisTemplate.execute(
+                    INCR_WITH_TTL_SCRIPT, Collections.singletonList(fk), String.valueOf(windowSeconds));
+            if (fails != null && fails >= failureThreshold) {
+                // SET NX EX：仅首个判定线程真正打开熔断；若用 set，并发判定会反复刷新 TTL、延长熔断时长
+                Boolean opened = redisTemplate.opsForValue()
+                        .setIfAbsent(openKey(target), "1", openSeconds, TimeUnit.SECONDS);
+                if (Boolean.TRUE.equals(opened)) {
+                    log.warn("[AiCircuit] 熔断打开: target={}, 窗口内失败={}次, 打开时长={}s（期间快速失败，到期半开试探）",
+                            target, fails, openSeconds);
+                }
             }
         } catch (Exception e) {
             log.debug("[AiCircuit] 熔断计数写入失败: target={}, err={}", target, e.getMessage());

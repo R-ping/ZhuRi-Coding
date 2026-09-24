@@ -111,7 +111,7 @@ public class AiLlmGateway {
             ChatResponse response = spec.call().chatResponse();
             circuitSuccess();
             tokenMeter.record(feature, response);
-            settleQuota(response);
+            settleQuota(response, systemPrompt, user);
             return response != null && response.getResult() != null && response.getResult().getOutput() != null
                     ? response.getResult().getOutput().getText() : null;
         } catch (SafetyGuardException e) {
@@ -381,8 +381,13 @@ public class AiLlmGateway {
         return chars <= 0 ? 0 : Math.max(1, chars / 2);
     }
 
-    /** 配额结算（token 维度）：从 ThreadLocal 取当前登录用户；未登录/未装配则跳过 */
-    private void settleQuota(ChatResponse response) {
+    /**
+     * 配额结算（token 维度）：从 ThreadLocal 取当前登录用户；未登录/未装配则跳过。
+     *
+     * <p>usage 缺失（网关未回传）时**按字符估算**结算，与流式路径 {@link #settleQuotaByTokens(long)}
+     * 口径一致 —— 否则同步调用在 usage 缺失场景下用户不扣费、成本由平台吸收。
+     */
+    private void settleQuota(ChatResponse response, String systemPrompt, String user) {
         if (quotaService == null || response == null || response.getMetadata() == null) {
             return;
         }
@@ -396,6 +401,14 @@ public class AiLlmGateway {
             if (usage != null) {
                 total = (usage.getPromptTokens() == null ? 0 : usage.getPromptTokens())
                       + (usage.getCompletionTokens() == null ? 0 : usage.getCompletionTokens());
+            }
+            if (total <= 0) {
+                // 与流式路径同口径：真实 usage 缺失时按字符估算，避免同步调用"漏收"
+                String answer = response.getResult() != null && response.getResult().getOutput() != null
+                        ? response.getResult().getOutput().getText() : null;
+                int promptChars = (systemPrompt == null ? 0 : systemPrompt.length())
+                        + (user == null ? 0 : user.length());
+                total = estimateTokens(promptChars) + estimateTokens(answer == null ? 0 : answer.length());
             }
             if (total > 0) {
                 quotaService.settleTokens(userId, total);

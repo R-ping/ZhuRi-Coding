@@ -5,11 +5,12 @@ import com.zhuri.coding.content.service.ai.AiQuotaService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.concurrent.TimeUnit;
+import java.util.Collections;
 
 /**
  * AI 每日免费配额实现（Redis 计数，key 按自然日过期）
@@ -21,6 +22,20 @@ public class AiQuotaServiceImpl implements AiQuotaService {
     private static final String QUOTA_KEY_PREFIX = "ai:quota:daily:";
     /** 今日免费已用 tokens（与次数分离计数：次数防刷，tokens 控成本） */
     private static final String TOKEN_KEY_PREFIX = "ai:quota:tokens:";
+
+    /**
+     * 原子「INCRBY + 补过期」脚本。
+     *
+     * <p><b>为什么必须用 Lua</b>：若分两步（先 INCR 再 EXPIRE），当进程在两步之间中断 / Redis 抖动时，
+     * 计数 key 会**永久没有 TTL** —— 当日免费额度从此不再重置，用户被长期计费且无从自愈。
+     * 收敛为单条脚本后，计数与过期同生共死；判据用 {@code TTL < 0} 而非 {@code n == 增量}，
+     * 因此也能顺带把历史上已产生的"无 TTL 存量 key"在下次计数时修回。
+     */
+    private static final DefaultRedisScript<Long> INCRBY_WITH_TTL_SCRIPT = new DefaultRedisScript<>(
+        "local n = redis.call('INCRBY', KEYS[1], ARGV[2]) "
+            + "if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end "
+            + "return n",
+        Long.class);
 
     /** 每日免费次数（配置可调；默认 20） */
     @org.springframework.beans.factory.annotation.Value("${ai-quota.daily-requests:20}")
@@ -73,12 +88,10 @@ public class AiQuotaServiceImpl implements AiQuotaService {
         // 免费额度优先（产品决策）：每日免费次数用尽后才扣减钱包（购买的额度包）
         try {
             String key = keyOf(userId);
-            Long count = redis().opsForValue().increment(key);
-            if (count != null && count == 1L) {
-                // 首次计数：设置当日剩余秒数过期，次日自动重置
-                long seconds = secondsUntilEndOfDay();
-                redis().expire(key, seconds, TimeUnit.SECONDS);
-            }
+            // 原子计数 + 过期（Lua）：避免 INCR 成功而 EXPIRE 未执行时 key 永不过期
+            Long count = redis().execute(INCRBY_WITH_TTL_SCRIPT,
+                Collections.singletonList(key),
+                String.valueOf(secondsUntilEndOfDay()), "1");
             if (count != null && count <= dailyRequestLimit) {
                 return true; // 仍处于今日免费额度内，放行
             }
@@ -122,10 +135,10 @@ public class AiQuotaServiceImpl implements AiQuotaService {
         }
         try {
             String key = tokenKeyOf(userId);
-            Long usedAfter = redis().opsForValue().increment(key, tokens);
-            if (usedAfter != null && usedAfter == tokens) {
-                redis().expire(key, secondsUntilEndOfDay(), TimeUnit.SECONDS);
-            }
+            // 同上：原子累加 + 补过期，避免 token 计数 key 永不过期导致免费额度不重置
+            Long usedAfter = redis().execute(INCRBY_WITH_TTL_SCRIPT,
+                Collections.singletonList(key),
+                String.valueOf(secondsUntilEndOfDay()), String.valueOf(tokens));
             // 免费额度内部分无需扣钱包；超出部分（含本次跨过阈值的量）扣 token 钱包
             long usedBefore = usedAfter == null ? 0L : usedAfter - tokens;
             long freeForThisCall = Math.max(0L, Math.min(tokens, dailyTokenLimit - usedBefore));

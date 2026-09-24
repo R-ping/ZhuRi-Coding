@@ -22,6 +22,7 @@ import com.zhuri.coding.model.article.pojos.TopicRelation;
 import com.zhuri.coding.model.topic.vos.TopicDetailVO;
 import com.zhuri.coding.model.topic.vos.TopicRecommendVO;
 import com.zhuri.coding.model.topic.vos.TopicSquareVO;
+import com.zhuri.coding.utils.common.PageParamUtil;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -59,6 +60,14 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
 
     @Override
     public Map<String, Object> recommend(int page, int size) {
+        // 该接口在网关公开只读白名单内（未登录可达），且下方按 size 逐元素构造集合，
+        // 必须先把 size 收口到上限，否则 size=Integer.MAX_VALUE 会直接耗尽内存。
+        // 注意：本方法是**环形缓冲**（page 从 0 开始，offset = page*size % total），
+        // 故 page 只能归一为非负，不能像 1-based 分页那样抬到 1 —— 否则默认的 page=0 会跳过第一页。
+        if (page < 0) {
+            page = 0;
+        }
+        size = PageParamUtil.normalizeSize(size);
         // 查询所有推荐话题
         LambdaQueryWrapper<ApTopic> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApTopic::getIsRecommend, 1)
@@ -74,7 +83,9 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
             return result;
         }
         // 环形缓冲：offset = (page * size) % total
-        int offset = (page * size) % total;
+        // 用 long 做乘法再取模：page 很大时 (page * size) 会 int 溢出为负，
+        // 进而 allTopics.get(负数) 抛 IndexOutOfBoundsException
+        int offset = (int) (((long) page * size) % total);
         List<ApTopic> pageTopics = new ArrayList<>();
         for (int i = 0; i < size; i++) {
             int idx = (offset + i) % total;
@@ -112,8 +123,13 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
         } else {
             wrapper.orderByDesc(ApTopic::getPostCount);
         }
-        long cursor = dto.getCursor() != null ? dto.getCursor() : 0;
-        int size = dto.getSize() > 0 ? dto.getSize() : 20;
+        long cursor = dto.getCursor() != null ? dto.getCursor() : 0L;
+        if (cursor < 0) {
+            cursor = 0L;
+        }
+        // size 是 Integer：客户端显式传 "size": null 时不能直接拆箱（会 NPE）；同时收口上限防一次拉全表
+        Integer rawSize = dto.getSize();
+        int size = PageParamUtil.normalizeSize(rawSize == null ? 20 : rawSize);
         int pageNum = (int) (cursor / size) + 1;
         Page<ApTopic> pageParam = new Page<>(pageNum, size + 1);
         IPage<ApTopic> pageResult = topicMapper.selectPage(pageParam, wrapper);
@@ -227,6 +243,11 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
     @Override
     public Map<String, Object> feed(Long id, String tab, long cursor, int size) {
         Map<String, Object> result = new HashMap<>();
+        // size 由客户端直传：为 0 时下方 cursor / size 会除零（500），同时需收口上限防一次拉全表
+        size = PageParamUtil.normalizeSize(size);
+        if (cursor < 0) {
+            cursor = 0L;
+        }
         // 文章分栏：前端传 article_hot（热门）/article_new（最新），兼容旧值 article
         boolean isArticle = tab != null && (tab.startsWith("article"));
         if (isArticle) {
@@ -317,7 +338,9 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
         }
         // 内存分页
         int total = articles.size();
-        int start = (int) (cursor / size) * size;
+        // cursor 是客户端直传的 long：用 long 运算避免 (int) 截断出负数导致 subList 越界
+        long rawStart = (cursor / size) * (long) size;
+        int start = rawStart > Integer.MAX_VALUE ? total : (int) rawStart;
         if (start >= total) {
             result.put("list", list);
             result.put("cursor", cursor + size);
