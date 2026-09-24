@@ -120,11 +120,10 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
         uc.setUserId(userId);
         uc.setCreatedTime(new Date());
         apUserCircleMapper.insert(uc);
-        ApCircle circle = apCircleMapper.selectById(circleId);
-        if (circle != null) {
-            circle.setMemberCount((circle.getMemberCount() != null ? circle.getMemberCount() : 0) + 1);
-            apCircleMapper.updateById(circle);
-        }
+        // 原子自增成员数：原先是“selectById → setMemberCount+1 → updateById”的读改写，
+        // 并发加入时两个请求都读到旧值、各自写回 +1 → 只加了 1（丢失更新）。
+        // 注意 @Transactional 只保证原子提交，不解决丢失更新，故必须下推到 SQL 原子操作。
+        apCircleMapper.incrementMemberCount(circleId);
     }
 
     @Override
@@ -137,12 +136,8 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
             throw new RuntimeException("未加入该圈子");
         }
         apUserCircleMapper.delete(wrapper);
-        ApCircle circle = apCircleMapper.selectById(circleId);
-        if (circle != null) {
-            int mc = circle.getMemberCount() != null ? circle.getMemberCount() : 0;
-            circle.setMemberCount(Math.max(0, mc - 1));
-            apCircleMapper.updateById(circle);
-        }
+        // 同上：原子自减（下限夹到 0，与原先 Math.max(0, mc-1) 语义一致），避免并发退出丢更新
+        apCircleMapper.decrementMemberCount(circleId);
     }
 
     @Override

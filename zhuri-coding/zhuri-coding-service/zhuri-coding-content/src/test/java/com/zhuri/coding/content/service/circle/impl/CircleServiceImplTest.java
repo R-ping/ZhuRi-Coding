@@ -222,24 +222,25 @@ class CircleServiceImplTest {
     }
 
     @Test
-    @DisplayName("join - 新加入自增成员数")
+    @DisplayName("join - 新加入成员数走 SQL 原子自增（不再读改写）")
     void testJoinSuccess() {
         when(apUserCircleMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
-        ApCircle c = circle(1L, "圈子", 5, 0, 1L);
-        when(apCircleMapper.selectById(1L)).thenReturn(c);
         circleService.join(1L, 1);
         verify(apUserCircleMapper).insert((ApUserCircle) any());
-        assertEquals(6, c.getMemberCount());
-        verify(apCircleMapper).updateById((ApCircle) any());
+        // 关键：成员数必须走原子自增，绝不能是"查出来 +1 再写回"（并发会丢更新）
+        verify(apCircleMapper).incrementMemberCount(1L);
+        verify(apCircleMapper, never()).updateById((ApCircle) any());
     }
 
     @Test
-    @DisplayName("join - 圈子不存在时不更新人数（不抛异常）")
-    void testJoinCircleNull() {
+    @DisplayName("join - 圈子不存在时原子自增影响 0 行，不抛异常（由 SQL 的 WHERE 天然兜底）")
+    void testJoinCircleNotExists() {
         when(apUserCircleMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
-        when(apCircleMapper.selectById(1L)).thenReturn(null);
+
+        // 圈子不存在 → UPDATE ... WHERE id=? 影响 0 行；不再需要 Java 侧判空
         circleService.join(1L, 1);
-        verify(apCircleMapper, never()).updateById((ApCircle) any());
+
+        verify(apCircleMapper).incrementMemberCount(1L);
     }
 
     // ==================== leave ====================
@@ -252,14 +253,13 @@ class CircleServiceImplTest {
     }
 
     @Test
-    @DisplayName("leave - 退出自减且不为负")
+    @DisplayName("leave - 退出成员数走 SQL 原子自减（下限夹到 0，不再读改写）")
     void testLeaveSuccess() {
         when(apUserCircleMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
-        ApCircle c = circle(1L, "圈子", 1, 0, 1L);
-        when(apCircleMapper.selectById(1L)).thenReturn(c);
         circleService.leave(1L, 1);
         verify(apUserCircleMapper).delete(any(Wrapper.class));
-        assertEquals(0, c.getMemberCount());
+        verify(apCircleMapper).decrementMemberCount(1L);
+        verify(apCircleMapper, never()).updateById((ApCircle) any());
     }
 
     // ==================== feed ====================
