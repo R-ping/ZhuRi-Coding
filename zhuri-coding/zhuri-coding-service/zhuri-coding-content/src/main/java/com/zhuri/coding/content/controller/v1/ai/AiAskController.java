@@ -106,6 +106,129 @@ public class AiAskController {
     }
 
     /**
+     * AI 发布预检·SSE 流式（可观测版）：实时回传 安全/质量/SEO/查重/终审/结构化 各阶段进行态，
+     * 结束前一次性推送最终预检报告（name=done）。
+     * 登录 + 限频（单用户 5 次/分钟 + 单 IP 20 次/分钟）+ 配额扣减同 {@code /precheck} 与 {@code /ask/stream}。
+     */
+    @PostMapping(value = "/precheck/stream", produces = "text/event-stream;charset=UTF-8")
+    @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    @RateLimit(dimension = RateLimit.Dimension.IP, count = 20, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter precheckStream(@RequestBody AiPrecheckDto dto) {
+        aiMetricsCollector.incr("ai_precheck_stream");
+        org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter =
+            new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(120_000L);
+        if (AppThreadLocalUtil.getUser() == null) {
+            emitter.completeWithError(new RuntimeException("NEED_LOGIN"));
+            return emitter;
+        }
+        if (dto == null || dto.getTitle() == null || dto.getTitle().trim().isEmpty()
+                || dto.getContent() == null || dto.getContent().trim().isEmpty()) {
+            emitter.completeWithError(new RuntimeException("标题与内容不能为空"));
+            return emitter;
+        }
+        // AI 每日免费配额 → 钱包额度包（免费优先；超限发 error 事件友好提示，再正常收尾）
+        Integer uid = AppThreadLocalUtil.getUser().getId();
+        if (uid == null || !aiQuotaService.tryConsume(uid)) {
+            try {
+                emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                    .name("error")
+                    .data("[" + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode() + "] "
+                        + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getErrorMessage(),
+                        org.springframework.http.MediaType.TEXT_PLAIN));
+            } catch (Exception ignore) {
+            }
+            emitter.complete();
+            return emitter;
+        }
+        // 消费漏斗：入口打点（配额通过 = 真正开始消耗）
+        funnelMeter.incr(com.zhuri.coding.content.service.ai.AiFeatures.PRECHECK,
+                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_STARTED);
+        // SSE 异步线程内 ThreadLocal 不可见，入参在此显式捕获传入
+        String title = dto.getTitle();
+        String content = dto.getContent();
+        Long articleId = dto.getArticleId();
+        String coverImageUrl = dto.getCoverImageUrl();
+        Integer uidForAsync = uid; // 与 askStream 保持一致（当前流式预检不使用会话记忆，保留以对齐风格）
+        // P2-3 流式取消：客户端断开（onError/onTimeout/send 失败）置位，onEvent 触发
+        // CancellationException 中断后续阶段（省 token），onDone 收尾仍照常执行
+        java.util.concurrent.atomic.AtomicBoolean cancelled =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+        emitter.onCompletion(() -> cancelled.set(true));
+        emitter.onTimeout(() -> cancelled.set(true));
+        emitter.onError(t -> cancelled.set(true));
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                publishAssistantService.precheckStream(title, content, articleId, coverImageUrl,
+                    // 阶段事件：running/done/degraded → SSE name=stage 事件
+                    (type, detail) -> {
+                        if (cancelled.get()) {
+                            throw new java.util.concurrent.CancellationException("client aborted");
+                        }
+                        try {
+                            emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                                .name("stage")
+                                .data("{\"stage\":\"" + stageLabel(type) + "\",\"status\":\"" + detail + "\"}",
+                                    org.springframework.http.MediaType.APPLICATION_JSON));
+                        } catch (Exception e) {
+                            // 客户端断开：置位 + 抛取消异常中断后续阶段（省 token）
+                            cancelled.set(true);
+                            throw new java.util.concurrent.CancellationException("sse send failed");
+                        }
+                    },
+                    // 结束回调：vo==null 发 error，否则发 done（最终预检报告）
+                    vo -> {
+                        try {
+                            if (vo == null) {
+                                emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                                    .name("error").data("AI 服务暂不可用，请稍后再试",
+                                        org.springframework.http.MediaType.TEXT_PLAIN));
+                            } else {
+                                emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                                    .name("done")
+                                    .data(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(vo),
+                                        org.springframework.http.MediaType.APPLICATION_JSON));
+                            }
+                        } catch (Exception e) {
+                            log.warn("AI 流式预检收尾发送失败", e);
+                        }
+                    });
+            } catch (java.util.concurrent.CancellationException ce) {
+                log.warn("AI 流式预检被取消: {}", ce.getMessage());
+            } catch (Exception e) {
+                log.error("AI 流式预检异常", e);
+                try {
+                    emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                        .name("error").data("AI 服务暂不可用，请稍后再试",
+                            org.springframework.http.MediaType.TEXT_PLAIN));
+                } catch (Exception ignore) {
+                }
+            } finally {
+                emitter.complete();
+            }
+        }, aiSseExecutor);
+        return emitter;
+    }
+
+    /** 阶段类型 → 前端展示中文名（SSE stage 事件用） */
+    private static String stageLabel(com.zhuri.coding.content.service.ai.agent.workflow.StageType type) {
+        switch (type) {
+            case SAFETY:
+                return "安全审查";
+            case QUALITY:
+                return "质量评审";
+            case SEO:
+                return "SEO优化";
+            case DUPLICATE:
+                return "查重";
+            case CRITIC:
+                return "终审校验";
+            case FORMAT:
+            default:
+                return "结构化输出";
+        }
+    }
+
+    /**
      * 手动触发存量文章向量回填（运维/初始化用，幂等；限频防连点）
      */
     /**

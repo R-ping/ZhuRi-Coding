@@ -268,7 +268,37 @@
       :append-to-body="true"
       custom-class="ai-precheck-dialog"
     >
-      <div v-if="aiReport" class="ai-report">
+      <!-- 进度步骤视图：流式预检进行中展示 -->
+      <div v-if="aiStageRunning" class="ai-precheck-progress">
+        <div class="ai-progress-steps">
+          <div
+            v-for="(step, i) in aiStageSteps"
+            :key="i"
+            class="ai-step"
+            :class="'ai-step-' + step.status"
+          >
+            <span class="ai-step-icon">
+              <i v-if="step.status === 'done'" class="el-icon-success ai-step-ok"></i>
+              <i v-else-if="step.status === 'running'" class="el-icon-loading ai-step-running"></i>
+              <i v-else class="ai-step-dot"></i>
+            </span>
+            <span class="ai-step-name">{{ step.name }}</span>
+          </div>
+        </div>
+        <p class="ai-progress-tip">正在智能预检，通常需十几秒…</p>
+        <el-alert
+          v-if="aiStageError"
+          type="error"
+          :closable="false"
+          show-icon
+          title="预检失败"
+          :description="aiStageError"
+          class="ai-progress-error"
+        />
+      </div>
+
+      <!-- 报告视图：全局状态机，仅非流式进行中才展示报告内容 -->
+      <div v-else-if="aiReport" class="ai-report">
         <el-alert
           v-if="aiReport.violation"
           type="error"
@@ -325,7 +355,8 @@
         </div>
       </div>
       <span slot="footer">
-        <el-button @click="aiReportVisible = false">关闭</el-button>
+        <el-button v-if="aiStageRunning" @click="cancelAiPrecheck">取 消</el-button>
+        <el-button v-else @click="aiReportVisible = false">关闭</el-button>
       </span>
     </el-dialog>
   </div>
@@ -344,7 +375,7 @@
   import { permission } from "@/utils/permission";
   import { API_DRAFT_CREATE, API_DRAFT_UPDATE, API_DRAFT_PUBLISH } from "@/pages/creator/constants/api";
   import wemediaRequest from '@/common/article_request';
-  import { precheckArticle } from '@/apis/ai';
+  import { precheckArticleStream } from '@/apis/ai';
 
   export default {
     name: "PublishEditor",
@@ -373,6 +404,18 @@
         aiChecking: false,
         aiReport: null,
         aiReportVisible: false,
+        // AI 预检流式进度（SSE 阶段）
+        aiStageRunning: false,
+        aiStageError: '',
+        aiStageAbortFn: null,
+        aiStageSteps: [
+          { name: '安全审查', status: 'pending' },
+          { name: '质量评审', status: 'pending' },
+          { name: 'SEO优化', status: 'pending' },
+          { name: '查重', status: 'pending' },
+          { name: '终审校验', status: 'pending' },
+          { name: '结构化输出', status: 'pending' }
+        ],
         syncScroll: true,
         charCount: 0,
         lineCount: 1,
@@ -473,6 +516,11 @@
       if (this.draftTimer) {
         clearTimeout(this.draftTimer)
         this.draftTimer = null
+      }
+      // 页面销毁时中止在途的流式预检
+      if (this.aiStageAbortFn) {
+        try { this.aiStageAbortFn() } catch (e) { /* 忽略取消异常 */ }
+        this.aiStageAbortFn = null
       }
       // 最后保存一次草稿
       if (this.FormData.content || this.FormData.title) {
@@ -844,25 +892,56 @@
           this.$message && this.$message.warning('请先填写标题与正文（已自动保存）后再预检')
           return
         }
+        // 进入进度步骤视图：重置状态并打开弹框
         this.aiChecking = true
-        precheckArticle({
+        this.aiStageRunning = true
+        this.aiStageError = ''
+        this.aiReport = null
+        this.aiStageSteps.forEach(s => { s.status = 'pending' })
+        this.aiReportVisible = true
+
+        // 记忆 abort 供取消按钮调用
+        this.aiStageAbortFn = precheckArticleStream({
           title: this.FormData.title,
           content: this.FormData.content,
-          articleId: this.FormData.id || null,
           coverImageUrl: this.FormData.cover_image || null
-        }).then(res => {
-          if (res && res.code === 200 && res.data) {
-            this.aiReport = res.data
-            this.applyAiReportToForm(res.data) // 自动回填（仅空字段，可再手动修改）
-            this.aiReportVisible = true
-          } else {
-            this.$message && this.$message.warning((res && res.message) || 'AI 服务暂不可用')
+        }, {
+          // 更新对应阶段的进行态/完成态；degraded 标记降级告警
+          onStage: (name, status) => {
+            const step = this.aiStageSteps.find(s => s.name === name)
+            if (step) step.status = status
+            if (status === 'degraded') {
+              this.aiStageError = '预检降级，结果可能不完整'
+            }
+          },
+          // 收到最终报告：赋给 aiReport 并自动回填发布表单，切换到报告视图
+          onDone: (voJson) => {
+            this.aiReport = voJson || {}
+            this.applyAiReportToForm(voJson || {}) // 自动回填（仅空字段，可再手动修改）
+            this.aiStageRunning = false
+            this.aiChecking = false
+            this.aiStageAbortFn = null
+          },
+          // 出错（含 [3301] 配额耗尽）直接展示
+          onError: (text) => {
+            this.aiStageError = text || 'AI 预检失败，请稍后再试'
+            this.aiStageRunning = false
+            this.aiChecking = false
+            this.aiStageAbortFn = null
           }
-        }).catch(() => {
-          this.$message && this.$message.error('AI 预检失败，请稍后再试')
-        }).finally(() => {
-          this.aiChecking = false
         })
+      },
+      /** 取消流式预检：中止请求并恢复初始状态 */
+      cancelAiPrecheck() {
+        if (this.aiStageAbortFn) {
+          try { this.aiStageAbortFn() } catch (e) { /* 忽略取消异常 */ }
+          this.aiStageAbortFn = null
+        }
+        this.aiStageRunning = false
+        this.aiChecking = false
+        this.aiStageError = ''
+        this.aiReport = null
+        this.aiStageSteps.forEach(s => { s.status = 'pending' })
       },
       /** 采用推荐标签（当前支持单个，取推荐首位可手点替换） */
       /** 采用 AI 推荐标签：追加去重，最多 maxTags 个（随文章提交并参与推荐/分发） */
@@ -1406,6 +1485,60 @@
   .ai-report {
     font-size: 13px;
     color: #333;
+  }
+  .ai-precheck-progress {
+    padding: 4px 0;
+    .ai-progress-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      .ai-step {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        .ai-step-icon {
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex: none;
+        }
+        .ai-step-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #c0c4cc;
+        }
+        .ai-step-running {
+          font-size: 20px;
+          color: #409eff;
+        }
+        .ai-step-ok {
+          font-size: 18px;
+          color: #18a058;
+        }
+        .ai-step-name {
+          font-size: 14px;
+          color: #4e5969;
+        }
+        &.ai-step-running .ai-step-name {
+          color: #1f2329;
+          font-weight: 600;
+        }
+        &.ai-step-done .ai-step-name {
+          color: #4e5969;
+        }
+      }
+    }
+    .ai-progress-tip {
+      margin: 20px 0 0;
+      font-size: 13px;
+      color: #86909c;
+    }
+    .ai-progress-error {
+      margin-top: 16px;
+    }
   }
   .ai-line {
     display: flex;

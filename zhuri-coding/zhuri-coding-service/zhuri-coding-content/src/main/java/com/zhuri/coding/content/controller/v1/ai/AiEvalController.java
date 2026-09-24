@@ -1,6 +1,7 @@
 package com.zhuri.coding.content.controller.v1.ai;
 
 import com.zhuri.coding.content.service.ai.AiEvalService;
+import com.zhuri.coding.content.service.ai.PrecheckEvalService;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import com.zhuri.coding.model.user.pojos.ApUser;
@@ -28,6 +29,9 @@ public class AiEvalController {
 
     @Autowired
     private AiEvalService aiEvalService;
+
+    @Autowired
+    private PrecheckEvalService precheckEvalService;
 
     @PostMapping("/run")
     @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.USER,
@@ -83,5 +87,28 @@ public class AiEvalController {
         }
         log.info("AI 评测门禁触发, userId={}", user.getId());
         return ResponseResult.okResult(aiEvalService.runGate());
+    }
+
+    /**
+     * 发布预检「阶段级评测」（离线/管理验证用，不面向普通用户）。
+     *
+     * <p>读取默认 golden 集 {@code eval-precheck.json}，对每条真实跑显式编排 {@code PrecheckWorkflow}，
+     * 返回四阶段维度（安全/标签/质量/摘要）命中率与整体准确率，作为"显式编排版 vs 旧直答版"质量回归基线。
+     *
+     * <p>⚠️ 成本：每 case 一次真实预检（含 LLM 调用），限流最严；仅需在改预检 prompt / 编排顺序后跑。
+     */
+    @PostMapping("/precheck")
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.USER,
+        count = 1, interval = 10, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
+    @com.zhuri.coding.common.annotation.RateLimit(dimension = com.zhuri.coding.common.annotation.RateLimit.Dimension.IP,
+        count = 1, interval = 20, timeUnit = com.zhuri.coding.common.annotation.RateLimit.TimeUnit.MINUTES)
+    public ResponseResult runPrecheck() {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null || user.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        log.info("AI 阶段级评测(Precheck)触发, userId={}", user.getId());
+        java.util.List<PrecheckEvalService.EvalCase> cases = precheckEvalService.loadDefaultCases();
+        return ResponseResult.okResult(precheckEvalService.evaluatePrecheck(cases));
     }
 }
