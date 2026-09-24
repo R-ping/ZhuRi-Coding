@@ -352,26 +352,47 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         return vo;
     }
 
-    /** 独立相似度兜底：与 Agent 的 search_similar_article 工具共用同一检索实现（排除自身、双保险） */
+    /**
+     * 独立相似度兜底：与 Agent 的 search_similar_article 工具共用同一检索实现（排除自身、双保险）。
+     *
+     * <p><b>这三个字段只由确定性检索决定</b>：命中则写入，未命中 / 检索失败一律清空。
+     * 原因：{@code toVo} 会从最终 JSON 里解析 {@code similar_article_id / similar_title / similarity}，
+     * 即字段默认带着模型填的值；若只做"命中才覆盖"，当确定性检索未命中时模型编造的预警会被保留
+     * ——作者会看到查无实据的"疑似重复"。清空即把权威来源收敛到确定性一侧。
+     */
     private void fillSimilarity(AiPrecheckVo vo, String content, Long articleId) {
         if (vo == null) {
             return;
         }
+        SimilaritySearchTool.SimilarArticle best = null;
         try {
             for (SimilaritySearchTool.SimilarArticle hit : similaritySearchTool.searchSimilar(content)) {
                 if (articleId != null && articleId.equals(hit.article().getId())) {
                     continue; // 排除自身
                 }
                 if (hit.similarity() >= SIMILAR_ALERT) {
-                    vo.setSimilarArticleId(hit.article().getId());
-                    vo.setSimilarTitle(hit.article().getTitle());
-                    vo.setSimilarity(Math.round(hit.similarity() * 10000) / 10000.0);
+                    best = hit;
                 }
                 break; // 与历史行为一致：仅以最相似一篇作为预警
             }
         } catch (Exception e) {
-            log.warn("[AiPrecheck] 相似度兜底失败", e);
+            // 检索失败按"无高相似"处理：宁可清空，也不保留模型可能编造的预警
+            log.warn("[AiPrecheck] 相似度兜底检索失败，按无高相似处理（清空模型填值）", e);
         }
+        applySimilarity(vo, best);
+    }
+
+    /** 唯一的相似度写入出口：best 为 null 即"确定性地无高相似"（或检索失败）→ 显式清空模型填值 */
+    private static void applySimilarity(AiPrecheckVo vo, SimilaritySearchTool.SimilarArticle best) {
+        if (best == null) {
+            vo.setSimilarArticleId(null);
+            vo.setSimilarTitle(null);
+            vo.setSimilarity(null);
+            return;
+        }
+        vo.setSimilarArticleId(best.article().getId());
+        vo.setSimilarTitle(best.article().getTitle());
+        vo.setSimilarity(Math.round(best.similarity() * 10000) / 10000.0);
     }
 
     /** 封面图多模态审核：调用 vision 模型判断违规与主题契合度 */

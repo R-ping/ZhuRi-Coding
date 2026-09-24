@@ -141,6 +141,43 @@ class PublishAssistantServiceImplTest {
     }
 
     @Test
+    @DisplayName("确定性未命中 → 清空模型在 FINAL JSON 里填的相似预警（防编造误报）")
+    void similarityNotHitClearsModelFilledAlert() {
+        String jsonWithFakeAlert = "{\"is_violation\":false,\"quality_score\":80,\"is_tech\":true,"
+            + "\"suggestions\":[],\"tags\":[\"Redis\"],\"summary\":\"摘要。\","
+            + "\"similar_article_id\":8888,\"similar_title\":\"编造的相似文章\",\"similarity\":0.99}";
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
+            .thenReturn(new AgentResult(jsonWithFakeAlert, 1, true));
+        // 确定性检索无命中 → 必须推翻模型填的预警
+        when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
+
+        AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
+
+        assertNotNull(vo);
+        assertNull(vo.getSimilarArticleId(), "确定性未命中必须清空模型编造的相似文章 ID");
+        assertNull(vo.getSimilarTitle(), "确定性未命中必须清空模型编造的标题");
+        assertNull(vo.getSimilarity(), "确定性未命中必须清空模型编造的相似度（否则是查无实据的误报）");
+    }
+
+    @Test
+    @DisplayName("确定性检索异常 → 同样按未命中清空（不保留模型填值）")
+    void similaritySearchFailureClearsModelFilledAlert() {
+        String jsonWithFakeAlert = "{\"is_violation\":false,\"quality_score\":80,\"is_tech\":true,"
+            + "\"suggestions\":[],\"tags\":[\"Redis\"],\"summary\":\"摘要。\","
+            + "\"similar_article_id\":8888,\"similar_title\":\"编造的相似文章\",\"similarity\":0.99}";
+        when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
+            .thenReturn(new AgentResult(jsonWithFakeAlert, 1, true));
+        when(similaritySearchTool.searchSimilar(anyString()))
+            .thenThrow(new RuntimeException("pgvector down"));
+
+        AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
+
+        assertNotNull(vo);
+        assertNull(vo.getSimilarArticleId(), "检索失败属'无确定性结论'，不得保留模型填值");
+        assertNull(vo.getSimilarity());
+    }
+
+    @Test
     @DisplayName("Agent 未收敛时降级为一次性直答")
     void agentNotCompletedFallsBackToDirect() {
         when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))

@@ -112,6 +112,29 @@ class PrecheckWorkflowTest {
     }
 
     @Test
+    @DisplayName("确定性未命中 → 清空模型在 JSON 里填的相似预警（防编造误报）")
+    void similarityNotHitClearsModelFilledAlert() {
+        mockWorkersAllOk(
+            "{\"is_violation\":false}",
+            "{\"quality_score\":60,\"is_tech\":true,\"suggestions\":[]}",
+            "{\"tags\":[\"标题\"],\"summary\":\"摘要。\"}");
+        // 关键：CRITIC 的 FINAL JSON 里带着模型"编造"的相似预警
+        when(criticWorker.review(org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn("{\"is_violation\":false,\"quality_score\":60,\"is_tech\":true,\"suggestions\":[],"
+                + "\"tags\":[\"标题\"],\"summary\":\"摘要。\","
+                + "\"similar_article_id\":8888,\"similar_title\":\"编造的相似文章\",\"similarity\":0.99}");
+        // 而确定性检索无命中
+        when(similarityTool.searchSimilar(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of());
+
+        AiPrecheckVo vo = workflow().run("标题", "正文", null);
+
+        assertNotNull(vo);
+        assertNull(vo.getSimilarArticleId(), "确定性未命中必须清空模型填的相似文章 ID（否则前端给错链接）");
+        assertNull(vo.getSimilarTitle(), "确定性未命中必须清空模型填的标题");
+        assertNull(vo.getSimilarity(), "确定性未命中必须清空模型填的相似度（否则是查无实据的误报）");
+    }
+
+    @Test
     @DisplayName("独立降级：SEO 专家失败 SKIPPED 填默认值，安全+质量照常产出 VO")
     void degrade_nonBlockingStageFailure() {
         mockWorkersAllOk(
