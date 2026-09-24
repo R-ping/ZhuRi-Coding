@@ -147,14 +147,13 @@ public class AiTopupServiceImpl implements AiTopupService {
         order.setPayTime(new Date());
         order.setUpdateTime(new Date());
         topupOrderMapper.updateById(order);
-        // 入账钱包（支付成功后才给额度）
-        walletService.grant(order.getUserId(), order.getQuotaAdded());
-        // token 额度双写（新计费口径）：用量按 token 结算，次数仅作兼容展示
+        // 入账钱包（支付成功后才给额度）：只发 token——次数维度已下线，金额与额度都以 token 表达。
+        // 订单表仍保留 quotaAdded 字段（历史数据兼容），但不再发放到 ap_ai_wallet.balance。
         if (order.getTokenAdded() != null && order.getTokenAdded() > 0) {
             walletService.grantTokens(order.getUserId(), order.getTokenAdded());
         }
-        log.info("[AiTopup] 额度包支付成功并入账, orderNo={}, userId={}, +{} 次, +{} tokens",
-            orderNo, order.getUserId(), order.getQuotaAdded(), order.getTokenAdded());
+        log.info("[AiTopup] 额度包支付成功并入账, orderNo={}, userId={}, +{} tokens",
+            orderNo, order.getUserId(), order.getTokenAdded());
         return true;
     }
 

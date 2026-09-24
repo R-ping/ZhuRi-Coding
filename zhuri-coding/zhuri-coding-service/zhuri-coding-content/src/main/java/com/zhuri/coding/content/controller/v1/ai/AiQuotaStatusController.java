@@ -36,15 +36,8 @@ public class AiQuotaStatusController {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
         }
         Map<String, Object> data = new HashMap<>();
-        // 次数维度（历史口径，保留兼容老前端）
-        Map<String, Object> free = new HashMap<>();
-        free.put("dailyLimit", aiQuotaService.dailyRequestLimit());
-        free.put("usedToday", aiQuotaService.usedToday(user.getId()));
-        free.put("remainToday", aiQuotaService.remainToday(user.getId()));
-        data.put("freeQuota", free);
-        data.put("walletBalance", walletService.balanceOf(user.getId()));
-
-        // token 维度（新计费口径）：用量与余额均按 token，前端可据此展示"今日免费 tokens / 已购 tokens"
+        // 统一 token 口径：原「次数」维度已下线（频次防刷由分层限流承担，成本只能由 token 表达），
+        // 故不再返回 freeQuota / walletBalance 两个次数口径字段；前端只读 freeTokens / walletTokenBalance。
         Map<String, Object> freeTokens = new HashMap<>();
         freeTokens.put("dailyLimit", aiQuotaService.dailyTokenLimit());
         freeTokens.put("usedToday", aiQuotaService.tokensUsedToday(user.getId()));

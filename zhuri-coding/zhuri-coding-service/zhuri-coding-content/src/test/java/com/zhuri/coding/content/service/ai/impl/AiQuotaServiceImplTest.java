@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -27,14 +26,15 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 
 /**
- * AI 每日免费配额（Redis 计数）单测。
+ * AI 每日免费配额（**token 单一口径**）单测。
  *
- * <p>覆盖核心产品决策「免费额度优先」：每日免费 20 次内放行；用尽后回补计数防虚高，
- * 转由钱包兜底扣减；钱包不足返回 false；Redis 异常 fail-open 放行不阻断问答主链路；
- * usedToday/remainToday 的读取与异常兜底。
+ * <p>覆盖：准入判定（免费 tokens 未用尽 / 钱包兜底 / 双尽拒绝）、Redis 异常 fail-open、
+ * 以及「准入不做预扣」这一设计决定（防回归：不得再出现按次计数）、流式额度快照 availableTokens。
+ *
+ * <p>原「次数」维度的用例已随该维度下线一并移除——频次防刷由分层限流承担，不再由配额承担。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("AI 每日免费配额（AiQuotaService）")
+@DisplayName("AI 每日免费配额（token 单一口径）")
 class AiQuotaServiceImplTest {
 
     private static final int UID = 7;
@@ -61,113 +61,109 @@ class AiQuotaServiceImplTest {
         lenient().when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
     }
 
-    // ==================== tryConsume：免费额度优先 ====================
+    /** 模拟"今日已用免费 tokens"（<= 20000 视为免费额度内） */
+    private void stubUsedTokens(String used) {
+        when(valueOps.get(anyString())).thenReturn(used);
+    }
+
+    // ==================== tryConsume：token 准入 ====================
 
     @Test
-    @DisplayName("userId 为空不放行")
+    @DisplayName("userId 为空 → 不放行")
     void tryConsumeNullUser() {
         assertFalse(service.tryConsume(null));
-        verify(walletService, never()).deductOne(any());
+        verify(walletService, never()).tokenBalanceOf(any());
     }
 
     @Test
-    @DisplayName("首次计数：Lua 原子累加并补当日过期，免费内放行")
-    void tryConsumeFirstCountExpiresKey() {
-        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(1L);
+    @DisplayName("免费 tokens 未用尽 → 放行，且不触碰钱包")
+    void tryConsumeWithinFreeTokens() {
+        stubUsedTokens("100");
 
         assertTrue(service.tryConsume(UID));
-
-        // 计数与过期已在同一 Lua 脚本内完成（不再有独立 expire 调用），故断言脚本入参为「当日剩余秒数 + 增量 1」
-        verify(stringRedisTemplate).execute(any(RedisScript.class), anyList(), anyString(), eq("1"));
-        verify(walletService, never()).deductOne(any());
+        verify(walletService, never()).tokenBalanceOf(any());
     }
 
     @Test
-    @DisplayName("当日免费额度内直接放行（不触碰钱包）")
-    void tryConsumeWithinFreeQuota() {
-        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(19L);
+    @DisplayName("免费 tokens 已用尽但钱包有余额 → 放行")
+    void tryConsumeFallsBackToWallet() {
+        stubUsedTokens("99999");
+        when(walletService.tokenBalanceOf(UID)).thenReturn(500L);
 
         assertTrue(service.tryConsume(UID));
-
-        verify(walletService, never()).deductOne(any());
     }
 
     @Test
-    @DisplayName("免费用尽：回补计数防虚高，转钱包扣减成功放行")
-    void tryConsumeFreeExhaustedFallsBackToWallet() {
-        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(21L);
-        when(valueOps.decrement(anyString())).thenReturn(20L);
-        when(walletService.deductOne(UID)).thenReturn(true);
-
-        assertTrue(service.tryConsume(UID));
-
-        verify(valueOps).decrement(anyString()); // 计数封顶 DAILY_QUOTA，不虚高
-        verify(walletService).deductOne(UID);
-    }
-
-    @Test
-    @DisplayName("免费与钱包均用尽 → 不放行")
+    @DisplayName("免费 tokens 与钱包均用尽 → 拒绝")
     void tryConsumeExhaustedAll() {
-        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(21L);
-        when(walletService.deductOne(UID)).thenReturn(false);
+        stubUsedTokens("99999");
+        when(walletService.tokenBalanceOf(UID)).thenReturn(0L);
 
         assertFalse(service.tryConsume(UID));
-        verify(walletService).deductOne(UID);
     }
 
     @Test
-    @DisplayName("Redis 计数异常 fail-open 放行（不阻断问答主链路）")
+    @DisplayName("Redis 异常 fail-open 放行（不阻断问答主链路）")
     void tryConsumeRedisFailOpen() {
-        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), any(), any()))
-            .thenThrow(new RuntimeException("redis down"));
+        when(valueOps.get(anyString())).thenThrow(new RuntimeException("redis down"));
 
         assertTrue(service.tryConsume(UID));
-        verify(walletService, never()).deductOne(any());
-    }
-
-    // ==================== usedToday / remainToday ====================
-
-    @Test
-    @DisplayName("usedToday：无记录返回 0")
-    void usedTodayNoRecord() {
-        when(valueOps.get(anyString())).thenReturn(null);
-        assertEquals(0, service.usedToday(UID));
     }
 
     @Test
-    @DisplayName("usedToday：读取计数")
-    void usedTodayParses() {
-        when(valueOps.get(anyString())).thenReturn("5");
-        assertEquals(5, service.usedToday(UID));
+    @DisplayName("准入不做预扣：放行路径不写任何计数（只读判定）")
+    void tryConsumeDoesNotReserve() {
+        stubUsedTokens("100");
+
+        assertTrue(service.tryConsume(UID));
+
+        // 关键：准入阶段不得有任何 INCRBY/EXPIRE（Lua 脚本）写入——
+        // 这是"去掉预扣"的设计决定，避免"预扣 + 跨存储找零"的复杂度
+        verify(stringRedisTemplate, never()).execute(any(RedisScript.class), anyList(), any(), any());
+    }
+
+    // ==================== availableTokens（流式「到线即停」的额度快照）====================
+
+    @Test
+    @DisplayName("availableTokens：今日免费剩余 + 钱包 token 余额")
+    void availableTokensSumsFreeAndWallet() {
+        // 今日已用 5000 → 免费剩余 20000-5000=15000；钱包 3000 → 合计 18000
+        stubUsedTokens("5000");
+        when(walletService.tokenBalanceOf(UID)).thenReturn(3000L);
+
+        assertEquals(18000L, service.availableTokens(UID));
     }
 
     @Test
-    @DisplayName("usedToday：异常或非数字兜底 0")
-    void usedTodayExceptionOrBadValue() {
-        when(valueOps.get(anyString()))
-            .thenThrow(new RuntimeException("redis down"))
-            .thenReturn("abc");
-        assertEquals(0, service.usedToday(UID)); // Redis 异常 → 0
-        assertEquals(0, service.usedToday(UID)); // 非数字 → 0
+    @DisplayName("availableTokens：免费已超用且钱包为 0 → 0（而非负数）")
+    void availableTokensNeverNegative() {
+        stubUsedTokens("99999");
+        when(walletService.tokenBalanceOf(UID)).thenReturn(0L);
 
-        assertEquals(0, service.usedToday(null));
+        assertEquals(0L, service.availableTokens(UID));
     }
 
     @Test
-    @DisplayName("remainToday：剩余次数不为负")
-    void remainTodayClampsAtZero() {
-        when(valueOps.get(anyString())).thenReturn("5");
-        // 生效额度取配置（默认 20 次），不再依赖接口常量
-        assertEquals(service.dailyRequestLimit() - 5, service.remainToday(UID));
-
-        when(valueOps.get(anyString())).thenReturn("99");
-        assertEquals(0, service.remainToday(UID));
+    @DisplayName("availableTokens：无用户上下文 → 不限（Long.MAX_VALUE）")
+    void availableTokensAnonymousUnlimited() {
+        assertEquals(Long.MAX_VALUE, service.availableTokens(null));
     }
 
     @Test
-    @DisplayName("每日额度可配置：默认值与 tokens 上限均从配置读取")
-    void dailyLimitsFromConfig() {
-        assertEquals(AiQuotaService.DEFAULT_DAILY_QUOTA, service.dailyRequestLimit());
+    @DisplayName("availableTokens：查询异常 fail-open → 不限，不阻断生成")
+    void availableTokensFailOpen() {
+        // 注意：tokensUsedToday 内部已 fail-open（异常即返回 0），因此要让「钱包侧」抛异常
+        // 才能真正走到 availableTokens 自己的兜底分支
+        when(walletService.tokenBalanceOf(UID)).thenThrow(new RuntimeException("db down"));
+
+        assertEquals(Long.MAX_VALUE, service.availableTokens(UID));
+    }
+
+    // ==================== 配置口径 ====================
+
+    @Test
+    @DisplayName("每日额度：token 上限从配置读取（次数维度已下线）")
+    void dailyTokenLimitFromConfig() {
         assertEquals(AiQuotaService.DEFAULT_DAILY_TOKEN_QUOTA, service.dailyTokenLimit());
     }
 }

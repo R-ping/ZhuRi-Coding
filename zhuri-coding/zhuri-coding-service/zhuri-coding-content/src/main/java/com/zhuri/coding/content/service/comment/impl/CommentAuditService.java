@@ -64,6 +64,15 @@ public class CommentAuditService extends AbstractAuditService {
     private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
     /**
+     * 「尽快执行」触发专用池。
+     * 原先直接使用 {@code CompletableFuture.delayedExecutor(delay, unit)}，其任务体会落到 JVM 公共
+     * ForkJoinPool，而审核任务内部含 LLM 调用（秒级阻塞），会拖累公共池里的其它任务。
+     */
+    @Autowired
+    @org.springframework.beans.factory.annotation.Qualifier("aiAuditTriggerExecutor")
+    private java.util.concurrent.Executor auditTriggerExecutor;
+
+    /**
      * 评论入队并触发异步审核（延迟约 5-10 秒）
      * 兼容原有调用方签名；仅持久化任务并请求一次尽快处理。
      *
@@ -99,10 +108,16 @@ public class CommentAuditService extends AbstractAuditService {
             }
 
             // 2. 请求一次尽快执行（延迟窗口配置，与"先展示后审核"窗口保持一致）
+            //    延迟仍由 delayedExecutor 负责，仅把任务体投给专用有界池（不再落到 JVM 公共池）
             long delay = 5000 + (long) (Math.random() * 5000);
             CompletableFuture.runAsync(
                 () -> processTaskIfPending(task.getId()),
-                CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS));
+                CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS, auditTriggerExecutor))
+                .exceptionally(e -> {
+                    // 池拒绝/任务异常：只记录。真正的兜底是定时补偿（CommentAuditRecoveryTask）
+                    log.warn("评论审核尽快执行触发失败，将由定时补偿拉起, commentId={}", commentId, e);
+                    return null;
+                });
 
             log.info("评论已加入数据库可靠审核队列, commentId={}, targetType={}", commentId, context.getTargetType());
         } catch (Exception e) {

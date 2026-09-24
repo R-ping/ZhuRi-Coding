@@ -20,57 +20,9 @@ public class AiWalletServiceImpl implements AiWalletService {
     @Autowired
     private AiQuotaWalletMapper walletMapper;
 
-    @Override
-    public int balanceOf(Integer userId) {
-        if (userId == null) {
-            return 0;
-        }
-        AiQuotaWallet w = walletMapper.selectById(userId);
-        return w == null || w.getBalance() == null ? 0 : w.getBalance();
-    }
-
-    @Override
-    public void grant(Integer userId, int add) {
-        if (userId == null || add <= 0) {
-            return;
-        }
-        AiQuotaWallet w = walletMapper.selectById(userId);
-        Date now = new Date();
-        if (w == null) {
-            AiQuotaWallet nw = new AiQuotaWallet();
-            nw.setUserId(userId);
-            nw.setBalance(add);
-            nw.setUpdateTime(now);
-            walletMapper.insert(nw);
-            log.info("[AiWallet] 新建钱包入账, userId={}, +{}", userId, add);
-            return;
-        }
-        int newBalance = w.getBalance() != null ? w.getBalance() + add : add;
-        w.setBalance(newBalance);
-        w.setUpdateTime(now);
-        walletMapper.updateById(w);
-        log.info("[AiWallet] 钱包入账, userId={}, +{} -> {}", userId, add, newBalance);
-    }
-
-    @Override
-    public boolean deductOne(Integer userId) {
-        if (userId == null) {
-            return false;
-        }
-        try {
-            int rows = walletMapper.update(null,
-                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<AiQuotaWallet>()
-                    .eq(AiQuotaWallet::getUserId, userId)
-                    .gt(AiQuotaWallet::getBalance, 0)
-                    .setSql("balance = balance - 1"));
-            return rows > 0;
-        } catch (Exception e) {
-            log.warn("[AiWallet] 扣减异常, userId={}", userId, e);
-            return false;
-        }
-    }
-
-    // ==================== token 维度（新计费口径） ====================
+    // ==================== token 维度（唯一口径） ====================
+    // 说明：原次数维度的 balanceOf / grant(int) / deductOne 已随该维度下线移除；
+    // ap_ai_wallet.balance 列保留不删以支持回滚（当前代码不再读写）。
 
     @Override
     public long tokenBalanceOf(Integer userId) {

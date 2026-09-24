@@ -40,6 +40,15 @@ public class AiCircuitBreaker {
     public static final String TARGET_LLM = "llm";
     /** 目标：向量化模型（RAG 召回与缓存的关键路径） */
     public static final String TARGET_EMBEDDING = "embedding";
+    /**
+     * 目标：search 服务（BM25 关键词召回，经 Feign 调用）。
+     * 该路径此前只有 try/catch 兜底：调用方异常后能降级为纯向量，但**故障期间每个请求仍要
+     * 等满 Feign 超时**才走到 catch，会把请求线程占住 —— 与 embedding 侧用熔断解决的问题同类。
+     */
+    public static final String TARGET_SEARCH = "search";
+
+    /** 全部熔断目标：snapshot 遍历用。新增目标必须登记在此，否则会漏出观测端点。 */
+    private static final String[] ALL_TARGETS = {TARGET_LLM, TARGET_EMBEDDING, TARGET_SEARCH};
 
     /**
      * 失败计数 + 窗口过期原子化脚本（INCR 与 EXPIRE 必须在同一脚本内执行）：
@@ -141,7 +150,7 @@ public class AiCircuitBreaker {
         out.put("windowSeconds", windowSeconds);
         out.put("openSeconds", openSeconds);
         Map<String, Object> targets = new LinkedHashMap<>();
-        for (String t : new String[]{TARGET_LLM, TARGET_EMBEDDING}) {
+        for (String t : ALL_TARGETS) {
             Map<String, Object> st = new LinkedHashMap<>();
             boolean open;
             long fails;

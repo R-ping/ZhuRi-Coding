@@ -4,9 +4,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zhuri.coding.apis.search.ISearchClient;
+import com.zhuri.coding.content.service.ai.AiCircuitBreaker;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
 import com.zhuri.coding.content.service.ai.HybridRecallService.Recall;
 import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
@@ -14,6 +20,7 @@ import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,8 +46,24 @@ class HybridRecallServiceImplTest {
     @Mock
     private ISearchClient searchClient;
 
+    @Mock
+    private AiCircuitBreaker circuitBreaker;
+
+    @Mock
+    private AiMetricsCollector metrics;
+
     @InjectMocks
     private HybridRecallServiceImpl service;
+
+    /**
+     * 熔断器默认放行（关闭态）。
+     * 必须显式 stub：Mockito 对 boolean 返回值默认给 false，否则 BM25 路会被"熔断打开"直接跳过，
+     * 导致既有用例全部失真。需要验证熔断行为的用例单独覆写。
+     */
+    @BeforeEach
+    void circuitClosedByDefault() {
+        lenient().when(circuitBreaker.allow(anyString())).thenReturn(true);
+    }
 
     private void enableHybrid() {
         ReflectionTestUtils.setField(service, "hybridEnabled", true);
@@ -135,6 +158,51 @@ class HybridRecallServiceImplTest {
         Recall recall = service.recall("query", new double[]{1.0}, 10);
 
         assertEquals(List.of(1L), recall.getIds());
+    }
+
+    // ==================== search 熔断 ====================
+
+    @Test
+    @DisplayName("熔断打开时跳过 BM25 请求，直接降级为纯向量（不再等满 Feign 超时）")
+    void circuitOpenSkipsBm25Call() {
+        enableHybrid();
+        when(circuitBreaker.allow(AiCircuitBreaker.TARGET_SEARCH)).thenReturn(false);
+        when(embeddingService.recallArticles(any(double[].class), anyInt()))
+            .thenReturn(hits(row(1L, 0.9)));
+
+        Recall recall = service.recall("query", new double[]{1.0}, 10);
+
+        assertEquals(List.of(1L), recall.getIds());
+        // 关键断言：熔断打开时一次请求都不发（这正是"防止故障扩散"的落点）
+        verify(searchClient, never()).bm25Recall(any(Bm25RecallDto.class));
+        verify(metrics).incr("ai_circuit_rejected_search");
+    }
+
+    @Test
+    @DisplayName("BM25 调用异常时上报熔断失败（依赖不可用类异常）")
+    void bm25FailureReportsCircuitFailure() {
+        enableHybrid();
+        when(embeddingService.recallArticles(any(double[].class), anyInt()))
+            .thenReturn(hits(row(1L, 0.9)));
+        when(searchClient.bm25Recall(any(Bm25RecallDto.class)))
+            .thenThrow(new RuntimeException("feign timeout"));
+
+        service.recall("query", new double[]{1.0}, 10);
+
+        verify(circuitBreaker).onFailure(AiCircuitBreaker.TARGET_SEARCH);
+    }
+
+    @Test
+    @DisplayName("BM25 调用成功时上报熔断成功（半开试探即可恢复正常）")
+    void bm25SuccessReportsCircuitSuccess() {
+        enableHybrid();
+        when(embeddingService.recallArticles(any(double[].class), anyInt()))
+            .thenReturn(hits(row(1L, 0.9)));
+        stubBm25(List.of(Map.of("id", 5)));
+
+        service.recall("query", new double[]{1.0}, 10);
+
+        verify(circuitBreaker).onSuccess(AiCircuitBreaker.TARGET_SEARCH);
     }
 
     // ==================== 两路汇总与 RRF 融合 ====================

@@ -31,6 +31,16 @@
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
 
+        <!-- 熔断降级：Spring Cloud CircuitBreaker（Resilience4j 实现）。
+             为什么必须显式引入：@FeignClient 上的 fallback 属性只有在「classpath 存在 CircuitBreaker
+             实现」且「spring.cloud.openfeign.circuitbreaker.enabled=true」时才会被 FeignTargeter 采用，
+             否则走 DefaultTargeter、fallback 被**静默忽略**——本仓库此前 11 个客户端的 fallback 全部处于
+             这种"声明了但不生效"的状态。版本由 spring-cloud-dependencies BOM 管理。 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+
         <!-- 可观测性：feign-micrometer 提供 MicrometerObservationCapability，
              将 Feign 调用接入 Micrometer Observation 链路（CLIENT span + traceId 传播）。
              Spring Cloud OpenFeign 4.1+ 已移除内置 FeignObservationAutoConfiguration，

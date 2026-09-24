@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
 import com.zhuri.coding.model.article.dtos.TagCountDTO;
 import com.zhuri.coding.model.article.pojos.ApArticle;
+import java.util.Date;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
@@ -19,6 +21,22 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
      */
     @Update("UPDATE ap_article SET status = 9 WHERE id = #{articleId} AND status = 1")
     int markPublishedIfPending(@Param("articleId") Long articleId);
+
+    /**
+     * 扫描「审核中滞留」的文章 id（服务崩溃 / 重启导致异步审核线程丢失、无人再推进的 SUBMIT 文章）。
+     *
+     * <p><b>为什么用 updated_time 而不是 created_time</b>：提交审核会把 status 由草稿改为 SUBMIT（一次 UPDATE），
+     * 而 {@code updated_time} 列为 {@code ON UPDATE CURRENT_TIMESTAMP}，该次更新会刷新它；审核过程本身
+     * 不再写文章表，因此滞留文章的 {@code updated_time} 恰好停留在“提交那一刻”——正是需要的语义。
+     * 用 {@code created_time} 会把“草稿放了很久、刚提交”的正常文章误判为滞留。
+     *
+     * @param before 早于该时间仍处于 SUBMIT 的视为滞留
+     * @param limit  单批上限
+     * @return 按 updated_time 升序（最早滞留的优先）的文章 id 列表
+     */
+    @Select("SELECT id FROM ap_article WHERE status = 1 AND is_deleted = 0 AND updated_time < #{before} "
+        + "ORDER BY updated_time ASC LIMIT #{limit}")
+    List<Long> selectStaleSubmitArticleIds(@Param("before") Date before, @Param("limit") int limit);
 
     /**
      * 加载文章列表

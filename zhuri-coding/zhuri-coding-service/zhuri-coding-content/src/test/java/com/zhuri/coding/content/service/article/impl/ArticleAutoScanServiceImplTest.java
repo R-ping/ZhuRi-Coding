@@ -244,8 +244,10 @@ class ArticleAutoScanServiceImplTest {
         CompletableFuture<Boolean> future = autoScanService.autoScanArticle(TEST_ARTICLE_ID);
         assertFalse(future.get());
 
-        // 顶层兜底：转终态失败并通知作者
-        verify(auditFailProcessor).handleFail(any(), eq(AuditFailProcessor.SYSTEM_ERROR_REASON));
+        // 顶层兜底：转终态失败并通知作者。
+        // 注意断言的是 handleSystemErrorFail 而非 handleFail —— 系统异常必须走"非违规"文案，
+        // 否则 AI 抖动会被作者感知为"内容违规被删"（本断言即为此护栏）。
+        verify(auditFailProcessor).handleSystemErrorFail(any(), eq(AuditFailProcessor.SYSTEM_ERROR_REASON));
         verify(articleTaskService, never()).addArticleToTask(anyLong(), any());
     }
 

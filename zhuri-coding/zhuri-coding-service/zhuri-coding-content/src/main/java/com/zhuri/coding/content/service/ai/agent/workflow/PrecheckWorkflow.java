@@ -443,14 +443,39 @@ public class PrecheckWorkflow {
         }
     }
 
-    /** 复用旧路径的相似度填充语义：仅当 DUPLICATE 产出有效命中时写入 */
+    /**
+     * 相似度填充：这三个字段**只由确定性检索结果决定**——命中则写入，未命中 / 未查重一律清空。
+     *
+     * <p><b>为什么未命中也要清空</b>：{@code toVo} 会从 CRITIC 的 FINAL JSON 里解析
+     * {@code similar_article_id / similar_title / similarity}，即这些字段默认带着"模型填的值"。
+     * 若只做"命中才覆盖"，那么当确定性检索**未命中**（实际无高相似）时，模型编造的预警会被保留下来
+     * ——作者会看到一条查无实据的"疑似重复"，甚至点到错误链接。
+     * 清空即把该字段的权威来源收敛到确定性一侧，与 VO 自身的文档语义（"无高相似为 null"）一致。
+     *
+     * <p>「未查重」同样清空：SAFETY 违规短路（违规内容无需查重）与 DUPLICATE 阶段异常 SKIPPED
+     * 都属于"没有确定性结论"，此时保留模型填值同样不可信。
+     */
     private void fillSimilarity(AiPrecheckVo vo, StageContext ctx) {
         Object payload = ctx.payload(StageType.DUPLICATE);
-        if (payload instanceof List<?> hits && !hits.isEmpty() && hits.get(0) instanceof SimilaritySearchTool.SimilarArticle hit) {
-            vo.setSimilarArticleId(hit.article().getId());
-            vo.setSimilarTitle(hit.article().getTitle());
-            vo.setSimilarity(Math.round(hit.similarity() * 10000) / 10000.0);
+        SimilaritySearchTool.SimilarArticle best = null;
+        if (payload instanceof List<?> hits && !hits.isEmpty()
+                && hits.get(0) instanceof SimilaritySearchTool.SimilarArticle hit) {
+            best = hit;
         }
+        applySimilarity(vo, best);
+    }
+
+    /** 唯一的相似度写入出口：best 为 null 即"确定性地无高相似"（或未查重）→ 显式清空模型填值 */
+    private static void applySimilarity(AiPrecheckVo vo, SimilaritySearchTool.SimilarArticle best) {
+        if (best == null) {
+            vo.setSimilarArticleId(null);
+            vo.setSimilarTitle(null);
+            vo.setSimilarity(null);
+            return;
+        }
+        vo.setSimilarArticleId(best.article().getId());
+        vo.setSimilarTitle(best.article().getTitle());
+        vo.setSimilarity(Math.round(best.similarity() * 10000) / 10000.0);
     }
 
     /** 解析 JSON 字符串，容错地剥离可能存在的 FINAL 前缀与代码块；不可解析返回 null */

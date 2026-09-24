@@ -76,6 +76,20 @@ spring:
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
+    # Feign 熔断降级开关：**必须显式打开**（spring-cloud-openfeign-core 元数据确认其默认值为 false），
+    # 否则 @FeignClient 上的 fallback 会被静默忽略（FeignTargeter 走 DefaultTargeter 分支）。
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      # 超时配置键必须用 @FeignClient 的 contextId（源码确证：resolveTarget 以 contextId 查
+      # FeignClientProperties），写成 value 里的服务名 "zhuri-coding-search" 会静默不生效。
+      # 另注意：该项类型是 Integer **毫秒数**，不能写 "500ms"（那是 Spring Boot Duration 的写法，
+      # 会导致 FeignClientProperties 绑定失败、上下文启动即报错）。
+      client:
+        config:
+          zhuri-coding-search-searchClient:
+            connect-timeout: 500
+            read-timeout: 1500
   data:
     redis:
       host: 127.0.0.1
@@ -210,8 +224,11 @@ ai:
 # AI 每日免费 tokens 额度（成本止血闸门；按主模型 qwen3.7-max 折算 ≈ 0.02 元/千）
 # 20000 tokens ≈ 0.4 元/用户/天 —— 免费层本质是获客成本，按预算调整
 ai-quota:
+  # 每日免费 tokens（唯一口径：准入、结算、流式「到线即停」都按 token）
   daily-tokens: ${AI_DAILY_FREE_TOKENS:20000}
-  daily-requests: ${AI_DAILY_FREE_REQUESTS:20}
+  # 已废弃：原「每日免费次数」维度已下线（频次防刷由分层限流承担，成本只能由 token 表达）。
+  # 该配置项当前无代码读取，保留仅为兼容既有环境变量/部署脚本；可安全删除。
+  # daily-requests: ${AI_DAILY_FREE_REQUESTS:20}
 
 # PostgreSQL pgvector 向量库（文章向量/相似度检索；配合 PgVectorConfig，enabled=true 才装配）
 pgvector:
@@ -298,6 +315,23 @@ app:
     critic-max-retry: 2
     # 并行专家批次整体等待超时上限（毫秒），防止单专家卡死拖垮整体
     parallel-timeout-ms: 45000
+  # 文章审核责任链可调参数（ArticleAutoScanServiceImpl 重试 + ArticleAuditRecoveryTask 滞留补偿）
+  # 说明：这些值原先只存在于代码 @Value 默认值，运维调参必须改代码或注环境变量，故显式入配置。
+  audit:
+    # 辅助环节（AIGC 检测 / 相似内容 / 逐力值加成）单阶段最大【尝试】次数（含首次调用）。
+    # 注意语义：判据为 attempt >= 该值即抛出，故 3 = 共尝试 3 次、退避 2 次（1s + 2s）。
+    # 准入前置环节（违规检测 / 图片审核）返回 false 即业务驳回，不参与重试。
+    aux-retry-attempts: ${AUDIT_AUX_RETRY_ATTEMPTS:3}
+    # 重试退避基准（毫秒）：指数退避 base × 2^(n-1)，封顶 30s
+    aux-retry-backoff-ms: ${AUDIT_AUX_RETRY_BACKOFF_MS:1000}
+    # 审核滞留补偿：SUBMIT 超过该分钟数仍未推进 → 视为滞留并重新触发审核（服务崩溃/重启兜底）
+    recovery-stale-minutes: ${AUDIT_RECOVERY_STALE_MINUTES:10}
+    # 滞留补偿单批扫描上限
+    recovery-batch: ${AUDIT_RECOVERY_BATCH:50}
+    # 滞留补偿扫描周期（毫秒，默认 5 分钟）
+    recovery-interval-ms: ${AUDIT_RECOVERY_INTERVAL_MS:300000}
+    # 滞留补偿首次执行延迟（毫秒，默认 2 分钟，避开启动期）
+    recovery-initial-delay-ms: ${AUDIT_RECOVERY_INITIAL_DELAY_MS:120000}
   internal-auth:
     secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
 

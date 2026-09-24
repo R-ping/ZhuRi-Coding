@@ -192,6 +192,16 @@ public class AiAskController {
                             log.warn("AI 流式预检收尾发送失败", e);
                         }
                     });
+            } catch (com.zhuri.coding.content.service.ai.AiLlmGateway.QuotaExhaustedException qe) {
+                // 同上：额度中断不是服务故障，给出可理解的原因而不是"服务暂不可用"
+                log.warn("AI 流式预检额度耗尽中断: {}", qe.getMessage());
+                try {
+                    emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                        .name("error")
+                        .data("本次 AI 额度已用完，预检已中断；可购买额度包或次日再试",
+                            org.springframework.http.MediaType.TEXT_PLAIN));
+                } catch (Exception ignore) {
+                }
             } catch (java.util.concurrent.CancellationException ce) {
                 log.warn("AI 流式预检被取消: {}", ce.getMessage());
             } catch (Exception e) {
@@ -306,6 +316,17 @@ public class AiAskController {
                     }
                 } catch (Exception e) {
                     log.warn("AI 流式收尾发送失败", e);
+                }
+            } catch (com.zhuri.coding.content.service.ai.AiLlmGateway.QuotaExhaustedException qe) {
+                // 额度到线被动中断，与「服务故障」必须区分提示：这不是故障，用户可充值或次日再试；
+                // 已下发的增量文本保留（前端已收到前几轮内容），此处只补一个明确的收尾原因
+                log.warn("AI 流式问答额度耗尽中断: {}", qe.getMessage());
+                try {
+                    emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                        .name("error")
+                        .data("本次 AI 额度已用完，回答已中断；已生成内容仍然可用，可购买额度包或次日再试",
+                            org.springframework.http.MediaType.TEXT_PLAIN));
+                } catch (Exception ignore) {
                 }
             } catch (Exception e) {
                 log.error("AI 流式问答异常", e);

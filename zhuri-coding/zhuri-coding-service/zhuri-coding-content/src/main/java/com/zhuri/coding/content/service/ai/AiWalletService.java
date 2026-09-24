@@ -1,20 +1,15 @@
 package com.zhuri.coding.content.service.ai;
 
 /**
- * AI 额度钱包（免费额度优先兜底：每日免费额度用尽后扣减钱包余额）
+ * AI 额度钱包（**token 单一口径**）
+ *
+ * <p>原「次数」维度（{@code balanceOf} / {@code grant(int)} / {@code deductOne}）已随该维度下线一并移除：
+ * 频次防刷由分层限流承担，成本只能由 token 表达。对应的 {@code ap_ai_wallet.balance} 列<b>保留不删</b>，
+ * 以便本次改动可回滚（当前代码已不再读写它）。
  */
 public interface AiWalletService {
 
-    /** 余额查询（无记录返回 0） */
-    int balanceOf(Integer userId);
-
-    /** 入账（用户不存在则建行；正数累加） */
-    void grant(Integer userId, int add);
-
-    /** 原子扣 1 次：余额不足返回 false */
-    boolean deductOne(Integer userId);
-
-    // ==================== token 维度（新计费口径） ====================
+    // ==================== token 维度 ====================
 
     /** token 余额查询（无记录返回 0） */
     long tokenBalanceOf(Integer userId);

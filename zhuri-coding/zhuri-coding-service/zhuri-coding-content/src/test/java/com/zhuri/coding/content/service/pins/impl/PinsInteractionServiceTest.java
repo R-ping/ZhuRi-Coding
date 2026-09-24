@@ -116,7 +116,8 @@ class PinsInteractionServiceTest {
 
         assertEquals(200, service.like(100L).getCode());
         verify(apPinsLikeMapper).insert(any(ApPinsLike.class));
-        verify(apPinsMapper).updateById(any(ApPins.class));
+        // 计数走 SQL 原子自增，而不是 updateById 整行回写
+        verify(apPinsMapper).incrementLikes(100L);
         verify(behaviorEventBus).execute(any());
     }
 
@@ -179,7 +180,7 @@ class PinsInteractionServiceTest {
 
         assertEquals(200, service.unlike(100L).getCode());
         verify(apPinsLikeMapper).deleteById(5L);
-        verify(apPinsMapper).updateById(any(ApPins.class));
+        verify(apPinsMapper).decrementLikes(100L);
     }
 
     @Test
@@ -192,7 +193,7 @@ class PinsInteractionServiceTest {
         when(apPinsMapper.selectById(100L)).thenReturn(pins(9L, 0, 0));
 
         assertEquals(200, service.unlike(100L).getCode());
-        verify(apPinsMapper).updateById(any(ApPins.class));
+        verify(apPinsMapper).decrementLikes(100L);
     }
 
     // ---------- createComment ----------
@@ -226,7 +227,8 @@ class PinsInteractionServiceTest {
         assertEquals(200, r.getCode());
         assertNotNull(r.getData());
         verify(apPinsCommentMapper).insert(any(ApPinsComment.class));
-        verify(apPinsMapper).updateById(any(ApPins.class));
+        // 评论计数同样走原子自增
+        verify(apPinsMapper).incrementComment(100L);
         verify(behaviorEventBus).execute(any());
     }
 

@@ -74,10 +74,12 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
         } catch (Exception e) {
             // 顶层兜底：任何环节抛出的未预期异常都不能让文章无限停留在"审核中"，
             // 统一落为终态失败（status=FAIL）并通知作者，杜绝"永远审核中"。
+            // 注意：走 handleSystemErrorFail 而非 handleFail —— 系统异常的通知文案不含"违规/删除"字样，
+            // 避免 AI 服务抖动被作者感知为"内容违规被删"。
             log.error("文章审核出现未预期异常, articleId={}", articleId, e);
             ApArticle article = apArticleMapper.selectById(articleId);
             if (article != null) {
-                auditFailProcessor.handleFail(article, AuditFailProcessor.SYSTEM_ERROR_REASON);
+                auditFailProcessor.handleSystemErrorFail(article, AuditFailProcessor.SYSTEM_ERROR_REASON);
             }
             return CompletableFuture.completedFuture(false);
         }

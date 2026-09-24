@@ -1,6 +1,8 @@
 package com.zhuri.coding.content.service.ai.impl;
 
 import com.zhuri.coding.apis.search.ISearchClient;
+import com.zhuri.coding.content.service.ai.AiCircuitBreaker;
+import com.zhuri.coding.content.service.ai.AiMetricsCollector;
 import com.zhuri.coding.content.service.ai.HybridRecallService;
 import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
 import com.zhuri.coding.content.utils.RrfFusion;
@@ -41,6 +43,14 @@ public class HybridRecallServiceImpl implements HybridRecallService {
     @Autowired(required = false)
     private ISearchClient searchClient;
 
+    /** 熔断器（search 目标；未注入时跳过熔断，纯靠 try/catch 降级） */
+    @Autowired(required = false)
+    private AiCircuitBreaker circuitBreaker;
+
+    /** 指标收集（熔断拒绝计数；未注入时跳过） */
+    @Autowired(required = false)
+    private AiMetricsCollector metrics;
+
     @Override
     public Recall recall(String query, double[] queryEmbedding, int limit) {
         List<Long> vectorIds = new ArrayList<>();
@@ -79,9 +89,19 @@ public class HybridRecallServiceImpl implements HybridRecallService {
         return new Recall(fused, vectorSims);
     }
 
-    /** BM25 路：经 Feign 调 search 服务的内部召回端点；异常一律降级为空列表 */
+    /** BM25 路：经 Feign 调 search 服务的内部召回端点；熔断打开或异常一律降级为空列表 */
     private List<Long> bm25Recall(String query, int limit) {
         if (searchClient == null || query == null || query.isBlank() || limit <= 0) {
+            return Collections.emptyList();
+        }
+        // 熔断前置判定：search 已被判定故障时不再发请求。
+        // 仅靠下方 try/catch 只能做到"异常后降级"，故障期间每个请求仍要等满 Feign 超时才走到 catch，
+        // 会把请求线程占住（与 embedding 侧用熔断解决的“不再逐个请求等满超时”是同一类问题）。
+        if (circuitBreaker != null && !circuitBreaker.allow(AiCircuitBreaker.TARGET_SEARCH)) {
+            if (metrics != null) {
+                metrics.incr("ai_circuit_rejected_search");
+            }
+            log.warn("[HybridRecall] search 服务熔断打开中，本次退化为纯向量召回");
             return Collections.emptyList();
         }
         try {
@@ -89,6 +109,10 @@ public class HybridRecallServiceImpl implements HybridRecallService {
             dto.setQuery(query);
             dto.setTopK(limit);
             ResponseResult result = searchClient.bm25Recall(dto);
+            // 能拿到响应即说明依赖可用 → 清零失败计数（半开试探成功后也由此恢复正常）
+            if (circuitBreaker != null) {
+                circuitBreaker.onSuccess(AiCircuitBreaker.TARGET_SEARCH);
+            }
             if (result == null || !(result.getData() instanceof List)) {
                 return Collections.emptyList();
             }
@@ -104,6 +128,10 @@ public class HybridRecallServiceImpl implements HybridRecallService {
             }
             return ids;
         } catch (Exception e) {
+            // 仅"依赖不可用"类异常（Feign 超时 / 连接失败等）计入熔断，参数类错误不会走到这里
+            if (circuitBreaker != null) {
+                circuitBreaker.onFailure(AiCircuitBreaker.TARGET_SEARCH);
+            }
             log.warn("[HybridRecall] BM25 召回异常，本次退化为纯向量: {}", e.getMessage());
             return Collections.emptyList();
         }

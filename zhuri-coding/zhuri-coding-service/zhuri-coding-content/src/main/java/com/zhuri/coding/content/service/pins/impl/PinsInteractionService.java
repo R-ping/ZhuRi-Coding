@@ -75,11 +75,11 @@ public class PinsInteractionService {
         like.setCreatedTime(new Date());
         apPinsLikeMapper.insert(like);
 
-        // 更新沸点点赞数
+        // 更新沸点点赞数：原子自增（原先是"查出来 +1 再写回"，并发点赞会丢更新）。
+        // pins 仍需读取，用于下方取 authorId 触发行为事件。
         ApPins pins = apPinsMapper.selectById(pinsId);
         if (pins != null) {
-            pins.setLikes((pins.getLikes() != null ? pins.getLikes() : 0) + 1);
-            apPinsMapper.updateById(pins);
+            apPinsMapper.incrementLikes(pinsId);
 
             // 跨用户点赞时，触发行为事件（等级分、通知）
             if (behaviorEventBus != null && pins.getAuthorId() != null
@@ -120,12 +120,8 @@ public class PinsInteractionService {
         }
         apPinsLikeMapper.deleteById(existLike.getId());
 
-        ApPins pins = apPinsMapper.selectById(pinsId);
-        if (pins != null) {
-            int newLikes = Math.max(0, (pins.getLikes() != null ? pins.getLikes() : 0) - 1);
-            pins.setLikes(newLikes);
-            apPinsMapper.updateById(pins);
-        }
+        // 原子自减（下限夹到 0）：不再"查出来 -1 再写回"，避免并发取消点赞丢更新
+        apPinsMapper.decrementLikes(pinsId);
         return ResponseResult.okResult();
     }
 
@@ -165,11 +161,10 @@ public class PinsInteractionService {
         comment.setCreatedTime(new Date());
         apPinsCommentMapper.insert(comment);
 
-        // 更新沸点评论数
+        // 更新沸点评论数：原子自增（原先是"查出来 +1 再写回"，并发评论会丢更新）
         ApPins pins = apPinsMapper.selectById(dto.getPinsId());
         if (pins != null) {
-            pins.setComment((pins.getComment() != null ? pins.getComment() : 0) + 1);
-            apPinsMapper.updateById(pins);
+            apPinsMapper.incrementComment(dto.getPinsId());
         }
 
         // 如果是回复，更新父评论的回复数
