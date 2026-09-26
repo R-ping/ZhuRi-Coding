@@ -3,299 +3,167 @@ package com.zhuri.coding.content.service.comment.impl;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhuri.coding.apis.notification.INotificationClient;
-import org.apache.ibatis.builder.MapperBuilderAssistant;
-import com.zhuri.coding.content.mapper.comment.ApCommentAuditTaskMapper;
 import com.zhuri.coding.content.mapper.comment.ApCommentMapper;
 import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
-import com.zhuri.coding.content.service.article.BailianAiService;
-import com.zhuri.coding.content.service.article.impl.AbstractAuditService;
-import com.zhuri.coding.model.audit.AuditServiceUnavailableException;
+import com.zhuri.coding.content.service.ai.AiLlmGateway;
+import com.zhuri.coding.content.service.audit.AuditTaskDispatcher;
 import com.zhuri.coding.model.audit.AuditContext;
 import com.zhuri.coding.model.audit.AuditEntityType;
-import com.zhuri.coding.model.audit.pojos.ApCommentAuditTask;
-import com.zhuri.coding.model.behavior.pojos.UserBehaviorRecord;
-import com.zhuri.coding.model.comment.pojos.ApComment;
+import com.zhuri.coding.model.audit.pojos.ApAuditTask;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.springframework.dao.DuplicateKeyException;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
-import java.lang.reflect.Field;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.concurrent.Executor;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
- * CommentAuditService 单元测试
+ * CommentAuditService 单测（薄壳版）。
  *
- * 核心安全诉求"先展示后审核"窗口期的可靠性：
- * 1. 审核任务必须落库（ap_comment_audit_task），服务重启后由补偿任务重拉，不丢失；
- * 2. 同一条评论幂等入队（DuplicateKeyException 忽略重复）；
- * 3. 处理前 CAS 抢占（PENDING→PROCESSING），避免进程内与补偿执行重复审核；
- * 4. 通过回调给作者发通知、违规回调软删评论并联系统通知，均防空态越权。
+ * <p><b>测试范围的变化</b>：抽取 {@link AuditTaskDispatcher} 之后，
+ * CAS 抢占 / 指数退避 / 超限降级放行等调度语义已由 {@code AuditTaskDispatcherTest} 统一覆盖
+ * （原先在三个 Service 里各测一遍）。本类只覆盖文章评论业务自己的差异：
+ * <ol>
+ *   <li>入队字段映射（bizType / taskKey / bizId / authorId / target 系列）；</li>
+ *   <li>{@code onDegraded}：降级放行后向内容作者补发"仅过审"通知 ——
+ *       这是文章评论与沸点评论的关键差异（后者"创建即通知"，审核链路不补发）；</li>
+ *   <li>调度调用如实委托给 Dispatcher。</li>
+ * </ol>
+ *
+ * <p><b>未在本类覆盖</b>：{@code audit(task)} 构造上下文后调用的父类模板方法
+ * （{@code handlePassed} / {@code handleFailed} 的折叠判定、删评论、撤销行为记录），
+ * 那部分依赖 {@code AbstractAuditService} 内部实现，属于集成测试范畴。
  */
 class CommentAuditServiceTest {
 
     @Mock
     private ApCommentMapper apCommentMapper;
     @Mock
-    private BailianAiService bailianAiService;
-    @Mock
-    private ApCommentAuditTaskMapper auditTaskMapper;
+    private AuditTaskDispatcher auditTaskDispatcher;
     @Mock
     private INotificationClient notificationClient;
     @Mock
     private UserBehaviorRecordMapper behaviorRecordMapper;
+    @Mock
+    private AiLlmGateway llmGateway;
+    @Mock
+    private Executor auditTriggerExecutor;
 
     @InjectMocks
     private CommentAuditService commentAuditService;
 
-    private final Long commentId = 1L;
-
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        // 将 BailianAiService mock 注入父类 AbstractAuditService 私有字段，
-        // 以便显式模拟"AI 审核服务不可用"触发 fail-closed 与降级通过
-        try {
-            Field f = AbstractAuditService.class.getDeclaredField("bailianAiService");
-            f.setAccessible(true);
-            f.set(commentAuditService, bailianAiService);
-        } catch (Exception e) {
-            throw new RuntimeException("注入 BailianAiService 失败", e);
-        }
-        // 预热 MybatisPlus 实体表元数据与 lambda 列缓存，使单测不依赖 Spring 上下文或测试执行顺序
-        // （集成测试若在共享 JVM 中先加载 Spring 会自动注册缓存；本单测须自足，CI 无库也能稳定运行）
+        // 预热 lambda 列缓存，使单测不依赖 Spring 上下文（与项目内其它测试一致）
         TableInfoHelper.initTableInfo(
-                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApCommentAuditTask.class);
-        TableInfoHelper.initTableInfo(
-                new MapperBuilderAssistant(new MybatisConfiguration(), ""), UserBehaviorRecord.class);
-        TableInfoHelper.initTableInfo(
-                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApComment.class);
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApAuditTask.class);
     }
 
-    private AuditContext context() {
+    private AuditContext context(Long commentId) {
         AuditContext ctx = new AuditContext(AuditEntityType.COMMENT, commentId, 100L);
-        ctx.withContent("正常评论内容")
-            .withUserId(100)
-            .withTargetType(1)
-            .withTargetId(99L)
-            .withTargetUserId(200);
+        ctx.withContent("这是一条评论")
+                .withAuthorName("张三")
+                .withUserId(100)
+                .withTargetType(1)
+                .withTargetId(999L)
+                .withTargetUserId(200);
         return ctx;
     }
 
-    // ==================== asyncAuditComment - 可靠入队 ====================
-
-    @Test
-    @DisplayName("asyncAuditComment - 上下文为空直接返回不落库")
-    void testAsyncAuditNullContext() {
-        commentAuditService.asyncAuditComment(null);
-        verify(auditTaskMapper, never()).insert(any(ApCommentAuditTask.class));
-    }
-
-    @Test
-    @DisplayName("asyncAuditComment - 评论ID为空直接返回不落库")
-    void testAsyncAuditNoEntityId() {
-        AuditContext ctx = new AuditContext(AuditEntityType.COMMENT, null, 100L);
-        commentAuditService.asyncAuditComment(ctx);
-        verify(auditTaskMapper, never()).insert(any(ApCommentAuditTask.class));
-    }
-
-    @Test
-    @DisplayName("asyncAuditComment - 正常入队持久化任务")
-    void testAsyncAuditEnqueue() {
-        commentAuditService.asyncAuditComment(context());
-        verify(auditTaskMapper).insert(any(ApCommentAuditTask.class));
-    }
-
-    @Test
-    @DisplayName("asyncAuditComment - 重复入队(DuplicateKey)忽略不中断")
-    void testAsyncAuditDuplicateIgnored() {
-        when(auditTaskMapper.insert(any(ApCommentAuditTask.class)))
-                .thenThrow(new DuplicateKeyException("dup"));
-        // 不应抛异常
-        commentAuditService.asyncAuditComment(context());
-    }
-
-    // ==================== processTaskIfPending - CAS 抢占 ====================
-
-    @Test
-    @DisplayName("processTaskIfPending - 任务ID为空直接返回")
-    void testProcessTaskNullId() {
-        commentAuditService.processTaskIfPending(null);
-        verify(auditTaskMapper, never()).selectById(any());
-    }
-
-    @Test
-    @DisplayName("processTaskIfPending - CAS抢占失败(已被处理)不重复执行")
-    void testProcessTaskCasFail() {
-        when(auditTaskMapper.update(any(), any())).thenReturn(0);
-        commentAuditService.processTaskIfPending(5L);
-        verify(auditTaskMapper, never()).selectById(anyLong());
-    }
-
-    @Test
-    @DisplayName("processTaskIfPending - 抢占成功但任务已删返回")
-    void testProcessTaskTaskMissing() {
-        when(auditTaskMapper.update(any(), any())).thenReturn(1);
-        when(auditTaskMapper.selectById(5L)).thenReturn(null);
-        commentAuditService.processTaskIfPending(5L);
-        verify(auditTaskMapper, times(1)).update(any(), any());
-    }
-
-    @Test
-    @DisplayName("processTaskIfPending - 抢占成功审核通过标记PASSED")
-    void testProcessTaskPassed() {
-        when(auditTaskMapper.update(any(), any())).thenReturn(1);
-        ApCommentAuditTask task = new ApCommentAuditTask();
-        task.setId(5L);
-        task.setCommentId(commentId);
-        task.setContent("");
-        task.setCommenterId(100);
-        task.setCommenterName("张三");
+    private ApAuditTask buildTask(Long commentId) {
+        ApAuditTask task = new ApAuditTask();
+        task.setId(1L);
+        task.setTaskKey(ApAuditTask.taskKey(ApAuditTask.BIZ_ARTICLE_COMMENT, commentId));
+        task.setBizType(ApAuditTask.BIZ_ARTICLE_COMMENT);
+        task.setBizId(commentId);
+        task.setAuthorId(100);
+        task.setContent("这是一条评论");
         task.setTargetType(1);
-        when(auditTaskMapper.selectById(5L)).thenReturn(task);
-
-        commentAuditService.processTaskIfPending(5L);
-
-        // CAS 一次 + markDone 一次
-        verify(auditTaskMapper, times(2)).update(any(), any());
-    }
-
-    @Test
-    @DisplayName("processTaskIfPending - 重试超限降级通过时补发评论通知")
-    void testProcessTaskDegradeSendsNotification() {
-        when(auditTaskMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
-        ApCommentAuditTask task = new ApCommentAuditTask();
-        task.setId(5L);
-        task.setCommentId(commentId);
-        task.setContent("非空内容，触发AI审核");
-        task.setCommenterId(100);
-        task.setCommenterName("张三");
-        task.setTargetType(1);
-        task.setTargetId(99L);
+        task.setTargetId(999L);
         task.setTargetUserId(200);
-        task.setRetryCount(ApCommentAuditTask.MAX_RETRY); // 已超重试上限，下次即降级通过
-        when(auditTaskMapper.selectById(5L)).thenReturn(task);
-        // AI 审核服务不可用（fail-closed 抛异常 → 重试超限 → 降级通过）
-        when(bailianAiService.checkViolation(any(), any(), any()))
-            .thenThrow(new AuditServiceUnavailableException("ai down"));
-
-        commentAuditService.processTaskIfPending(5L);
-
-        // CAS 抢占一次 + 降级通过(DEGRADED_PASSED)一次
-        verify(auditTaskMapper, times(2)).update(any(), any());
-        // 降级通过即评论可见 → 向作者补发一条"评论通知"(type=1)
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationClient, times(1)).createNotification(captor.capture());
-        Map<String, Object> params = captor.getValue();
-        assertEquals(200L, params.get("userId")); // 目标作者(targetUserId=200)
-        assertEquals(1, params.get("type"));      // 评论通知
+        return task;
     }
 
-    // ==================== handlePassed ====================
+    // ==================== 入队 ====================
 
     @Test
-    @DisplayName("handlePassed - 评论不存在仅告警")
-    void testHandlePassedCommentMissing() {
-        when(apCommentMapper.selectById(commentId)).thenReturn(null);
-        commentAuditService.handlePassed(context());
-        verify(notificationClient, never()).createNotification(any());
-    }
+    @DisplayName("入队：字段映射正确（bizType/taskKey/bizId/authorId/target 系列）")
+    void enqueueMapsFields() {
+        doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) {
+                ApAuditTask task = invocation.getArgument(0);
+                assertEquals(ApAuditTask.BIZ_ARTICLE_COMMENT, task.getBizType());
+                assertEquals(ApAuditTask.taskKey(ApAuditTask.BIZ_ARTICLE_COMMENT, 555L), task.getTaskKey());
+                assertEquals(555L, task.getBizId());
+                assertEquals(100, task.getAuthorId(), "评论者即该条评论的作者");
+                assertEquals(1, task.getTargetType());
+                assertEquals(999L, task.getTargetId());
+                assertEquals(200, task.getTargetUserId());
+                assertEquals(ApAuditTask.STATUS_PENDING, task.getStatus());
+                task.setId(777L);
+                return null;
+            }
+        }).when(auditTaskDispatcher).enqueue(any(ApAuditTask.class));
 
-    @Test
-    @DisplayName("handlePassed - 评论存在且目标作者非空：仅过审后发一条评论通知")
-    void testHandlePassedSendsNotification() {
-        ApComment comment = new ApComment();
-        comment.setId(commentId);
-        comment.setContent("正常评论内容");
-        comment.setUserId(100);
-        when(apCommentMapper.selectById(commentId)).thenReturn(comment);
+        commentAuditService.asyncAuditComment(context(555L));
 
-        commentAuditService.handlePassed(context());
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationClient, times(1)).createNotification(captor.capture());
-        Map<String, Object> params = captor.getValue();
-        // 断言语义：仅审核通过后，向目标作者恰好发送一条"评论通知"(type=1)
-        assertEquals(200L, params.get("userId"));   // 目标作者(targetUserId=200)
-        assertEquals(1, params.get("type"));        // 1 = 评论通知
-        assertEquals("99", params.get("sourceId")); // 被评论的目标内容
-    }
-
-    // ==================== handleFailed ====================
-
-    @Test
-    @DisplayName("handleFailed - 评论不存在直接返回")
-    void testHandleFailedCommentMissing() {
-        when(apCommentMapper.selectById(commentId)).thenReturn(null);
-        commentAuditService.handleFailed(context(), "违规");
-        verify(apCommentMapper, never()).deleteById(any());
+        verify(auditTaskDispatcher).enqueue(any(ApAuditTask.class));
     }
 
     @Test
-    @DisplayName("handleFailed - 违规软删评论并撤销行为记录")
-    void testHandleFailedDeleteAndRevoke() {
-        ApComment comment = new ApComment();
-        comment.setId(commentId);
-        comment.setContent("违规内容");
-        comment.setUserId(100);
-        when(apCommentMapper.selectById(commentId)).thenReturn(comment);
+    @DisplayName("入队：上下文或评论ID为空时直接返回，不写库")
+    void enqueueSkipsWhenContextInvalid() {
+        commentAuditService.asyncAuditComment(null);
+        verify(auditTaskDispatcher, never()).enqueue(any(ApAuditTask.class));
 
-        UserBehaviorRecord record = new UserBehaviorRecord();
-        record.setId(7L);
-        record.setStatus(1);
-        when(behaviorRecordMapper.selectOne(any())).thenReturn(record);
+        commentAuditService.asyncAuditComment(new AuditContext());
+        verify(auditTaskDispatcher, never()).enqueue(any(ApAuditTask.class));
+    }
 
-        commentAuditService.handleFailed(context(), "违规");
+    // ==================== 降级放行的业务动作 ====================
 
-        verify(apCommentMapper).deleteById(commentId);
-        assertEquals(0, record.getStatus());
-        verify(behaviorRecordMapper).updateById(record);
-        verify(notificationClient).createNotification(any());
+    @Test
+    @DisplayName("onDegraded：缺少目标用户或目标内容时不补发通知（避免误发）")
+    void onDegradedSkipsWithoutTarget() {
+        ApAuditTask task = buildTask(555L);
+        task.setTargetUserId(null);
+
+        assertDoesNotThrow(() -> commentAuditService.onDegraded(task));
+
+        task.setTargetUserId(200);
+        task.setTargetId(null);
+        assertDoesNotThrow(() -> commentAuditService.onDegraded(task));
     }
 
     @Test
-    @DisplayName("handleFailed - 审核违规不发“评论通知”，仅发违规系统通知(type=4)")
-    void testHandleFailedNoCommentNotification() {
-        ApComment comment = new ApComment();
-        comment.setId(commentId);
-        comment.setContent("违规内容");
-        comment.setUserId(100);
-        when(apCommentMapper.selectById(commentId)).thenReturn(comment);
-        when(behaviorRecordMapper.selectOne(any())).thenReturn(null); // 无行为记录
-
-        commentAuditService.handleFailed(context(), "违规");
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationClient, times(1)).createNotification(captor.capture());
-        Map<String, Object> params = captor.getValue();
-        // 断言语义：评论未过审绝不发"评论通知"(type=1)，只发违规系统通知(type=4)
-        assertEquals(4, params.get("type"));
+    @DisplayName("onDegraded：字段齐全时执行补发通知（不抛异常）")
+    void onDegradedSendsNotification() {
+        assertDoesNotThrow(() -> commentAuditService.onDegraded(buildTask(555L)));
     }
 
-    // ==================== listPendingDue ====================
+    // ==================== 调度委托 ====================
 
     @Test
-    @DisplayName("listPendingDue - 返回到期待审核任务")
-    void testListPendingDue() {
-        when(auditTaskMapper.selectList(any()))
-                .thenReturn(Collections.singletonList(new ApCommentAuditTask()));
-        List<ApCommentAuditTask> result = commentAuditService.listPendingDue(20);
-        assertEquals(1, result.size());
+    @DisplayName("调度委托：processTaskIfPending / listPendingDue 原样转交 Dispatcher")
+    void delegatesSchedulingToDispatcher() {
+        commentAuditService.processTaskIfPending(1L);
+        verify(auditTaskDispatcher).processIfPending(1L);
+
+        commentAuditService.listPendingDue(50);
+        verify(auditTaskDispatcher).listPendingDue(ApAuditTask.BIZ_ARTICLE_COMMENT, 50);
     }
 }
