@@ -58,4 +58,20 @@ public interface OutboxService {
      * @param errorReason 最后一次失败原因（截断 500 字符入库）
      */
     void markExhaustedDone(OutboxEvent event, String errorReason);
+
+    /**
+     * 「不计数重试」：把事件退回 {@code PENDING} 并按<b>固定间隔</b>排程，
+     * 但不递增 {@code retry_count}（本次失败不消耗重试配额）。
+     *
+     * <p>用途：Handler 抛出 {@link RetryWithoutCountingException} 时调用 ——
+     * 典型是"暂时性竞态，过一会儿自然会成功"的场景。
+     *
+     * <p><b>为什么用固定间隔而非指数退避</b>：既然认定它是"很快会好的暂时性竞态"，
+     * 就不该按退避的节奏让它越等越久。真正的收敛由 Handler 声明的
+     * {@link OutboxHandler#maxLifetimeMinutes()} 兜底，而不是靠重试次数。
+     *
+     * @param event       被执行的事件
+     * @param errorReason 失败原因（截断 500 字符入库）
+     */
+    void markRetryWithoutCounting(OutboxEvent event, String errorReason);
 }

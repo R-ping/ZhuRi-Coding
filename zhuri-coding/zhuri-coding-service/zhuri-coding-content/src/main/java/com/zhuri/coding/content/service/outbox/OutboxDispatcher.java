@@ -50,6 +50,10 @@ public class OutboxDispatcher {
     private final AtomicLong deadTotal = new AtomicLong();
     /** 重试耗尽后按 DEGRADE / DISCARD 收尾的次数（非成功，必须与 doneTotal 区分统计） */
     private final AtomicLong degradedTotal = new AtomicLong();
+    /** 「不计数重试」的次数（暂时性竞态，不消耗重试配额） */
+    private final AtomicLong noCountRetryTotal = new AtomicLong();
+    /** 因超过生命周期上限被强制判死的次数（属人工介入范畴，必须单独观测） */
+    private final AtomicLong lifetimeKilledTotal = new AtomicLong();
 
     @Autowired
     public OutboxDispatcher(OutboxEventMapper outboxEventMapper,
@@ -73,6 +77,9 @@ public class OutboxDispatcher {
     @Scheduled(fixedDelay = 5000, initialDelay = 10_000)
     public void dispatch() {
         try {
+            // 先做生命周期判定：它不依赖本轮的待处理批次（批次为空时也须执行，
+            // 否则一批事件全处于 PENDING 等退避时，护栏就不会被触发）
+            enforceLifetime();
             List<OutboxEvent> batch = listDispatchable(BATCH_SIZE);
             if (CollectionUtils.isEmpty(batch)) {
                 return;
@@ -83,6 +90,42 @@ public class OutboxDispatcher {
         } catch (Exception e) {
             // 调度器自身异常不能终止 @Scheduled 心跳
             log.error("Outbox dispatch 轮次异常", e);
+        }
+    }
+
+    /**
+     * 生命周期护栏：把超过 Handler 声明上限仍未完成的事件强制判死。
+     *
+     * <p><b>为什么必须有它</b>：Handler 抛 {@link RetryWithoutCountingException} 时，
+     * 事件<b>不消耗重试配额</b>，因此永远不会因「重试超限」而收敛 ——
+     * 缺少时间维度的兜底，它就是一个永不结束的重试循环。
+     *
+     * <p><b>为什么按 Handler 遍历、而不是一条全局 SQL</b>：{@link OutboxHandler#maxLifetimeMinutes()}
+     * 默认为 0（不限）。若全局执行，会把语义上「必须完成、或等人工介入」的事件（如支付副作用）
+     * 一并误杀 —— 护栏反而成了故障源。
+     *
+     * <p>可见性为包级，便于单测直接覆盖。
+     */
+    void enforceLifetime() {
+        Date now = new Date();
+        for (Map.Entry<String, OutboxHandler> entry : handlerIndex.entrySet()) {
+            int limitMinutes = entry.getValue().maxLifetimeMinutes();
+            if (limitMinutes <= 0) {
+                continue; // 未声明上限：不参与判定（等人工介入）
+            }
+            Date deadline = new Date(now.getTime() - limitMinutes * 60_000L);
+            int killed = outboxEventMapper.update(null, new LambdaUpdateWrapper<OutboxEvent>()
+                    .eq(OutboxEvent::getEventType, entry.getKey())
+                    .notIn(OutboxEvent::getStatus, OutboxEvent.STATUS_DONE, OutboxEvent.STATUS_DEAD)
+                    .lt(OutboxEvent::getCreatedTime, deadline)
+                    .set(OutboxEvent::getStatus, OutboxEvent.STATUS_DEAD)
+                    .set(OutboxEvent::getLastError, "超过生命周期上限(" + limitMinutes + " 分钟)未完成，强制判死")
+                    .set(OutboxEvent::getUpdatedTime, now));
+            if (killed > 0) {
+                lifetimeKilledTotal.addAndGet(killed);
+                log.error("[OUTBOX-LIFETIME] {} 条 {} 事件超过 {} 分钟生命周期上限，已强制置 DEAD，需人工确认",
+                        killed, entry.getKey(), limitMinutes);
+            }
         }
     }
 
@@ -118,6 +161,14 @@ public class OutboxDispatcher {
                 return;
             }
             String reason = String.valueOf(e.getMessage());
+            if (e instanceof RetryWithoutCountingException) {
+                // 暂时性竞态（如延迟任务的锚点事务尚未提交）：退回待处理但不消耗重试配额。
+                // 必须排在 willExhaust 之前 —— 这类失败压根不参与「是否超限」的计算，
+                // 它的收敛由 Handler 声明的生命周期护栏兜底（见 enforceLifetime）。
+                noCountRetryTotal.incrementAndGet();
+                outboxService.markRetryWithoutCounting(event, reason);
+                return;
+            }
             // 本次失败即耗尽重试 → 按 Handler 声明的终态策略收尾，不再排程重试
             // （handler 为 null 只可能是未注册 handler 的配置错误，此时没有策略可查，走常规重试/死信）
             if (handler != null && outboxService.willExhaust(event)) {
@@ -212,6 +263,8 @@ public class OutboxDispatcher {
         m.put("failTotal", failTotal.get());
         m.put("deadTotal", deadTotal.get());
         m.put("degradedTotal", degradedTotal.get());
+        m.put("noCountRetryTotal", noCountRetryTotal.get());
+        m.put("lifetimeKilledTotal", lifetimeKilledTotal.get());
         return m;
     }
 
