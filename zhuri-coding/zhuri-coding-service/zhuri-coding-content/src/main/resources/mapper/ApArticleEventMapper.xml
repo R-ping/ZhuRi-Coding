@@ -2,10 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
   "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.zhuri.coding.content.mapper.article.ApArticleEventMapper">
+  <!-- 2026-09-26 清理：移除 minio_status / es_status / pub_status 三个已废弃列。
+       状态机早已收敛为单 status，这三列此前仅被本文件的两条旧 SQL 引用（实体字段也因此保留着），
+       属"迁移只做了一半"的残留 —— 数据折算做了，冗余结构没清。 -->
   <insert id="insertArticleEvent">
-    insert into article_event (article_id, status, create_time, update_time, retry_count, max_retry_count, minio_status, es_status, retry_time, parameter, pub_status)
+    insert into article_event (article_id, status, create_time, update_time, retry_count, max_retry_count, retry_time, parameter)
     values (#{articleEvent.articleId}, #{articleEvent.status}, #{articleEvent.createTime}, #{articleEvent.updateTime},
-            COALESCE(#{articleEvent.retryCount}, 0), COALESCE(#{articleEvent.maxRetryCount}, 5), COALESCE(#{articleEvent.minioStatus}, 0), COALESCE(#{articleEvent.esStatus}, 0), #{articleEvent.retryTime}, #{articleEvent.parameter}, COALESCE(#{articleEvent.pubStatus}, 0))
+            COALESCE(#{articleEvent.retryCount}, 0), COALESCE(#{articleEvent.maxRetryCount}, 5), #{articleEvent.retryTime}, #{articleEvent.parameter})
   </insert>
 
 
@@ -14,12 +17,6 @@
     <set>
       <if test="articleEvent.status != null">
         status = #{articleEvent.status},
-      </if>
-      <if test="articleEvent.esStatus != null">
-        es_status = #{articleEvent.esStatus},
-      </if>
-      <if test="articleEvent.pubStatus != null">
-        pub_status = #{articleEvent.pubStatus},
       </if>
       <if test="articleEvent.retryCount != null">
         retry_count = #{articleEvent.retryCount},

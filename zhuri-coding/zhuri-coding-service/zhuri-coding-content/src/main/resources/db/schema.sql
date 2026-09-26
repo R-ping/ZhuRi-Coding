@@ -585,7 +585,7 @@ CREATE TABLE `ap_comment` (
   KEY `idx_parent_id` (`parent_id`),
   KEY `idx_created_time` (`created_time`),
   KEY `idx_article_parent_created` (`article_id`,`parent_id`,`created_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=1870 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章评论表';
+) ENGINE=InnoDB AUTO_INCREMENT=1876 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章评论表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -596,7 +596,7 @@ CREATE TABLE `ap_comment_like` (
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_comment_user` (`comment_id`,`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=243 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='评论点赞记录表';
+) ENGINE=InnoDB AUTO_INCREMENT=246 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='评论点赞记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1170,11 +1170,8 @@ CREATE TABLE `article_event` (
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `retry_count` tinyint NOT NULL DEFAULT '0' COMMENT '事务重试次数',
   `max_retry_count` tinyint DEFAULT '2' COMMENT '最大重试次数',
-  `minio_status` int NOT NULL DEFAULT '0' COMMENT '0初始化，1为还未成功，2已成功',
-  `es_status` int NOT NULL DEFAULT '0' COMMENT '0初始化，1为还未成功，2已成功',
   `retry_time` datetime DEFAULT NULL COMMENT '生产者重试时间',
   `parameter` longtext COLLATE utf8mb4_unicode_ci COMMENT '方法执行参数',
-  `pub_status` tinyint DEFAULT '0' COMMENT '发布状态 0=初始化 1=待重试 2=成功',
   PRIMARY KEY (`id`),
   UNIQUE KEY `article_id` (`article_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

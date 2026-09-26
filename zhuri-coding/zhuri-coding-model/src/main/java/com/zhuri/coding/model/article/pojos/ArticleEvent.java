@@ -26,20 +26,6 @@ public class ArticleEvent {
     private Byte maxRetryCount; // ES 同步最大重试次数
     private Date retryTime; // 下次重试时间
 
-//    private Byte minioStatus; // minio状态，0初始化，1为还未成功，2已成功
-
-    /**
-     * @deprecated 已由 status 单一状态机替代；字段保留以兼容存量数据与 SQL，新代码禁止读写。
-     */
-    @Deprecated
-    private Byte esStatus;
-
-    /**
-     * @deprecated 已由 status 单一状态机替代；字段保留以兼容存量数据与 SQL，新代码禁止读写。
-     */
-    @Deprecated
-    private Byte pubStatus;
-
     private String parameter;
 
     private Date createTime;
