@@ -2,6 +2,7 @@ package com.zhuri.coding.content.service.ai.agent.tools;
 
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticle.Status;
 import java.util.ArrayList;
@@ -95,5 +96,58 @@ public class SimilaritySearchTool {
             log.warn("[SimilaritySearchTool] 相似检索失败", e);
             return List.of();
         }
+    }
+
+    // ==================== 从检索结果到 VO 的唯二入口（两条预检链路共用） ====================
+    //
+    // 这两个静态方法刻意放在本类，而不是各链路各写一份：
+    // 两条链路（显式 DAG 的 PrecheckWorkflow / 兜底的 PublishAssistantServiceImpl）此前
+    // 各写了一份逐字相同的 applySimilarity 与"排除自身 + 取最相似一篇"的循环 ——
+    // 靠人记住"改一处别忘了另一处"是约定，只有一份才是结构。
+
+    /**
+     * 从候选里挑出唯一一篇预警对象：排除自身 → 取最相似的一篇 → 过阈值。
+     *
+     * <p>候选已按相似度**降序**，因此排除自身后的第一篇就是最相似的一篇；
+     * 它不达阈值即说明其余更低，无需继续遍历。
+     *
+     * @param hits             检索候选（可能为 null / 空）
+     * @param excludeArticleId 需要排除的自身文章 id（可为 null，表示无需排除）
+     * @return 达标的那一篇；无候选、候选里只有自己、或最相似一篇未达阈值时返回 null
+     */
+    public static SimilarArticle pickAlert(List<SimilarArticle> hits, Long excludeArticleId) {
+        if (hits == null || hits.isEmpty()) {
+            return null;
+        }
+        for (SimilarArticle hit : hits) {
+            if (excludeArticleId != null && excludeArticleId.equals(hit.article().getId())) {
+                continue; // 排除自身
+            }
+            return hit.similarity() >= ALERT_THRESHOLD ? hit : null;
+        }
+        return null; // 候选里只有自己
+    }
+
+    /**
+     * 唯一写入出口：把检索结论落到 VO 上。
+     *
+     * <p>best 为 null 即"确定性地无高相似"（未命中 / 检索失败 / 未查重）→ **显式清空**。
+     * 之所以强调"显式"，是因为这三个字段曾经也收到过模型的填值，而"命中才覆盖"的写法
+     * 会让未命中时残留那个值 —— 把"无高相似"表达成一个明确的 null，才能让
+     * "该字段只有一个写入出口"成为代码层面可验证的事实。
+     */
+    public static void applyToVo(AiPrecheckVo vo, SimilarArticle best) {
+        if (vo == null) {
+            return;
+        }
+        if (best == null) {
+            vo.setSimilarArticleId(null);
+            vo.setSimilarTitle(null);
+            vo.setSimilarity(null);
+            return;
+        }
+        vo.setSimilarArticleId(best.article().getId());
+        vo.setSimilarTitle(best.article().getTitle());
+        vo.setSimilarity(Math.round(best.similarity() * 10000) / 10000.0);
     }
 }

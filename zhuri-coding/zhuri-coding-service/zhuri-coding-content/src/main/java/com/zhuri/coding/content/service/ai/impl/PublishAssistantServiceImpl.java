@@ -344,49 +344,27 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     }
 
     /**
-     * 相似度填充：这三个字段**只由确定性检索决定**——命中则写入，未命中 / 检索失败一律清空。
+     * 相似度填充：兜底路径（主编 ReAct）下由本方法自己执行检索，再落到 VO 上。
      *
-     * <p>与 {@code PrecheckWorkflow#fillSimilarity} 同一语义：不管走主路径（显式工作流）还是本兜底路径，
-     * 相似度都来自同一次确定性检索，都不依赖模型输出。
-     *
-     * <p><b>为什么"未命中"要显式清空，而不是"什么都不做"</b>：把「无高相似」表达成明确的 null，
-     * 才能让"该字段只有一个写入出口"成为代码层面可验证的事实。早期版本这里是"命中才覆盖"，
-     * 而模型输出 schema 里带着这三个字段，于是检索未命中时模型编造的值被原样展示给了作者。
-     * schema 已清理，但约束保留 —— 只要这一处覆盖所有写入，将来谁在别处写它都无效。
+     * <p>主路径（显式 DAG 的 {@code PrecheckWorkflow}）已在 DUPLICATE 阶段检索过。
+     * 两条链路共用 {@link SimilaritySearchTool#pickAlert}（排除自身 + 取最相似一篇 + 过阈值）
+     * 与 {@link SimilaritySearchTool#applyToVo}（唯一写入出口）——
+     * 因此不存在"两份实现忘记同步"的可能：约定靠人记，结构不靠人记。
      */
     private void fillSimilarity(AiPrecheckVo vo, String content, Long articleId) {
         if (vo == null) {
             return;
         }
-        SimilaritySearchTool.SimilarArticle best = null;
+        SimilaritySearchTool.SimilarArticle best;
         try {
-            for (SimilaritySearchTool.SimilarArticle hit : similaritySearchTool.searchSimilar(content)) {
-                if (articleId != null && articleId.equals(hit.article().getId())) {
-                    continue; // 排除自身
-                }
-                if (hit.similarity() >= SimilaritySearchTool.ALERT_THRESHOLD) {
-                    best = hit;
-                }
-                break; // 与历史行为一致：仅以最相似一篇作为预警
-            }
+            best = SimilaritySearchTool.pickAlert(
+                    similaritySearchTool.searchSimilar(content), articleId);
         } catch (Exception e) {
-            // 检索失败按"无高相似"处理：宁可清空，也不保留模型可能编造的预警
+            // 检索失败按"无高相似"处理：宁可清空，也不保留可能编造的值
             log.warn("[AiPrecheck] 相似度检索失败，按无高相似处理（清空该字段）", e);
+            best = null;
         }
-        applySimilarity(vo, best);
-    }
-
-    /** 唯一的相似度写入出口：best 为 null 即"确定性地无高相似"（或检索失败）→ 显式清空模型填值 */
-    private static void applySimilarity(AiPrecheckVo vo, SimilaritySearchTool.SimilarArticle best) {
-        if (best == null) {
-            vo.setSimilarArticleId(null);
-            vo.setSimilarTitle(null);
-            vo.setSimilarity(null);
-            return;
-        }
-        vo.setSimilarArticleId(best.article().getId());
-        vo.setSimilarTitle(best.article().getTitle());
-        vo.setSimilarity(Math.round(best.similarity() * 10000) / 10000.0);
+        SimilaritySearchTool.applyToVo(vo, best);
     }
 
     /** 封面图多模态审核：调用 vision 模型判断违规与主题契合度 */
