@@ -1,22 +1,20 @@
 package com.zhuri.coding.content.service.pins.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhuri.coding.content.behavior.service.BehaviorEventBus;
-import com.zhuri.coding.content.mapper.pins.ApPinsAuditTaskMapper;
 import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
-import com.zhuri.coding.model.pins.pojos.ApPins;
+import com.zhuri.coding.content.service.audit.AuditTaskDispatcher;
+import com.zhuri.coding.content.service.audit.AuditTaskHandler;
 import com.zhuri.coding.model.audit.AuditContext;
 import com.zhuri.coding.model.audit.AuditEntityType;
 import com.zhuri.coding.model.audit.AuditResult;
-import com.zhuri.coding.model.audit.AuditServiceUnavailableException;
-import com.zhuri.coding.model.audit.pojos.ApPinsAuditTask;
+import com.zhuri.coding.model.audit.pojos.ApAuditTask;
 import com.zhuri.coding.model.behavior.BehaviorContext;
 import com.zhuri.coding.model.behavior.BehaviorType;
+import com.zhuri.coding.model.pins.pojos.ApPins;
 import com.zhuri.coding.model.user.pojos.ApUser;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
@@ -25,21 +23,37 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 沸点异步审核服务（数据库可靠队列版）
+ * 沸点异步审核服务（数据库可靠队列版）。
  *
- * 沸点为"先审后展"：审核任务持久化到 ap_pins_audit_task，即使服务重启/崩溃，
- * 定时补偿任务（PinsAuditRecoveryTask）也能重新拉起审核，避免沸点长期停留在"待审"状态。
- * 执行前通过 CAS（PENDING→PROCESSING）抢占，与补偿任务不会重复处理同一沸点。
+ * <p>沸点为"先审后展"：审核任务持久化到统一任务表 {@code ap_audit_task}（bizType=pins），
+ * 即使服务重启/崩溃，定时补偿任务（PinsAuditRecoveryTask）也能重新拉起审核，
+ * 避免沸点长期停留在"待审"状态。
+ *
+ * <p><b>本类现在只负责"业务差异"，调度机制交给 {@link AuditTaskDispatcher}</b>：
+ * CAS 抢占、指数退避、超限降级放行、幂等入队、补偿扫描都已在 Dispatcher 内实现一份，
+ * 三个审核业务共用。这里只提供三件业务相关的事：
+ * <ol>
+ *   <li>{@link #audit(ApAuditTask)} —— 沸点审核**回查沸点表取最新内容**
+ *       （与评论类读任务表快照的做法不同，故任务表里的 content 对本业务仅为留档）；</li>
+ *   <li>{@link #onPassed(ApAuditTask)} —— 通过后触发"发布沸点"等级积分事件；</li>
+ *   <li>{@link #asyncReviewPins} —— 入队并尽快触发一次。</li>
+ * </ol>
+ *
+ * <p><b>迁移历史</b>：2026-09-26 由独立表 {@code ap_pins_audit_task} 并入统一表；
+ * 同期抽出的 Dispatcher 消除了原先散落在三个 Service 里的重复调度逻辑。
  */
 @Component
 @Slf4j
-public class PinsReviewService {
+public class PinsReviewService implements AuditTaskHandler {
+
+    /** 本服务负责的业务类型（统一表 ap_audit_task 内按此值路由） */
+    private static final String BIZ_TYPE = ApAuditTask.BIZ_PINS;
 
     @Autowired
     private ApPinsMapper apPinsMapper;
 
     @Autowired
-    private ApPinsAuditTaskMapper pinsAuditTaskMapper;
+    private AuditTaskDispatcher auditTaskDispatcher;
 
     @Autowired
     private PinsAuditService pinsAuditService;
@@ -47,9 +61,20 @@ public class PinsReviewService {
     @Autowired(required = false)
     private BehaviorEventBus behaviorEventBus;
 
+    /** 自注册到调度器：保持依赖单向（Service → Dispatcher），避免与 Dispatcher 的集合注入形成循环依赖 */
+    @PostConstruct
+    void registerSelf() {
+        auditTaskDispatcher.register(this);
+    }
+
+    @Override
+    public String bizType() {
+        return BIZ_TYPE;
+    }
+
     /**
      * 沸点入队并触发一次尽快审核（兼容原调用方签名）。
-     * 先持久化审核任务（重启不丢），再异步尝试执行一次。
+     * 先持久化审核任务（重启不丢），再尝试执行一次。
      *
      * @param pins 已入库的沸点（SUBMIT 待审）
      * @param user 发布用户（用于审核通过后的等级积分）
@@ -60,27 +85,26 @@ public class PinsReviewService {
             return;
         }
         try {
-            // 1. 幂等持久化任务（同一沸点仅一条待审核任务，唯一键 pins_id 兜底）
-            ApPinsAuditTask task = new ApPinsAuditTask();
-            task.setPinsId(pins.getId());
+            ApAuditTask task = new ApAuditTask();
+            task.setTaskKey(ApAuditTask.taskKey(BIZ_TYPE, pins.getId()));
+            task.setBizType(BIZ_TYPE);
+            task.setBizId(pins.getId());
             task.setAuthorId(pins.getAuthorId() != null ? pins.getAuthorId().intValue() : 0);
             task.setAuthorName(pins.getAuthorName() != null ? pins.getAuthorName() : "");
-            task.setUserId(user != null ? user.getId() : (pins.getAuthorId() != null ? pins.getAuthorId().intValue() : 0));
+            task.setActorUserId(user != null
+                    ? user.getId()
+                    : (pins.getAuthorId() != null ? pins.getAuthorId().intValue() : 0));
             task.setContent(pins.getContent() != null ? pins.getContent() : "");
             task.setImageUrls(pins.getImageUrls() != null ? pins.getImageUrls() : "");
-            task.setStatus(ApPinsAuditTask.STATUS_PENDING);
+            task.setStatus(ApAuditTask.STATUS_PENDING);
             task.setRetryCount(0);
             task.setNextRetryTime(new Date());
             task.setCreateTime(new Date());
             task.setUpdateTime(new Date());
-            try {
-                pinsAuditTaskMapper.insert(task);
-            } catch (DuplicateKeyException e) {
-                log.info("沸点审核任务已存在，跳过重复入队, pinsId={}", pins.getId());
-            }
 
-            // 2. 立即触发一次审核（进程内触发与定时补偿共用 CAS 抢占）
-            processTaskIfPending(task.getId());
+            // 幂等写入（同一沸点仅一条任务，唯一键 uk_task_key 兜底）→ 立即触发一次
+            auditTaskDispatcher.enqueue(task);
+            auditTaskDispatcher.processIfPending(task.getId());
             log.info("沸点已加入数据库可靠审核队列, pinsId={}", pins.getId());
         } catch (Exception e) {
             log.error("触发沸点异步审核入队异常, pinsId={}", pins.getId(), e);
@@ -88,53 +112,14 @@ public class PinsReviewService {
     }
 
     /**
-     * 若任务仍处于待审核则抢占执行审核（CAS，避免与定时补偿重复处理）。
-     * 供进程内直接触发与定时补偿任务共同调用。
+     * 执行一次沸点审核。
      *
-     * @param taskId 任务ID
+     * <p>刻意**回查沸点表**取最新内容（而非读任务表里的 content 快照）：
+     * 沸点内容在待审窗口内可能被作者编辑，审核对象应是当前内容。
      */
-    public void processTaskIfPending(Long taskId) {
-        if (taskId == null) {
-            return;
-        }
-        try {
-            // CAS：仅当 status=PENDING 才抢占为 PROCESSING，保证同一沸点只被一个执行体处理
-            boolean acquired = pinsAuditTaskMapper.update(null, new LambdaUpdateWrapper<ApPinsAuditTask>()
-                .eq(ApPinsAuditTask::getId, taskId)
-                .eq(ApPinsAuditTask::getStatus, ApPinsAuditTask.STATUS_PENDING)
-                .set(ApPinsAuditTask::getStatus, ApPinsAuditTask.STATUS_PROCESSING)
-                .set(ApPinsAuditTask::getUpdateTime, new Date())) > 0;
-            if (!acquired) {
-                return;
-            }
-
-            ApPinsAuditTask task = pinsAuditTaskMapper.selectById(taskId);
-            if (task == null) {
-                return;
-            }
-
-            log.info("开始审核沸点, pinsId={}, taskId={}", task.getPinsId(), taskId);
-            AuditResult result = doAudit(task.getPinsId(), task.getUserId());
-
-            if (result.isPassed()) {
-                markDone(taskId, ApPinsAuditTask.STATUS_PASSED);
-                log.info("沸点审核通过, pinsId={}", task.getPinsId());
-            } else {
-                markDone(taskId, ApPinsAuditTask.STATUS_VIOLATION);
-                log.info("沸点审核违规, pinsId={}, reason={}", task.getPinsId(), result.getReason());
-            }
-        } catch (AuditServiceUnavailableException e) {
-            // 审核服务不可用（fail-closed）：恢复正常任务状态并退避重试，不误标违规
-            log.warn("沸点审核服务不可用，安排退避重试, taskId={}", taskId, e);
-            retryOrDegrade(taskId);
-        } catch (Exception e) {
-            log.error("沸点审核执行异常, taskId={}", taskId, e);
-            retryOrDegrade(taskId);
-        }
-    }
-
-    /** 依据队列数据执行一次真实审核，返回审核结果 */
-    private AuditResult doAudit(Long pinsId, Integer userId) {
+    @Override
+    public AuditResult audit(ApAuditTask task) {
+        Long pinsId = task.getBizId();
         ApPins pins = apPinsMapper.selectById(pinsId);
         if (pins == null) {
             log.warn("沸点不存在, pinsId={}", pinsId);
@@ -143,84 +128,57 @@ public class PinsReviewService {
 
         AuditContext auditContext = new AuditContext(AuditEntityType.PINS, pinsId, pins.getAuthorId());
         auditContext.withTitle("")
-            .withContent(pins.getContent())
-            .withAuthorName(pins.getAuthorName());
+                .withContent(pins.getContent())
+                .withAuthorName(pins.getAuthorName());
 
         if (pins.getImageUrls() != null && !pins.getImageUrls().isEmpty()) {
             List<String> imageUrls = Arrays.stream(pins.getImageUrls().split(","))
-                .map(String::trim)
-                .filter(url -> !url.isEmpty())
-                .collect(Collectors.toList());
+                    .map(String::trim)
+                    .filter(url -> !url.isEmpty())
+                    .collect(Collectors.toList());
             auditContext.withImageUrls(imageUrls);
         }
 
         return pinsAuditService.audit(auditContext);
     }
 
-    /** 恢复任务为待审核并按指数退避安排重试时间；超限则降级通过 */
-    private void retryOrDegrade(Long taskId) {
-        ApPinsAuditTask task = pinsAuditTaskMapper.selectById(taskId);
-        if (task == null) {
+    /**
+     * 审核通过后的业务动作：触发"发布沸点"等级积分事件。
+     * （审核服务本身已把沸点置为 PUBLISHED，这里只处理积分联动）
+     */
+    @Override
+    public void onPassed(ApAuditTask task) {
+        if (behaviorEventBus == null || task.getActorUserId() == null) {
             return;
         }
-        int retry = (task.getRetryCount() == null ? 0 : task.getRetryCount()) + 1;
-        if (retry > ApPinsAuditTask.MAX_RETRY) {
-            pinsAuditTaskMapper.update(null, new LambdaUpdateWrapper<ApPinsAuditTask>()
-                .eq(ApPinsAuditTask::getId, taskId)
-                .set(ApPinsAuditTask::getStatus, ApPinsAuditTask.STATUS_DEGRADED_PASSED)
-                .set(ApPinsAuditTask::getRetryCount, retry)
-                .set(ApPinsAuditTask::getAuditTime, new Date())
-                .set(ApPinsAuditTask::getUpdateTime, new Date()));
-            log.warn("沸点审核重试超限，降级通过, taskId={}, pinsId={}", taskId, task.getPinsId());
-            return;
-        }
-        // 指数退避：60s -> 120s -> 240s ...
-        long backoffMillis = 60_000L * (1L << (retry - 1));
-        Date next = new Date(System.currentTimeMillis() + backoffMillis);
-        pinsAuditTaskMapper.update(null, new LambdaUpdateWrapper<ApPinsAuditTask>()
-            .eq(ApPinsAuditTask::getId, taskId)
-            .eq(ApPinsAuditTask::getStatus, ApPinsAuditTask.STATUS_PROCESSING)
-            .set(ApPinsAuditTask::getStatus, ApPinsAuditTask.STATUS_PENDING)
-            .set(ApPinsAuditTask::getRetryCount, retry)
-            .set(ApPinsAuditTask::getNextRetryTime, next)
-            .set(ApPinsAuditTask::getUpdateTime, new Date()));
-        log.warn("沸点审核执行异常，安排退避重试, taskId={}, retryCount={}", taskId, retry);
-    }
-
-    /** 标记任务完成 */
-    private void markDone(Long taskId, int status) {
-        pinsAuditTaskMapper.update(null, new LambdaUpdateWrapper<ApPinsAuditTask>()
-            .eq(ApPinsAuditTask::getId, taskId)
-            .set(ApPinsAuditTask::getStatus, status)
-            .set(ApPinsAuditTask::getAuditTime, new Date())
-            .set(ApPinsAuditTask::getUpdateTime, new Date()));
-
-        ApPinsAuditTask task = pinsAuditTaskMapper.selectById(taskId);
-        if (task == null) {
-            return;
-        }
-        // 审核通过后触发等级积分（PinsAuditService.handlePassed 已把沸点置为 PUBLISHED）
-        if (status == ApPinsAuditTask.STATUS_PASSED && behaviorEventBus != null && task.getUserId() != null) {
-            try {
-                ApPins pins = apPinsMapper.selectById(task.getPinsId());
-                BehaviorContext behaviorContext = new BehaviorContext(BehaviorType.PUBLISH_PIN, task.getUserId());
-                behaviorContext.withTarget(2, task.getPinsId())
-                    .withUserInfo(pins != null ? pins.getAuthorName() : null, pins != null ? pins.getAuthorImage() : null);
-                behaviorEventBus.execute(behaviorContext);
-                log.info("沸点发布行为已通过事件总线处理, pinsId={}, userId={}", task.getPinsId(), task.getUserId());
-            } catch (Exception e) {
-                log.error("沸点发布行为事件处理失败, pinsId={}", task.getPinsId(), e);
-            }
+        try {
+            ApPins pins = apPinsMapper.selectById(task.getBizId());
+            BehaviorContext behaviorContext =
+                    new BehaviorContext(BehaviorType.PUBLISH_PIN, task.getActorUserId());
+            behaviorContext.withTarget(2, task.getBizId())
+                    .withUserInfo(pins != null ? pins.getAuthorName() : null,
+                            pins != null ? pins.getAuthorImage() : null);
+            behaviorEventBus.execute(behaviorContext);
+            log.info("沸点发布行为已通过事件总线处理, pinsId={}, userId={}",
+                    task.getBizId(), task.getActorUserId());
+        } catch (Exception e) {
+            log.error("沸点发布行为事件处理失败, pinsId={}", task.getBizId(), e);
         }
     }
 
-    /** 供定时补偿任务批量拉取待审核任务（按 next_retry_time 到期排序） */
-    public List<ApPinsAuditTask> listPendingDue(int limit) {
-        return pinsAuditTaskMapper.selectList(new LambdaQueryWrapper<ApPinsAuditTask>()
-            .eq(ApPinsAuditTask::getStatus, ApPinsAuditTask.STATUS_PENDING)
-            .and(w -> w.isNull(ApPinsAuditTask::getNextRetryTime).or()
-                .le(ApPinsAuditTask::getNextRetryTime, new Date()))
-            .orderByAsc(ApPinsAuditTask::getId)
-            .last("LIMIT " + Math.max(1, Math.min(limit, 500))));
+    /**
+     * 供定时补偿任务批量拉取待审核任务（委托 Dispatcher，保留原签名以减少调用方改动）。
+     * Dispatcher 内部按 bizType 隔离，避免与其他业务抢占批次配额。
+     */
+    public List<ApAuditTask> listPendingDue(int limit) {
+        return auditTaskDispatcher.listPendingDue(BIZ_TYPE, limit);
+    }
+
+    /**
+     * 触发一次审核（委托 Dispatcher）。
+     * 供进程内直接触发与定时补偿任务共同调用，CAS 抢占保证不重复处理。
+     */
+    public void processTaskIfPending(Long taskId) {
+        auditTaskDispatcher.processIfPending(taskId);
     }
 }

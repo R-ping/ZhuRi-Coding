@@ -213,7 +213,7 @@ flowchart TB
 
 | 模块 | 职责 | 数据库 |
 |---|---|---|
-| `zhuri-coding-gateway` | 路由、JWT 鉴权、限流（IP 固定窗口 / 滑动窗口 / 令牌桶）、HMAC 内部签名 | — |
+| `zhuri-coding-gateway` | 路由、JWT 鉴权、入口限流（IP 固定窗口：普通 600/min、敏感 60/min）、HMAC 内部签名 | — |
 | `zhuri-coding-service/content` | **内容 + 全部 AI 能力**（RAG 问答、发布助手 Agent、内容治理、向量与分块、语义检索、计费） | MySQL + **pgvector** + Redis |
 | `zhuri-coding-service/search` | ES 全文检索，对外搜索接口 + **对内 BM25 召回端点** | Elasticsearch |
 | `zhuri-coding-service/user` | 用户、双 Token 认证、社交登录（GitHub / 微博 OAuth） | MySQL |
@@ -275,7 +275,7 @@ flowchart TB
 | **发布 → 上线 → 搜索最终一致** | Redisson 延迟队列按发布时间调度；**本地消息表单 status 状态机**（先落消息保证可补偿 → 条件更新置发布态 → 一步带发布态同步 ES）；DB 失败幂等自愈、ES 失败 20s 定时扫描重试、超限死信。**不引入 MQ** 完成双写最终一致 |
 | **行为事件总线 + @Order 后置责任链** | 一次行为按类型路由，有序触发等级积分 → 文章热度 → 站内信 → 成就解锁；处理器独立降级互不拖垮；"行为记录门控 + 唯一索引"双保险防重；热度用单条原子 SQL 重算消除读改写竞态 |
 | **统一支付与资损兜底** | 金额全部服务端计算；回调经 RSA2 验签 + app_id + 实付金额三重校验；**条件更新原子抢占订单状态**实现幂等入账；超时关单 + "已关单却支付成功"竞态自动退款（订单号幂等键）；结算唯一索引防重 |
-| **双 Token 认证 + 网关信任链 + 分层限流** | Access 1h + Refresh 7d，刷新用 Redis Lua **原子"取即删"轮换**；社交登录（GitHub / 微博 OAuth，绑定双向防重）；网关与下游 HMAC 内部签名、下游只信网关透传身份；三层限流（IP 固定窗口 / 自定义 `@RateLimit` 滑动窗口多维叠加 / 令牌桶） |
+| **双 Token 认证 + 网关信任链 + 分层限流** | Access 1h + Refresh 7d，刷新用 Redis Lua **原子"取即删"轮换**；社交登录（GitHub / 微博 OAuth，绑定双向防重）；网关与下游 HMAC 内部签名、下游只信网关透传身份；两层限流（网关 IP 固定窗口 + 自定义 `@RateLimit` 滑动窗口多维叠加） |
 
 ---
 

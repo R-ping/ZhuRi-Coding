@@ -1,15 +1,13 @@
 package com.zhuri.coding.content.service.pins.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhuri.coding.content.behavior.service.BehaviorEventBus;
-import com.zhuri.coding.content.mapper.pins.ApPinsAuditTaskMapper;
 import com.zhuri.coding.content.mapper.pins.ApPinsMapper;
+import com.zhuri.coding.content.service.audit.AuditTaskDispatcher;
 import com.zhuri.coding.model.audit.AuditContext;
 import com.zhuri.coding.model.audit.AuditResult;
-import com.zhuri.coding.model.audit.AuditServiceUnavailableException;
-import com.zhuri.coding.model.audit.pojos.ApPinsAuditTask;
+import com.zhuri.coding.model.audit.pojos.ApAuditTask;
 import com.zhuri.coding.model.behavior.BehaviorContext;
 import com.zhuri.coding.model.pins.pojos.ApPins;
 import com.zhuri.coding.model.user.pojos.ApUser;
@@ -22,31 +20,35 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.springframework.dao.DuplicateKeyException;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * PinsReviewService 回归测试（重点关注 B2 沸点异步审核可靠队列 / CAS 抢占）
+ * PinsReviewService 单测（薄壳版）。
  *
- * 核心安全诉求：保证同一沸点只被一个执行体处理、服务重启不丢任务、审核服务异常按退避重试处理。
- * - 入队：持久化任务(PENDING) + 幂等(唯一键冲突跳过)；
- * - 抢占：CAS(PENDING->PROCESSING) 未命中则不重复执行审核；
- * - 完成：审核通过才触发等级积分事件，违规不触发；
- * - 异常：AI 审核不可用 -> 不误标违规，退回待审重试。
+ * <p><b>测试范围的变化</b>：抽取 {@link AuditTaskDispatcher} 之后，
+ * CAS 抢占 / 指数退避 / 超限降级放行等**调度语义已由 {@code AuditTaskDispatcherTest} 统一覆盖**，
+ * 本类只覆盖沸点业务自己的三件事：
+ * <ol>
+ *   <li>入队字段映射（bizType / bizKey / bizId / actorUserId）与触发；</li>
+ *   <li>{@code audit} **回查沸点表取最新内容**（区别于评论类读任务表快照）；</li>
+ *   <li>{@code onPassed} 触发"发布沸点"等级积分事件。</li>
+ * </ol>
+ * 外加"调度调用是否如实委托给 Dispatcher"。
  */
 class PinsReviewServiceTest {
 
     @Mock
     private ApPinsMapper apPinsMapper;
     @Mock
-    private ApPinsAuditTaskMapper pinsAuditTaskMapper;
+    private AuditTaskDispatcher auditTaskDispatcher;
     @Mock
     private PinsAuditService pinsAuditService;
     @Mock
@@ -58,17 +60,27 @@ class PinsReviewServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        // 预热 MybatisPlus 实体表元数据与 lambda 列缓存，使单测不依赖 Spring 上下文或测试执行顺序
-        // （集成测试若在共享 JVM 中先加载 Spring 会自动注册缓存；本单测须自足，CI 无库也能稳定运行）
+        // 预热 lambda 列缓存，使单测不依赖 Spring 上下文（与项目内其它测试一致）
         TableInfoHelper.initTableInfo(
-                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApPinsAuditTask.class);
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApAuditTask.class);
+    }
+
+    private ApAuditTask buildTask(Long pinsId) {
+        ApAuditTask task = new ApAuditTask();
+        task.setId(1L);
+        task.setTaskKey(ApAuditTask.taskKey(ApAuditTask.BIZ_PINS, pinsId));
+        task.setBizType(ApAuditTask.BIZ_PINS);
+        task.setBizId(pinsId);
+        task.setStatus(ApAuditTask.STATUS_PROCESSING);
+        task.setRetryCount(0);
+        return task;
     }
 
     // ==================== 入队 ====================
 
     @Test
-    @DisplayName("B2 - asyncReviewPins 持久化待审任务并立即触发审核")
-    void testAsyncReviewPinsEnqueueAndTrigger() {
+    @DisplayName("入队：字段映射正确，并在写入后立即触发一次")
+    void enqueueMapsFieldsAndTriggers() {
         ApPins pins = new ApPins();
         pins.setId(999L);
         pins.setAuthorId(20001L);
@@ -77,124 +89,105 @@ class PinsReviewServiceTest {
         ApUser user = new ApUser();
         user.setId(88);
 
-        // 模拟 insert 时由数据库回填主键
-        when(pinsAuditTaskMapper.insert(any(ApPinsAuditTask.class))).thenAnswer(new Answer<Integer>() {
+        // 模拟数据库回填主键，同时校验统一表的字段映射
+        doAnswer(new Answer<Void>() {
             @Override
-            public Integer answer(InvocationOnMock invocation) {
-                ApPinsAuditTask task = invocation.getArgument(0);
+            public Void answer(InvocationOnMock invocation) {
+                ApAuditTask task = invocation.getArgument(0);
+                assertEquals(ApAuditTask.BIZ_PINS, task.getBizType());
+                assertEquals(ApAuditTask.taskKey(ApAuditTask.BIZ_PINS, 999L), task.getTaskKey());
+                assertEquals(999L, task.getBizId());
+                assertEquals(88, task.getActorUserId(), "user 优先作为行为用户");
+                assertEquals(20001, task.getAuthorId());
+                assertEquals(ApAuditTask.STATUS_PENDING, task.getStatus());
                 task.setId(777L);
-                return 1;
+                return null;
             }
-        });
-        when(pinsAuditTaskMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
-        when(pinsAuditTaskMapper.selectById(777L)).thenReturn(buildTask(777L, 999L, 88));
-        when(apPinsMapper.selectById(999L)).thenReturn(pins);
-        when(pinsAuditService.audit(any(AuditContext.class))).thenReturn(AuditResult.passed());
+        }).when(auditTaskDispatcher).enqueue(any(ApAuditTask.class));
 
         pinsReviewService.asyncReviewPins(pins, user);
 
-        verify(pinsAuditTaskMapper).insert(any(ApPinsAuditTask.class));
-        // 入队后立即触发了一次真实审核
-        verify(pinsAuditService).audit(any(AuditContext.class));
+        verify(auditTaskDispatcher).enqueue(any(ApAuditTask.class));
+        verify(auditTaskDispatcher).processIfPending(777L);
     }
 
     @Test
-    @DisplayName("B2 - 重复入队(唯一键冲突)不抛异常，幂等可容忍")
-    void testAsyncReviewPinsDuplicateKeyIdempotent() {
-        ApPins pins = new ApPins();
-        pins.setId(998L);
-        pins.setAuthorId(20001L);
-        pins.setContent("重复入队");
-        ApUser user = new ApUser();
-        user.setId(88);
+    @DisplayName("入队：沸点或ID为空时直接返回，不写库")
+    void enqueueSkipsWhenPinsMissing() {
+        pinsReviewService.asyncReviewPins(null, new ApUser());
+        verify(auditTaskDispatcher, never()).enqueue(any(ApAuditTask.class));
 
-        when(pinsAuditTaskMapper.insert(any(ApPinsAuditTask.class)))
-                .thenThrow(new DuplicateKeyException("duplicate uq_pins_id"));
-
-        assertDoesNotThrow(() -> pinsReviewService.asyncReviewPins(pins, user));
-        verify(pinsAuditTaskMapper).insert(any(ApPinsAuditTask.class));
+        pinsReviewService.asyncReviewPins(new ApPins(), new ApUser());
+        verify(auditTaskDispatcher, never()).enqueue(any(ApAuditTask.class));
     }
 
-    // ==================== CAS 抢占 ====================
+    // ==================== 审核 ====================
 
     @Test
-    @DisplayName("B2 - CAS 未抢占成功(已被他处处理)则不重复执行审核")
-    void testProcessTaskNotAcquiredSkipsAudit() {
-        // update 返回 0 -> PENDING->PROCESSING 抢占失败
-        when(pinsAuditTaskMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
-
-        pinsReviewService.processTaskIfPending(1L);
-
-        verify(pinsAuditService, never()).audit(any(AuditContext.class));
-    }
-
-    // ==================== 完成 ====================
-
-    @Test
-    @DisplayName("B2 - 审核通过: 触发等级积分事件")
-    void testProcessTaskPassedTriggersBehavior() {
-        long taskId = 1L;
-        when(pinsAuditTaskMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
-        when(pinsAuditTaskMapper.selectById(taskId)).thenReturn(buildTask(taskId, 999L, 88));
+    @DisplayName("审核：回查沸点表取最新内容（而非任务表快照）")
+    void auditReadsLatestPinsContent() {
         ApPins pins = new ApPins();
         pins.setId(999L);
+        pins.setContent("作者刚刚修改过的最新内容");
+        pins.setAuthorId(20001L);
         pins.setAuthorName("测试作者");
         when(apPinsMapper.selectById(999L)).thenReturn(pins);
         when(pinsAuditService.audit(any(AuditContext.class))).thenReturn(AuditResult.passed());
 
-        pinsReviewService.processTaskIfPending(taskId);
+        AuditResult result = pinsReviewService.audit(buildTask(999L));
 
+        assertTrue(result.isPassed());
+        verify(apPinsMapper).selectById(999L);
         verify(pinsAuditService).audit(any(AuditContext.class));
+    }
+
+    @Test
+    @DisplayName("审核：沸点不存在时返回失败结果，不调用审核服务")
+    void auditMissingPinsReturnsFailed() {
+        when(apPinsMapper.selectById(any())).thenReturn(null);
+
+        AuditResult result = pinsReviewService.audit(buildTask(999L));
+
+        assertFalse(result.isPassed());
+        verify(pinsAuditService, never()).audit(any(AuditContext.class));
+    }
+
+    // ==================== 终态回调 ====================
+
+    @Test
+    @DisplayName("onPassed：触发发布沸点的等级积分事件")
+    void onPassedTriggersBehaviorEvent() {
+        ApAuditTask task = buildTask(999L);
+        task.setActorUserId(88);
+        ApPins pins = new ApPins();
+        pins.setAuthorName("测试作者");
+        when(apPinsMapper.selectById(999L)).thenReturn(pins);
+
+        pinsReviewService.onPassed(task);
+
         verify(behaviorEventBus).execute(any(BehaviorContext.class));
     }
 
     @Test
-    @DisplayName("B2 - 审核违规: 标记违规且不触发等级积分事件")
-    void testProcessTaskViolationNoBehavior() {
-        long taskId = 2L;
-        when(pinsAuditTaskMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
-        when(pinsAuditTaskMapper.selectById(taskId)).thenReturn(buildTask(taskId, 999L, 88));
-        when(apPinsMapper.selectById(999L)).thenReturn(new ApPins());
-        when(pinsAuditService.audit(any(AuditContext.class))).thenReturn(AuditResult.failed("违规"));
+    @DisplayName("onPassed：缺少行为用户时不触发事件（避免给不存在的用户记积分）")
+    void onPassedSkippedWithoutActor() {
+        ApAuditTask task = buildTask(999L);
+        task.setActorUserId(null);
 
-        pinsReviewService.processTaskIfPending(taskId);
+        pinsReviewService.onPassed(task);
 
-        verify(pinsAuditService).audit(any(AuditContext.class));
         verify(behaviorEventBus, never()).execute(any(BehaviorContext.class));
     }
 
-    // ==================== 异常重试 ====================
+    // ==================== 调度委托 ====================
 
     @Test
-    @DisplayName("B2 - 审核服务不可用: 不误标违规，退回待审调度重试(不抛异常)")
-    void testProcessTaskAiUnavailableRetries() {
-        long taskId = 3L;
-        when(pinsAuditTaskMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
-        // 初始 retryCount=0；注意 selectById 在 CAS 后与 retryOrDegrade 中都会被调用
-        ApPinsAuditTask task = buildTask(taskId, 999L, 88);
-        task.setRetryCount(0);
-        when(pinsAuditTaskMapper.selectById(taskId)).thenReturn(task);
-        when(apPinsMapper.selectById(999L)).thenReturn(new ApPins());
-        when(pinsAuditService.audit(any(AuditContext.class)))
-                .thenThrow(new AuditServiceUnavailableException("AI不可用"));
+    @DisplayName("调度委托：processTaskIfPending / listPendingDue 原样转交 Dispatcher")
+    void delegatesSchedulingToDispatcher() {
+        pinsReviewService.processTaskIfPending(1L);
+        verify(auditTaskDispatcher).processIfPending(1L);
 
-        // 关键断言：fail-closed 异常被捕获，沿可靠队列退避重试，不向上抛、不误标违规
-        assertDoesNotThrow(() -> pinsReviewService.processTaskIfPending(taskId));
-        verify(pinsAuditService).audit(any(AuditContext.class));
-        verify(behaviorEventBus, never()).execute(any(BehaviorContext.class));
-        // CAS 抢占 + 退避重试(退回 PENDING) 至少产生两次 update
-        verify(pinsAuditTaskMapper, atLeastOnce()).update(isNull(), any(LambdaUpdateWrapper.class));
-    }
-
-    // ==================== 辅助 ====================
-
-    private ApPinsAuditTask buildTask(Long taskId, Long pinsId, Integer userId) {
-        ApPinsAuditTask task = new ApPinsAuditTask();
-        task.setId(taskId);
-        task.setPinsId(pinsId);
-        task.setUserId(userId);
-        task.setStatus(ApPinsAuditTask.STATUS_PENDING);
-        task.setRetryCount(0);
-        return task;
+        pinsReviewService.listPendingDue(50);
+        verify(auditTaskDispatcher).listPendingDue(ApAuditTask.BIZ_PINS, 50);
     }
 }

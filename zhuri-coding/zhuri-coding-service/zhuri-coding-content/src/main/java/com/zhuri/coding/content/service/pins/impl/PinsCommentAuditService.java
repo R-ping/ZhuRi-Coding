@@ -1,54 +1,70 @@
 package com.zhuri.coding.content.service.pins.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhuri.coding.apis.notification.INotificationClient;
-import com.zhuri.coding.content.mapper.pins.ApPinsCommentAuditTaskMapper;
 import com.zhuri.coding.content.mapper.pins.ApPinsCommentMapper;
 import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
+import com.zhuri.coding.content.service.ai.AiLlmGateway;
 import com.zhuri.coding.content.service.article.impl.AbstractAuditService;
+import com.zhuri.coding.content.service.audit.AuditTaskDispatcher;
+import com.zhuri.coding.content.service.audit.AuditTaskHandler;
 import com.zhuri.coding.content.utils.NotificationHelper;
 import com.zhuri.coding.model.audit.AuditContext;
 import com.zhuri.coding.model.audit.AuditEntityType;
 import com.zhuri.coding.model.audit.AuditResult;
-import com.zhuri.coding.model.audit.pojos.ApPinsCommentAuditTask;
+import com.zhuri.coding.model.audit.pojos.ApAuditTask;
 import com.zhuri.coding.model.behavior.pojos.UserBehaviorRecord;
 import com.zhuri.coding.model.pins.pojos.ApPinsComment;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 沸点评论异步审核服务（数据库可靠队列版，Step3 沸点接入治理）
+ * 沸点评论异步审核服务（数据库可靠队列版）
  *
  * 与 {@link com.zhuri.coding.content.service.comment.impl.CommentAuditService}（文章评论）同构，
- * 但独立建表 ap_pins_comment_audit_task / 独立服务，零侵入文章侧已联调链路。
- * （两张源表 id 各自 AUTO 自增会撞号，无法共用文章任务的 comment_id 唯一键。）
+ * 差异在终态动作：沸点评论的"新评论"通知是**创建即通知**（评论对作者可见时已发送），
+ * 审核链路不补发任何通知，因此无需实现 {@link AuditTaskHandler#onDegraded}。
  *
  * 审核策略：先展示后审核
  * 1. 沸点评论发布时立即保存到数据库（用户可见），并向沸点作者发送"新评论"通知（创建即通知，既有行为保持）
- * 2. 审核任务持久化到 ap_pins_comment_audit_task 队列，后台异步（延迟约 5-10 秒）执行审核
+ * 2. 审核任务持久化到统一任务表 ap_audit_task（bizType=pins_comment），后台异步（延迟约 5-10 秒）执行审核
  * 3. 红线违规 → 物理删除评论 + 给评论者发违规系统通知
  * 4. 温和违规（引战/阴阳/软广）→ is_hidden=1 折叠：全局隐藏（对所有人含本人不可见，数据保留可审计）
  *
- * 可靠性保证：任务落库 + CAS 抢占 + 指数退避重试 + 超限降级放行（系统故障不误删正常评论）。
+ * 可靠性保证：任务落库 + CAS 抢占 + 指数退避重试 + 超限降级放行（系统故障不误删正常评论）
+ * —— 这些调度语义现由 {@link AuditTaskDispatcher} 统一提供，三个审核业务共用一份实现。
+ *
+ * <p><b>审核对象语义</b>：读**任务表里的内容快照**（与文章评论一致，与沸点审核的"回查业务表"不同）。
+ *
+ * <p><b>迁移历史</b>：2026-09-26 由独立表 {@code ap_pins_comment_audit_task} 并入统一表。
  */
 @Slf4j
 @Service
-public class PinsCommentAuditService extends AbstractAuditService {
+public class PinsCommentAuditService extends AbstractAuditService implements AuditTaskHandler {
+
+    /** 本服务负责的业务类型（统一表 ap_audit_task 内按此值路由） */
+    private static final String BIZ_TYPE = ApAuditTask.BIZ_PINS_COMMENT;
+
+    /** 尽快执行触发的延迟窗口下界（毫秒） */
+    private static final long TRIGGER_DELAY_MIN_MILLIS = 5_000L;
+    /** 延迟窗口的随机上浮范围（毫秒），避免同批评论同时触发审核 */
+    private static final long TRIGGER_DELAY_JITTER_MILLIS = 5_000L;
 
     @Autowired
     private ApPinsCommentMapper pinsCommentMapper;
 
     @Autowired
-    private ApPinsCommentAuditTaskMapper auditTaskMapper;
+    private AuditTaskDispatcher auditTaskDispatcher;
 
     @Autowired(required = false)
     private INotificationClient notificationClient;
@@ -62,7 +78,7 @@ public class PinsCommentAuditService extends AbstractAuditService {
      * 模型选择交由网关内的 AiModelRouter 按 feature 路由（pins_comment_audit → 低成本模型）。
      */
     @Autowired
-    private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
+    private AiLlmGateway llmGateway;
 
     /**
      * 「尽快执行」触发专用池。
@@ -70,8 +86,19 @@ public class PinsCommentAuditService extends AbstractAuditService {
      * ForkJoinPool，而审核任务内部含 LLM 调用（秒级阻塞），会拖累公共池里的其它任务。
      */
     @Autowired
-    @org.springframework.beans.factory.annotation.Qualifier("aiAuditTriggerExecutor")
-    private java.util.concurrent.Executor auditTriggerExecutor;
+    @Qualifier("aiAuditTriggerExecutor")
+    private Executor auditTriggerExecutor;
+
+    /** 自注册到调度器：保持依赖单向（Service → Dispatcher），避免与 Dispatcher 的集合注入形成循环依赖 */
+    @PostConstruct
+    void registerSelf() {
+        auditTaskDispatcher.register(this);
+    }
+
+    @Override
+    public String bizType() {
+        return BIZ_TYPE;
+    }
 
     /**
      * 沸点评论入队并触发异步审核（延迟约 5-10 秒）
@@ -85,32 +112,30 @@ public class PinsCommentAuditService extends AbstractAuditService {
         }
         Long commentId = context.getEntityId();
         try {
-            // 1. 幂等持久化任务（同一条评论仅一条任务，唯一键 comment_id 兜底）
-            ApPinsCommentAuditTask task = new ApPinsCommentAuditTask();
-            task.setCommentId(commentId);
-            task.setCommenterId(context.getUserId() != null ? context.getUserId() : 0);
-            task.setCommenterName(context.getAuthorName() != null ? context.getAuthorName() : "");
+            // 1. 幂等持久化任务（同一条评论仅一条任务，唯一键 uk_task_key 兜底）
+            ApAuditTask task = new ApAuditTask();
+            task.setTaskKey(ApAuditTask.taskKey(BIZ_TYPE, commentId));
+            task.setBizType(BIZ_TYPE);
+            task.setBizId(commentId);
+            task.setAuthorId(context.getUserId() != null ? context.getUserId() : 0);
+            task.setAuthorName(context.getAuthorName() != null ? context.getAuthorName() : "");
             task.setContent(context.getContent() != null ? context.getContent() : "");
             task.setTargetType(context.getTargetType() != null ? context.getTargetType() : 2);
             task.setTargetId(context.getTargetId());
             task.setTargetUserId(context.getTargetUserId());
-            task.setStatus(ApPinsCommentAuditTask.STATUS_PENDING);
+            task.setStatus(ApAuditTask.STATUS_PENDING);
             task.setRetryCount(0);
             task.setNextRetryTime(new Date());
             task.setCreateTime(new Date());
             task.setUpdateTime(new Date());
-            try {
-                auditTaskMapper.insert(task);
-            } catch (DuplicateKeyException e) {
-                // 已存在同评论的待审核任务，说明已有一次入队在途，忽略即可
-                log.info("沸点评论审核任务已存在，跳过重复入队, commentId={}", commentId);
-            }
+            auditTaskDispatcher.enqueue(task);
 
             // 2. 请求一次尽快执行（延迟窗口配置，与"先展示后审核"窗口保持一致）
             //    延迟仍由 delayedExecutor 负责，仅把任务体投给专用有界池（不再落到 JVM 公共池）
-            long delay = 5000 + (long) (Math.random() * 5000);
+            long delay = TRIGGER_DELAY_MIN_MILLIS + (long) (Math.random() * TRIGGER_DELAY_JITTER_MILLIS);
+            final Long taskId = task.getId();
             CompletableFuture.runAsync(
-                () -> processTaskIfPending(task.getId()),
+                () -> auditTaskDispatcher.processIfPending(taskId),
                 CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS, auditTriggerExecutor))
                 .exceptionally(e -> {
                     // 池拒绝/任务异常：只记录。真正的兜底是定时补偿（PinsCommentAuditRecoveryTask）
@@ -125,103 +150,40 @@ public class PinsCommentAuditService extends AbstractAuditService {
     }
 
     /**
-     * 若任务仍处于待审核则抢执行审核（CAS 抢占，避免与定时补偿重复处理）
-     * 供进程内直接触发与定时补偿任务共同调用。
+     * 依据队列数据重建审核上下文并执行审核。
+     *
+     * <p>通过 / 违规后的业务动作（折叠判定、删评论、撤销行为记录、发通知）由父类模板方法完成，
+     * 本方法只负责把任务表里的字段还原成 {@link AuditContext}。
      */
-    public void processTaskIfPending(Long taskId) {
-        if (taskId == null) {
-            return;
-        }
-        try {
-            // CAS：仅当 status=PENDING 时才允许抢占为 PROCESSING，保证同一任务只会被一个执行体处理
-            boolean acquired = auditTaskMapper.update(null, new LambdaUpdateWrapper<ApPinsCommentAuditTask>()
-                .eq(ApPinsCommentAuditTask::getId, taskId)
-                .eq(ApPinsCommentAuditTask::getStatus, ApPinsCommentAuditTask.STATUS_PENDING)
-                .set(ApPinsCommentAuditTask::getStatus, ApPinsCommentAuditTask.STATUS_PROCESSING)
-                .set(ApPinsCommentAuditTask::getUpdateTime, new Date())) > 0;
-            if (!acquired) {
-                return;
-            }
-
-            ApPinsCommentAuditTask task = auditTaskMapper.selectById(taskId);
-            if (task == null) {
-                return;
-            }
-
-            // 依据队列数据重建审核上下文
-            AuditContext context = new AuditContext(AuditEntityType.COMMENT, task.getCommentId(), task.getCommenterId().longValue());
-            context.withTitle("")
+    @Override
+    public AuditResult audit(ApAuditTask task) {
+        AuditContext context = new AuditContext(
+                AuditEntityType.COMMENT, task.getBizId(),
+                task.getAuthorId() == null ? null : task.getAuthorId().longValue());
+        context.withTitle("")
                 .withContent(task.getContent())
-                .withAuthorName(task.getCommenterName())
-                .withUserId(task.getCommenterId())
+                .withAuthorName(task.getAuthorName())
+                .withUserId(task.getAuthorId())
                 .withTargetType(task.getTargetType())
                 .withTargetId(task.getTargetId())
                 .withTargetUserId(task.getTargetUserId());
-
-            log.info("开始审核沸点评论, commentId={}, taskId={}", task.getCommentId(), taskId);
-            AuditResult result = audit(context);
-
-            if (result.isPassed()) {
-                markDone(taskId, ApPinsCommentAuditTask.STATUS_PASSED);
-                log.info("沸点评论审核通过, commentId={}", task.getCommentId());
-            } else {
-                markDone(taskId, ApPinsCommentAuditTask.STATUS_VIOLATION);
-                log.info("沸点评论审核违规, commentId={}, reason={}", task.getCommentId(), result.getReason());
-            }
-        } catch (Exception e) {
-            log.error("沸点评论审核执行异常, taskId={}", taskId, e);
-            retryOrDegrade(taskId);
-        }
+        return audit(context);
     }
 
-    /** 恢复任务为待审核并按指数退避安排重试时间；超限则降级通过 */
-    private void retryOrDegrade(Long taskId) {
-        ApPinsCommentAuditTask task = auditTaskMapper.selectById(taskId);
-        if (task == null) {
-            return;
-        }
-        int retry = (task.getRetryCount() == null ? 0 : task.getRetryCount()) + 1;
-        if (retry > ApPinsCommentAuditTask.MAX_RETRY) {
-            auditTaskMapper.update(null, new LambdaUpdateWrapper<ApPinsCommentAuditTask>()
-                .eq(ApPinsCommentAuditTask::getId, taskId)
-                .set(ApPinsCommentAuditTask::getStatus, ApPinsCommentAuditTask.STATUS_DEGRADED_PASSED)
-                .set(ApPinsCommentAuditTask::getRetryCount, retry)
-                .set(ApPinsCommentAuditTask::getAuditTime, new Date())
-                .set(ApPinsCommentAuditTask::getUpdateTime, new Date()));
-            log.warn("沸点评论审核重试超限，降级通过, taskId={}, commentId={}", taskId, task.getCommentId());
-            // 降级即评论保持可见；沸点作者通知为"创建即通知"，审核链路不补发通知
-            return;
-        }
-        // 指数退避：60s -> 120s -> 240s ...
-        long backoffMillis = 60_000L * (1L << (retry - 1));
-        Date next = new Date(System.currentTimeMillis() + backoffMillis);
-        auditTaskMapper.update(null, new LambdaUpdateWrapper<ApPinsCommentAuditTask>()
-            .eq(ApPinsCommentAuditTask::getId, taskId)
-            .eq(ApPinsCommentAuditTask::getStatus, ApPinsCommentAuditTask.STATUS_PROCESSING)
-            .set(ApPinsCommentAuditTask::getStatus, ApPinsCommentAuditTask.STATUS_PENDING)
-            .set(ApPinsCommentAuditTask::getRetryCount, retry)
-            .set(ApPinsCommentAuditTask::getNextRetryTime, next)
-            .set(ApPinsCommentAuditTask::getUpdateTime, new Date()));
-        log.warn("沸点评论审核执行异常，安排退避重试, taskId={}, retryCount={}", taskId, retry);
+    /**
+     * 供定时补偿任务批量拉取待审核任务（委托 Dispatcher，保留原签名以减少调用方改动）。
+     * Dispatcher 内部按 bizType 隔离，避免与其他业务抢占批次配额。
+     */
+    public List<ApAuditTask> listPendingDue(int limit) {
+        return auditTaskDispatcher.listPendingDue(BIZ_TYPE, limit);
     }
 
-    /** 标记任务完成 */
-    private void markDone(Long taskId, int status) {
-        auditTaskMapper.update(null, new LambdaUpdateWrapper<ApPinsCommentAuditTask>()
-            .eq(ApPinsCommentAuditTask::getId, taskId)
-            .set(ApPinsCommentAuditTask::getStatus, status)
-            .set(ApPinsCommentAuditTask::getAuditTime, new Date())
-            .set(ApPinsCommentAuditTask::getUpdateTime, new Date()));
-    }
-
-    /** 供定时补偿任务批量拉取待审核任务（按 next_retry_time 到期排序） */
-    public List<ApPinsCommentAuditTask> listPendingDue(int limit) {
-        return auditTaskMapper.selectList(new LambdaQueryWrapper<ApPinsCommentAuditTask>()
-            .eq(ApPinsCommentAuditTask::getStatus, ApPinsCommentAuditTask.STATUS_PENDING)
-            .and(w -> w.isNull(ApPinsCommentAuditTask::getNextRetryTime).or()
-                .le(ApPinsCommentAuditTask::getNextRetryTime, new Date()))
-            .orderByAsc(ApPinsCommentAuditTask::getId)
-            .last("LIMIT " + Math.max(1, Math.min(limit, 500))));
+    /**
+     * 触发一次审核（委托 Dispatcher）。
+     * 供进程内直接触发与定时补偿任务共同调用，CAS 抢占保证不重复处理。
+     */
+    public void processTaskIfPending(Long taskId) {
+        auditTaskDispatcher.processIfPending(taskId);
     }
 
     @Override
