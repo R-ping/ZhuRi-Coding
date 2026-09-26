@@ -133,12 +133,8 @@ public class OutboxDispatcher {
      *
      * <p>三种策略的差别只在于「失败方向的错哪边更不可接受」，但实现上都保证同一件事：
      * <b>事件一定离开 PENDING</b>，不会永远卡在重试循环里。
-     *
-     * <p>可见性为包级（而非 private）是为了让单测直接覆盖策略分派：{@link #safeDispatchOne}
-     * 全流程依赖 CAS 抢占，而 CAS 用到的 {@code LambdaUpdateWrapper} 需要 MyBatis-Plus 的
-     * lambda 缓存（由 Spring/MyBatis 上下文初始化），纯单测环境不可用。
      */
-    void handleExhausted(OutboxEvent event, OutboxHandler handler, String reason) {
+    private void handleExhausted(OutboxEvent event, OutboxHandler handler, String reason) {
         switch (handler.failPolicy()) {
             case DEGRADE -> {
                 // 降级放行：先执行业务降级动作，再置 DONE。
