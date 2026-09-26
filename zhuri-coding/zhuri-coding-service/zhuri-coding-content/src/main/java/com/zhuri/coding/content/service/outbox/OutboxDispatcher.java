@@ -48,6 +48,8 @@ public class OutboxDispatcher {
     private final AtomicLong doneTotal = new AtomicLong();
     private final AtomicLong failTotal = new AtomicLong();
     private final AtomicLong deadTotal = new AtomicLong();
+    /** 重试耗尽后按 DEGRADE / DISCARD 收尾的次数（非成功，必须与 doneTotal 区分统计） */
+    private final AtomicLong degradedTotal = new AtomicLong();
 
     @Autowired
     public OutboxDispatcher(OutboxEventMapper outboxEventMapper,
@@ -87,11 +89,13 @@ public class OutboxDispatcher {
     /** 单条事件分发：CAS 抢占 → 路由执行 → markDone/markFailed，任何异常不影响其余事件 */
     void safeDispatchOne(OutboxEvent event) {
         dispatchTotal.incrementAndGet();
+        // 声明在 try 之外：catch 分支需要按 Handler 声明的失败策略收尾
+        OutboxHandler handler = null;
         try {
             if (!casClaim(event)) {
                 return; // 被其它实例抢走，跳过
             }
-            OutboxHandler handler = handlerIndex.get(event.getEventType());
+            handler = handlerIndex.get(event.getEventType());
             if (handler == null) {
                 // 配置错误（没注册 handler）：按失败走重试/死信，ERROR 暴露
                 log.error("[OUTBOX] 未找到事件处理器: type={}, eventKey={}",
@@ -113,7 +117,53 @@ public class OutboxDispatcher {
                 markDead(event, e.getMessage());
                 return;
             }
-            outboxService.markFailed(event, String.valueOf(e.getMessage()));
+            String reason = String.valueOf(e.getMessage());
+            // 本次失败即耗尽重试 → 按 Handler 声明的终态策略收尾，不再排程重试
+            // （handler 为 null 只可能是未注册 handler 的配置错误，此时没有策略可查，走常规重试/死信）
+            if (handler != null && outboxService.willExhaust(event)) {
+                handleExhausted(event, handler, reason);
+                return;
+            }
+            outboxService.markFailed(event, reason);
+        }
+    }
+
+    /**
+     * 重试耗尽的终态处理：按 {@link OutboxHandler#failPolicy()} 决定收尾方式。
+     *
+     * <p>三种策略的差别只在于「失败方向的错哪边更不可接受」，但实现上都保证同一件事：
+     * <b>事件一定离开 PENDING</b>，不会永远卡在重试循环里。
+     *
+     * <p>可见性为包级（而非 private）是为了让单测直接覆盖策略分派：{@link #safeDispatchOne}
+     * 全流程依赖 CAS 抢占，而 CAS 用到的 {@code LambdaUpdateWrapper} 需要 MyBatis-Plus 的
+     * lambda 缓存（由 Spring/MyBatis 上下文初始化），纯单测环境不可用。
+     */
+    void handleExhausted(OutboxEvent event, OutboxHandler handler, String reason) {
+        switch (handler.failPolicy()) {
+            case DEGRADE -> {
+                // 降级放行：先执行业务降级动作，再置 DONE。
+                // onExhausted 自身异常不改变终态判定 —— 此时已明确不再重试，
+                // 若因回调异常抛出去，会被误当作"普通失败"重新排程，退化成无限重试。
+                try {
+                    handler.onExhausted(event.getPayload(), reason);
+                } catch (Exception ex) {
+                    log.error("[OUTBOX] onExhausted 回调异常，仍按降级收尾: eventKey={}, type={}",
+                            event.getEventKey(), event.getEventType(), ex);
+                }
+                degradedTotal.incrementAndGet();
+                outboxService.markExhaustedDone(event, reason);
+            }
+            case DISCARD -> {
+                degradedTotal.incrementAndGet();
+                outboxService.markExhaustedDone(event, reason);
+                log.warn("[OUTBOX] 事件按 DISCARD 策略丢弃: eventKey={}, type={}",
+                        event.getEventKey(), event.getEventType());
+            }
+            default -> {
+                deadTotal.incrementAndGet();
+                // 复用 markFailed：内部同样判定为耗尽 → 置 DEAD + ERROR 告警
+                outboxService.markFailed(event, reason);
+            }
         }
     }
 
@@ -165,6 +215,7 @@ public class OutboxDispatcher {
         m.put("doneTotal", doneTotal.get());
         m.put("failTotal", failTotal.get());
         m.put("deadTotal", deadTotal.get());
+        m.put("degradedTotal", degradedTotal.get());
         return m;
     }
 

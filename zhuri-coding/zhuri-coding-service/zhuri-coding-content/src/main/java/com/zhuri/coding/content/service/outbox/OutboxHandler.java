@@ -22,4 +22,27 @@ public interface OutboxHandler {
      * @param payload OutboxService.record 时写入的 JSON 载荷
      */
     void execute(String payload) throws Exception;
+
+    /**
+     * 重试耗尽后的终态策略，默认 {@link FailPolicy#DEAD}（保守：不静默丢弃）。
+     *
+     * <p>只在"本次失败即将耗尽重试次数"时被读取，实现应为**无副作用的常量返回**。
+     * 需要"降级放行"的业务（如内容审核）返回 {@link FailPolicy#DEGRADE}。
+     */
+    default FailPolicy failPolicy() {
+        return FailPolicy.DEAD;
+    }
+
+    /**
+     * 重试耗尽且 {@link #failPolicy()} 为 {@link FailPolicy#DEGRADE} 时回调，用于业务降级。
+     *
+     * <p>约定：本方法应尽最大努力完成"保持原状"的降级动作（例如让内容保持可见），
+     * 且**必须容忍重复执行**——调用后事件会被置为 DONE，但进程若在置位前崩溃，事件仍会重新分发。
+     *
+     * @param payload   事件载荷
+     * @param lastError 最后一次失败原因（可能为 null）
+     */
+    default void onExhausted(String payload, String lastError) {
+        // 默认无降级动作：配合默认策略 DEAD 使用，正常情况下不会走到这里
+    }
 }

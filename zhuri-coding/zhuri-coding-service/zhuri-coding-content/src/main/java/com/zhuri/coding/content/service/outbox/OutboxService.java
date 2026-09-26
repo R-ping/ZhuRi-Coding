@@ -35,4 +35,27 @@ public interface OutboxService {
      * @param errorReason 失败原因（截断 500 字符入库）
      */
     void markFailed(OutboxEvent event, String errorReason);
+
+    /**
+     * 判断"本次再失败一次"是否就会耗尽重试次数。
+     *
+     * <p>存在的意义：让「是否耗尽」的判定只定义一处（本实现），Dispatacher 据此决定
+     * 走常规重试还是走终态策略（{@link FailPolicy}），避免两处各写一遍导致口径漂移。
+     *
+     * @param event 被执行的事件（含当前 retryCount / maxRetries）
+     * @return true = 本次失败即耗尽，应由 Dispatcher 按 Handler 的策略收尾
+     */
+    boolean willExhaust(OutboxEvent event);
+
+    /**
+     * 终态为"降级放行 / 丢弃"时，把事件置为 DONE 并**保留最后一次失败原因**。
+     *
+     * <p>与 {@link #markDone(Long)} 的区别：本方法会把失败原因写入 {@code last_error}，
+     * 而 markDone 是"真的成功了"。二者混用会造成可观测性盲区 ——
+     * 「有多少事件是降级收尾的」将无法统计。
+     *
+     * @param event       被执行的事件
+     * @param errorReason 最后一次失败原因（截断 500 字符入库）
+     */
+    void markExhaustedDone(OutboxEvent event, String errorReason);
 }

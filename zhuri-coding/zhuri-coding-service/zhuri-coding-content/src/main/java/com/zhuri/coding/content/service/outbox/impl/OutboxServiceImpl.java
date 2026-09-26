@@ -55,10 +55,8 @@ public class OutboxServiceImpl implements OutboxService {
 
     @Override
     public void markFailed(OutboxEvent event, String errorReason) {
-        int current = event.getRetryCount() == null ? 0 : event.getRetryCount();
-        int max = event.getMaxRetries() == null || event.getMaxRetries() <= 0
-                ? defaultMaxRetries() : event.getMaxRetries();
-        int next = current + 1;
+        int next = nextRetryCount(event);
+        int max = effectiveMaxRetries(event);
         Date now = new Date();
 
         if (next >= max) {
@@ -86,6 +84,40 @@ public class OutboxServiceImpl implements OutboxService {
                 .set(OutboxEvent::getUpdatedTime, now));
         log.warn("Outbox 事件执行失败，第 {} 次重试已排程(+{}min): id={}, eventKey={}",
                 next, backoffMinutes, event.getId(), event.getEventKey());
+    }
+
+    @Override
+    public boolean willExhaust(OutboxEvent event) {
+        return nextRetryCount(event) >= effectiveMaxRetries(event);
+    }
+
+    @Override
+    public void markExhaustedDone(OutboxEvent event, String errorReason) {
+        int next = nextRetryCount(event);
+        // 状态置 DONE，但 last_error 保留失败原因：降级收尾不等于"真的成功了"，
+        // 后续统计「有多少事件是降级收尾的」必须能查出来
+        outboxEventMapper.update(null, new LambdaUpdateWrapper<OutboxEvent>()
+                .eq(OutboxEvent::getId, event.getId())
+                .set(OutboxEvent::getStatus, OutboxEvent.STATUS_DONE)
+                .set(OutboxEvent::getRetryCount, next)
+                .set(OutboxEvent::getLastError, truncate(errorReason))
+                .set(OutboxEvent::getUpdatedTime, new Date()));
+        log.warn("[OUTBOX-DEGRADED] 事件重试耗尽，按 Handler 策略降级收尾并置 DONE: "
+                        + "id={}, eventKey={}, type={}, retries={}/{}, lastError={}",
+                event.getId(), event.getEventKey(), event.getEventType(),
+                next, effectiveMaxRetries(event), truncate(errorReason));
+    }
+
+    /** 本次失败后的重试序号（当前次数 + 1）——「是否耗尽」的唯一判定口径 */
+    private int nextRetryCount(OutboxEvent event) {
+        int current = event.getRetryCount() == null ? 0 : event.getRetryCount();
+        return current + 1;
+    }
+
+    /** 有效重试上限：null 或非正数回落到默认值（与建表 DEFAULT 5 一致） */
+    private int effectiveMaxRetries(OutboxEvent event) {
+        int max = event.getMaxRetries() == null ? 0 : event.getMaxRetries();
+        return max <= 0 ? defaultMaxRetries() : max;
     }
 
     /** 写库时统一缺省重试上限（与建表 DEFAULT 5 一致） */
