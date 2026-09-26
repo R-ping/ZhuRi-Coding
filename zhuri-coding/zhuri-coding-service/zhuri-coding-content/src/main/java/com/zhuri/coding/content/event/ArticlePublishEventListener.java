@@ -16,6 +16,16 @@ import org.springframework.stereotype.Component;
  * <p>解耦边界：本监听器属于发布业务侧，任何异常都不回传延迟任务层——
  * 延迟任务在落锚后即已置 COMPLETED；本监听器崩溃/应用重启导致的 INIT 滞留，
  * 由 20s 扫描按「INIT 滞留超 60s 重放」兜底收敛。
+ *
+ * <p><b>⚠️ 迁移阶段 2（切读）起本类已无事件源，处于待清理状态</b>：
+ * {@code ApArticleServiceImpl.createArticleEvent} 不再发布 {@link ArticlePublishEvent}
+ * （发布执行改由 Outbox 的 {@code ArticlePublishHandler} 承担），因此本监听器不会再被触发，
+ * 上面的「20s 扫描兜底」也已随 {@code ApArticleEventServiceImpl.processEvent}
+ * 摘除定时器而失效。本类连同 {@code article_event} 相关代码留待阶段 3 一并清理。
+ *
+ * <p>之所以<b>保留而不立即删除</b>：切读阶段需要保留完整回退形态 ——
+ * 一旦 Outbox 在真实流量下暴露问题，恢复 {@code createArticleEvent} 中的
+ * 「写锚点 + 发事件」两行即可让本监听器重新工作，无需重写代码。
  */
 @Component
 @Slf4j

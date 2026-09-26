@@ -10,7 +10,6 @@ import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.util.Date;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
@@ -69,7 +68,18 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
         publishFromInit(event);
     }
 
-    @Scheduled(fixedRate = 20000)
+    /**
+     * 补偿扫描入口。
+     *
+     * <p><b>迁移阶段 2（切读）起已移除 {@code @Scheduled} 定时触发</b>：
+     * {@code createArticleEvent} 不再写 {@code article_event}，本扫描已无数据可扫；
+     * 全部补偿职责由 Outbox 接管（5s 轮询 + 指数退避 + 重试耗尽终态策略 + 生命周期护栏）。
+     *
+     * <p>之所以连定时器也一并摘掉，而不是"留着空转也无害"：
+     * 一个还在运行的旧链路扫描器是<b>沉默的隐患</b> —— 一旦将来有人往
+     * {@code article_event} 写入数据，旧链路就会在不被告知的情况下复活，
+     * 与 Outbox 争夺同一条发布链路。保留方法体仅为阶段 3 清理前的可回退形态。
+     */
     public void processEvent() {
         for (ArticleEvent event : apArticleEventMapper.loadUnfinishedEvents()) {
             try {
