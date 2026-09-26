@@ -49,9 +49,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class PrecheckWorkflow {
 
-    /** 相似度预警阈值（与旧路径一致，低于该值不算"疑似重复"） */
-    private static final double SIMILAR_ALERT = 0.72;
-
     private final SafetyExpertWorker safetyWorker;
     private final QualityExpertWorker qualityWorker;
     private final SeoExpertWorker seoWorker;
@@ -309,27 +306,16 @@ public class PrecheckWorkflow {
             // 查重直接调用（对象级，不序列化——内部 ApArticle 大小/枚举字段不适合 JSON 往返）。
             // 查重自身无重试；单次执行若异常按 SKIPPED 处理，不拖垮 DAG 其余分支。
             List<SimilaritySearchTool.SimilarArticle> hits = similarityTool.searchSimilar(ctx.content());
-            return StageResult.ok(StageType.DUPLICATE, filterSelf(hits, ctx.articleId()), System.currentTimeMillis() - t);
+            // 挑出唯一预警对象（排除自身 + 取最相似一篇 + 过阈值）；无命中即空列表，
+            // "确定性地无高相似"由 fillSimilarity 统一落到 VO 上
+            SimilaritySearchTool.SimilarArticle alert = SimilaritySearchTool.pickAlert(hits, ctx.articleId());
+            return StageResult.ok(StageType.DUPLICATE,
+                    alert == null ? Collections.emptyList() : List.of(alert),
+                    System.currentTimeMillis() - t);
         } catch (Exception e) {
             log.warn("[PrecheckWorkflow] 查重阶段异常，按 SKIPPED 处理: {}", e.getMessage());
             return StageResult.skipped(StageType.DUPLICATE, System.currentTimeMillis() - t);
         }
-    }
-
-    /** 复用 {@link SimilaritySearchTool.SimilarArticle} 的 record；排除自身后仅保留最相似的一篇 */
-    private List<SimilaritySearchTool.SimilarArticle> filterSelf(List<SimilaritySearchTool.SimilarArticle> hits, Long articleId) {
-        if (hits == null || hits.isEmpty()) {
-            return Collections.emptyList();
-        }
-        for (SimilaritySearchTool.SimilarArticle hit : hits) {
-            if (articleId != null && articleId.equals(hit.article().getId())) {
-                continue;
-            }
-            if (hit.similarity() >= SIMILAR_ALERT) {
-                return List.of(hit); // 与历史行为一致：仅以最相似一篇作为预警
-            }
-        }
-        return Collections.emptyList();
     }
 
     /** 安全的单阶段执行（含失败重试与超时）：异常/超时重试至 maxRetry 次，均失败 → SKIPPED（非阻断） */
@@ -444,38 +430,22 @@ public class PrecheckWorkflow {
     }
 
     /**
-     * 相似度填充：这三个字段**只由确定性检索结果决定**——命中则写入，未命中 / 未查重一律清空。
+     * 相似度填充：把 DUPLICATE 阶段的结论落到 VO 上。
      *
-     * <p><b>为什么未命中也要清空</b>：{@code toVo} 会从 CRITIC 的 FINAL JSON 里解析
-     * {@code similar_article_id / similar_title / similarity}，即这些字段默认带着"模型填的值"。
-     * 若只做"命中才覆盖"，那么当确定性检索**未命中**（实际无高相似）时，模型编造的预警会被保留下来
-     * ——作者会看到一条查无实据的"疑似重复"，甚至点到错误链接。
-     * 清空即把该字段的权威来源收敛到确定性一侧，与 VO 自身的文档语义（"无高相似为 null"）一致。
+     * <p>写入语义（含"为什么未命中要显式清空"）见 {@link SimilaritySearchTool#applyToVo} ——
+     * 那是两条预检链路共用的唯一出口，本类不再保留自己的一份实现。
      *
-     * <p>「未查重」同样清空：SAFETY 违规短路（违规内容无需查重）与 DUPLICATE 阶段异常 SKIPPED
-     * 都属于"没有确定性结论"，此时保留模型填值同样不可信。
+     * <p>「未查重」同样按无高相似处理并清空：SAFETY 违规短路（违规内容无需查重）与
+     * DUPLICATE 阶段异常 SKIPPED 都属于"没有确定性结论"，不能让它落到一个"看起来像有结论"的状态。
      */
     private void fillSimilarity(AiPrecheckVo vo, StageContext ctx) {
         Object payload = ctx.payload(StageType.DUPLICATE);
         SimilaritySearchTool.SimilarArticle best = null;
         if (payload instanceof List<?> hits && !hits.isEmpty()
                 && hits.get(0) instanceof SimilaritySearchTool.SimilarArticle hit) {
-            best = hit;
+            best = hit; // DUPLICATE 阶段已用 pickAlert 挑好，至多一篇
         }
-        applySimilarity(vo, best);
-    }
-
-    /** 唯一的相似度写入出口：best 为 null 即"确定性地无高相似"（或未查重）→ 显式清空模型填值 */
-    private static void applySimilarity(AiPrecheckVo vo, SimilaritySearchTool.SimilarArticle best) {
-        if (best == null) {
-            vo.setSimilarArticleId(null);
-            vo.setSimilarTitle(null);
-            vo.setSimilarity(null);
-            return;
-        }
-        vo.setSimilarArticleId(best.article().getId());
-        vo.setSimilarTitle(best.article().getTitle());
-        vo.setSimilarity(Math.round(best.similarity() * 10000) / 10000.0);
+        SimilaritySearchTool.applyToVo(vo, best);
     }
 
     /** 解析 JSON 字符串，容错地剥离可能存在的 FINAL 前缀与代码块；不可解析返回 null */
@@ -507,11 +477,8 @@ public class PrecheckWorkflow {
         vo.setSuggestions(toStringList(root.get("suggestions")));
         vo.setTags(toStringList(root.get("tags")));
         vo.setSummary(trimToNull(root.path("summary").asText()));
-        if (root.hasNonNull("similar_article_id") && root.path("similar_article_id").asLong() > 0) {
-            vo.setSimilarArticleId(root.path("similar_article_id").asLong());
-            vo.setSimilarTitle(trimToNull(root.path("similar_title").asText()));
-            vo.setSimilarity(root.path("similarity").isNumber() ? root.path("similarity").asDouble() : null);
-        }
+        // 相似度三个字段刻意不在此解析：模型输出 schema 里已不含 similar_*，
+        // 其值只由 fillSimilarity 的确定性检索填充（唯一写入出口，见该类方法注释）。
         return vo;
     }
 

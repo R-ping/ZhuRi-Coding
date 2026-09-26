@@ -25,7 +25,6 @@ import com.zhuri.coding.content.service.ai.agent.workers.CriticExpertWorker;
 import com.zhuri.coding.content.service.ai.agent.workers.QualityExpertWorker;
 import com.zhuri.coding.content.service.ai.agent.workers.SafetyExpertWorker;
 import com.zhuri.coding.content.service.ai.agent.workers.SeoExpertWorker;
-import com.zhuri.coding.content.service.ai.spring.AiSimilarityTools;
 import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
 import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
 import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
@@ -69,8 +68,7 @@ class PublishAssistantServiceImplTest {
         + "\"quality_score\":88,\"is_tech\":true,"
         + "\"suggestions\":[\"补充锁超时与续期策略\",\"给出可运行示例代码\"],"
         + "\"tags\":[\"Redis\",\"分布式锁\"],"
-        + "\"summary\":\"讲解 Redis 分布式锁原理与落地要点\","
-        + "\"similar_article_id\":null,\"similar_title\":\"\",\"similarity\":null}";
+        + "\"summary\":\"讲解 Redis 分布式锁原理与落地要点\"}";
 
     @Mock private DashScopeClient dashScopeClient;
     @Mock private ChatModel chatModel;
@@ -81,7 +79,6 @@ class PublishAssistantServiceImplTest {
     @Mock private QualityExpertWorker qualityExpertWorker;
     @Mock private SeoExpertWorker seoExpertWorker;
     @Mock private CriticExpertWorker criticExpertWorker;
-    @Mock private AiSimilarityTools aiSimilarityTools;
     @Mock private SimilaritySearchTool similaritySearchTool;
 /** Prompt 注册表（P2-1 补齐）：默认回显 fallback（version=0），特定用例按 key 重打桩 */
     @Mock private com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
@@ -141,27 +138,28 @@ class PublishAssistantServiceImplTest {
     }
 
     @Test
-    @DisplayName("确定性未命中 → 清空模型在 FINAL JSON 里填的相似预警（防编造误报）")
-    void similarityNotHitClearsModelFilledAlert() {
+    @DisplayName("模型在 FINAL JSON 里自填相似预警 → 一律不采信（字段只由确定性检索产出）")
+    void modelFilledAlertIsIgnored() {
+        // 即使模型"好心"多填了 similar_*，也不该进入 VO：这三个字段已从 prompt 的 schema 移除，
+        // 解析路径也刻意不读它们 —— 权威来源只有 applySimilarity 那一处。
         String jsonWithFakeAlert = "{\"is_violation\":false,\"quality_score\":80,\"is_tech\":true,"
             + "\"suggestions\":[],\"tags\":[\"Redis\"],\"summary\":\"摘要。\","
             + "\"similar_article_id\":8888,\"similar_title\":\"编造的相似文章\",\"similarity\":0.99}";
         when(agentRunner.run(anyString(), anyString(), anyList(), any(), anyInt()))
             .thenReturn(new AgentResult(jsonWithFakeAlert, 1, true));
-        // 确定性检索无命中 → 必须推翻模型填的预警
         when(similaritySearchTool.searchSimilar(anyString())).thenReturn(List.of());
 
         AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
 
         assertNotNull(vo);
-        assertNull(vo.getSimilarArticleId(), "确定性未命中必须清空模型编造的相似文章 ID");
-        assertNull(vo.getSimilarTitle(), "确定性未命中必须清空模型编造的标题");
-        assertNull(vo.getSimilarity(), "确定性未命中必须清空模型编造的相似度（否则是查无实据的误报）");
+        assertNull(vo.getSimilarArticleId(), "模型自填的相似文章 ID 不得采信");
+        assertNull(vo.getSimilarTitle(), "模型自填的标题不得采信");
+        assertNull(vo.getSimilarity(), "模型自填的相似度不得采信（否则就是查无实据的误报）");
     }
 
     @Test
-    @DisplayName("确定性检索异常 → 同样按未命中清空（不保留模型填值）")
-    void similaritySearchFailureClearsModelFilledAlert() {
+    @DisplayName("确定性检索异常 → 按未命中处理，字段清空（不采信模型填值）")
+    void modelFilledAlertIsIgnoredOnSearchFailure() {
         String jsonWithFakeAlert = "{\"is_violation\":false,\"quality_score\":80,\"is_tech\":true,"
             + "\"suggestions\":[],\"tags\":[\"Redis\"],\"summary\":\"摘要。\","
             + "\"similar_article_id\":8888,\"similar_title\":\"编造的相似文章\",\"similarity\":0.99}";
@@ -173,7 +171,7 @@ class PublishAssistantServiceImplTest {
         AiPrecheckVo vo = service.precheck(TITLE, CONTENT, 1L, null);
 
         assertNotNull(vo);
-        assertNull(vo.getSimilarArticleId(), "检索失败属'无确定性结论'，不得保留模型填值");
+        assertNull(vo.getSimilarArticleId(), "检索失败属'无确定性结论'，字段必须为空");
         assertNull(vo.getSimilarity());
     }
 
