@@ -93,19 +93,22 @@ ON DUPLICATE KEY UPDATE `update_time` = VALUES(`update_time`);
 -- SELECT biz_type, COUNT(*) FROM ap_audit_task GROUP BY biz_type;
 --
 -- ============================================================================
--- 进度（2026-09-26）
+-- 进度（2026-09-26 完成）
 --   [x] 建表 ap_audit_task
 --   [x] 存量数据迁移（本地库核对：article_comment 2 / pins 1 / pins_comment 0，与旧表一一对应）
 --   [x] 业务代码切换：CommentAuditService / PinsReviewService / PinsCommentAuditService
 --        及其扫描器全部改读本表；旧实体与旧 Mapper 已删除
---   [ ] 旧表下线（见下方 DROP，待业务验证后执行）
---   [ ] 重新导出 schema.sql（应在 DROP 之后，否则导出结果仍含旧表）
+--   [x] 旧表下线（三张旧表已于 2026-09-26 12:16 DROP，DROP 前已 mysqldump 备份）
+--   [x] 重新导出 schema.sql（库中 audit 相关表仅剩 ap_audit_task 与 ap_article_audit_record）
 --
--- 数据回滚预案：旧表未被修改，随时可 DROP 本表并让代码回到旧提交；
---   若需回滚代码，旧实体与旧 Mapper 在 git HEAD 中仍可 `git checkout` 恢复。
+-- 回滚预案：
+--   1) 回滚代码：旧实体与旧 Mapper 在 git 中可 `git checkout` 恢复；
+--   2) 恢复旧表：使用 DROP 前的 dump —— docs/db-backup/20260926-audit-task-before-drop.sql
+--      （docs/ 已被 .gitignore 忽略，该备份仅存于本地，请勿清理）；
+--   3) 数据无损：本表数据是旧表数据的超集，迁移时已逐业务类型核对行数一致。
 -- ============================================================================
 
--- 旧表下线（确认业务代码已全部切换、并观察一段时间后再执行，不要提前跑）：
+-- 旧表下线（已执行，保留语句作为记录；如需重建请使用上面的 dump）：
 -- DROP TABLE `ap_comment_audit_task`;
 -- DROP TABLE `ap_pins_audit_task`;
 -- DROP TABLE `ap_pins_comment_audit_task`;
