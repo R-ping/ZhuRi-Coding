@@ -9,6 +9,8 @@ import com.zhuri.coding.content.event.ArticlePublishEvent;
 import com.zhuri.coding.content.mapper.article.ApArticleEventMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.ApArticleService;
+import com.zhuri.coding.content.service.outbox.OutboxService;
+import com.zhuri.coding.content.service.outbox.handler.ArticlePublishHandler;
 import com.zhuri.coding.model.article.dtos.ArticleDto;
 import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
 import com.zhuri.coding.model.article.pojos.ApArticle;
@@ -40,6 +42,10 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     private ApArticleEventMapper apArticleEventMapper;
     @Autowired
     private ApplicationEventPublisher eventPublisher;
+
+    /** 统一 Outbox（迁移阶段 1：双写对照用；article_event 仍是执行依据） */
+    @Autowired
+    private OutboxService outboxService;
 
     /**
      * 加载文章列表
@@ -107,6 +113,21 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
             event.setParameter(JSONUtil.toJsonStr(searchArticleVo));
             apArticleEventMapper.insertArticleEvent(event);
             log.info("文章本地消息表保存成功，文章id：{}", articleId);
+
+            // 【迁移阶段 1 · 双写】同时写统一 Outbox。
+            //   - 幂等：eventKey = "article_publish:{articleId}"，同一文章只保留一条在途事件；
+            //   - 阶段 1 中 article_event 仍是执行依据，outbox 只作对照 ——
+            //     目的是在真实发布流量下观察新链路行为，确认无误后再进入阶段 2（切读）；
+            //   - best-effort：双写失败不影响主流程（老链路才是当前的正确性来源），
+            //     仅记 WARN，用于尽早暴露新链路的接入问题。
+            try {
+                outboxService.record(
+                        ArticlePublishHandler.eventKey(articleId),
+                        ArticlePublishHandler.EVENT_TYPE,
+                        ArticlePublishHandler.payload(articleId));
+            } catch (Exception ex) {
+                log.warn("Outbox 双写失败（阶段 1 不影响主流程）, articleId={}", articleId, ex);
+            }
         } catch (Exception e) {
             log.error("文章本地消息表保存失败", e);
             return false;

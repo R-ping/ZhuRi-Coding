@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -48,7 +49,10 @@ class OutboxDispatcherFailPolicyTest {
     /** 可配置策略与抛错行为的测试 Handler */
     static class TestHandler implements OutboxHandler {
 
+        private final String eventType;
         private final FailPolicy policy;
+        /** 生命周期上限（分钟）；0 = 不限（默认） */
+        int lifetimeMinutes;
         boolean exhaustedCalled;
         boolean payloadPresent;
         String lastError;
@@ -56,12 +60,22 @@ class OutboxDispatcherFailPolicyTest {
         RuntimeException exhaustedThrow;
 
         TestHandler(FailPolicy policy) {
+            this("TEST_EVENT", policy);
+        }
+
+        TestHandler(String eventType, FailPolicy policy) {
+            this.eventType = eventType;
             this.policy = policy;
         }
 
         @Override
         public String eventType() {
-            return "TEST_EVENT";
+            return eventType;
+        }
+
+        @Override
+        public int maxLifetimeMinutes() {
+            return lifetimeMinutes;
         }
 
         @Override
@@ -205,5 +219,53 @@ class OutboxDispatcherFailPolicyTest {
         assertTrue(handler.exhaustedCalled);
         verify(outboxService).markExhaustedDone(any(), anyString());
         verify(outboxService, never()).markFailed(any(), anyString());
+    }
+
+    // ==================== 「不计数重试」与生命周期护栏 ====================
+
+    @Test
+    @DisplayName("不计数重试：即使已达重试上限，也不走超限收尾、不消耗重试配额")
+    void retryWithoutCountingDoesNotConsumeQuota() {
+        TestHandler handler = new TestHandler(FailPolicy.DEAD);
+        handler.executeThrow = new RetryWithoutCountingException("文章仍处于待审态（暂时性竞态）");
+        // 该分支必须排在 willExhaust 判定之前：这类失败压根不参与「是否超限」的计算
+        when(outboxService.willExhaust(any())).thenReturn(true);
+
+        dispatcherWith(handler, true).safeDispatchOne(pendingEvent());
+
+        verify(outboxService).markRetryWithoutCounting(any(), anyString());
+        verify(outboxService, never()).markFailed(any(), anyString());
+        verify(outboxService, never()).markExhaustedDone(any(), anyString());
+    }
+
+    @Test
+    @DisplayName("生命周期护栏：只对声明了上限的 Handler 执行，默认不限的跳过")
+    void enforceLifetimeOnlyAppliesToHandlersWithLimit() {
+        TestHandler limited = new TestHandler("TYPE_WITH_LIMIT", FailPolicy.DISCARD);
+        limited.lifetimeMinutes = 15;
+        TestHandler unlimited = new TestHandler("TYPE_NO_LIMIT", FailPolicy.DEAD);
+
+        when(outboxEventMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
+
+        new OutboxDispatcher(outboxEventMapper, outboxService, List.of(limited, unlimited))
+                .enforceLifetime();
+
+        // 只有声明上限的那个产生 UPDATE —— 默认不限，正是为了不误杀
+        // 「必须完成、或等人工介入」的事件（如支付副作用）
+        verify(outboxEventMapper, times(1)).update(isNull(), any(LambdaUpdateWrapper.class));
+    }
+
+    @Test
+    @DisplayName("生命周期护栏：判死条数计入 lifetimeKilledTotal（需人工介入，必须可观测）")
+    void enforceLifetimeCountsKilled() {
+        TestHandler limited = new TestHandler("TYPE_WITH_LIMIT", FailPolicy.DISCARD);
+        limited.lifetimeMinutes = 15;
+        when(outboxEventMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(3);
+
+        OutboxDispatcher dispatcher =
+                new OutboxDispatcher(outboxEventMapper, outboxService, List.of(limited));
+        dispatcher.enforceLifetime();
+
+        assertEquals(Long.valueOf(3L), dispatcher.metricsSnapshot().get("lifetimeKilledTotal"));
     }
 }

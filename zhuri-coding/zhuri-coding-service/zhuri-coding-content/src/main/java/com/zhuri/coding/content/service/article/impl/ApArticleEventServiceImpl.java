@@ -1,13 +1,10 @@
 package com.zhuri.coding.content.service.article.impl;
 
 import cn.hutool.json.JSONUtil;
-import com.zhuri.coding.apis.search.ISearchClient;
 import com.zhuri.coding.common.constants.ArticleConstants;
 import com.zhuri.coding.content.mapper.article.ApArticleEventMapper;
-import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.ApArticleEventService;
-import com.zhuri.coding.model.article.pojos.ApArticle;
-import com.zhuri.coding.model.article.pojos.ApArticle.Status;
+import com.zhuri.coding.content.service.article.ArticlePublishExecutor;
 import com.zhuri.coding.model.article.pojos.ArticleEvent;
 import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.util.Date;
@@ -37,11 +34,15 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
     @Autowired
     private ApArticleEventMapper apArticleEventMapper;
 
+    /**
+     * 发布业务逻辑（置位 + ES 同步）。
+     *
+     * <p>与本类的 {@code article_event} 状态机**刻意分开**：业务逻辑归 Executor，
+     * 状态记录仍归本类 —— 这样 Outbox 侧的 Handler 能复用同一份业务逻辑，
+     * 而两条链路各写自己的消息表，不会互相覆盖状态。
+     */
     @Autowired
-    private ApArticleMapper apArticleMapper;
-
-    @Autowired
-    private ISearchClient searchClient;
+    private ArticlePublishExecutor publishExecutor;
 
     @Override
     public void updateEvent(ArticleEvent event) {
@@ -100,51 +101,45 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
 
     /** 重试 DB 置位（status=2，幂等自愈）。置位成功或已是发布态 → 转 ES 同步；FAIL 等终态 → 死信删除 */
     private void retryDbSet(ArticleEvent event) {
-        if (apArticleMapper.markPublishedIfPending(event.getArticleId()) == 1) {
-            esSyncOrMarkFail(event);
-            return;
-        }
-        Byte articleStatus = resolveArticleStatus(event.getArticleId());
-        if (articleStatus == null) {
-            log.error("文章不存在，删除事件, articleId={}", event.getArticleId());
-            apArticleEventMapper.deleteByArticleId(event.getArticleId());
-        } else if (articleStatus == Status.PUBLISHED.getCode()) {
-            esSyncOrMarkFail(event);
-        } else if (articleStatus == Status.SUBMIT.getCode()) {
-            postpone(event); // 仍处于审核态（罕见竞态窗口），顺延下一轮再试
-        } else {
-            log.error("文章处于不可发布终态(status={})，删除事件, articleId={}", articleStatus,
-                event.getArticleId());
-            apArticleEventMapper.deleteByArticleId(event.getArticleId());
+        try {
+            ArticlePublishExecutor.Outcome outcome = publishExecutor.publish(event.getArticleId());
+            switch (outcome) {
+                case DONE -> markStatus(event, ArticleConstants.EVENT_STATUS_DONE, null);
+                // 仍处于审核态（罕见竞态窗口）：顺延下一轮再试
+                case STILL_PENDING -> postpone(event);
+                case ARTICLE_MISSING, ARTICLE_NOT_PUBLISHABLE ->
+                    apArticleEventMapper.deleteByArticleId(event.getArticleId());
+            }
+        } catch (Exception e) {
+            // 置位成功但 ES 同步失败 → 落 ES_SYNC_FAIL 等下一轮（等价于原 esSyncOrMarkFail 的失败分支）
+            log.error("置位成功但ES同步失败, articleId={}", event.getArticleId(), e);
+            markStatus(event, ArticleConstants.EVENT_STATUS_ES_SYNC_FAIL,
+                new Date(System.currentTimeMillis() + ArticleConstants.RETRY_INTERVAL_MS));
         }
     }
 
     /** 从 INIT 推进发布：先置位再同步（幂等）。异步监听器主路径与扫描 INIT 滞留重放共用 */
     private void publishFromInit(ArticleEvent event) {
-        if (apArticleMapper.markPublishedIfPending(event.getArticleId()) == 1) {
-            esSyncOrMarkFail(event);
-            return;
-        }
-        Byte articleStatus = resolveArticleStatus(event.getArticleId());
-        if (articleStatus == null) {
-            log.error("重放失败：文章不存在，删除事件, articleId={}", event.getArticleId());
-            apArticleEventMapper.deleteByArticleId(event.getArticleId());
-        } else if (articleStatus == Status.PUBLISHED.getCode()) {
-            esSyncOrMarkFail(event);
-        } else if (articleStatus == Status.SUBMIT.getCode()) {
-            // 置位仍失败：转 DB_SET_FAIL 交给重试分支持续补偿
-            markStatus(event, ArticleConstants.EVENT_STATUS_DB_SET_FAIL, null);
-        } else {
-            log.error("重放失败：文章不可发布(status={})，删除事件, articleId={}", articleStatus,
-                event.getArticleId());
-            apArticleEventMapper.deleteByArticleId(event.getArticleId());
+        try {
+            ArticlePublishExecutor.Outcome outcome = publishExecutor.publish(event.getArticleId());
+            switch (outcome) {
+                case DONE -> markStatus(event, ArticleConstants.EVENT_STATUS_DONE, null);
+                // 置位仍失败：转 DB_SET_FAIL 交给重试分支持续补偿
+                case STILL_PENDING -> markStatus(event, ArticleConstants.EVENT_STATUS_DB_SET_FAIL, null);
+                case ARTICLE_MISSING, ARTICLE_NOT_PUBLISHABLE ->
+                    apArticleEventMapper.deleteByArticleId(event.getArticleId());
+            }
+        } catch (Exception e) {
+            log.error("置位成功但ES同步失败, articleId={}", event.getArticleId(), e);
+            markStatus(event, ArticleConstants.EVENT_STATUS_ES_SYNC_FAIL,
+                new Date(System.currentTimeMillis() + ArticleConstants.RETRY_INTERVAL_MS));
         }
     }
 
     /** 重试 ES 同步（status=3）：成功置 DONE 并清零重试次数；失败累计次数，超限死信 */
     private void retryEsSync(ArticleEvent event) {
         try {
-            doEsSync(event);
+            publishExecutor.syncToEs(event.getArticleId());
             markStatus(event, ArticleConstants.EVENT_STATUS_DONE, null);
             log.info("ES同步重试成功, articleId={}", event.getArticleId());
         } catch (Exception e) {
@@ -166,31 +161,11 @@ public class ApArticleEventServiceImpl implements ApArticleEventService {
         }
     }
 
-    /** 置位成功后执行 ES 同步；失败落 ES_SYNC_FAIL 等待下一轮 */
-    private void esSyncOrMarkFail(ArticleEvent event) {
-        try {
-            doEsSync(event);
-            markStatus(event, ArticleConstants.EVENT_STATUS_DONE, null);
-        } catch (Exception e) {
-            log.error("置位成功但ES同步失败, articleId={}", event.getArticleId(), e);
-            markStatus(event, ArticleConstants.EVENT_STATUS_ES_SYNC_FAIL,
-                new Date(System.currentTimeMillis() + ArticleConstants.RETRY_INTERVAL_MS));
-        }
-    }
-
-    /** 实际 ES 同步：从 parameter 还原 vo 调 search 服务（正文由 search 端反向拉取） */
-    private void doEsSync(ArticleEvent event) {
-        SearchArticleVo vo = JSONUtil.toBean(event.getParameter(), SearchArticleVo.class);
-        if (vo == null || vo.getId() == null) {
-            throw new IllegalStateException("事件参数缺失 articleId=" + event.getArticleId());
-        }
-        searchClient.syncArticle(vo);
-    }
-
-    private Byte resolveArticleStatus(Long articleId) {
-        ApArticle article = apArticleMapper.selectById(articleId);
-        return article == null || article.getStatus() == null ? null : article.getStatus().byteValue();
-    }
+    // 【2026-09-26 迁移】原 esSyncOrMarkFail / doEsSync / resolveArticleStatus 三个方法已移入
+    // ArticlePublishExecutor —— 目的是让 Outbox 侧的 ArticlePublishHandler 复用同一份发布逻辑，
+    // 避免"同一件事两份代码"的漂移（改了一处忘另一处，日志与报错栈也会分裂）。
+    // 注意边界：状态记录（markStatus / deleteByArticleId）仍留在本类 ——
+    // 业务逻辑共用、状态各管各的，两条链路各写自己的消息表，不会互相覆盖。
 
     /** 顺延重试时间（DB 置位仍为 SUBMIT 的罕见竞态窗口） */
     private void postpone(ArticleEvent event) {

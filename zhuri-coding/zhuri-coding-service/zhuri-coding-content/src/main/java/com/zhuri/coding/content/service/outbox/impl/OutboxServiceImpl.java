@@ -17,6 +17,13 @@ public class OutboxServiceImpl implements OutboxService {
     /** 指数退避封顶间隔（分钟） */
     static final long MAX_BACKOFF_MINUTES = 60;
 
+    /**
+     * 「不计数重试」的固定排程间隔（分钟）。
+     * 刻意不用指数退避：既然认定它是"很快会好的暂时性竞态"，就不该让它越等越久；
+     * 真正的收敛由 Handler 声明的 {@code maxLifetimeMinutes()} 兜底，而非重试次数。
+     */
+    static final long NO_COUNT_BACKOFF_MINUTES = 1;
+
     /** last_error 入库最大长度 */
     private static final int MAX_ERROR_LENGTH = 500;
 
@@ -118,6 +125,21 @@ public class OutboxServiceImpl implements OutboxService {
     private int effectiveMaxRetries(OutboxEvent event) {
         int max = event.getMaxRetries() == null ? 0 : event.getMaxRetries();
         return max <= 0 ? defaultMaxRetries() : max;
+    }
+
+    @Override
+    public void markRetryWithoutCounting(OutboxEvent event, String errorReason) {
+        Date now = new Date();
+        Date nextRetryAt = new Date(now.getTime() + NO_COUNT_BACKOFF_MINUTES * 60_000L);
+        // 刻意不写 retry_count：本次失败不消耗重试配额
+        outboxEventMapper.update(null, new LambdaUpdateWrapper<OutboxEvent>()
+                .eq(OutboxEvent::getId, event.getId())
+                .set(OutboxEvent::getStatus, OutboxEvent.STATUS_PENDING)
+                .set(OutboxEvent::getNextRetryAt, nextRetryAt)
+                .set(OutboxEvent::getLastError, truncate(errorReason))
+                .set(OutboxEvent::getUpdatedTime, now));
+        log.warn("Outbox 事件按「不计数重试」退回待处理（不消耗重试配额）: id={}, eventKey={}, 当前重试次数={}",
+                event.getId(), event.getEventKey(), event.getRetryCount());
     }
 
     /** 写库时统一缺省重试上限（与建表 DEFAULT 5 一致） */

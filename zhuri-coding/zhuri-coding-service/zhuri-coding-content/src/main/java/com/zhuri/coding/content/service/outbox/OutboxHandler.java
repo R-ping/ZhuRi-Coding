@@ -34,6 +34,22 @@ public interface OutboxHandler {
     }
 
     /**
+     * 事件最大存活时长（分钟）；{@code <= 0} 表示<b>不限</b>。超时未完成 → 强制 {@code DEAD}。
+     *
+     * <p><b>默认不限是刻意的</b>：像支付副作用这类事件的语义是"必须完成、或等人工介入"，
+     * 给它套一个时长上限，会把"本该继续重试的"变成"被判死的"，护栏反而成为故障源。
+     *
+     * <p><b>什么时候必须声明正数</b>：当 Handler 会抛出
+     * {@link RetryWithoutCountingException}（即"这类失败不计数"）时 ——
+     * 不配上限，"不计数重试"就退化为永不收敛的无限重试。
+     *
+     * <p>由 {@link OutboxDispatcher} 每轮扫描顺带执行，且<b>仅对声明了上限的 Handler 生效</b>。
+     */
+    default int maxLifetimeMinutes() {
+        return 0;
+    }
+
+    /**
      * 重试耗尽且 {@link #failPolicy()} 为 {@link FailPolicy#DEGRADE} 时回调，用于业务降级。
      *
      * <p>约定：本方法应尽最大努力完成"保持原状"的降级动作（例如让内容保持可见），

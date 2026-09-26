@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhuri.coding.content.event.ArticlePublishEvent;
 import com.zhuri.coding.content.mapper.article.ApArticleEventMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.outbox.OutboxService;
 import com.zhuri.coding.model.article.dtos.ArticleDto;
 import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
 import com.zhuri.coding.model.article.pojos.ApArticle;
@@ -52,6 +53,8 @@ class ApArticleServiceImplTest {
     @Mock private ApArticleMapper apArticleMapper;
     @Mock private ApArticleEventMapper apArticleEventMapper;
     @Mock private ApplicationEventPublisher applicationEventPublisher;
+    /** 迁移阶段 1：双写目标（article_event 仍是执行依据，此处只验证双写发生） */
+    @Mock private OutboxService outboxService;
 
     @InjectMocks
     private ApArticleServiceImpl articleService;
@@ -130,6 +133,11 @@ class ApArticleServiceImplTest {
         ArgumentCaptor<ArticlePublishEvent> publishCaptor = ArgumentCaptor.forClass(ArticlePublishEvent.class);
         verify(applicationEventPublisher).publishEvent(publishCaptor.capture());
         assertEquals(1L, publishCaptor.getValue().getArticleId());
+        // 迁移阶段 1 双写：同时写统一 Outbox，幂等键为 article_publish:{articleId}
+        verify(outboxService).record(
+                org.mockito.ArgumentMatchers.eq("article_publish:1"),
+                org.mockito.ArgumentMatchers.eq("ARTICLE_PUBLISH"),
+                org.mockito.ArgumentMatchers.eq("{\"articleId\":1}"));
     }
 
     @Test

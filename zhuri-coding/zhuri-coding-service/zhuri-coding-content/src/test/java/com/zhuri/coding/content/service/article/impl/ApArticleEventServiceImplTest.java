@@ -1,11 +1,10 @@
 package com.zhuri.coding.content.service.article.impl;
 
 import cn.hutool.json.JSONUtil;
-import com.zhuri.coding.apis.search.ISearchClient;
 import com.zhuri.coding.common.constants.ArticleConstants;
 import com.zhuri.coding.content.mapper.article.ApArticleEventMapper;
-import com.zhuri.coding.content.mapper.article.ApArticleMapper;
-import com.zhuri.coding.model.article.pojos.ApArticle;
+import com.zhuri.coding.content.service.article.ArticlePublishExecutor;
+import com.zhuri.coding.content.service.article.ArticlePublishExecutor.Outcome;
 import com.zhuri.coding.model.article.pojos.ArticleEvent;
 import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.util.Arrays;
@@ -29,6 +28,14 @@ import static org.mockito.Mockito.when;
 /**
  * ApArticleEventServiceImpl 单元测试（单 status 状态机）
  *
+ * <p><b>测试边界（2026-09-26 重构后）</b>：业务逻辑（置位 DB 发布态 + 同步 ES）已抽到
+ * {@link ArticlePublishExecutor}，故这里只测**状态机映射**：
+ * 「Executor 返回的业务结果 → {@code article_event} 的状态流转」。
+ *
+ * <p>之所以这样切：原测试 mock 的是 {@code apArticleMapper} / {@code searchClient} 这类
+ * **底层依赖**，导致"业务逻辑一挪位置，整套状态机测试就整片失败"—— 测试与实现细节强耦合。
+ * 按职责拆开后，两边可以各自演进。
+ *
  * <p>覆盖 20s 补偿扫描三态处理：
  * ES_SYNC_FAIL 重试成功置 DONE / 失败累计重试 / 超限死信；
  * DB_SET_FAIL 置位成功转 ES 同步 / 文章已是发布态续跑 / 不可发布终态删除；
@@ -41,9 +48,7 @@ class ApArticleEventServiceImplTest {
     @Mock
     private ApArticleEventMapper apArticleEventMapper;
     @Mock
-    private ApArticleMapper apArticleMapper;
-    @Mock
-    private ISearchClient searchClient;
+    private ArticlePublishExecutor publishExecutor;
 
     @InjectMocks
     private ApArticleEventServiceImpl service;
@@ -61,13 +66,15 @@ class ApArticleEventServiceImplTest {
         return e;
     }
 
+    // ==================== ES_SYNC_FAIL 分支（只重试同步，不重新置位） ====================
+
     @Test
     @DisplayName("ES_SYNC_FAIL 重试失败累计 retryCount，未达上限不删除")
     void esRetryFailureCountsRetry() {
         ArticleEvent e = event(1L);
         e.setStatus(ArticleConstants.EVENT_STATUS_ES_SYNC_FAIL);
         when(apArticleEventMapper.loadUnfinishedEvents()).thenReturn(Arrays.asList(e));
-        doThrow(new RuntimeException("es down")).when(searchClient).syncArticle(any(SearchArticleVo.class));
+        doThrow(new RuntimeException("es down")).when(publishExecutor).syncToEs(1L);
 
         service.processEvent();
 
@@ -83,7 +90,7 @@ class ApArticleEventServiceImplTest {
         e.setStatus(ArticleConstants.EVENT_STATUS_ES_SYNC_FAIL);
         e.setRetryCount((byte) (ArticleConstants.EVENT_ES_MAX_RETRY - 1));
         when(apArticleEventMapper.loadUnfinishedEvents()).thenReturn(Arrays.asList(e));
-        doThrow(new RuntimeException("es down")).when(searchClient).syncArticle(any(SearchArticleVo.class));
+        doThrow(new RuntimeException("es down")).when(publishExecutor).syncToEs(1L);
 
         service.processEvent();
 
@@ -103,8 +110,10 @@ class ApArticleEventServiceImplTest {
 
         assertEquals(ArticleConstants.EVENT_STATUS_DONE, e.getStatus().byteValue());
         assertEquals((byte) 0, e.getRetryCount());
-        verify(searchClient).syncArticle(any(SearchArticleVo.class));
+        verify(publishExecutor).syncToEs(1L);
     }
+
+    // ==================== DB_SET_FAIL 分支（重新走一遍置位 + 同步） ====================
 
     @Test
     @DisplayName("DB_SET_FAIL 置位成功转 ES 同步并完成")
@@ -112,25 +121,21 @@ class ApArticleEventServiceImplTest {
         ArticleEvent e = event(1L);
         e.setStatus(ArticleConstants.EVENT_STATUS_DB_SET_FAIL);
         when(apArticleEventMapper.loadUnfinishedEvents()).thenReturn(Arrays.asList(e));
-        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(1);
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.DONE);
 
         service.processEvent();
 
         assertEquals(ArticleConstants.EVENT_STATUS_DONE, e.getStatus().byteValue());
-        verify(searchClient).syncArticle(any(SearchArticleVo.class));
+        verify(publishExecutor).publish(1L);
     }
 
     @Test
-    @DisplayName("DB_SET_FAIL 置位 0 行但文章已是发布态 → 续跑 ES 同步")
+    @DisplayName("DB_SET_FAIL 置位 0 行但文章已是发布态 → 续跑并完成")
     void dbSetFailArticleAlreadyPublished() {
         ArticleEvent e = event(1L);
         e.setStatus(ArticleConstants.EVENT_STATUS_DB_SET_FAIL);
-        ApArticle article = new ApArticle();
-        article.setId(1L);
-        article.setStatus((byte) ApArticle.Status.PUBLISHED.getCode());
         when(apArticleEventMapper.loadUnfinishedEvents()).thenReturn(Arrays.asList(e));
-        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
-        when(apArticleMapper.selectById(1L)).thenReturn(article);
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.DONE);
 
         service.processEvent();
 
@@ -142,17 +147,26 @@ class ApArticleEventServiceImplTest {
     void dbSetFailArticleFailed() {
         ArticleEvent e = event(1L);
         e.setStatus(ArticleConstants.EVENT_STATUS_DB_SET_FAIL);
-        ApArticle article = new ApArticle();
-        article.setId(1L);
-        article.setStatus((byte) ApArticle.Status.FAIL.getCode());
         when(apArticleEventMapper.loadUnfinishedEvents()).thenReturn(Arrays.asList(e));
-        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
-        when(apArticleMapper.selectById(1L)).thenReturn(article);
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.ARTICLE_NOT_PUBLISHABLE);
 
         service.processEvent();
 
         verify(apArticleEventMapper).deleteByArticleId(1L);
-        verify(searchClient, never()).syncArticle(any());
+    }
+
+    @Test
+    @DisplayName("DB_SET_FAIL 文章仍待审 → 顺延重试时间，不删除")
+    void dbSetFailStillPendingPostpones() {
+        ArticleEvent e = event(1L);
+        e.setStatus(ArticleConstants.EVENT_STATUS_DB_SET_FAIL);
+        when(apArticleEventMapper.loadUnfinishedEvents()).thenReturn(Arrays.asList(e));
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.STILL_PENDING);
+
+        service.processEvent();
+
+        verify(apArticleEventMapper, never()).deleteByArticleId(anyLong());
+        verify(apArticleEventMapper).updateArticleEvent(any());
     }
 
     @Test
@@ -161,12 +175,25 @@ class ApArticleEventServiceImplTest {
         ArticleEvent e = event(1L);
         e.setStatus(ArticleConstants.EVENT_STATUS_INIT);
         when(apArticleEventMapper.loadUnfinishedEvents()).thenReturn(Arrays.asList(e));
-        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(1);
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.DONE);
 
         service.processEvent();
 
         assertEquals(ArticleConstants.EVENT_STATUS_DONE, e.getStatus().byteValue());
-        verify(searchClient).syncArticle(any(SearchArticleVo.class));
+        verify(publishExecutor).publish(1L);
+    }
+
+    @Test
+    @DisplayName("置位成功但 ES 同步失败 → 落 ES_SYNC_FAIL 等下一轮")
+    void esSyncFailureMarksEsSyncFail() {
+        ArticleEvent e = event(1L);
+        e.setStatus(ArticleConstants.EVENT_STATUS_DB_SET_FAIL);
+        when(apArticleEventMapper.loadUnfinishedEvents()).thenReturn(Arrays.asList(e));
+        when(publishExecutor.publish(1L)).thenThrow(new RuntimeException("es down"));
+
+        service.processEvent();
+
+        assertEquals(ArticleConstants.EVENT_STATUS_ES_SYNC_FAIL, e.getStatus().byteValue());
     }
 
     @Test
@@ -186,18 +213,17 @@ class ApArticleEventServiceImplTest {
     void executePublishNullIdSkipped() {
         service.executePublish(null);
 
-        verify(apArticleMapper, never()).markPublishedIfPending(anyLong());
+        verify(publishExecutor, never()).publish(anyLong());
         verify(apArticleEventMapper, never()).updateArticleEvent(any());
     }
 
     @Test
-    @DisplayName("executePublish - 置位成功 → ES 同步 → DONE（内存构造事件，不回查锚点行）")
+    @DisplayName("executePublish - 执行成功 → DONE（内存构造事件，不回查锚点行）")
     void executePublishHappyPath() {
-        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(1);
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.DONE);
 
         service.executePublish(1L);
 
-        verify(searchClient).syncArticle(any(SearchArticleVo.class));
         ArgumentCaptor<ArticleEvent> captor = ArgumentCaptor.forClass(ArticleEvent.class);
         verify(apArticleEventMapper).updateArticleEvent(captor.capture());
         assertEquals(ArticleConstants.EVENT_STATUS_DONE, captor.getValue().getStatus().byteValue());
@@ -205,51 +231,36 @@ class ApArticleEventServiceImplTest {
     }
 
     @Test
-    @DisplayName("executePublish - 置位 0 行且文章仍 SUBMIT → 落 DB_SET_FAIL 交扫描补偿")
+    @DisplayName("executePublish - 文章仍 SUBMIT → 落 DB_SET_FAIL 交扫描补偿")
     void executePublishStillSubmitMarksDbSetFail() {
-        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
-        ApArticle submit = new ApArticle();
-        submit.setId(1L);
-        submit.setStatus((byte) ApArticle.Status.SUBMIT.getCode());
-        when(apArticleMapper.selectById(1L)).thenReturn(submit);
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.STILL_PENDING);
 
         service.executePublish(1L);
 
         ArgumentCaptor<ArticleEvent> captor = ArgumentCaptor.forClass(ArticleEvent.class);
         verify(apArticleEventMapper).updateArticleEvent(captor.capture());
         assertEquals(ArticleConstants.EVENT_STATUS_DB_SET_FAIL, captor.getValue().getStatus().byteValue());
-        verify(searchClient, never()).syncArticle(any());
     }
 
     @Test
-    @DisplayName("executePublish - 置位 0 行但文章已是发布态 → 幂等续跑 ES 同步")
+    @DisplayName("executePublish - 文章已是发布态 → 幂等续跑并完成")
     void executePublishAlreadyPublishedContinues() {
-        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
-        ApArticle published = new ApArticle();
-        published.setId(1L);
-        published.setStatus((byte) ApArticle.Status.PUBLISHED.getCode());
-        when(apArticleMapper.selectById(1L)).thenReturn(published);
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.DONE);
 
         service.executePublish(1L);
 
-        verify(searchClient).syncArticle(any(SearchArticleVo.class));
         ArgumentCaptor<ArticleEvent> captor = ArgumentCaptor.forClass(ArticleEvent.class);
         verify(apArticleEventMapper).updateArticleEvent(captor.capture());
         assertEquals(ArticleConstants.EVENT_STATUS_DONE, captor.getValue().getStatus().byteValue());
     }
 
     @Test
-    @DisplayName("executePublish - 置位 0 行且文章处于 FAIL 终态 → 删除事件防滞留")
+    @DisplayName("executePublish - 文章处于 FAIL 终态 → 删除事件防滞留")
     void executePublishFailedArticleDeletesEvent() {
-        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
-        ApArticle failed = new ApArticle();
-        failed.setId(1L);
-        failed.setStatus((byte) ApArticle.Status.FAIL.getCode());
-        when(apArticleMapper.selectById(1L)).thenReturn(failed);
+        when(publishExecutor.publish(1L)).thenReturn(Outcome.ARTICLE_NOT_PUBLISHABLE);
 
         service.executePublish(1L);
 
         verify(apArticleEventMapper).deleteByArticleId(1L);
-        verify(searchClient, never()).syncArticle(any());
     }
 }
