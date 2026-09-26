@@ -3,24 +3,19 @@ package com.zhuri.coding.content.service.article.impl;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
-import com.zhuri.coding.content.event.ArticlePublishEvent;
-import com.zhuri.coding.content.mapper.article.ApArticleEventMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.outbox.OutboxService;
 import com.zhuri.coding.model.article.dtos.ArticleDto;
 import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
 import com.zhuri.coding.model.article.pojos.ApArticle;
-import com.zhuri.coding.model.article.pojos.ArticleEvent;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Arrays;
@@ -32,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -43,17 +40,19 @@ import static org.mockito.Mockito.when;
  * 继承 MyBatis-Plus ServiceImpl，私有 baseMapper 以反射注入；其余 @Autowired 依赖由 @InjectMocks 注入。
  * 覆盖：
  * - load：size 缺省/上限 50、type 非法回退、tag 缺省、时间缺省；null-safe 列表映射；
- * - createArticleEvent：参数为空、DB 无记录、落锚成功并发布 ArticlePublishEvent、落库异常(false)不发布事件；
- *   置位与 ES 同步属于异步执行体（ApArticleEventService#executePublish），在 ApArticleEventServiceImplTest 覆盖；
+ * - createArticleEvent：参数为空、DB 无记录、落 Outbox 成功、幂等短路、落库异常；
+ *   置位与 ES 同步属于异步执行体（ArticlePublishExecutor），在 ArticlePublishExecutorTest 覆盖；
  * - updateScoreByBehavior：文章不存在、正常更新热度分；
  * - listByAuthorId：仅作者、按频道/标签/删除过滤（JSON_OVERLAPS）。
+ *
+ * <p><b>迁移阶段 2（切读）后的断言口径</b>：本方法原先还要「写 article_event 锚点 + 发布
+ * ArticlePublishEvent」，切读后这两处写入已移除，Outbox 是唯一执行依据 ——
+ * 因此这里不再断言那两个动作，改为断言「落 Outbox」以及它的返回值语义。
  */
 class ApArticleServiceImplTest {
 
     @Mock private ApArticleMapper apArticleMapper;
-    @Mock private ApArticleEventMapper apArticleEventMapper;
-    @Mock private ApplicationEventPublisher applicationEventPublisher;
-    /** 迁移阶段 1：双写目标（article_event 仍是执行依据，此处只验证双写发生） */
+    /** 迁移阶段 2 起 Outbox 是文章发布的唯一落锚目标（旧链路写入已移除） */
     @Mock private OutboxService outboxService;
 
     @InjectMocks
@@ -66,8 +65,6 @@ class ApArticleServiceImplTest {
         ReflectionTestUtils.setField(articleService, "baseMapper", apArticleMapper);
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApArticle.class);
-        TableInfoHelper.initTableInfo(
-                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ArticleEvent.class);
     }
 
     private ApArticle article(Long id) {
@@ -107,47 +104,57 @@ class ApArticleServiceImplTest {
     // ==================== createArticleEvent ====================
 
     @Test
-    @DisplayName("createArticleEvent - 参数为空返回 false")
+    @DisplayName("createArticleEvent - 参数为空返回 false 且不落 Outbox")
     void testEventNullArticle() {
         assertFalse(articleService.createArticleEvent(null));
-        verify(applicationEventPublisher, never()).publishEvent(any(Object.class));
+        verify(outboxService, never()).record(anyString(), anyString(), anyString());
     }
 
     @Test
-    @DisplayName("createArticleEvent - 文章不存在(被审核回滚)返回 false 且不发布事件")
+    @DisplayName("createArticleEvent - 文章不存在(被审核回滚)返回 false 且不落 Outbox")
     void testEventArticleMissing() {
         when(apArticleMapper.selectById(1L)).thenReturn(null);
         assertFalse(articleService.createArticleEvent(article(1L)));
-        verify(apArticleEventMapper, never()).insertArticleEvent(any(ArticleEvent.class));
-        verify(applicationEventPublisher, never()).publishEvent(any(Object.class));
+        verify(outboxService, never()).record(anyString(), anyString(), anyString());
     }
 
     @Test
-    @DisplayName("createArticleEvent - 落锚本地消息表(INIT)成功并发布 ArticlePublishEvent")
+    @DisplayName("createArticleEvent - 落 Outbox 成功，幂等键与载荷符合 Handler 约定")
     void testEventSuccess() {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
+        when(outboxService.record(anyString(), anyString(), anyString())).thenReturn(true);
+
         assertTrue(articleService.createArticleEvent(article(1L)));
-        ArgumentCaptor<ArticleEvent> eventCaptor = ArgumentCaptor.forClass(ArticleEvent.class);
-        verify(apArticleEventMapper).insertArticleEvent(eventCaptor.capture());
-        assertEquals(1L, eventCaptor.getValue().getArticleId());
-        ArgumentCaptor<ArticlePublishEvent> publishCaptor = ArgumentCaptor.forClass(ArticlePublishEvent.class);
-        verify(applicationEventPublisher).publishEvent(publishCaptor.capture());
-        assertEquals(1L, publishCaptor.getValue().getArticleId());
-        // 迁移阶段 1 双写：同时写统一 Outbox，幂等键为 article_publish:{articleId}
+
         verify(outboxService).record(
-                org.mockito.ArgumentMatchers.eq("article_publish:1"),
-                org.mockito.ArgumentMatchers.eq("ARTICLE_PUBLISH"),
-                org.mockito.ArgumentMatchers.eq("{\"articleId\":1}"));
+                eq("article_publish:1"),
+                eq("ARTICLE_PUBLISH"),
+                eq("{\"articleId\":1}"));
     }
 
     @Test
-    @DisplayName("createArticleEvent - 落锚异常返回 false 且不发布执行事件")
-    void testEventInsertFailure() {
+    @DisplayName("createArticleEvent - 同 eventKey 已存在(幂等短路)仍返回 true，不阻断发布")
+    void testEventIdempotentShortCircuit() {
+        when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
+        // record 返回 false = uk_event_key 冲突，说明已有在途发布事件
+        when(outboxService.record(anyString(), anyString(), anyString())).thenReturn(false);
+
+        assertTrue(articleService.createArticleEvent(article(1L)));
+
+        verify(outboxService).record(
+                eq("article_publish:1"),
+                eq("ARTICLE_PUBLISH"),
+                eq("{\"articleId\":1}"));
+    }
+
+    @Test
+    @DisplayName("createArticleEvent - 落 Outbox 异常返回 false（切读后无兜底链路，必须暴露失败）")
+    void testEventRecordFailure() {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
         doThrow(new RuntimeException("db down"))
-                .when(apArticleEventMapper).insertArticleEvent(any(ArticleEvent.class));
+                .when(outboxService).record(anyString(), anyString(), anyString());
+
         assertFalse(articleService.createArticleEvent(article(1L)));
-        verify(applicationEventPublisher, never()).publishEvent(any(Object.class));
     }
 
     // ==================== updateScoreByBehavior ====================
