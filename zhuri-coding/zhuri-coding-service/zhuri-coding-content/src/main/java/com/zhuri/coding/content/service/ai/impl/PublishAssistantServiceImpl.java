@@ -11,7 +11,6 @@ import com.zhuri.coding.content.service.ai.agent.workers.CriticExpertWorker;
 import com.zhuri.coding.content.service.ai.agent.workers.QualityExpertWorker;
 import com.zhuri.coding.content.service.ai.agent.workers.SafetyExpertWorker;
 import com.zhuri.coding.content.service.ai.agent.workers.SeoExpertWorker;
-import com.zhuri.coding.content.service.ai.spring.AiSimilarityTools;
 import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
 import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
 import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
@@ -37,8 +36,6 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     private static final int MAX_CONTENT = 20000;
     /** 提供给模型的正文上限（控制 token 成本） */
     private static final int LLM_CONTENT_CHARS = 8000;
-    /** 相似度预警阈值（低于该值不算"疑似重复"） */
-    private static final double SIMILAR_ALERT = 0.72;
     private static final int AGENT_MAX_STEPS = 6;
 
     /**
@@ -54,23 +51,21 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         "- expert_safety(title, content)：安全审查专家 → {\"is_violation\":true/false,\"violation_type\":\"\",\"violation_reason\":\"\"}\n" +
         "- expert_quality(title, content)：质量评审专家 → {\"quality_score\":0,\"is_tech\":true,\"suggestions\":[\"建议1\"]}\n" +
         "- expert_seo(title, content)：SEO/运营专家 → {\"tags\":[\"标签1\"],\"summary\":\"120字内摘要\"}\n" +
-        "- expert_critic(draftJson)：总编终审，检查一致性/完整性并输出修正后的同结构 JSON\n" +
-        "- search_similar_article(content)：检索社区最相似的已发布文章（articleId/title/similarity）\n\n" +
+        "- expert_critic(draftJson)：总编终审，检查一致性/完整性并输出修正后的同结构 JSON\n\n" +
         "执行方式：你拥有以上全部工具，需要时直接调用（框架自动执行并回传结果）。\n" +
         "工作流：\n" +
-        "1. 第一轮尽量在同一回复内并行调用 expert_safety、expert_quality、expert_seo，并调用 search_similar_article 查重；\n" +
+        "1. 第一轮尽量在同一回复内并行调用 expert_safety、expert_quality、expert_seo；\n" +
         "2. 汇总各专家输出形成预检草稿；如发现矛盾或字段缺失，可调用 expert_critic 做一次终审修正；\n" +
         "3. 输出最终报告（仅输出这一行）：\n" +
         "FINAL: {JSON}\n\n" +
         "FINAL 的 JSON 结构（严格遵守，字段不能缺失）：\n" +
         "{\"is_violation\":false,\"violation_type\":\"\",\"violation_reason\":\"\",\"quality_score\":0,\"is_tech\":true," +
-        "\"suggestions\":[\"建议1\"],\"tags\":[\"标签1\"],\"summary\":\"120字内摘要\"," +
-        "\"similar_article_id\":null,\"similar_title\":\"\",\"similarity\":null}\n\n" +
+        "\"suggestions\":[\"建议1\"],\"tags\":[\"标签1\"],\"summary\":\"120字内摘要\"}\n\n" +
         "规则：\n" +
         "1. is_violation 以 expert_safety 裁定为准；客观技术讨论（安全研究/科普/新闻）不算违规。\n" +
         "2. quality_score/suggestions/tags/summary 以对应专家输出为准，仅做格式整理，不得自行改写结论。\n" +
-        "3. similar_article_id/similar_title/similarity 仅在相似文章相似度 ≥ 0.7 时填写，否则为 null/空。\n" +
-        "4. 禁止编造工具结果，未调用工具不得声称已评审；某专家异常返回 error 时据其余信息合理降级，仍输出完整 FINAL。";
+        "3. 禁止编造工具结果，未调用工具不得声称已评审；某专家异常返回 error 时据其余信息合理降级，仍输出完整 FINAL。\n" +
+        "4. 相似文章预警不在你的输出范围内——它由系统在报告生成后独立检索数据库填充，与你的输出无关。";
 
     private static final String DIRECT_SYSTEM_PROMPT =
         "你是内容社区《逐日 Coding》的资深编辑助手。请审阅作者文章，仅输出一个 JSON 对象（不要任何额外文字、不要 markdown 代码块），字段：\n" +
@@ -118,9 +113,6 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
 
     @Autowired
     private CriticExpertWorker criticExpertWorker;
-
-    @Autowired
-    private AiSimilarityTools aiSimilarityTools;
 
     @Autowired
     private PromptSafetyAdvisor promptSafetyAdvisor;
@@ -206,9 +198,11 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
             }
 
             if (vo == null) {
-                // 主路径二（兜底）：主编 Agent 调度专家团队（安全/质量/SEO 并行 + 查重 + 可选终审 Critic）
+                // 主路径二（兜底）：主编 Agent 调度专家团队（安全/质量/SEO 并行 + 可选终审 Critic）。
+                // 查重刻意不交给模型：相似度是确定性事实，由下方 fillSimilarity 独立检索填充 ——
+                // 模型查出来的结果反正会被覆盖，交给它只会多一次编造的机会。
                 List<Object> tools = java.util.Arrays.asList(safetyExpertWorker, qualityExpertWorker,
-                    seoExpertWorker, criticExpertWorker, aiSimilarityTools);
+                    seoExpertWorker, criticExpertWorker);
                 // 透传 MCP provider：MCP 工具（文档读写等）并入工具回调集；未启用时 providerOrNull() 返回 null，
                 // AgentRunner 内部退化为仅方法型工具，行为与未接入 MCP 时一致（fail-open）
                 AgentResult result = agentRunner.run(agentP.content, user, tools,
@@ -344,21 +338,21 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         vo.setSuggestions(toStringList(root.get("suggestions")));
         vo.setTags(toStringList(root.get("tags")));
         vo.setSummary(trimToNull(root.path("summary").asText()));
-        if (root.hasNonNull("similar_article_id") && root.path("similar_article_id").asLong() > 0) {
-            vo.setSimilarArticleId(root.path("similar_article_id").asLong());
-            vo.setSimilarTitle(trimToNull(root.path("similar_title").asText()));
-            vo.setSimilarity(root.path("similarity").isNumber() ? root.path("similarity").asDouble() : null);
-        }
+        // 相似度三个字段刻意不在此解析：模型输出 schema 里已不含 similar_*，
+        // 其值只由 fillSimilarity 的确定性检索填充（唯一写入出口）。
         return vo;
     }
 
     /**
-     * 独立相似度兜底：与 Agent 的 search_similar_article 工具共用同一检索实现（排除自身、双保险）。
+     * 相似度填充：这三个字段**只由确定性检索决定**——命中则写入，未命中 / 检索失败一律清空。
      *
-     * <p><b>这三个字段只由确定性检索决定</b>：命中则写入，未命中 / 检索失败一律清空。
-     * 原因：{@code toVo} 会从最终 JSON 里解析 {@code similar_article_id / similar_title / similarity}，
-     * 即字段默认带着模型填的值；若只做"命中才覆盖"，当确定性检索未命中时模型编造的预警会被保留
-     * ——作者会看到查无实据的"疑似重复"。清空即把权威来源收敛到确定性一侧。
+     * <p>与 {@code PrecheckWorkflow#fillSimilarity} 同一语义：不管走主路径（显式工作流）还是本兜底路径，
+     * 相似度都来自同一次确定性检索，都不依赖模型输出。
+     *
+     * <p><b>为什么"未命中"要显式清空，而不是"什么都不做"</b>：把「无高相似」表达成明确的 null，
+     * 才能让"该字段只有一个写入出口"成为代码层面可验证的事实。早期版本这里是"命中才覆盖"，
+     * 而模型输出 schema 里带着这三个字段，于是检索未命中时模型编造的值被原样展示给了作者。
+     * schema 已清理，但约束保留 —— 只要这一处覆盖所有写入，将来谁在别处写它都无效。
      */
     private void fillSimilarity(AiPrecheckVo vo, String content, Long articleId) {
         if (vo == null) {
@@ -370,14 +364,14 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
                 if (articleId != null && articleId.equals(hit.article().getId())) {
                     continue; // 排除自身
                 }
-                if (hit.similarity() >= SIMILAR_ALERT) {
+                if (hit.similarity() >= SimilaritySearchTool.ALERT_THRESHOLD) {
                     best = hit;
                 }
                 break; // 与历史行为一致：仅以最相似一篇作为预警
             }
         } catch (Exception e) {
             // 检索失败按"无高相似"处理：宁可清空，也不保留模型可能编造的预警
-            log.warn("[AiPrecheck] 相似度兜底检索失败，按无高相似处理（清空模型填值）", e);
+            log.warn("[AiPrecheck] 相似度检索失败，按无高相似处理（清空该字段）", e);
         }
         applySimilarity(vo, best);
     }
