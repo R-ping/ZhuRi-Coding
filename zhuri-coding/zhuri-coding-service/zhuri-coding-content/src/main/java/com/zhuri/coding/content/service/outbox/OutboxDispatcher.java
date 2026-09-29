@@ -3,15 +3,15 @@ package com.zhuri.coding.content.service.outbox;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhuri.coding.content.mapper.outbox.OutboxEventMapper;
+import com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry;
 import com.zhuri.coding.model.outbox.pojos.OutboxEvent;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,8 +26,9 @@ import org.springframework.util.CollectionUtils;
  * 多实例同时扫到同一事件时只有 CAS 命中的那台执行，其余跳过。
  * 执行中崩溃的 PROCESSING 事件由 {@link #PROCESSING_STUCK_MINUTES} 超时回收重新分发。
  *
- * <p><b>Handler 路由</b>：构造期收集所有 {@link OutboxHandler} Bean 按 eventType 建索引；
- * 新增一种异步副作用 = 新增一个 Handler 实现，零改本类。
+ * <p><b>事件执行从哪来</b>：按 {@code event_type} 到 {@link LocalMessageReplayRegistry}
+ * 取 {@code @LocalMessage} 标注方法的反射重放器 —— 新增一种异步副作用 =
+ * 在业务方法上打一个注解，本类零改动。
  */
 @Component
 @Slf4j
@@ -41,36 +42,48 @@ public class OutboxDispatcher {
 
     private final OutboxEventMapper outboxEventMapper;
     private final OutboxService outboxService;
-    private final Map<String, OutboxHandler> handlerIndex;
+    private final LocalMessageReplayRegistry replayRegistry;
 
-    /** 轻量内存指标（与 AiMetricsCollector 同款；生产可平滑迁 Micrometer） */
-    private final AtomicLong dispatchTotal = new AtomicLong();
-    private final AtomicLong doneTotal = new AtomicLong();
-    private final AtomicLong failTotal = new AtomicLong();
-    private final AtomicLong deadTotal = new AtomicLong();
+    /** 指标：直接注册为 Micrometer Counter，暴露到 /actuator/prometheus 供 Prometheus 抓取与告警 */
+    private final Counter dispatchTotal;
+    private final Counter doneTotal;
+    private final Counter failTotal;
+    private final Counter deadTotal;
     /** 重试耗尽后按 DEGRADE / DISCARD 收尾的次数（非成功，必须与 doneTotal 区分统计） */
-    private final AtomicLong degradedTotal = new AtomicLong();
+    private final Counter degradedTotal;
     /** 「不计数重试」的次数（暂时性竞态，不消耗重试配额） */
-    private final AtomicLong noCountRetryTotal = new AtomicLong();
+    private final Counter noCountRetryTotal;
     /** 因超过生命周期上限被强制判死的次数（属人工介入范畴，必须单独观测） */
-    private final AtomicLong lifetimeKilledTotal = new AtomicLong();
+    private final Counter lifetimeKilledTotal;
 
     @Autowired
     public OutboxDispatcher(OutboxEventMapper outboxEventMapper,
                             OutboxService outboxService,
-                            List<OutboxHandler> handlers) {
+                            LocalMessageReplayRegistry replayRegistry,
+                            MeterRegistry meterRegistry) {
         this.outboxEventMapper = outboxEventMapper;
         this.outboxService = outboxService;
-        this.handlerIndex = handlers == null ? Map.of() : handlers.stream()
-                .collect(Collectors.toMap(OutboxHandler::eventType, Function.identity(), (a, b) -> {
-                    throw new IllegalStateException("Duplicate OutboxHandler eventType: "
-                            + a.eventType());
-                }));
+        this.replayRegistry = replayRegistry;
+        // 计数器命名遵循 Prometheus 约定：outbox.dead → outbox_dead_total（可直接写告警表达式）
+        this.dispatchTotal = counter(meterRegistry, "outbox.dispatch", "已分发的 Outbox 事件数");
+        this.doneTotal = counter(meterRegistry, "outbox.done", "执行成功的 Outbox 事件数");
+        this.failTotal = counter(meterRegistry, "outbox.fail", "执行失败（含重试中）的 Outbox 事件数");
+        this.deadTotal = counter(meterRegistry, "outbox.dead", "重试超限进死信的事件数（需人工介入）");
+        this.degradedTotal = counter(meterRegistry, "outbox.degraded", "重试耗尽后按 DEGRADE / DISCARD 收尾的次数");
+        this.noCountRetryTotal = counter(meterRegistry, "outbox.no_count_retry", "不计数重试次数");
+        this.lifetimeKilledTotal = counter(meterRegistry, "outbox.lifetime_killed", "超生命周期上限被强制判死的次数");
+    }
+
+    private static Counter counter(MeterRegistry registry, String name, String description) {
+        return Counter.builder(name).description(description).register(registry);
     }
 
     @PostConstruct
     void logRegisteredHandlers() {
-        log.info("OutboxDispatcher 已注册 {} 个处理器: {}", handlerIndex.size(), handlerIndex.keySet());
+        // 注意：此处打印的是「截至本 bean 初始化完成」已注册的事件类型，
+        // 晚于本 bean 初始化的 @LocalMessage 方法不含在内 —— 完整清单以启动结束后的日志为准
+        log.info("OutboxDispatcher 已注册 {} 个事件类型: {}", replayRegistry.registeredTypes().size(),
+                replayRegistry.registeredTypes());
     }
 
     /** 每 5 秒一轮；initialDelay 避开启动高峰 */
@@ -108,55 +121,59 @@ public class OutboxDispatcher {
      */
     void enforceLifetime() {
         Date now = new Date();
-        for (Map.Entry<String, OutboxHandler> entry : handlerIndex.entrySet()) {
-            int limitMinutes = entry.getValue().maxLifetimeMinutes();
+        for (String eventType : replayRegistry.registeredTypes()) {
+            OutboxHandler handler = replayRegistry.forType(eventType);
+            if (handler == null) {
+                continue;
+            }
+            int limitMinutes = handler.maxLifetimeMinutes();
             if (limitMinutes <= 0) {
                 continue; // 未声明上限：不参与判定（等人工介入）
             }
             Date deadline = new Date(now.getTime() - limitMinutes * 60_000L);
             int killed = outboxEventMapper.update(null, new LambdaUpdateWrapper<OutboxEvent>()
-                    .eq(OutboxEvent::getEventType, entry.getKey())
+                    .eq(OutboxEvent::getEventType, eventType)
                     .notIn(OutboxEvent::getStatus, OutboxEvent.STATUS_DONE, OutboxEvent.STATUS_DEAD)
                     .lt(OutboxEvent::getCreatedTime, deadline)
                     .set(OutboxEvent::getStatus, OutboxEvent.STATUS_DEAD)
                     .set(OutboxEvent::getLastError, "超过生命周期上限(" + limitMinutes + " 分钟)未完成，强制判死")
                     .set(OutboxEvent::getUpdatedTime, now));
             if (killed > 0) {
-                lifetimeKilledTotal.addAndGet(killed);
+                lifetimeKilledTotal.increment(killed);
                 log.error("[OUTBOX-LIFETIME] {} 条 {} 事件超过 {} 分钟生命周期上限，已强制置 DEAD，需人工确认",
-                        killed, entry.getKey(), limitMinutes);
+                        killed, eventType, limitMinutes);
             }
         }
     }
 
     /** 单条事件分发：CAS 抢占 → 路由执行 → markDone/markFailed，任何异常不影响其余事件 */
     void safeDispatchOne(OutboxEvent event) {
-        dispatchTotal.incrementAndGet();
+        dispatchTotal.increment();
         // 声明在 try 之外：catch 分支需要按 Handler 声明的失败策略收尾
         OutboxHandler handler = null;
         try {
             if (!casClaim(event)) {
                 return; // 被其它实例抢走，跳过
             }
-            handler = handlerIndex.get(event.getEventType());
+            handler = replayRegistry.forType(event.getEventType());
             if (handler == null) {
                 // 配置错误（没注册 handler）：按失败走重试/死信，ERROR 暴露
                 log.error("[OUTBOX] 未找到事件处理器: type={}, eventKey={}",
                         event.getEventType(), event.getEventKey());
-                failTotal.incrementAndGet();
+                failTotal.increment();
                 outboxService.markFailed(event, "No handler for eventType=" + event.getEventType());
                 return;
             }
             handler.execute(event.getPayload());
             outboxService.markDone(event.getId());
-            doneTotal.incrementAndGet();
+            doneTotal.increment();
             log.info("Outbox 事件执行成功: id={}, eventKey={}, type={}",
                     event.getId(), event.getEventKey(), event.getEventType());
         } catch (Exception e) {
-            failTotal.incrementAndGet();
+            failTotal.increment();
             if (e instanceof DeadSignal) {
                 // handler 内部明确判死（如业务校验永久失败）：直接置 DEAD，不再重试
-                deadTotal.incrementAndGet();
+                deadTotal.increment();
                 markDead(event, e.getMessage());
                 return;
             }
@@ -165,7 +182,7 @@ public class OutboxDispatcher {
                 // 暂时性竞态（如延迟任务的锚点事务尚未提交）：退回待处理但不消耗重试配额。
                 // 必须排在 willExhaust 之前 —— 这类失败压根不参与「是否超限」的计算，
                 // 它的收敛由 Handler 声明的生命周期护栏兜底（见 enforceLifetime）。
-                noCountRetryTotal.incrementAndGet();
+                noCountRetryTotal.increment();
                 outboxService.markRetryWithoutCounting(event, reason);
                 return;
             }
@@ -197,17 +214,17 @@ public class OutboxDispatcher {
                     log.error("[OUTBOX] onExhausted 回调异常，仍按降级收尾: eventKey={}, type={}",
                             event.getEventKey(), event.getEventType(), ex);
                 }
-                degradedTotal.incrementAndGet();
+                degradedTotal.increment();
                 outboxService.markExhaustedDone(event, reason);
             }
             case DISCARD -> {
-                degradedTotal.incrementAndGet();
+                degradedTotal.increment();
                 outboxService.markExhaustedDone(event, reason);
                 log.warn("[OUTBOX] 事件按 DISCARD 策略丢弃: eventKey={}, type={}",
                         event.getEventKey(), event.getEventType());
             }
             default -> {
-                deadTotal.incrementAndGet();
+                deadTotal.increment();
                 // 复用 markFailed：内部同样判定为耗尽 → 置 DEAD + ERROR 告警
                 outboxService.markFailed(event, reason);
             }
@@ -255,16 +272,16 @@ public class OutboxDispatcher {
         return outboxEventMapper.selectList(query);
     }
 
-    /** 指标快照（运维/自检用） */
+    /** 指标快照（运维/自检用；与 /actuator/prometheus 同源） */
     public Map<String, Long> metricsSnapshot() {
         Map<String, Long> m = new ConcurrentHashMap<>();
-        m.put("dispatchTotal", dispatchTotal.get());
-        m.put("doneTotal", doneTotal.get());
-        m.put("failTotal", failTotal.get());
-        m.put("deadTotal", deadTotal.get());
-        m.put("degradedTotal", degradedTotal.get());
-        m.put("noCountRetryTotal", noCountRetryTotal.get());
-        m.put("lifetimeKilledTotal", lifetimeKilledTotal.get());
+        m.put("dispatchTotal", (long) this.dispatchTotal.count());
+        m.put("doneTotal", (long) this.doneTotal.count());
+        m.put("failTotal", (long) this.failTotal.count());
+        m.put("deadTotal", (long) this.deadTotal.count());
+        m.put("degradedTotal", (long) this.degradedTotal.count());
+        m.put("noCountRetryTotal", (long) this.noCountRetryTotal.count());
+        m.put("lifetimeKilledTotal", (long) this.lifetimeKilledTotal.count());
         return m;
     }
 

@@ -12,9 +12,7 @@ import com.zhuri.coding.content.mapper.course.ApCourseOrderMapper;
 import com.zhuri.coding.content.mapper.course.ApUserCourseMapper;
 import com.zhuri.coding.content.service.order.DiscountService;
 import com.zhuri.coding.content.service.order.OrderService;
-import com.zhuri.coding.content.service.outbox.OutboxService;
-import com.zhuri.coding.content.service.outbox.handler.PayRewardOutboxHandler;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhuri.coding.content.service.payment.PaymentRewardService;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import com.zhuri.coding.model.course.pojos.ApCourse;
@@ -56,10 +54,7 @@ public class OrderServiceImpl implements OrderService {
     private DiscountService discountService;
 
     @Autowired
-    private OutboxService outboxService;
-
-    /** 支付联动事件载荷序列化（Outbox payload） */
-    private static final ObjectMapper PAY_REWARD_MAPPER = new ObjectMapper();
+    private PaymentRewardService paymentRewardService;
 
     @Autowired
     private IRewardClient rewardClient;
@@ -418,20 +413,12 @@ public class OrderServiceImpl implements OrderService {
         }
 
         // 4. 支付成功联动：加逐日等级经验 + 发"系统通知"站内信
-        //    方案 B（Transactional Outbox）：主事务内只写事件，联动由 OutboxDispatcher 异步执行；
-        //    主事务回滚事件一起回滚（原子），联动失败指数退避重试、超限死信告警 —— 不再 try-catch 丢事件。
+        //    本地消息表（Transactional Outbox）：onCoursePurchaseSuccess 被注解标注 ——
+        //    切面把 (userId, courseId, paidAmount, orderNo) 存进消息表（与业务同事务提交），
+        //    方法体由 OutboxDispatcher 在提交后反射重放；失败指数退避、超限死信告警。
         //    （资金类核销仍走上方同步 + 退款兜底语义，不进 Outbox —— 见铁律 4。）
-        String payRewardPayload;
-        try {
-            payRewardPayload = PAY_REWARD_MAPPER.writeValueAsString(
-                    PayRewardOutboxHandler.PayRewardPayload.of(order.getUserId().longValue(),
-                            order.getCourseId(), order.getPaidAmount(), order.getOrderNo()));
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            // 序列化失败属于编程错误（字段固定）：显式失败让主事务回滚，绝不能让"订单 PAID 但联动事件丢失"
-            throw new IllegalStateException("支付联动事件序列化失败: orderNo=" + orderNo, e);
-        }
-        outboxService.record(PayRewardOutboxHandler.EVENT_TYPE + ":" + orderNo,
-                PayRewardOutboxHandler.EVENT_TYPE, payRewardPayload);
+        paymentRewardService.onCoursePurchaseSuccess(order.getUserId().longValue(),
+                order.getCourseId(), order.getPaidAmount(), order.getOrderNo());
 
         log.info("订单支付成功: orderNo={}, tradeNo={}, userId={}, courseId={}",
                 orderNo, tradeNo, order.getUserId(), order.getCourseId());

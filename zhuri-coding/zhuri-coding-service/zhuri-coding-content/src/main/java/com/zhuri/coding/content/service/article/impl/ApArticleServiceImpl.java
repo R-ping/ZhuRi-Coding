@@ -6,8 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.zhuri.coding.common.constants.ArticleConstants;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.ApArticleService;
-import com.zhuri.coding.content.service.outbox.OutboxService;
-import com.zhuri.coding.content.service.outbox.handler.ArticlePublishHandler;
+import com.zhuri.coding.content.service.article.ArticlePublishExecutor;
 import com.zhuri.coding.model.article.dtos.ArticleDto;
 import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
 import com.zhuri.coding.model.article.pojos.ApArticle;
@@ -34,13 +33,13 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     private final static short MAX_PAGE_SIZE = 50;
 
     /**
-     * 统一 Outbox —— 迁移阶段 2 起它是文章发布的**唯一**执行依据。
+     * 文章发布执行体（被 {@code @LocalMessage} 标注）—— 迁移阶段 2 起它是文章发布的**唯一**执行依据。
      *
-     * <p>阶段 1 时该字段只是「双写对照」的旁路（article_event 才是执行依据）；
-     * 切读后 article_event 与 ArticlePublishEvent 的写入均已移除，本字段转为主路径。
+     * <p>在业务事务里调用它，切面只把 articleId 存进本地消息表（与业务同事务提交）；
+     * 方法体（置发布态 + 同步 ES）由 OutboxDispatcher 在提交后反射重放。
      */
     @Autowired
-    private OutboxService outboxService;
+    private ArticlePublishExecutor articlePublishExecutor;
 
     /**
      * 加载文章列表
@@ -98,30 +97,16 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
             log.error("文章不存在，可能有由于审核逻辑出问题，导致文章回滚掉了，文章id：{}", articleId);
             return false;
         }
-        // 落统一 Outbox 锚点（status=PENDING）。本类带类级 @Transactional，
-        // 事件与业务同事务提交；提交后 5s 内即被 OutboxDispatcher 抢占执行
-        // （幂等键 "article_publish:{articleId}" + uk_event_key 保证同一文章只有一条在途事件）。
+        // 落统一 Outbox 锚点：调用被 @LocalMessage 标注的发布方法 —— 切面把 articleId 存进消息表，
+        // 与业务同事务提交；方法体（置发布态 + 同步 ES）由 Dispatcher 在提交后反射重放。
+        // （幂等键 "article_publish:{articleId}" + uk_event_key 保证同一篇文章只有一条在途事件。）
         //
-        // 【迁移阶段 2 · 切读】本方法原先还做两件事，已一并移除：
-        //   ① 写 article_event 锚点 —— 旧状态机的载体，切读后无人再读它；
-        //   ② 发布 ArticlePublishEvent —— 旧执行入口（@Async 监听器 → executePublish）。
-        // 移除这两处写入后，旧链路的「异步监听器 + 20s 补偿扫描」因**无数据可扫、无事件可消费**
-        // 而自然失效，那两个类无需改动（代码留待阶段 3 与 article_event 表一并清理）。
+        // 【迁移阶段 2 · 切读】本方法原先还写 article_event 锚点、发布 ArticlePublishEvent，
+        // 切读后旧链路「无数据可扫、无事件可消费」自然失效（那两个类留待阶段 3 清理）。
         //
-        // 返回值语义随之收紧：阶段 1 时 Outbox 写失败是可容忍的 best-effort（旧链路兜底），
-        // 切读后**落库失败即本次发布失败**，没有第二条路径兜底，故必须 ERROR 告警供人工察觉。
+        // 返回值语义：**落库失败即本次发布失败**，没有第二条路径兜底，故必须 ERROR 告警供人工察觉。
         try {
-            boolean recorded = outboxService.record(
-                    ArticlePublishHandler.eventKey(articleId),
-                    ArticlePublishHandler.EVENT_TYPE,
-                    ArticlePublishHandler.payload(articleId));
-            if (recorded) {
-                log.info("文章发布事件落 Outbox 成功，文章id：{}", articleId);
-            } else {
-                // uk_event_key 冲突 = 同一篇文章已有在途发布事件（重复投递），幂等短路按成功处理
-                log.info("发布事件已存在（幂等短路，无需重复投递）, articleId={}", articleId);
-            }
-            // 两种情况都算落锚成功：事件已存在同样满足「有执行依据」这一前提
+            articlePublishExecutor.publishArticle(articleId);
             return true;
         } catch (Exception e) {
             log.error("文章发布事件落 Outbox 失败，该文章本次将不会发布，需人工排查, articleId={}", articleId, e);

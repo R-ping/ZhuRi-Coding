@@ -2,6 +2,9 @@ package com.zhuri.coding.content.service.article;
 
 import com.zhuri.coding.apis.search.ISearchClient;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.outbox.OutboxDispatcher;
+import com.zhuri.coding.content.service.outbox.RetryWithoutCountingException;
+import com.zhuri.coding.content.service.outbox.localmsg.LocalMessage;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import lombok.extern.slf4j.Slf4j;
@@ -81,6 +84,39 @@ public class ArticlePublishExecutor {
         // ② 同步 ES（失败即抛出）
         syncToEs(articleId);
         return Outcome.DONE;
+    }
+
+    /**
+     * 【本地消息表·注解式接入】文章发布的可靠入口：置 DB 发布态 → 同步 ES。
+     *
+     * <p><b>语义（重要）</b>：被 {@link LocalMessage} 标注后，本方法<b>调用 ≠ 执行</b>——
+     * 在业务事务里调用它，切面只把 {@code articleId} 存进消息表（与业务同事务提交）；
+     * 方法体真正执行发生在事务提交后，由 OutboxDispatcher 反射调回。
+     *
+     * <p>本方法体负责把业务结果翻译成框架的失败语义：
+     * {@code ARTICLE_MISSING / ARTICLE_NOT_PUBLISHABLE} 属永久失败 → 抛 {@code DeadSignal} 直接判死；
+     * {@code STILL_PENDING} 属暂时性竞态 → 抛 {@code RetryWithoutCountingException} 不计次；
+     * 其余异常按普通失败计次重试。
+     *
+     * <p><b>重试预算为何是 3</b>：ES 同步失败有对账巡检（每小时）自动补推，
+     * 死信不是终点 —— 少几次重试、快点进死信，比长时间空转更合理。
+     * 对比支付联动（无对账兜底，死信即人工），那边保持默认 5 次。
+     *
+     * <p><b>必须在事务内调用</b>（调用方 {@code ApArticleServiceImpl} 类级 @Transactional）；
+     * 必须经由注入的 bean 调用（同类 this 调用不走代理，切面不命中）。
+     */
+    @LocalMessage(eventType = "ARTICLE_PUBLISH", key = "'article_publish:' + #a0",
+            lifetimeMinutes = 15, maxRetries = 3)
+    public void publishArticle(Long articleId) {
+        Outcome outcome = publish(articleId);
+        switch (outcome) {
+            case DONE -> log.info("文章发布事件执行成功, articleId={}", articleId);
+            case STILL_PENDING ->
+                    throw new RetryWithoutCountingException("文章仍处于待审态, articleId=" + articleId);
+            case ARTICLE_MISSING, ARTICLE_NOT_PUBLISHABLE ->
+                    // Executor 内已打 ERROR 日志；业务上永久失败，直接判死不浪费重试
+                    throw new OutboxDispatcher.DeadSignal("文章不可发布(" + outcome + "), articleId=" + articleId);
+        }
     }
 
     /** ES 同步：只传 articleId，正文由 search 端反向拉取 */

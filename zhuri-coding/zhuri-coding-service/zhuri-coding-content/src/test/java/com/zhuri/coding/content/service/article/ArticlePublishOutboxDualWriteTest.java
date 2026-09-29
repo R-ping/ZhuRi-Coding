@@ -9,7 +9,6 @@ import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.outbox.OutboxEventMapper;
 import com.zhuri.coding.content.schedule.listener.RedissonDelayQueue;
 import com.zhuri.coding.content.service.outbox.OutboxService;
-import com.zhuri.coding.content.service.outbox.handler.ArticlePublishHandler;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ArticleEvent;
 import com.zhuri.coding.model.outbox.pojos.OutboxEvent;
@@ -87,7 +86,7 @@ class ArticlePublishOutboxDualWriteTest {
             return;
         }
         outboxEventMapper.delete(new LambdaQueryWrapper<OutboxEvent>()
-                .eq(OutboxEvent::getEventKey, ArticlePublishHandler.eventKey(articleId)));
+                .eq(OutboxEvent::getEventKey, "article_publish:" + articleId));
         apArticleEventMapper.delete(new LambdaQueryWrapper<ArticleEvent>()
                 .eq(ArticleEvent::getArticleId, articleId));
         apArticleMapper.deleteById(articleId);
@@ -109,13 +108,15 @@ class ArticlePublishOutboxDualWriteTest {
                 .isEmpty();
 
         // then ② Outbox 成为唯一执行依据，幂等键/载荷与 Handler 约定一致
-        OutboxEvent outboxEvent = selectOutboxEvent(ArticlePublishHandler.eventKey(articleId));
+        OutboxEvent outboxEvent = selectOutboxEvent("article_publish:" + articleId);
         assertThat(outboxEvent)
                 .as("落锚事件必须与业务同事务落库，eventKey=%s",
-                        ArticlePublishHandler.eventKey(articleId))
+                        "article_publish:" + articleId)
                 .isNotNull();
-        assertThat(outboxEvent.getEventType()).isEqualTo(ArticlePublishHandler.EVENT_TYPE);
-        assertThat(outboxEvent.getPayload()).isEqualTo(ArticlePublishHandler.payload(articleId));
+        assertThat(outboxEvent.getEventType()).isEqualTo("ARTICLE_PUBLISH");
+        assertThat(outboxEvent.getPayload()).isEqualTo("[" + articleId + "]");
+        // 注解声明的重试预算：文章同步有对账巡检兜底，3 次足够（支付联动无兜底，仍是默认 5）
+        assertThat(outboxEvent.getMaxRetries()).isEqualTo(3);
     }
 
     @Test
@@ -131,7 +132,7 @@ class ArticlePublishOutboxDualWriteTest {
 
         assertThat(selectEvents(articleId)).isEmpty();
         assertThat(outboxEventMapper.selectCount(new LambdaQueryWrapper<OutboxEvent>()
-                .eq(OutboxEvent::getEventKey, ArticlePublishHandler.eventKey(articleId))))
+                .eq(OutboxEvent::getEventKey, "article_publish:" + articleId)))
                 .as("幂等键唯一：重复投递不会产生第二条事件")
                 .isEqualTo(1L);
     }
@@ -140,12 +141,12 @@ class ArticlePublishOutboxDualWriteTest {
     @DisplayName("Outbox 幂等短路 - 同 eventKey 重复 record 时靠唯一索引拦截并返回 false")
     void recordIsIdempotentByUniqueKey() {
         articleId = insertPendingArticle();
-        String eventKey = ArticlePublishHandler.eventKey(articleId);
+        String eventKey = "article_publish:" + articleId;
 
         boolean first = outboxService.record(
-                eventKey, ArticlePublishHandler.EVENT_TYPE, ArticlePublishHandler.payload(articleId));
+                eventKey, "ARTICLE_PUBLISH", "[" + articleId + "]");
         boolean second = outboxService.record(
-                eventKey, ArticlePublishHandler.EVENT_TYPE, ArticlePublishHandler.payload(articleId));
+                eventKey, "ARTICLE_PUBLISH", "[" + articleId + "]");
 
         assertThat(first).as("首次写入成功").isTrue();
         assertThat(second).as("重复写入应被唯一索引拦截并幂等短路").isFalse();

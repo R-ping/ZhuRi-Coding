@@ -42,6 +42,8 @@ class OutboxDispatcherTest {
     @Mock
     private OutboxHandler handler;
 
+    private com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry replayRegistry;
+
     private OutboxDispatcher dispatcher;
 
     @BeforeEach
@@ -52,7 +54,10 @@ class OutboxDispatcherTest {
                         new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
                 com.zhuri.coding.model.outbox.pojos.OutboxEvent.class);
         org.mockito.Mockito.lenient().when(handler.eventType()).thenReturn("PAY_REWARD");
-        dispatcher = new OutboxDispatcher(outboxEventMapper, outboxService, List.of(handler));
+        replayRegistry = new com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry();
+        replayRegistry.register("PAY_REWARD", handler, "test");
+        dispatcher = new OutboxDispatcher(outboxEventMapper, outboxService, replayRegistry,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     private OutboxEvent event(int status) {
@@ -147,7 +152,7 @@ class OutboxDispatcherTest {
         };
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
-                () -> new OutboxDispatcher(outboxEventMapper, outboxService, List.of(handler, another)));
+                () -> replayRegistry.register("PAY_REWARD", another, "test-duplicate"));
     }
 
     @Test
