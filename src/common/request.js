@@ -3,6 +3,7 @@ import crypto from 'crypto-js'
 import store from '@/stores/store'
 import tokenManager from './tokenManager'
 import { normalizeOssUrl, normalizeResponseData } from './ossUrl'
+import { toast } from '@/utils/toast'
 
 function Request() {
     this.store = null;
@@ -152,6 +153,12 @@ Request.prototype = {
             }
             // 检查响应code字段，非200时视为错误，抛出带message的异常
             if (data && data.code !== undefined && data.code !== 200) {
+                // 限流（业务码 8001）在这里集中提示一次：
+                // 页面侧的 catch 有相当一部分是 `.catch(() => {})` 空实现，若指望每个页面自己弹提示，
+                // 用户往往什么反馈都看不到。集中处理可同时覆盖网关限流与应用层限流。
+                if (data.code === 8001) {
+                    toast(data.message || '请求过于频繁，请稍后再试')
+                }
                 return Promise.reject({ code: data.code, message: data.message || '服务器内部错误', data: data.data })
             }
             // 规范化响应数据中的 OSS URL（去除过期签名参数）
@@ -172,6 +179,14 @@ Request.prototype = {
             if (error.response && error.response.status === 403) {
                 console.warn('[request.js] 403 Forbidden:', error.response.config.url)
                 return Promise.reject(error.response)
+            }
+            // 429限流 — 网关已统一为 HTTP 200 + 业务码 8001，这里是兜底：
+            // 若将来有其他上游按标准语义返回 429，也收敛成与 8001 相同的结构，
+            // 让调用方不必区分"是哪一层限的流"
+            if (error.response && error.response.status === 429) {
+                var limitedMsg = (error.response.data && error.response.data.message) || '请求过于频繁，请稍后再试'
+                toast(limitedMsg)
+                return Promise.reject({ code: 8001, message: limitedMsg })
             }
             // 网络错误
             if (error.code === 'ECONNABORTED' || error.message === 'Network Error') {
