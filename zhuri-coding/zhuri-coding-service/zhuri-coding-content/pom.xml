@@ -29,6 +29,21 @@
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
+        <!-- 动态线程池（Apache-2.0）：AI 异步执行器改为配置中心驱动，运行时可调参 + 指标采集 + 告警。
+             用 nacos starter 而非通用 starter —— 本项目配置中心就是 Nacos（127.0.0.1:8848），
+             线程池参数随已有配置体系走，不额外引入第二套配置源。
+             版本由父 pom 的 dependencyManagement 显式管理（刻意不 import dynamic-tp BOM，
+             否则其内置的 Jackson 2.13.5 会覆盖 Spring Boot 的 2.21.4，见父 pom 注释） -->
+        <dependency>
+            <groupId>org.dromara.dynamictp</groupId>
+            <artifactId>dynamic-tp-spring-boot-starter-nacos</artifactId>
+        </dependency>
+        <!-- 线程池指标上报（Micrometer）：dynamic-tp 采集的 TPS/TP99/队列水位等指标
+             经本项目既有的 /actuator/prometheus 暴露，无需另建监控通道 -->
+        <dependency>
+            <groupId>org.dromara.dynamictp</groupId>
+            <artifactId>dynamic-tp-spring-boot-starter-common</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.zhuri.coding</groupId>
             <artifactId>zhuri-file-starter</artifactId>

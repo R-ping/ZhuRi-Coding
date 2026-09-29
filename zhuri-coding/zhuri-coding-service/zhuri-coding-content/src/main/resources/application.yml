@@ -334,4 +334,125 @@ app:
     recovery-initial-delay-ms: ${AUDIT_RECOVERY_INITIAL_DELAY_MS:120000}
   internal-auth:
     secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
+  # 文章索引对账（ArticleIndexReconcileTask）：补「已发布但不在 ES 索引里」的文章。
+  # 说明：发布事件的失败重试覆盖不了"同步返回成功但文档没落库""索引被清空"这两类，
+  #      故定期真去问一次 ES 并补推 —— 这是「文章搜不到」的最后一道兜底。
+  article:
+    # 对账窗口（天）：只看这段时间内发布的文章
+    index-reconcile-window-days: ${ARTICLE_RECONCILE_WINDOW_DAYS:3}
+    # 单轮扫描上限（控制 ES 查询量）
+    index-reconcile-scan-limit: ${ARTICLE_RECONCILE_SCAN_LIMIT:300}
+    # 单轮补推上限（索引被整体清空时，避免一次性打垮下游）
+    index-reconcile-repair-limit: ${ARTICLE_RECONCILE_REPAIR_LIMIT:100}
+    # 对账周期（毫秒，默认 1 小时）
+    # 说明：用 fixedDelay 而非 cron —— Spring 不允许 cron 与 initialDelay 同时出现
+    index-reconcile-interval-ms: ${ARTICLE_RECONCILE_INTERVAL_MS:3600000}
+    # 首次执行延迟（毫秒，避开启动高峰）
+    index-reconcile-initial-delay-ms: ${ARTICLE_RECONCILE_INITIAL_DELAY_MS:60000}
 
+# 动态线程池（dynamic-tp）：AiAsyncConfig 中四个 @DynamicTp 执行器的运行时参数。
+#
+# 接入方式：这四个执行器仍由 @Bean 声明（保留 AppUserTaskDecorator 等既有语义），
+# 加 @DynamicTp 注解交给框架接管 —— 故此处必须写 autoCreate: false，
+# 否则框架会按本配置再新建同名池，与 @Bean 声明的实例冲突。
+#
+# 参数值来源：等价于改造前 AiAsyncConfig 里的硬编码值，刻意保持一致 ——
+# 本次改造只把「参数从代码搬到配置」，不改行为；调参留给运行时。
+nacos:
+  config:
+    # 与 spring.cloud.nacos.server-addr 同一台 Nacos，但走的是 nacos-config-spring-boot-starter
+    # （项目原先只用了 nacos-discovery，没启用配置中心）
+    server-addr: ${NACOS_CONFIG_ADDR:127.0.0.1:8848}
+    type: yaml
+    # data-id 约定：{应用名}-{环境}.yml；线程池配置单独一个 data-id，与业务配置分离，
+    # 便于运维只改线程池参数而不用碰主配置文件
+    data-ids: ${NACOS_CONFIG_DATA_IDS:zhuri-coding-content-dtp.yml}
+    auto-refresh: true
+    group: DEFAULT_GROUP
+    # bootstrap.enable=false：不做启动期预加载，Nacos 不可达时静默降级（用下面的本地 configuration 兜底），
+    # 不能因为配置中心挂了导致服务起不来 —— 与项目里其它外部依赖（MCP、pgvector）的 fail-open 口径一致
+    bootstrap:
+      enable: false
+
+dynamictp:
+  enabled: true
+  # 指标采集走 Micrometer：复用品目已有的 /actuator/prometheus 通道（management.endpoints 已暴露 prometheus），
+  # 不额外开一套监控链路。TPS/TP99/队列水位等 20+ 指标自此可在 Prometheus/Grafana 直接查。
+  collector-types: micrometer
+  monitor-interval: 5
+
+  global-executor-props:
+    # 全局默认值，各池未显式声明时生效
+    wait-for-tasks-to-complete-on-shutdown: true
+    await-termination-seconds: 30
+    # 变更通知：运维改参后收到通知，避免"谁把线程数改了"无据可查
+    notify-items:
+      - type: change
+        silence-period: 60
+      - type: capacity
+        threshold: 80
+        count: 1
+        period: 30
+        silence-period: 120
+      - type: reject
+        count: 1
+        period: 30
+        silence-period: 120
+
+  # 本地兜底配置（Nacos 未启用/不可达时生效）。四个池与 AiAsyncConfig 的 @Bean 一一对应。
+  executors:
+    - thread-pool-name: aiSseExecutor
+      thread-pool-alias-name: SSE流式问答
+      executor-type: common
+      core-pool-size: 2
+      maximum-pool-size: 4
+      queue-capacity: 50
+      thread-name-prefix: ai-sse-
+      rejected-handler-type: AbortPolicy
+      auto-create: false          # 关键：不新建，只接管 @Bean 声明的实例
+      notify-enabled: true
+      # 流式问答是用户交互请求：任务排队超过 10s 或执行超过 60s 都可能已是异常，纳入超时告警
+      queue-timeout: 10000
+      run-timeout: 60000
+
+    - thread-pool-name: aiAgentToolExecutor
+      thread-pool-alias-name: Agent并行工具
+      executor-type: common
+      core-pool-size: 2
+      maximum-pool-size: 6
+      queue-capacity: 50
+      thread-name-prefix: ai-agent-
+      rejected-handler-type: AbortPolicy
+      auto-create: false
+      notify-enabled: true
+      # 单次 LLM 调用 15s 超时（见 app.ai-precheck.stage-timeout-ms），60s 执行超时留足重试余量
+      queue-timeout: 10000
+      run-timeout: 60000
+
+    - thread-pool-name: aiMemoryCompressExecutor
+      thread-pool-alias-name: 会话记忆压缩
+      executor-type: common
+      core-pool-size: 1
+      maximum-pool-size: 1
+      queue-capacity: 20
+      thread-name-prefix: ai-mem-
+      # 超载丢弃：压缩是可延迟优化任务，丢弃后下次 appendTurn 会再次触发（fail-open）
+      rejected-handler-type: DiscardPolicy
+      auto-create: false
+      # 低频后台任务：不配超时告警（压缩耗时本就随会话长度变化，告警只会产生噪声）
+      notify-enabled: false
+
+    - thread-pool-name: aiAuditTriggerExecutor
+      thread-pool-alias-name: 审核尽快触发
+      executor-type: common
+      core-pool-size: 2
+      maximum-pool-size: 4
+      queue-capacity: 100
+      thread-name-prefix: ai-audit-
+      rejected-handler-type: AbortPolicy
+      auto-create: false
+      notify-enabled: true
+      # 拒绝不影响正确性（审核真保证是落库 + 定时补偿），但仍需告警 ——
+      # 拒绝率升高是「触发池不够用」的早期信号
+      queue-timeout: 30000
+      run-timeout: 60000
