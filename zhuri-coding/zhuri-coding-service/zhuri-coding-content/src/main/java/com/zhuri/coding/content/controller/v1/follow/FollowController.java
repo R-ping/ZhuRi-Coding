@@ -20,11 +20,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/v1/follow")
 public class FollowController {
+
+    /** 单次批量上限：防止调用方一次丢进来几万个 id 拖垮本服务 */
+    private static final int MAX_BATCH = 200;
 
     @Autowired(required = false)
     private BehaviorEventBus behaviorEventBus;
@@ -97,6 +104,32 @@ public class FollowController {
         boolean isFollowing = apFollowMapper.selectCount(wrapper) > 0;
         Map<String, Object> result = new HashMap<>();
         result.put("isFollowing", isFollowing);
+        return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 批量判定：这批 userIds 里，哪些人关注了 followUserId。一次查询出结果，供列表场景消除 N+1。
+     *
+     * @return data 为 {@code Map<userId, Boolean>}；入参里每个 id 都有结果，查不到即 false
+     */
+    @GetMapping("/isFollowing/batch")
+    public ResponseResult isFollowingBatch(@RequestParam("followUserId") Long followUserId,
+                                           @RequestParam("userIds") List<Long> userIds) {
+        if (followUserId == null || userIds == null || userIds.isEmpty()) {
+            return ResponseResult.okResult(new HashMap<>());
+        }
+        List<Long> ids = userIds.stream().filter(Objects::nonNull).distinct().limit(MAX_BATCH).toList();
+        LambdaQueryWrapper<ApFollow> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ApFollow::getFollowUserId, followUserId.intValue());
+        wrapper.in(ApFollow::getUserId, ids.stream().map(Long::intValue).toList());
+        Set<Long> followed = new HashSet<>();
+        for (ApFollow row : apFollowMapper.selectList(wrapper)) {
+            followed.add(row.getUserId().longValue());
+        }
+        Map<String, Object> result = new HashMap<>();
+        for (Long id : ids) {
+            result.put(String.valueOf(id), followed.contains(id));
+        }
         return ResponseResult.okResult(result);
     }
 }

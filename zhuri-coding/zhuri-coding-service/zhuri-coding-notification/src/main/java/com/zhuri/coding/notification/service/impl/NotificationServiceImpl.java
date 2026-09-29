@@ -18,7 +18,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -27,7 +30,32 @@ import java.util.concurrent.TimeUnit;
 public class NotificationServiceImpl implements NotificationService {
 
     private static final String REDIS_UNREAD_KEY = "notif:unread:";
+    private static final String FIELD_TOTAL = "total";
+    /** 缓存里的类型明细字段，与 getTypeName 的输出一一对应 */
+    private static final String[] TYPE_FIELDS = {"comment", "digg", "follow", "system"};
+    /** 未读计数缓存 TTL。到期后由 DB 全量重建，顺带校正增量累积的偏差 */
+    private static final long UNREAD_TTL_MINUTES = 5;
     private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * 参与聚合的通知类型：2-赞/收藏、3-粉丝。
+     *
+     * <p>评论(1) 与系统(4) 刻意不进来：这两类的价值在于"说了什么/发了什么"，
+     * 压成"3 人评论了你"等于把内容丢了。系统通知的 source_id 本来也常为空。
+     *
+     * <p>已知取舍：赞和收藏都是 type=2、source_id 都是作品 ID，会被合并成同一行，
+     * 文案取最近一次事件。要拆开只要让写入方把 source_id 带上动作前缀即可，不用改表。
+     */
+    private static final Set<Integer> AGGREGATABLE_TYPES = Set.of(2, 3);
+
+    /** 复合游标分隔符：{@code last_event_at + "_" + id} */
+    private static final String CURSOR_SEP = "_";
+    /**
+     * 游标里时间的固定格式。不能用 {@code LocalDateTime.toString()}——
+     * 秒为 0 时它会输出 {@code 2026-09-01T10:00} 而不是 {@code ...T10:00:00}，
+     * 同一个时刻能产出两种字符串。游标是要回传给服务端的，格式必须唯一。
+     */
+    private static final DateTimeFormatter CURSOR_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
     @Autowired
     private NotificationMapper notificationMapper;
@@ -49,9 +77,25 @@ public class NotificationServiceImpl implements NotificationService {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
         int size = (dto.getSize() == null || dto.getSize() <= 0) ? 20 : Math.min(dto.getSize(), 50);
-        Long cursor = dto.getCursor() != null ? Long.parseLong(dto.getCursor()) : null;
 
-        List<Notification> notifications = notificationMapper.selectByTypeAndCursor(userId, type, cursor, size);
+        // 游标是 (last_event_at, id) 二元组。旧格式是单个 id，解析不了就退回第一页，
+        // 不要因为一个过期的游标让整个列表 500。
+        LocalDateTime cursorAt = null;
+        Long cursorId = null;
+        if (dto.getCursor() != null && dto.getCursor().contains(CURSOR_SEP)) {
+            String[] parts = dto.getCursor().split(CURSOR_SEP, 2);
+            try {
+                cursorAt = LocalDateTime.parse(parts[0], CURSOR_TIME_FMT);
+                cursorId = Long.valueOf(parts[1]);
+            } catch (Exception e) {
+                log.warn("通知游标解析失败，退回第一页, userId={}, cursor={}", userId, dto.getCursor());
+                cursorAt = null;
+                cursorId = null;
+            }
+        }
+
+        List<Notification> notifications =
+                notificationMapper.selectByTypeAndCursor(userId, type, cursorAt, cursorId, size);
         List<Map<String, Object>> list = new ArrayList<>();
         for (Notification n : notifications) {
             list.add(assembleNotificationData(n, userId));
@@ -59,7 +103,7 @@ public class NotificationServiceImpl implements NotificationService {
 
         boolean hasMore = notifications.size() == size;
         String nextCursor = hasMore && !notifications.isEmpty()
-                ? String.valueOf(notifications.get(notifications.size() - 1).getId())
+                ? buildCursor(notifications.get(notifications.size() - 1))
                 : null;
 
         Map<String, Object> result = new HashMap<>();
@@ -137,31 +181,74 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public ResponseResult unreadCount(Long userId) {
-        String key = REDIS_UNREAD_KEY + userId;
-        // 1) 优先读取整包缓存（total + 各类型），一次性命中直接返回
-        if (stringRedisTemplate != null) {
-            String cached = stringRedisTemplate.opsForValue().get(key);
-            if (cached != null && !cached.isEmpty()) {
-                try {
-                    Map<String, Object> cachedResult = objectMapper.readValue(
-                            cached, new TypeReference<Map<String, Object>>() {});
-                    return ResponseResult.okResult(cachedResult);
-                } catch (Exception e) {
-                    log.warn("未读计数缓存解析失败，回退 DB 查询, userId={}", userId, e);
-                }
-            }
+        // 1) 缓存命中直接返回。写入侧已按类型原子增量维护，不必回库。
+        Map<String, Object> cached = readUnreadCache(userId);
+        if (cached != null) {
+            return ResponseResult.okResult(cached);
         }
-        // 2) DB 作为唯一事实源，保证 total 恒等于各类型之和
+        // 2) 未命中：DB 是唯一事实源，重建整包缓存（各类型明细齐全，作为后续增量的基线）
         Map<String, Object> result = loadUnreadFromDb(userId);
-        // 3) 写整包缓存
-        if (stringRedisTemplate != null) {
-            try {
-                stringRedisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(result), 5, TimeUnit.MINUTES);
-            } catch (Exception e) {
-                log.warn("未读计数缓存写入失败, userId={}", userId, e);
-            }
-        }
+        writeUnreadCache(userId, result);
         return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 读未读计数缓存（Hash：total + 各类型明细）。不存在返回 null，由调用方回库重建。
+     */
+    private Map<String, Object> readUnreadCache(Long userId) {
+        if (stringRedisTemplate == null || userId == null) {
+            return null;
+        }
+        try {
+            Map<Object, Object> entries = stringRedisTemplate.opsForHash().entries(REDIS_UNREAD_KEY + userId);
+            if (entries.isEmpty()) {
+                return null;
+            }
+            Map<String, Object> result = new HashMap<>();
+            result.put(FIELD_TOTAL, toInt(entries.get(FIELD_TOTAL)));
+            for (String field : TYPE_FIELDS) {
+                result.put(field, toInt(entries.get(field)));
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("未读计数缓存读取失败，回退 DB 查询, userId={}", userId, e);
+            return null;
+        }
+    }
+
+    /** Redis Hash 取回的值可能是 String 也可能是数字，统一转成 int */
+    private int toInt(Object v) {
+        if (v == null) {
+            return 0;
+        }
+        if (v instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(v.toString());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private void writeUnreadCache(Long userId, Map<String, Object> result) {
+        if (stringRedisTemplate == null || userId == null) {
+            return;
+        }
+        try {
+            String key = REDIS_UNREAD_KEY + userId;
+            Map<String, Object> flat = new HashMap<>();
+            flat.put(FIELD_TOTAL, result.get(FIELD_TOTAL));
+            for (String field : TYPE_FIELDS) {
+                flat.put(field, result.get(field));
+            }
+            stringRedisTemplate.opsForHash().putAll(key, flat);
+            // TTL 只在重建时设置。增量刻意不刷新它——到期后由 DB 全量重建，
+            // 顺带校正增量期间累积的偏差。
+            stringRedisTemplate.expire(key, UNREAD_TTL_MINUTES, TimeUnit.MINUTES);
+        } catch (Exception e) {
+            log.warn("未读计数缓存写入失败, userId={}", userId, e);
+        }
     }
 
     /**
@@ -216,23 +303,63 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    @Transactional
     public ResponseResult createNotification(Long userId, Integer type, String sourceId, String content) {
         if (userId == null || type == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
+        if (!AGGREGATABLE_TYPES.contains(type) || sourceId == null || sourceId.isBlank()) {
+            return insertPlain(userId, type, sourceId, content);
+        }
+
+        String aggKey = type + ":" + sourceId;
+        Notification notification = new Notification();
+        notification.setUserId(userId);
+        notification.setType(type);
+        notification.setSourceId(sourceId);
+        notification.setAggKey(aggKey);
+        notification.setContent(content);
+        notification.setAggCount(1);
+        notification.setLastEventAt(LocalDateTime.now());
+
+        // 顺序不能反。flipToUnread 的 WHERE 里带 is_read = 1，它的返回值就是
+        // "这一行原本是不是已读" —— 这是判断未读数要不要 +1 的唯一依据，
+        // 一旦先 upsert 就再也问不出来了（upsert 之后这行必然是未读）。
+        int flipped = notificationMapper.flipToUnread(userId, aggKey);
+        int affected = notificationMapper.upsertAggregated(notification);
+
+        // 三种结局，只有前两种要动未读缓存：
+        //   ① flipped > 0  合并进了一条已读行，它重新变回未读 → 未读 +1
+        //   ② affected = 1 插了新行（此前没有这条聚合记录）→ 未读 +1
+        //   ③ affected = 2 合并进一条本来就没读的行 → 未读数不该变
+        // ①②互斥：flip 命中要求行已存在，插入要求行不存在，不会重复计数。
+        if (flipped > 0 || affected == 1) {
+            incrUnreadCache(userId, type);
+        }
+
+        return ResponseResult.okResult(notification.getId());
+    }
+
+    /** 不参与聚合的通知（评论、系统）：一行一事件，插入即未读。 */
+    private ResponseResult insertPlain(Long userId, Integer type, String sourceId, String content) {
         Notification notification = new Notification();
         notification.setUserId(userId);
         notification.setType(type);
         notification.setSourceId(sourceId);
         notification.setContent(content);
         notification.setIsRead(0);
-        notification.setCreatedAt(java.time.LocalDateTime.now());
+        notification.setCreatedAt(LocalDateTime.now());
         notificationMapper.insert(notification);
-
-        // 更新Redis未读计数
-        incrUnreadCache(userId);
-
+        incrUnreadCache(userId, type);
         return ResponseResult.okResult(notification.getId());
+    }
+
+    private String buildCursor(Notification n) {
+        LocalDateTime at = n.getLastEventAt() != null ? n.getLastEventAt() : n.getCreatedAt();
+        if (at == null) {
+            return null;
+        }
+        return at.format(CURSOR_TIME_FMT) + CURSOR_SEP + n.getId();
     }
 
     @Override
@@ -258,8 +385,8 @@ public class NotificationServiceImpl implements NotificationService {
             notification.setCreatedAt(java.time.LocalDateTime.now());
             notificationMapper.insert(notification);
 
-            // 更新Redis未读计数
-            incrUnreadCache(userId);
+            // 系统通知固定 type=4
+            incrUnreadCache(userId, 4);
 
             return ResponseResult.okResult(notification.getId());
         } catch (Exception e) {
@@ -270,8 +397,38 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void incrUnreadCache(Long userId) {
-        // 未读计数以 DB 为唯一事实源，这里仅使缓存失效，下次读取按 DB 重建整包缓存
+        // 无类型的入口（外部 Feign 调用）维持"整包失效"语义：下次读取按 DB 重建
         evictUnreadCache(userId);
+    }
+
+    /**
+     * 新来一条通知：按类型原子增量未读计数，不再整包失效。
+     *
+     * <p>为什么必须要求缓存已存在：缓存里存的是"各类型明细 + total"，增量只认得这一种类型。
+     * 如果缓存不存在时就开始增量，会得到一份残缺的计数——用户明明有 3 条未读评论，
+     * 缓存里却只有刚来的 1 条点赞。所以没有基线就跳过，让缓存保持"不存在"，
+     * 下次读取自然走 DB 全量重建。
+     *
+     * <p>为什么用 Hash 而不是整包 JSON：整包要先读出来、改完再写回，两个并发写入会互相覆盖；
+     * HINCRBY 让数据库自己加，没有丢失更新的窗口。
+     */
+    void incrUnreadCache(Long userId, Integer type) {
+        if (stringRedisTemplate == null || userId == null || type == null) {
+            return;
+        }
+        try {
+            String key = REDIS_UNREAD_KEY + userId;
+            Long size = stringRedisTemplate.opsForHash().size(key);
+            if (size == null || size == 0) {
+                return;
+            }
+            stringRedisTemplate.opsForHash().increment(key, FIELD_TOTAL, 1);
+            stringRedisTemplate.opsForHash().increment(key, getTypeName(type), 1);
+            // 刻意不刷新 TTL：到期后由 DB 全量重建，校正增量累积的偏差
+        } catch (Exception e) {
+            log.warn("未读计数增量失败，回退为整包失效, userId={}", userId, e);
+            evictUnreadCache(userId);
+        }
     }
 
     /**
@@ -300,6 +457,11 @@ public class NotificationServiceImpl implements NotificationService {
         data.put("type", getTypeName(n.getType()));
         data.put("is_read", n.getIsRead() == 1);
         data.put("created_at", n.getCreatedAt() != null ? n.getCreatedAt().toString() : null);
+        // 聚合行：这行合并了多少个事件、最后一次事件什么时候发生。
+        // 前端据此显示"张三 等 N 人赞了你的作品"；不聚合的行 agg_count 恒为 1。
+        data.put("agg_count", n.getAggCount() == null ? 1 : n.getAggCount());
+        data.put("last_event_at",
+                n.getLastEventAt() != null ? n.getLastEventAt().format(CURSOR_TIME_FMT) : null);
 
         // 解析content JSON中的多态数据
         if (n.getContent() != null) {

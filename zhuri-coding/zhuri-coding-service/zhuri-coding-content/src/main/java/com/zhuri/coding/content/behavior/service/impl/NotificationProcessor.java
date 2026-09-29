@@ -163,9 +163,6 @@ public class NotificationProcessor implements BehaviorPostProcessor {
 
             notificationClient.createNotification(params);
 
-            // 更新未读计数
-            notificationClient.incrUnread(context.getTargetUserId().longValue());
-
             log.info("粉丝通知已发送: to={}, from={}",
                 context.getTargetUserId(), context.getUserId());
         } catch (Exception e) {

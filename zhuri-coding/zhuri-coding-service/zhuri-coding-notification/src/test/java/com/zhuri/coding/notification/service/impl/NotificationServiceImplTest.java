@@ -17,9 +17,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -54,6 +56,8 @@ class NotificationServiceImplTest {
     private IFollowClient followClient;
     @Mock
     private ValueOperations<String, String> valueOps;
+    @Mock
+    private HashOperations<String, Object, Object> hashOps;
 
     @InjectMocks
     private NotificationServiceImpl notificationService;
@@ -64,6 +68,7 @@ class NotificationServiceImplTest {
     void setUp() {
         // 部分测试不触碰 Redis，故对 opsForValue() 打桩放宽为 lenient，避免 UnnecessaryStubbing
         lenient().when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
+        lenient().when(stringRedisTemplate.opsForHash()).thenReturn(hashOps);
         ApUser u = new ApUser();
         u.setId(userId.intValue());
         AppThreadLocalUtil.setUser(u);
@@ -104,7 +109,8 @@ class NotificationServiceImplTest {
             dto.setSize(10);
             dto.setCursor("50");
             Notification n = notif(60L, 1, 0, "{\"title\":\"t\",\"content\":\"c\",\"link\":\"l\",\"notification_type\":\"activity\"}");
-            when(notificationMapper.selectByTypeAndCursor(userId, 1, 50L, 10)).thenReturn(List.of(n));
+            // "50" 是旧格式的纯 id 游标，没有分隔符 → 解析失败退回第一页
+            when(notificationMapper.selectByTypeAndCursor(userId, 1, null, null, 10)).thenReturn(List.of(n));
 
             Map<String, Object> data = (Map<String, Object>) notificationService.list(dto).getData();
             List<Map<String, Object>> list = (List<Map<String, Object>>) data.get("list");
@@ -120,7 +126,7 @@ class NotificationServiceImplTest {
             NotificationDto dto = new NotificationDto();
             dto.setType("digg");
             Notification n = notif(61L, 2, 1, "plain-text");
-            when(notificationMapper.selectByTypeAndCursor(eq(userId), eq(2), isNull(), anyInt()))
+            when(notificationMapper.selectByTypeAndCursor(eq(userId), eq(2), isNull(), isNull(), anyInt()))
                     .thenReturn(List.of(n));
 
             Map<String, Object> data = (Map<String, Object>) notificationService.list(dto).getData();
@@ -195,9 +201,9 @@ class NotificationServiceImplTest {
     @DisplayName("unreadCount 未读计数")
     class UnreadCount {
         @Test
-        @DisplayName("Redis 无缓存 → 用 DB 分组总数并写回整包缓存")
+        @DisplayName("Redis 无缓存 → 用 DB 分组总数并写回 Hash 缓存")
         void testFromDb() {
-            when(valueOps.get("notif:unread:100")).thenReturn(null);
+            when(hashOps.entries("notif:unread:100")).thenReturn(Map.of());
             Map<String, Object> row = new HashMap<>();
             row.put("type", 1);
             row.put("count", 3);
@@ -207,23 +213,63 @@ class NotificationServiceImplTest {
             assertEquals(3, data.get("total"));
             assertEquals(3, data.get("comment"));
             assertEquals(0, data.get("digg"));
-            // 写回的是整包 JSON，而非单个总数
-            verify(valueOps).set(eq("notif:unread:100"),
-                    argThat(json -> json.contains("\"total\":3") && json.contains("\"comment\":3")),
-                    eq(5L), eq(TimeUnit.MINUTES));
+            // 写回的是各类型明细齐全的基线——后续按类型增量才有得可加
+            verify(hashOps).putAll(eq("notif:unread:100"), argThat(m ->
+                    Integer.valueOf(3).equals(m.get("total")) && Integer.valueOf(3).equals(m.get("comment"))));
+            verify(stringRedisTemplate).expire("notif:unread:100", 5, TimeUnit.MINUTES);
         }
 
         @Test
-        @DisplayName("Redis 有整包缓存 → 直接返回，不触达 DB")
+        @DisplayName("Redis 有 Hash 缓存 → 直接返回，不触达 DB")
         void testFromRedis() {
-            when(valueOps.get("notif:unread:100"))
-                    .thenReturn("{\"total\":10,\"comment\":0,\"digg\":0,\"follow\":0,\"system\":0}");
+            Map<Object, Object> entries = new HashMap<>();
+            entries.put("total", "10");
+            entries.put("comment", "0");
+            when(hashOps.entries("notif:unread:100")).thenReturn(entries);
 
             Map<String, Object> data = (Map<String, Object>) notificationService.unreadCount(userId).getData();
             assertEquals(10, data.get("total"));
             assertEquals(0, data.get("comment"));
+            // 缺失的类型字段补 0
+            assertEquals(0, data.get("digg"));
             // 命中缓存，不再查询 DB（防止 UnnecessaryStubbing 不再打桩 countUnreadGroupByType）
             verify(notificationMapper, never()).countUnreadGroupByType(anyLong());
+        }
+    }
+
+    @Nested
+    @DisplayName("incrUnreadCache 按类型增量")
+    class IncrUnread {
+        @Test
+        @DisplayName("已有基线 → 按类型原子增量，不再整包失效")
+        void testIncrement() {
+            when(hashOps.size("notif:unread:100")).thenReturn(5L);
+
+            notificationService.incrUnreadCache(userId, 1);
+
+            verify(hashOps).increment("notif:unread:100", "total", 1L);
+            verify(hashOps).increment("notif:unread:100", "comment", 1L);
+            verify(stringRedisTemplate, never()).delete("notif:unread:100");
+        }
+
+        @Test
+        @DisplayName("没有基线 → 跳过增量，避免写出只含部分类型的残缺计数")
+        void testSkipWhenNoBaseline() {
+            when(hashOps.size("notif:unread:100")).thenReturn(0L);
+
+            notificationService.incrUnreadCache(userId, 1);
+
+            verify(hashOps, never()).increment(anyString(), any(), anyLong());
+        }
+
+        @Test
+        @DisplayName("Redis 抛异常 → 回退为整包失效，下次按 DB 重建")
+        void testFallbackOnError() {
+            when(hashOps.size("notif:unread:100")).thenThrow(new RuntimeException("redis down"));
+
+            notificationService.incrUnreadCache(userId, 1);
+
+            verify(stringRedisTemplate).delete("notif:unread:100");
         }
     }
 
@@ -278,14 +324,30 @@ class NotificationServiceImplTest {
         }
 
         @Test
-        @DisplayName("createNotification：成功插入并使未读缓存失效")
+        @DisplayName("createNotification：评论类不聚合 → 直接插入并按类型增量未读")
         void testOk() {
             when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+            when(hashOps.size("notif:unread:100")).thenReturn(5L);
 
-            assertEquals(200, notificationService.createNotification(userId, 3, "src", "content").getCode());
-            verify(notificationMapper).insert(ArgumentMatchers.<Notification>argThat(n -> n.getType() == 3 && n.getIsRead() == 0));
-            // 未读计数以 DB 为唯一源，插入后仅失效整包缓存
-            verify(stringRedisTemplate).delete("notif:unread:100");
+            assertEquals(200, notificationService.createNotification(userId, 1, "src", "content").getCode());
+            verify(notificationMapper).insert(ArgumentMatchers.<Notification>argThat(
+                    n -> n.getType() == 1 && n.getIsRead() == 0 && n.getAggKey() == null));
+            verify(notificationMapper, never()).upsertAggregated(any());
+            // type=1 → comment。按类型增量而非整包失效——整包失效会让活跃用户的缓存一直被冲掉
+            verify(hashOps).increment("notif:unread:100", "comment", 1L);
+            verify(hashOps).increment("notif:unread:100", "total", 1L);
+            verify(stringRedisTemplate, never()).delete("notif:unread:100");
+        }
+
+        @Test
+        @DisplayName("createNotification：聚合类型但 sourceId 为空 → 退化为普通插入")
+        void testAggregatableButNoSource() {
+            when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+            when(hashOps.size("notif:unread:100")).thenReturn(5L);
+
+            assertEquals(200, notificationService.createNotification(userId, 2, null, "content").getCode());
+            verify(notificationMapper).insert(any(Notification.class));
+            verify(notificationMapper, never()).upsertAggregated(any());
         }
 
         @Test
@@ -295,14 +357,127 @@ class NotificationServiceImplTest {
         }
 
         @Test
-        @DisplayName("sendActivityNotification：成功写入 JSON 内容并使未读缓存失效")
+        @DisplayName("sendActivityNotification：成功写入 JSON 内容并按类型增量未读")
         void testActivityOk() {
             when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+            when(hashOps.size("notif:unread:100")).thenReturn(5L);
 
             ResponseResult r = notificationService.sendActivityNotification(userId, "促销", "看看", "/link");
             assertEquals(200, r.getCode());
             verify(notificationMapper).insert(ArgumentMatchers.<Notification>argThat(n -> n.getType() == 4));
-            verify(stringRedisTemplate).delete("notif:unread:100");
+            // 系统通知固定 type=4 → system
+            verify(hashOps).increment("notif:unread:100", "system", 1L);
+        }
+    }
+
+    @Nested
+    @DisplayName("通知聚合：同一 (user, type, source) 只占一行")
+    class Aggregate {
+
+        private void givenCacheExists() {
+            when(hashOps.size("notif:unread:100")).thenReturn(5L);
+        }
+
+        @Test
+        @DisplayName("首次事件：upsert 返回 1（新行）→ 未读 +1")
+        void testFirstEvent() {
+            givenCacheExists();
+            when(notificationMapper.flipToUnread(userId, "2:art-1")).thenReturn(0);
+            when(notificationMapper.upsertAggregated(any(Notification.class))).thenReturn(1);
+
+            assertEquals(200, notificationService.createNotification(userId, 2, "art-1", "{}").getCode());
+
+            verify(notificationMapper).upsertAggregated(ArgumentMatchers.<Notification>argThat(
+                    n -> "2:art-1".equals(n.getAggKey()) && n.getLastEventAt() != null));
+            verify(notificationMapper, never()).insert(any(Notification.class));
+            verify(hashOps).increment("notif:unread:100", "digg", 1L);
+        }
+
+        @Test
+        @DisplayName("合并进未读行：upsert 返回 2、flip 0 → 未读数不该变")
+        void testMergeIntoUnread() {
+            when(notificationMapper.flipToUnread(userId, "2:art-1")).thenReturn(0);
+            when(notificationMapper.upsertAggregated(any(Notification.class))).thenReturn(2);
+
+            assertEquals(200, notificationService.createNotification(userId, 2, "art-1", "{}").getCode());
+
+            // 合并进本来就没读的行：未读数一个字都不该动，连缓存都不该碰
+            verifyNoInteractions(hashOps);
+            verify(stringRedisTemplate, never()).delete("notif:unread:100");
+        }
+
+        @Test
+        @DisplayName("合并进已读行：flip 命中 1 → 翻回未读，未读 +1（最新的也冒出来）")
+        void testMergeIntoRead() {
+            givenCacheExists();
+            when(notificationMapper.flipToUnread(userId, "2:art-1")).thenReturn(1);
+            when(notificationMapper.upsertAggregated(any(Notification.class))).thenReturn(2);
+
+            assertEquals(200, notificationService.createNotification(userId, 2, "art-1", "{}").getCode());
+
+            // flip 必须在 upsert 之前：upsert 之后这行必然是未读，就再也问不出"原来是不是已读"
+            InOrder inOrder = inOrder(notificationMapper);
+            inOrder.verify(notificationMapper).flipToUnread(userId, "2:art-1");
+            inOrder.verify(notificationMapper).upsertAggregated(any(Notification.class));
+
+            verify(hashOps).increment("notif:unread:100", "digg", 1L);
+            verify(hashOps).increment("notif:unread:100", "total", 1L);
+        }
+
+        @Test
+        @DisplayName("粉丝通知同样聚合，且 agg_key 用 type 前缀与点赞区分开")
+        void testFollowAggKey() {
+            givenCacheExists();
+            when(notificationMapper.flipToUnread(userId, "3:9527")).thenReturn(0);
+            when(notificationMapper.upsertAggregated(any(Notification.class))).thenReturn(1);
+
+            notificationService.createNotification(userId, 3, "9527", "{}");
+
+            verify(notificationMapper).upsertAggregated(ArgumentMatchers.<Notification>argThat(
+                    n -> "3:9527".equals(n.getAggKey())));
+            verify(hashOps).increment("notif:unread:100", "follow", 1L);
+        }
+    }
+
+    @Nested
+    @DisplayName("复合游标：(last_event_at, id)")
+    class Cursor {
+
+        @Test
+        @DisplayName("合法复合游标 → 拆成 last_event_at + id 传给 Mapper")
+        void testCompositeCursor() {
+            NotificationDto dto = new NotificationDto();
+            dto.setType("digg");
+            dto.setSize(1);
+            dto.setCursor("2026-09-01T10:00:00_50");
+
+            Notification n = notif(50L, 2, 0, "{}");
+            n.setLastEventAt(LocalDateTime.parse("2026-09-01T10:00:00"));
+            when(notificationMapper.selectByTypeAndCursor(
+                    eq(userId), eq(2), eq(LocalDateTime.parse("2026-09-01T10:00:00")), eq(50L), eq(1)))
+                    .thenReturn(List.of(n));
+
+            Map<String, Object> data = (Map<String, Object>) notificationService.list(dto).getData();
+            assertEquals("2026-09-01T10:00:00_50", data.get("next_cursor"));
+        }
+
+        @Test
+        @DisplayName("返回体带 agg_count 与 last_event_at，供前端显示「等 N 人」")
+        void testAggCountInPayload() {
+            NotificationDto dto = new NotificationDto();
+            dto.setType("digg");
+            dto.setSize(1);
+
+            Notification n = notif(70L, 2, 0, "{}");
+            n.setAggCount(37);
+            n.setLastEventAt(LocalDateTime.parse("2026-09-28T20:00:00"));
+            when(notificationMapper.selectByTypeAndCursor(eq(userId), eq(2), isNull(), isNull(), eq(1)))
+                    .thenReturn(List.of(n));
+
+            Map<String, Object> data = (Map<String, Object>) notificationService.list(dto).getData();
+            List<Map<String, Object>> list = (List<Map<String, Object>>) data.get("list");
+            assertEquals(37, list.get(0).get("agg_count"));
+            assertEquals("2026-09-28T20:00:00", list.get(0).get("last_event_at"));
         }
     }
 }

@@ -10,11 +10,16 @@ CREATE TABLE IF NOT EXISTS `notifications` (
   `user_id` bigint(20) NOT NULL COMMENT '接收通知的用户ID',
   `type` tinyint(4) NOT NULL COMMENT '1-评论 2-赞/收藏 3-粉丝 4-系统',
   `source_id` varchar(64) DEFAULT NULL COMMENT '触发源ID（评论ID/文章ID/用户ID等）',
+  `agg_key` varchar(128) DEFAULT NULL COMMENT '聚合键（type:sourceId）；为空表示不聚合，一行一事件',
   `content` text COMMENT '通知内容摘要（JSON存储多态数据）',
+  `agg_count` int NOT NULL DEFAULT '1' COMMENT '本行合并的事件数；不聚合恒为 1',
+  `last_event_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '最后一次事件时间；列表排序与游标用它，被顶起来的行才能浮到顶部',
   `is_read` tinyint(1) DEFAULT '0' COMMENT '0-未读 1-已读',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_user_read_created` (`user_id`, `is_read`, `created_at`)
+  UNIQUE KEY `uk_agg` (`user_id`, `agg_key`),
+  KEY `idx_user_read_created` (`user_id`, `is_read`, `created_at`),
+  KEY `idx_user_type_last` (`user_id`, `type`, `last_event_at`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='被动通知表';
 
 -- 系统通知表

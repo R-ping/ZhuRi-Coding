@@ -2,9 +2,14 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.zhuri.coding.notification.mapper.ImMessageMapper">
 
+    <!-- 按会话查消息（游标向前翻）。
+         删除是「各自可见」的：一段会话里两个人各有一个删除标记，谁删的对谁不可见。
+         所以过滤要按调用者身份选列——我是发送方就看 is_deleted_for_sender，否则看另一个。
+         此前这两个字段只在插入时写了 0，没有任何查询读它们，等于删了也照样显示。 -->
     <select id="selectBySessionId" resultType="com.zhuri.coding.model.notification.pojos.ImMessage">
         SELECT * FROM im_messages
         WHERE session_id = #{sessionId}
+          AND IF(sender_id = #{userId}, is_deleted_for_sender, is_deleted_for_receiver) = 0
           <if test="cursor != null and cursor > 0">
               AND id &lt; #{cursor}
           </if>
@@ -24,6 +29,12 @@
                 AND sender_id = #{receiverId}
                 AND receiver_id = #{senderId}
           )
+    </select>
+
+    <select id="selectByClientId" resultType="com.zhuri.coding.model.notification.pojos.ImMessage">
+        SELECT * FROM im_messages
+        WHERE session_id = #{sessionId} AND client_id = #{clientId}
+        LIMIT 1
     </select>
 
     <update id="markRead">

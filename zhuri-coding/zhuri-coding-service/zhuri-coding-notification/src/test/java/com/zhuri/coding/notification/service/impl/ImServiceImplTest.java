@@ -79,6 +79,11 @@ class ImServiceImplTest {
         return data;
     }
 
+    /** 批量接口的返回结构：{ "200": {nickname, avatar} } */
+    private ResponseResult batchPeerInfo(Long id, String name, String avatar) {
+        return ResponseResult.okResult(Map.of(String.valueOf(id), peerInfoData(name, avatar)));
+    }
+
     /** 通过反射将指定字段置为 null，模拟 @Autowired(required=false) 依赖缺失 */
     private void clearField(String name) throws Exception {
         Field f = ImServiceImpl.class.getDeclaredField(name);
@@ -90,11 +95,11 @@ class ImServiceImplTest {
     @DisplayName("listSessions 会话列表")
     class ListSessions {
         @Test
-        @DisplayName("正常：对方信息/us读/权限补齐")
+        @DisplayName("正常：对方信息/未读/权限补齐")
         void testOk() {
             ImSession s = session(10L, 100L, 200L, 1, 3);
             when(imSessionMapper.selectByUserId(100L)).thenReturn(List.of(s));
-            when(userClient.getPublicInfo(200L)).thenReturn(ResponseResult.okResult(peerInfoData("张三", "a.png")));
+            when(userClient.getBasicInfoBatch(List.of(200L))).thenReturn(batchPeerInfo(200L, "张三", "a.png"));
 
             Map<String, Object> data = (Map<String, Object>) imService.listSessions(100L).getData();
             List<Map<String, Object>> list = (List<Map<String, Object>>) data.get("list");
@@ -105,6 +110,56 @@ class ImServiceImplTest {
             assertEquals(3, item.get("unread_count"));
             // is_active=1 → can_send_unlimited=true
             assertTrue((Boolean) item.get("can_send_unlimited"));
+        }
+
+        @Test
+        @DisplayName("多个会话 → 两个批量接口各只调一次，不再是 2N 次")
+        void testBatchInsteadOfNPlusOne() {
+            when(imSessionMapper.selectByUserId(100L)).thenReturn(List.of(
+                    session(10L, 100L, 200L, 0, 0),
+                    session(11L, 100L, 300L, 0, 0),
+                    session(12L, 100L, 400L, 0, 0)));
+            when(userClient.getBasicInfoBatch(List.of(200L, 300L, 400L)))
+                    .thenReturn(batchPeerInfo(200L, "张三", "a"));
+
+            Map<String, Object> data = (Map<String, Object>) imService.listSessions(100L).getData();
+            assertEquals(3, ((List<?>) data.get("list")).size());
+
+            // 3 个会话，但每个批量接口只打一次
+            verify(userClient, times(1)).getBasicInfoBatch(any());
+            verify(followClient, times(1)).isFollowingBatch(eq(100L), any());
+            // 不再逐人调用单条接口
+            verify(userClient, never()).getPublicInfo(anyLong());
+            verify(followClient, never()).isFollowing(anyLong(), anyLong());
+        }
+
+        @Test
+        @DisplayName("对方关注了当前用户 → 可无限发送")
+        void testCanSendWhenPeerFollowsViewer() {
+            when(imSessionMapper.selectByUserId(100L)).thenReturn(List.of(session(10L, 100L, 200L, 0, 0)));
+            when(followClient.isFollowingBatch(eq(100L), any()))
+                    .thenReturn(ResponseResult.okResult(Map.of("200", true)));
+
+            Map<String, Object> data = (Map<String, Object>) imService.listSessions(100L).getData();
+            List<Map<String, Object>> list = (List<Map<String, Object>>) data.get("list");
+            assertTrue((Boolean) list.get(0).get("can_send_unlimited"));
+        }
+
+        @Test
+        @DisplayName("批量接口不可用 → 昵称头像留空，权限按未关注处理")
+        void testBatchFallback() {
+            when(imSessionMapper.selectByUserId(100L)).thenReturn(List.of(session(10L, 100L, 200L, 0, 0)));
+            when(userClient.getBasicInfoBatch(any())).thenThrow(new RuntimeException("user down"));
+            when(followClient.isFollowingBatch(eq(100L), any()))
+                    .thenReturn(ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR));
+
+            Map<String, Object> data = (Map<String, Object>) imService.listSessions(100L).getData();
+            List<Map<String, Object>> list = (List<Map<String, Object>>) data.get("list");
+            // 展示信息缺失只留空，不能让整个列表失败
+            assertEquals(1, list.size());
+            assertEquals("", list.get(0).get("peer_name"));
+            // 权限判定查不到时宁可少给，不放行
+            assertFalse((Boolean) list.get(0).get("can_send_unlimited"));
         }
 
         @Test
@@ -212,7 +267,7 @@ class ImServiceImplTest {
             ImMessage m1 = msg(1L, 100L, 200L, "hi");
             ImMessage m2 = msg(2L, 100L, 200L, "yo");
             // 返回顺序 [m1, m2]，服务端会 reverse 成 [m2, m1]；size=2 → 条数==limit → hasMore=true
-            when(imMessageMapper.selectBySessionId(10L, 5L, 2)).thenReturn(new ArrayList<>(List.of(m1, m2)));
+            when(imMessageMapper.selectBySessionId(10L, 200L, 5L, 2)).thenReturn(new ArrayList<>(List.of(m1, m2)));
 
             Map<String, Object> data = (Map<String, Object>) imService.listMessages(200L, 10L, 5L, 2).getData();
             List<Map<String, Object>> list = (List<Map<String, Object>>) data.get("list");
@@ -228,7 +283,7 @@ class ImServiceImplTest {
         @DisplayName("size 为空 → 默认 20")
         void testDefaultSize() {
             when(imSessionMapper.selectById(10L)).thenReturn(session(10L, 100L, 200L, 1, 0));
-            when(imMessageMapper.selectBySessionId(10L, null, 20)).thenReturn(List.of());
+            when(imMessageMapper.selectBySessionId(10L, 100L, null, 20)).thenReturn(List.of());
 
             Map<String, Object> data = (Map<String, Object>) imService.listMessages(100L, 10L, null, null).getData();
             assertEquals(false, data.get("has_more"));
@@ -240,7 +295,8 @@ class ImServiceImplTest {
             when(imSessionMapper.selectById(10L)).thenReturn(session(10L, 100L, 200L, 1, 0));
             ResponseResult r = imService.listMessages(300L, 10L, null, null);
             assertEquals(AppHttpCodeEnum.NO_OPERATOR_AUTH.getCode(), r.getCode());
-            verify(imMessageMapper, never()).selectBySessionId(anyLong(), any(), any());
+            verify(imMessageMapper, never()).selectBySessionId(
+                    ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any());
         }
     }
 
@@ -248,9 +304,14 @@ class ImServiceImplTest {
     @DisplayName("sendMessage 发送消息")
     class SendMessage {
         private ImMessageDto dto(Long receiver, String content) {
+            return dto(receiver, content, null);
+        }
+
+        private ImMessageDto dto(Long receiver, String content, String clientId) {
             ImMessageDto d = new ImMessageDto();
             d.setReceiverId(receiver);
             d.setContent(content);
+            d.setClientId(clientId);
             return d;
         }
 
@@ -297,7 +358,27 @@ class ImServiceImplTest {
             // 新建了会话（receiver user2 未读+1）
             verify(imSessionMapper).insert(any(ImSession.class));
             verify(imMessageMapper).insert(ArgumentMatchers.<ImMessage>argThat(m -> m.getSenderId() == 100L && m.getReceiverId() == 200L));
-            verify(imSessionMapper).updateById(ArgumentMatchers.<ImSession>argThat(s -> s.getUser2UnreadCount() == 1));
+            // 未读递增下推到 SQL：不再走 updateById（那是并发丢失更新的来源）
+            verify(imSessionMapper, never()).updateById(any(ImSession.class));
+            verify(imSessionMapper).applyIncomingMessage(
+                    ArgumentMatchers.isNull(), ArgumentMatchers.eq(200L),
+                    ArgumentMatchers.eq("hello"), ArgumentMatchers.any(LocalDateTime.class));
+        }
+
+        @Test
+        @DisplayName("已存在的会话：未读递增按 receiver 方向交给 SQL 判定")
+        void testIncrUnreadPushedDownToSql() {
+            // user1 = 200 即接收方，方向由 SQL 用 receiverId 比对得出，Java 侧不分支
+            when(imSessionMapper.selectBySessionKey("100_200")).thenReturn(session(10L, 200L, 100L, 1, 0));
+            when(imStateMachine.checkPermission(eq(100L), eq(200L), any(ImSession.class)))
+                    .thenReturn(ImStateMachine.SendPermission.ALLOWED);
+
+            imService.sendMessage(100L, dto(200L, "hi"));
+
+            verify(imSessionMapper).applyIncomingMessage(
+                    ArgumentMatchers.eq(10L), ArgumentMatchers.eq(200L),
+                    ArgumentMatchers.eq("hi"), ArgumentMatchers.any(LocalDateTime.class));
+            verify(imSessionMapper, never()).updateById(any(ImSession.class));
         }
 
         @Test
@@ -311,7 +392,60 @@ class ImServiceImplTest {
 
             imService.sendMessage(100L, dto(200L, longText));
 
-            verify(imSessionMapper).updateById(ArgumentMatchers.<ImSession>argThat(sv -> sv.getLastMessage().endsWith("...")));
+            verify(imSessionMapper).applyIncomingMessage(
+                    ArgumentMatchers.eq(10L), ArgumentMatchers.eq(200L),
+                    ArgumentMatchers.argThat(lm -> lm != null && lm.endsWith("...") && lm.length() == 53),
+                    ArgumentMatchers.any(LocalDateTime.class));
+        }
+
+        @Test
+        @DisplayName("重发同一 clientId → 幂等返回首条，不重复插入也不递增未读")
+        void testDedupByClientId() {
+            when(imSessionMapper.selectBySessionKey("100_200")).thenReturn(session(10L, 100L, 200L, 1, 0));
+            when(imMessageMapper.selectByClientId(10L, "c-1")).thenReturn(msg(77L, 100L, 200L, "hi"));
+
+            Map<String, Object> data = (Map<String, Object>) imService.sendMessage(100L, dto(200L, "hi", "c-1")).getData();
+
+            assertEquals(77L, data.get("message_id"));
+            assertEquals("sent", data.get("status"));
+            verify(imMessageMapper, never()).insert(any(ImMessage.class));
+            // 幂等命中绝不能再走未读递增，否则客户端每重发一次未读数就多 1
+            verify(imSessionMapper, never()).applyIncomingMessage(
+                    ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any());
+            // 幂等在权限校验之前：重发不能被「陌生人只能发 1 条」判成 403
+            verifyNoInteractions(imStateMachine);
+        }
+
+        @Test
+        @DisplayName("并发插入撞唯一键 → 回读既有消息按幂等返回")
+        void testDedupOnDuplicateKey() {
+            when(imSessionMapper.selectBySessionKey("100_200")).thenReturn(session(10L, 100L, 200L, 1, 0));
+            when(imStateMachine.checkPermission(eq(100L), eq(200L), any(ImSession.class)))
+                    .thenReturn(ImStateMachine.SendPermission.ALLOWED);
+            when(imMessageMapper.selectByClientId(10L, "c-1"))
+                    .thenReturn(null)                              // 查重时还没有
+                    .thenReturn(msg(88L, 100L, 200L, "hi"));       // 撞唯一键后回读到
+            when(imMessageMapper.insert(any(ImMessage.class)))
+                    .thenThrow(new DuplicateKeyException("uk_session_client dup"));
+
+            Map<String, Object> data = (Map<String, Object>) imService.sendMessage(100L, dto(200L, "hi", "c-1")).getData();
+
+            assertEquals(88L, data.get("message_id"));
+            verify(imSessionMapper, never()).applyIncomingMessage(
+                    ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any());
+        }
+
+        @Test
+        @DisplayName("clientId 为空白 → 视为未传，不查重、不写入")
+        void testBlankClientIdSkipsDedup() {
+            when(imSessionMapper.selectBySessionKey("100_200")).thenReturn(null);
+            when(imStateMachine.checkPermission(eq(100L), eq(200L), any(ImSession.class)))
+                    .thenReturn(ImStateMachine.SendPermission.ALLOWED);
+
+            imService.sendMessage(100L, dto(200L, "hi", "   "));
+
+            verify(imMessageMapper, never()).selectByClientId(ArgumentMatchers.any(), ArgumentMatchers.any());
+            verify(imMessageMapper).insert(ArgumentMatchers.<ImMessage>argThat(m -> m.getClientId() == null));
         }
     }
 
@@ -335,8 +469,9 @@ class ImServiceImplTest {
             ResponseResult r = imService.markRead(200L, dto);
             assertEquals(200, r.getCode());
             verify(imMessageMapper).markRead(10L, Long.MAX_VALUE, 200L);
-            // viewer=user2 → user2UnreadCount 清零；isActive 置 1
-            verify(imSessionMapper).updateById(ArgumentMatchers.<ImSession>argThat(sv -> sv.getUser2UnreadCount() == 0 && sv.getIsActive() == 1));
+            // 清零走 SQL，只动 viewer 这一侧；不再 selectById 出来改完再整体写回
+            verify(imSessionMapper).resetUnread(10L, 200L);
+            verify(imSessionMapper, never()).updateById(any(ImSession.class));
         }
 
         @Test
@@ -350,7 +485,7 @@ class ImServiceImplTest {
             ResponseResult r = imService.markRead(300L, dto);
             assertEquals(AppHttpCodeEnum.NO_OPERATOR_AUTH.getCode(), r.getCode());
             verify(imMessageMapper, never()).markRead(anyLong(), anyLong(), anyLong());
-            verify(imSessionMapper, never()).updateById(any(ImSession.class));
+            verify(imSessionMapper, never()).resetUnread(anyLong(), anyLong());
         }
     }
 

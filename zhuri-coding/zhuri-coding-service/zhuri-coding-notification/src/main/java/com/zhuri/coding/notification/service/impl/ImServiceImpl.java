@@ -47,17 +47,28 @@ public class ImServiceImpl implements ImService {
     @Override
     public ResponseResult listSessions(Long userId) {
         List<ImSession> sessions = imSessionMapper.selectByUserId(userId);
-        List<Map<String, Object>> list = new ArrayList<>();
+
+        // 先把所有对方的 id 收齐，用两次批量调用取回昵称头像与关注关系。
+        // 原来这两样是在循环里逐人问的：N 个会话 = 2N 次跨服务调用，还得一个接一个排队。
+        List<Long> peerIds = new ArrayList<>(sessions.size());
         for (ImSession s : sessions) {
-            Long peerId = s.getUser1Id().equals(userId) ? s.getUser2Id() : s.getUser1Id();
+            peerIds.add(s.getUser1Id().equals(userId) ? s.getUser2Id() : s.getUser1Id());
+        }
+        Map<Long, Map<String, String>> peerInfos = loadPeerInfos(peerIds);
+        Map<Long, Boolean> peerFollowsViewer = loadFollowFlags(userId, peerIds);
+
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (int i = 0; i < sessions.size(); i++) {
+            ImSession s = sessions.get(i);
+            Long peerId = peerIds.get(i);
             Map<String, Object> item = new HashMap<>();
             item.put("session_id", s.getId());
             item.put("session_key", s.getSessionKey());
             item.put("peer_id", peerId);
             // 补充对方昵称与头像，供会话列表展示
-            Map<String, String> peer = resolvePeerInfo(peerId);
-            item.put("peer_name", peer.get("name"));
-            item.put("peer_avatar", peer.get("avatar"));
+            Map<String, String> peer = peerInfos.get(peerId);
+            item.put("peer_name", peer != null ? peer.get("name") : "");
+            item.put("peer_avatar", peer != null ? peer.get("avatar") : "");
             item.put("last_message", s.getLastMessage());
             item.put("last_message_at", s.getLastMessageAt() != null ? s.getLastMessageAt().toString() : null);
             int unread = s.getUser1Id().equals(userId)
@@ -67,7 +78,7 @@ public class ImServiceImpl implements ImService {
             boolean isActive = s.getIsActive() == 1;
             item.put("is_active", isActive);
             // 当前用户是否能无限发送：对方已回复 或 对方关注了当前用户
-            item.put("can_send_unlimited", isActive || peerFollowsViewer(peerId, userId));
+            item.put("can_send_unlimited", isActive || Boolean.TRUE.equals(peerFollowsViewer.get(peerId)));
             list.add(item);
         }
         Map<String, Object> result = new HashMap<>();
@@ -126,6 +137,66 @@ public class ImServiceImpl implements ImService {
     }
 
     /**
+     * 批量取回一批人的昵称头像（一次调用，供会话列表这类"一次展示很多人"的场景用）。
+     *
+     * <p>服务不可用或返回异常时返回空 Map：昵称头像只是展示层的补充信息，
+     * 缺了就留空，不能让它把整个列表拖垮。
+     */
+    private Map<Long, Map<String, String>> loadPeerInfos(List<Long> peerIds) {
+        Map<Long, Map<String, String>> result = new HashMap<>();
+        if (userClient == null || peerIds == null || peerIds.isEmpty()) {
+            return result;
+        }
+        try {
+            ResponseResult res = userClient.getBasicInfoBatch(peerIds);
+            if (res == null || res.getCode() != 200 || res.getData() == null) {
+                return result;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) res.getData();
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> info = (Map<String, Object>) entry.getValue();
+                Map<String, String> pair = new HashMap<>();
+                pair.put("name", info.get("nickname") != null ? String.valueOf(info.get("nickname")) : "");
+                pair.put("avatar", info.get("avatar") != null ? String.valueOf(info.get("avatar")) : "");
+                result.put(Long.valueOf(entry.getKey()), pair);
+            }
+        } catch (Exception e) {
+            log.warn("批量解析用户信息失败, size={}", peerIds.size(), e);
+        }
+        return result;
+    }
+
+    /**
+     * 批量判定这批人里谁关注了 viewer（一次调用）。
+     *
+     * <p>服务不可用返回空 Map，缺失一律按"未关注"处理——这个结果决定能不能无限发消息，
+     * 查不到时宁可少给权限，也不能放行。
+     */
+    private Map<Long, Boolean> loadFollowFlags(Long viewerId, List<Long> peerIds) {
+        Map<Long, Boolean> result = new HashMap<>();
+        if (followClient == null || viewerId == null || peerIds == null || peerIds.isEmpty()) {
+            return result;
+        }
+        try {
+            ResponseResult res = followClient.isFollowingBatch(viewerId, peerIds);
+            if (res == null || res.getCode() != 200 || res.getData() == null) {
+                return result;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) res.getData();
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                result.put(Long.valueOf(entry.getKey()),
+                        Boolean.parseBoolean(String.valueOf(entry.getValue())));
+            }
+        } catch (Exception e) {
+            log.warn("批量查询关注关系失败, viewerId={}, size={}", viewerId, peerIds.size(), e);
+        }
+        return result;
+    }
+
+    /**
      * 通过 Feign 调用用户服务解析对方昵称/头像，失败时返回空字符串兜底
      */
     private Map<String, String> resolvePeerInfo(Long peerId) {
@@ -158,7 +229,7 @@ public class ImServiceImpl implements ImService {
             return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "无权访问该会话");
         }
         int limit = (size == null || size <= 0) ? 20 : Math.min(size, 50);
-        List<ImMessage> messages = imMessageMapper.selectBySessionId(sessionId, cursor, limit);
+        List<ImMessage> messages = imMessageMapper.selectBySessionId(sessionId, userId, cursor, limit);
         Collections.reverse(messages);
 
         List<Map<String, Object>> list = new ArrayList<>();
@@ -204,6 +275,17 @@ public class ImServiceImpl implements ImService {
 
         ImSession session = getOrInsertSession(sessionKey, senderId, receiverId);
 
+        // 幂等查重要放在权限校验之前。客户端超时重发时，首次那条已经让「陌生人只能发 1 条」
+        // 的限制生效了；若先校验权限，重发会被判成 403，客户端就会以为消息没发出去。
+        String clientId = normalizeClientId(dto.getClientId());
+        if (clientId != null) {
+            ImMessage existing = imMessageMapper.selectByClientId(session.getId(), clientId);
+            if (existing != null) {
+                log.debug("im send dedup hit: sessionId={}, clientId={}", session.getId(), clientId);
+                return ResponseResult.okResult(messageResult(existing.getId(), existing.getCreatedAt()));
+            }
+        }
+
         ImStateMachine.SendPermission permission = imStateMachine.checkPermission(senderId, receiverId, session);
         if (permission == ImStateMachine.SendPermission.LIMIT_REACHED) {
             Map<String, Object> error = new HashMap<>();
@@ -212,34 +294,56 @@ public class ImServiceImpl implements ImService {
             return ResponseResult.errorResult(403, "由于对方并未关注你，在收到对方回复之前，你最多只能发送1条文字消息");
         }
 
+        LocalDateTime now = LocalDateTime.now();
+        String content = dto.getContent().trim();
         ImMessage message = new ImMessage();
         message.setSessionId(session.getId());
         message.setSenderId(senderId);
         message.setReceiverId(receiverId);
-        message.setContent(dto.getContent().trim());
+        message.setContent(content);
+        message.setClientId(clientId);
         message.setMsgType(dto.getMsgType() != null ? dto.getMsgType() : 1);
         message.setStatus(0);
         message.setIsDeletedForSender(0);
         message.setIsDeletedForReceiver(0);
-        message.setCreatedAt(LocalDateTime.now());
-        imMessageMapper.insert(message);
-
-        session.setLastMessage(dto.getContent().trim().length() > 50
-                ? dto.getContent().trim().substring(0, 50) + "..."
-                : dto.getContent().trim());
-        session.setLastMessageAt(LocalDateTime.now());
-        if (session.getUser1Id().equals(receiverId)) {
-            session.setUser1UnreadCount((session.getUser1UnreadCount() != null ? session.getUser1UnreadCount() : 0) + 1);
-        } else {
-            session.setUser2UnreadCount((session.getUser2UnreadCount() != null ? session.getUser2UnreadCount() : 0) + 1);
+        message.setCreatedAt(now);
+        try {
+            imMessageMapper.insert(message);
+        } catch (DuplicateKeyException e) {
+            // 并发下同一个 clientId 被另一个请求抢先落库，回读它按幂等返回（不递增未读）
+            ImMessage existing = imMessageMapper.selectByClientId(session.getId(), clientId);
+            if (existing != null) {
+                return ResponseResult.okResult(messageResult(existing.getId(), existing.getCreatedAt()));
+            }
+            throw e;
         }
-        imSessionMapper.updateById(session);
 
+        // 未读递增与会话预览都在 SQL 层完成：Java 侧「读出来 +1 再写回」在两个事务并发时
+        // 会各自读到旧值、各自写回 +1，最终只涨 1（丢失更新）。方向由 SQL 按 receiverId 判定。
+        String preview = content.length() > 50 ? content.substring(0, 50) + "..." : content;
+        imSessionMapper.applyIncomingMessage(session.getId(), receiverId, preview, now);
+
+        return ResponseResult.okResult(messageResult(message.getId(), message.getCreatedAt()));
+    }
+
+    /**
+     * 归一化客户端去重 ID：空白视为「未传」，不参与去重；超长截断到列宽 64。
+     */
+    private String normalizeClientId(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        String v = raw.trim();
+        return v.length() > 64 ? v.substring(0, 64) : v;
+    }
+
+    /** 发送结果的统一出口：首次落库与幂等命中返回同一结构，调用方无需区分 */
+    private Map<String, Object> messageResult(Long messageId, LocalDateTime createdAt) {
         Map<String, Object> result = new HashMap<>();
-        result.put("message_id", message.getId());
+        result.put("message_id", messageId);
         result.put("status", "sent");
-        result.put("created_at", message.getCreatedAt().toString());
-        return ResponseResult.okResult(result);
+        result.put("created_at", createdAt.toString());
+        return result;
     }
 
     @Override
@@ -254,18 +358,8 @@ public class ImServiceImpl implements ImService {
         Long lastReadId = dto.getLastReadId() != null ? dto.getLastReadId() : Long.MAX_VALUE;
         imMessageMapper.markRead(dto.getSessionId(), lastReadId, userId);
 
-        ImSession session = imSessionMapper.selectById(dto.getSessionId());
-        if (session != null) {
-            if (session.getUser1Id().equals(userId)) {
-                session.setUser1UnreadCount(0);
-            } else {
-                session.setUser2UnreadCount(0);
-            }
-            if (session.getIsActive() == null || session.getIsActive() == 0) {
-                session.setIsActive(1);
-            }
-            imSessionMapper.updateById(session);
-        }
+        // 清零也走 SQL，只动当前用户这一侧。归属已在上面 getPeerUserId 校验过，不必再查一次会话。
+        imSessionMapper.resetUnread(dto.getSessionId(), userId);
 
         return ResponseResult.okResult(null);
     }

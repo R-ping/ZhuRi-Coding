@@ -3,13 +3,13 @@ package com.zhuri.coding.notification.controller.v1;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.notification.dtos.ImMessageDto;
 import com.zhuri.coding.notification.service.ImService;
-import com.zhuri.coding.notification.websocket.SessionManager;
+import com.zhuri.coding.notification.websocket.ImPushBroadcaster;
+import com.zhuri.coding.notification.websocket.PresenceRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.util.HashMap;
@@ -23,10 +23,10 @@ public class WebSocketMessageController {
     private ImService imService;
 
     @Autowired
-    private SessionManager sessionManager;
+    private PresenceRegistry presenceRegistry;
 
     @Autowired
-    private SimpMessagingTemplate messagingTemplate;
+    private ImPushBroadcaster broadcaster;
 
     /**
      * 接收客户端通过WebSocket发送的消息
@@ -66,10 +66,12 @@ public class WebSocketMessageController {
             ack.put("type", "MESSAGE_ACK");
             ack.put("message_id", data.get("message_id"));
             ack.put("status", "sent");
-            messagingTemplate.convertAndSendToUser(senderId.toString(), "/queue/messages", ack);
+            broadcaster.broadcast(senderId, ack);
 
-            // 如果接收者在线，实时推送
-            if (sessionManager.isOnline(receiverId)) {
+            // 接收者在任意实例在线才广播。判据取自 Redis 上的全局在线表，
+            // 不能用本实例的连接表判断——那样多实例下连在别处的接收者会被当成离线。
+            // 离线也不影响送达，消息已落库，下次打开会话列表会看到。
+            if (presenceRegistry.isOnline(receiverId)) {
                 Map<String, Object> push = new HashMap<>();
                 push.put("type", "MESSAGE_RECEIVED");
                 push.put("message_id", data.get("message_id"));
@@ -77,7 +79,7 @@ public class WebSocketMessageController {
                 push.put("receiver_id", receiverId);
                 push.put("content", content);
                 push.put("created_at", data.get("created_at"));
-                messagingTemplate.convertAndSendToUser(receiverId.toString(), "/queue/messages", push);
+                broadcaster.broadcast(receiverId, push);
             }
         } else {
             // 发送错误消息
@@ -85,7 +87,7 @@ public class WebSocketMessageController {
             error.put("type", "MESSAGE_ERROR");
             error.put("code", result.getCode());
             error.put("message", result.getMessage());
-            messagingTemplate.convertAndSendToUser(senderId.toString(), "/queue/messages", error);
+            broadcaster.broadcast(senderId, error);
         }
     }
 
@@ -122,8 +124,8 @@ public class WebSocketMessageController {
         readReceipt.put("reader_id", readerId);
         readReceipt.put("last_read_id", lastReadId);
 
-        if (sessionManager.isOnline(senderId)) {
-            messagingTemplate.convertAndSendToUser(senderId.toString(), "/queue/messages", readReceipt);
+        if (presenceRegistry.isOnline(senderId)) {
+            broadcaster.broadcast(senderId, readReceipt);
         }
     }
 

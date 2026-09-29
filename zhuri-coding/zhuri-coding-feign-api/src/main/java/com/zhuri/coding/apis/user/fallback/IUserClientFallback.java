@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Slf4j
 @Component
 public class IUserClientFallback implements FallbackFactory<IUserClient> {
@@ -21,6 +23,13 @@ public class IUserClientFallback implements FallbackFactory<IUserClient> {
             @Override
             public ResponseResult getPublicInfo(Long userId) {
                 log.error("IUserClient.getPublicInfo fallback, userId={}, error: {}", userId, cause.getMessage());
+                return ResponseResult.errorResult(500, "用户服务不可用");
+            }
+
+            @Override
+            public ResponseResult getBasicInfoBatch(List<Long> userIds) {
+                log.error("IUserClient.getBasicInfoBatch fallback, size={}, error: {}",
+                        userIds == null ? 0 : userIds.size(), cause.getMessage());
                 return ResponseResult.errorResult(500, "用户服务不可用");
             }
         };

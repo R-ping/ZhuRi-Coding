@@ -2,6 +2,10 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.zhuri.coding.notification.mapper.ImSessionMapper">
 
+    <!-- 会话列表：OR 横跨两列。实测（2026-09-28，MySQL 8.0）执行计划走 index_merge 的
+         sort_union，idx_user1_lastmsg 与 idx_user2_lastmsg 两个索引都生效，不是全表扫。
+         曾改为 UNION ALL（两条 ref 各走各的索引），但计划里多出 Using temporary 物化结果集，
+         当前量级下没有可观测收益，已回退。等会话量大到优化器放弃 index_merge 时再重测。 -->
     <select id="selectByUserId" resultType="com.zhuri.coding.model.notification.pojos.ImSession">
         SELECT * FROM im_sessions
         WHERE user1_id = #{userId} OR user2_id = #{userId}
@@ -11,4 +15,30 @@
     <select id="selectBySessionKey" resultType="com.zhuri.coding.model.notification.pojos.ImSession">
         SELECT * FROM im_sessions WHERE session_key = #{sessionKey}
     </select>
+
+    <!-- 收到一条新消息：未读 +1（原子），顺带刷新会话预览。
+         未读递增下推到 SQL，避免 Java 侧「读出来 +1 再写回」在两个事务并发时丢一次更新。
+         方向由 user1_id / user2_id 判定，调用方不必自己分支。
+         末行「last_message_at 不回退」是防并发乱序：两条消息几乎同时到达时，
+         先到的那个若后写，会把新消息的预览覆盖回旧内容。 -->
+    <update id="applyIncomingMessage">
+        UPDATE im_sessions
+        SET last_message = #{lastMessage},
+            last_message_at = #{lastMessageAt},
+            user1_unread_count = COALESCE(user1_unread_count, 0)
+                + CASE WHEN user1_id = #{receiverId} THEN 1 ELSE 0 END,
+            user2_unread_count = COALESCE(user2_unread_count, 0)
+                + CASE WHEN user2_id = #{receiverId} THEN 1 ELSE 0 END
+        WHERE id = #{sessionId}
+          AND (last_message_at IS NULL OR last_message_at &lt;= #{lastMessageAt})
+    </update>
+
+    <!-- 已读：只清零「当前用户这一侧」的未读，另一侧原样保留。 -->
+    <update id="resetUnread">
+        UPDATE im_sessions
+        SET user1_unread_count = CASE WHEN user1_id = #{userId} THEN 0 ELSE COALESCE(user1_unread_count, 0) END,
+            user2_unread_count = CASE WHEN user2_id = #{userId} THEN 0 ELSE COALESCE(user2_unread_count, 0) END,
+            is_active = 1
+        WHERE id = #{sessionId}
+    </update>
 </mapper>

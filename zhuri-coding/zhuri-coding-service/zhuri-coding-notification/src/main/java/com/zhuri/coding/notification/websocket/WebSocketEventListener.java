@@ -21,18 +21,21 @@ import java.util.Map;
 public class WebSocketEventListener {
 
     private final SessionManager sessionManager;
+    private final PresenceRegistry presenceRegistry;
 
-    public WebSocketEventListener(SessionManager sessionManager) {
+    public WebSocketEventListener(SessionManager sessionManager, PresenceRegistry presenceRegistry) {
         this.sessionManager = sessionManager;
+        this.presenceRegistry = presenceRegistry;
     }
 
-    /** STOMP 连接建立成功：登记在线。 */
+    /** STOMP 连接建立成功：登记本实例连接，并把在线状态写到全局（Redis） */
     @EventListener
     public void onConnected(SessionConnectedEvent event) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(event.getMessage(), StompHeaderAccessor.class);
         Long userId = authUserId(accessor != null ? accessor.getSessionAttributes() : null);
         if (userId != null) {
             sessionManager.userOnline(userId, accessor.getSessionId());
+            presenceRegistry.markOnline(userId);
         }
     }
 
@@ -50,6 +53,8 @@ public class WebSocketEventListener {
             return;
         }
         sessionManager.userOffline(userId, sessionId);
+        // 只摘掉本实例这一端：用户在其他实例上还连着的话，全局仍算在线
+        presenceRegistry.markOffline(userId);
     }
 
     private Long parseUserId(String raw) {
