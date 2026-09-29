@@ -39,6 +39,21 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
     List<Long> selectStaleSubmitArticleIds(@Param("before") Date before, @Param("limit") int limit);
 
     /**
+     * 扫描「已发布」文章的 id（供 DB↔ES 索引对账使用）。
+     *
+     * <p><b>为什么用 publish_time 而不是 updated_time</b>：对账关心的是"这段时间里本该进索引的文章"。
+     * {@code updated_time} 会被点赞/评论数等任何一次更新刷新，用它会把"很久前发布、刚刚被点赞"的文章
+     * 反复拉进对账范围，而 publish_time 一旦写入不再变化。
+     *
+     * @param since 发布时间不早于该时刻
+     * @param limit 单轮上限（对账要控制 ES 查询量与补推量）
+     * @return 按 publish_time 倒序的文章 id 列表
+     */
+    @Select("SELECT id FROM ap_article WHERE status = 9 AND is_deleted = 0 AND publish_time >= #{since} "
+        + "ORDER BY publish_time DESC LIMIT #{limit}")
+    List<Long> selectPublishedIdsSince(@Param("since") Date since, @Param("limit") int limit);
+
+    /**
      * 加载文章列表
      * @param dto
      * @param type  1  加载更多   2记载最新

@@ -5,6 +5,7 @@ import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
 import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.util.ArrayList;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -27,5 +28,15 @@ public class ISearchClientFallback implements ISearchClient {
     public ResponseResult bm25Recall(Bm25RecallDto dto) {
         log.warn("[Bm25Recall] search 服务不可用，关键词召回降级为空（本次问答退化为纯向量召回）");
         return ResponseResult.okResult(new ArrayList<>());
+    }
+
+    /**
+     * 对账**不做降级**：返回"没有缺失"会把 search 故障伪装成索引完全一致，
+     * 巡检会安静地什么都不做。抛异常让调用方跳过本轮并留下 WARN。
+     */
+    @Override
+    public ResponseResult missingArticleIds(List<Long> candidateIds) {
+        log.warn("[IndexReconcile] search 服务不可用，跳过本轮索引对账");
+        throw new RuntimeException("search 服务不可用，索引对账跳过本轮");
     }
 }

@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 public class SearchClient implements ISearchClient {
 
@@ -29,6 +31,14 @@ public class SearchClient implements ISearchClient {
     @PostMapping("/api/v1/search/bm25-recall")
     public ResponseResult bm25Recall(@RequestBody Bm25RecallDto dto){
         return articleSearchService.bm25Recall(dto);
+    }
+
+    /**
+     * DB↔ES 索引对账（内部接口）：返回给定 id 中不在索引里的那些，供 content 侧巡检补推。
+     */
+    @PostMapping("/api/v1/search/article/missing")
+    public ResponseResult missingArticleIds(@RequestBody List<Long> candidateIds){
+        return ResponseResult.okResult(articleSearchService.missingArticleIds(candidateIds));
     }
 
 }
