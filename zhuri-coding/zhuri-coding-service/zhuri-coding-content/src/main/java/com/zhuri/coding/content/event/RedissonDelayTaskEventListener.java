@@ -15,10 +15,10 @@ import org.springframework.stereotype.Component;
  * Redisson 延迟队列任务事件监听器 处理 RedissonDelayQueue 发布的延迟任务事件， 负责调用 ApArticleService 和 TaskService 执行具体业务逻辑。 此监听器将
  * RedissonDelayQueue 与业务服务解耦，从而打破循环依赖链。
  *
- * <p>单延迟方案 · 异步解耦版：任务在 publishTime 触发一次消费，链路为
- * 本地消息表落锚(INIT) → 发布 ArticlePublishEvent（@Async 监听器异步置位 + 同步 ES）→ 任务置 COMPLETED。
- * 延迟任务状态只表示「到点已触发执行」，与发布结果彻底解耦；
- * 发布未完成由 20s 扫描按本地消息表状态机补偿收敛。
+ * <p>单延迟方案：任务在 publishTime 触发一次消费，链路为
+ * 落 Outbox 锚点（{@code @LocalMessage} 切面登记，与业务同事务提交）→ 任务置 COMPLETED；
+ * 发布执行（置 DB 发布态 + ES 同步）由 OutboxDispatcher 在提交后反射重放。
+ * 延迟任务状态只表示「到点已触发执行」，与发布结果彻底解耦。
  */
 @Component
 @Slf4j
@@ -55,13 +55,13 @@ public class RedissonDelayTaskEventListener {
      * <p>解耦依据：taskinfo_logs 状态只表示「到点已触发执行」。若落锚失败仍保持 PROGRESSING：
      * in_one_hour=1（1 小时内发布）的任务不会被 selectGoal 捞出重投，永久滞留；
      * in_one_hour=0 的任务会被 30min 刷新重投递，造成重复消费风暴。
-     * 发布执行（置位 + ES 同步）由 {@link ArticlePublishEventListener} 异步完成，失败由 20s 扫描补偿。
+     * 发布执行（置位 + ES 同步）由 OutboxDispatcher 反射重放完成，重试/死信由 Outbox 收敛。
      */
     private void handleDelayExec(Task task, ApArticle article) {
         log.info("处理延迟发布任务，taskId={}, articleId={}", task.getTaskId(), article.getId());
         boolean anchored = false;
         try {
-            anchored = apArticleService.createArticleEvent(article);
+            anchored = apArticleService.submitPublish(article);
         } catch (Exception e) {
             log.error("延迟发布任务落锚异常, taskId={}, articleId={}", task.getTaskId(), article.getId(), e);
         } finally {

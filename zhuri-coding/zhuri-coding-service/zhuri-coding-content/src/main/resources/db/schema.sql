@@ -1162,22 +1162,6 @@ CREATE TABLE `ap_user_power_log` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `article_event` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `article_id` bigint NOT NULL COMMENT '文章id',
-  `status` tinyint NOT NULL DEFAULT '1',
-  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
-  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `retry_count` tinyint NOT NULL DEFAULT '0' COMMENT '事务重试次数',
-  `max_retry_count` tinyint DEFAULT '2' COMMENT '最大重试次数',
-  `retry_time` datetime DEFAULT NULL COMMENT '生产者重试时间',
-  `parameter` longtext COLLATE utf8mb4_unicode_ci COMMENT '方法执行参数',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `article_id` (`article_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `club_featured_pin` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `circle_id` bigint NOT NULL COMMENT '圈子ID',

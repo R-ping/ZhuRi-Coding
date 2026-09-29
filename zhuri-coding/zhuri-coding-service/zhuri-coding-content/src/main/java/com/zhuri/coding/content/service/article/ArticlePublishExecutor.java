@@ -14,28 +14,17 @@ import org.springframework.stereotype.Component;
 /**
  * 文章发布执行体 —— 把「置 DB 发布态 → 同步 ES」这段业务逻辑收敛到唯一一处。
  *
- * <p><b>为什么需要它</b>：本次迁移引入了两条并行的执行链路，若各写一份业务逻辑，
- * 就会出现"同一件事两份代码"的漂移风险（改了一处忘另一处，日志与报错栈也会分裂）：
- * <ul>
- *   <li><b>旧链路</b>：{@code article_event} 状态机 + 20s 补偿扫描
- *       （{@code ApArticleEventServiceImpl}）—— 迁移阶段 1 的执行依据；</li>
- *   <li><b>新链路</b>：Outbox 的 {@code ArticlePublishHandler} —— 阶段 2 起接管。</li>
- * </ul>
- *
- * <p><b>职责边界（关键）</b>：本类<b>只做业务，不碰任何消息表</b>。
- * 状态记录是各链路自己的事 —— 旧链路写 {@code article_event}，新链路交给
- * {@code OutboxDispatcher}。所以本类返回 {@link Outcome} 由调用方映射到各自的状态机，
- * 而不是自己决定"该标记成什么状态"。
- *
- * <p>这条边界也是"阶段 1 不能直接委托 {@code executePublish}"的原因：
- * 那个方法内部会写 {@code article_event}，若被 Outbox 侧的 Handler 调用，
- * 两条链路会同时修改同一张表的状态而互相覆盖。
+ * <p><b>为什么业务与消息表分离</b>：本类<b>只做业务，不碰任何消息表</b>；
+ * 状态记录是消息层自己的事，统一交给 {@code OutboxDispatcher}（旧链路
+ * {@code article_event} 状态机已于阶段 3 删除）。本类返回 {@link Outcome}，
+ * 由消息层把业务结果翻译成重试语义（见 {@code publishArticle}）——
+ * 这条边界保证业务逻辑只有一份，消息表怎么记、重试怎么算都不影响它。
  */
 @Component
 @Slf4j
 public class ArticlePublishExecutor {
 
-    /** 执行结果：由调用方映射到各自的状态机 */
+    /** 执行结果：由消息层翻译成对应的重试/死信语义 */
     public enum Outcome {
         /** 执行完成（含"此前已发布"的幂等情形） */
         DONE,

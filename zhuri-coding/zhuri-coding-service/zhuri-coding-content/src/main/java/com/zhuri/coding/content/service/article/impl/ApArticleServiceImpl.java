@@ -80,13 +80,13 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
     }
 
     /**
-     * 创建文章发布事件（延迟任务消费的同步部分，仅落锚）
-     * <p>单延迟方案 · 异步解耦版：本方法只负责「校验 + 本地消息表落锚(INIT) + 发布执行事件」，
-     * 置 DB 发布态与 ES 同步由 {@link com.zhuri.coding.content.event.ArticlePublishEventListener} 异步执行，
-     * 未完成事件由 20s 扫描补偿收敛。落锚失败返回 false 由调用方记日志（任务仍会消费完成，不回滚重投）。
+     * 提交文章发布（延迟任务消费的同步部分，仅落锚）
+     * <p>本方法只负责「校验 + 落 Outbox 锚点」，置 DB 发布态与 ES 同步由
+     * OutboxDispatcher 在事务提交后反射重放 {@code ArticlePublishExecutor#publishArticle} 完成。
+     * 落锚失败返回 false 由调用方记日志（任务仍会消费完成，不回滚重投）。
      */
     @Override
-    public boolean createArticleEvent(ApArticle article) {
+    public boolean submitPublish(ApArticle article) {
         //1.检查参数
         if (article == null) {
             log.error("文章保存失败，参数为空");
@@ -100,9 +100,6 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
         // 落统一 Outbox 锚点：调用被 @LocalMessage 标注的发布方法 —— 切面把 articleId 存进消息表，
         // 与业务同事务提交；方法体（置发布态 + 同步 ES）由 Dispatcher 在提交后反射重放。
         // （幂等键 "article_publish:{articleId}" + uk_event_key 保证同一篇文章只有一条在途事件。）
-        //
-        // 【迁移阶段 2 · 切读】本方法原先还写 article_event 锚点、发布 ArticlePublishEvent，
-        // 切读后旧链路「无数据可扫、无事件可消费」自然失效（那两个类留待阶段 3 清理）。
         //
         // 返回值语义：**落库失败即本次发布失败**，没有第二条路径兜底，故必须 ERROR 告警供人工察觉。
         try {

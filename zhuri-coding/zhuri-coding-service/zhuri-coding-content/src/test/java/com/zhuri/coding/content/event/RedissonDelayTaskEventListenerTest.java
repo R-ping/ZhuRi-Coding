@@ -23,7 +23,7 @@ import static org.mockito.Mockito.when;
 /**
  * RedissonDelayTaskEventListener 单元测试（延迟任务状态与发布结果解耦语义）
  *
- * <p>核心断言：不管落锚（createArticleEvent）成功/失败/抛异常，
+ * <p>核心断言：不管落锚（submitPublish）成功/失败/抛异常，
  * handleDelayExec 都必须将延迟任务置为已消费（consumerTask）——
  * 任务状态只表示「到点已触发执行」，与发布结果彻底解耦。
  */
@@ -51,7 +51,7 @@ class RedissonDelayTaskEventListenerTest {
     @Test
     @DisplayName("落锚成功 → 消费任务完成")
     void anchorSuccessThenTaskCompleted() {
-        when(apArticleService.createArticleEvent(any(ApArticle.class))).thenReturn(true);
+        when(apArticleService.submitPublish(any(ApArticle.class))).thenReturn(true);
 
         listener.handleDelayTask(buildEvent());
 
@@ -61,7 +61,7 @@ class RedissonDelayTaskEventListenerTest {
     @Test
     @DisplayName("落锚返回 false（参数/文章缺失/落库失败）→ 任务仍消费完成")
     void anchorFalseStillTaskCompleted() {
-        when(apArticleService.createArticleEvent(any(ApArticle.class))).thenReturn(false);
+        when(apArticleService.submitPublish(any(ApArticle.class))).thenReturn(false);
 
         listener.handleDelayTask(buildEvent());
 
@@ -71,7 +71,7 @@ class RedissonDelayTaskEventListenerTest {
     @Test
     @DisplayName("落锚抛异常 → 异常不外抛，任务仍消费完成")
     void anchorThrowsStillTaskCompleted() {
-        when(apArticleService.createArticleEvent(any(ApArticle.class)))
+        when(apArticleService.submitPublish(any(ApArticle.class)))
                 .thenThrow(new RuntimeException("db down"));
 
         listener.handleDelayTask(buildEvent());
@@ -82,12 +82,12 @@ class RedissonDelayTaskEventListenerTest {
     @Test
     @DisplayName("消费任务置状态失败 → 异常吞掉不阻断消费线程")
     void consumerTaskFailsSwallowed() {
-        when(apArticleService.createArticleEvent(any(ApArticle.class))).thenReturn(true);
+        when(apArticleService.submitPublish(any(ApArticle.class))).thenReturn(true);
         doThrow(new RuntimeException("update fail")).when(taskService).consumerTask(100L);
 
         listener.handleDelayTask(buildEvent());
 
-        verify(apArticleService).createArticleEvent(any(ApArticle.class));
+        verify(apArticleService).submitPublish(any(ApArticle.class));
     }
 
     @Test
@@ -95,7 +95,7 @@ class RedissonDelayTaskEventListenerTest {
     void unknownQueueIgnored() {
         listener.handleDelayTask(new RedissonDelayTaskEvent("UNKNOWN_QUEUE", "{}"));
 
-        verify(apArticleService, never()).createArticleEvent(any());
+        verify(apArticleService, never()).submitPublish(any());
         verify(taskService, never()).consumerTask(anyLong());
     }
 }

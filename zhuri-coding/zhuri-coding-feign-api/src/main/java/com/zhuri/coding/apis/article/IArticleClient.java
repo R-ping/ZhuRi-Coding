@@ -3,7 +3,6 @@ package com.zhuri.coding.apis.article;
 import com.zhuri.coding.apis.article.fallback.IArticleClientFallback;
 import com.zhuri.coding.model.article.dtos.ArticleDto;
 import com.zhuri.coding.model.article.pojos.ApArticle;
-import com.zhuri.coding.model.article.pojos.ArticleEvent;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import java.util.List;
 import java.util.Map;
@@ -15,9 +14,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(value = "zhuri-coding-content", contextId = "zhuri-coding-content-articleClient", fallback = IArticleClientFallback.class)
 public interface IArticleClient {
-
-    @PostMapping("/api/v1/article/event")
-    public void eventUpdate(@RequestBody ArticleEvent event);
 
     @GetMapping("/api/v1/article/content")
     public ResponseResult getContent(@RequestParam("articleId") Long articleId);
