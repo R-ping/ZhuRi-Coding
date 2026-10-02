@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
+import org.dromara.dynamictp.spring.annotation.EnableDynamicTp;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -19,6 +20,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableAsync(proxyTargetClass = true)
 @EnableScheduling
 @EnableFeignClients(basePackages = "com.zhuri.coding.apis")
+// 动态线程池：接管 AiAsyncConfig 中标注 @DynamicTp 的四个执行器，参数改由 Nacos 下发、运行时生效
+@EnableDynamicTp
 public class ContentApplication {
 
     public static void main(String[] args) {

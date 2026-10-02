@@ -10,8 +10,7 @@ import com.zhuri.coding.content.mapper.course.ApUserCourseMapper;
 import com.zhuri.coding.apis.reward.IRewardClient;
 import com.zhuri.coding.content.service.order.DiscountService;
 import com.zhuri.coding.content.service.order.OrderService;
-import com.zhuri.coding.content.service.outbox.OutboxService;
-import com.zhuri.coding.content.service.outbox.handler.PayRewardOutboxHandler;
+import com.zhuri.coding.content.service.payment.PaymentRewardService;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import com.zhuri.coding.model.course.pojos.ApCourse;
@@ -46,7 +45,7 @@ import static org.mockito.Mockito.when;
 /**
  * OrderServiceImpl 单元测试（课程订单核心流程）
  *
- * @Service 依赖多个 mapper 与 DiscountService、OutboxService，均 @Mock 注入。
+ * @Service 依赖多个 mapper 与 DiscountService、PaymentRewardService，均 @Mock 注入。
  * 覆盖：
  * - createOrder 参数校验 / 课程不存在 / 折扣码无效 / FIXED 与 PERCENTAGE 折扣计算 / 金额下溢归零 / 默认支付方式；
  * - getOrderStatus 归属校验（防越权）/ 不存在 / 成功；
@@ -67,7 +66,7 @@ class OrderServiceImplTest {
     @Mock
     private DiscountService discountService;
     @Mock
-    private OutboxService outboxService;
+    private PaymentRewardService paymentRewardService;
     @Mock
     private IRewardClient rewardClient;
     @Mock
@@ -311,16 +310,9 @@ class OrderServiceImplTest {
         verify(discountService).consumeDiscountCode("CODE");
         verify(courseMapper).updateById(any(ApCourse.class));
         verify(userCourseMapper).insert(any(ApUserCourse.class));
-        // 方案 B：联动改为 Outbox 事件（同事务写入），不再同步调 PaymentRewardService
-        org.mockito.ArgumentCaptor<String> payload =
-                org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(outboxService).record(
-                org.mockito.ArgumentMatchers.eq(PayRewardOutboxHandler.EVENT_TYPE + ":" + orderNo),
-                org.mockito.ArgumentMatchers.eq(PayRewardOutboxHandler.EVENT_TYPE),
-                payload.capture());
-        // payload JSON 含关键业务字段（反序列化失败会由 handler 判死信，这里防呆）
-        assertTrue(payload.getValue().contains("\"orderNo\":\"" + orderNo + "\""));
-        assertTrue(payload.getValue().contains("\"userId\":" + userId));
+        // 本地消息表：联动是「被注解的方法」——切面把实参存档（同事务写入），不再同步调 PaymentRewardService
+        verify(paymentRewardService).onCoursePurchaseSuccess(userId, courseId,
+                new BigDecimal("100"), orderNo);
     }
 
     @Test
@@ -343,22 +335,19 @@ class OrderServiceImplTest {
     }
 
     @Test
-    @DisplayName("handlePaySuccess 联动走 Outbox：只写事件不同步调联动，主流程返回 true")
+    @DisplayName("handlePaySuccess 联动走本地消息表：只登记不执行，主流程返回 true")
     void handlePaySuccessRewardViaOutbox() {
         when(orderMapper.selectOne(any())).thenReturn(order(ApCourseOrder.Status.PENDING.getCode(), ""));
         when(orderMapper.update(any(), any())).thenReturn(1); // CAS 抢占成功
         when(courseMapper.selectById(courseId)).thenReturn(course(new BigDecimal("100"), 0));
         when(userCourseMapper.selectOne(any())).thenReturn(null);
-        when(outboxService.record(any(), any(), any())).thenReturn(true);
 
         boolean ok = orderService.handlePaySuccess(orderNo, "TN1");
 
         assertTrue(ok); // 主流程仍完成
-        // 事件以 orderNo 为幂等键写入（PAY_REWARD:{orderNo}），联动改由 Dispatcher 异步执行
-        verify(outboxService).record(
-                org.mockito.ArgumentMatchers.eq(PayRewardOutboxHandler.EVENT_TYPE + ":" + orderNo),
-                org.mockito.ArgumentMatchers.eq(PayRewardOutboxHandler.EVENT_TYPE),
-                any());
+        // 切面只登记（事件以 orderNo 为幂等键），真正的加经验/发信由 Dispatcher 在提交后重放
+        verify(paymentRewardService).onCoursePurchaseSuccess(userId, courseId,
+                new BigDecimal("100"), orderNo);
     }
 
     @Test

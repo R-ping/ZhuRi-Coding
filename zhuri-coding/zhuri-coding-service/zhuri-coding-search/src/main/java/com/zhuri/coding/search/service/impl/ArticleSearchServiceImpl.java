@@ -294,4 +294,36 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
             return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, "同步文章到ES索引失败");
         }
     }
+
+    @Override
+    public List<Long> missingArticleIds(List<Long> candidateIds) {
+        if (candidateIds == null || candidateIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            List<String> ids = candidateIds.stream().map(String::valueOf).collect(Collectors.toList());
+            // 按文档 _id 查，而不是按字段查：SearchArticle.id 标了 @Id，映射到 ES 的 _id，不是可检索字段。
+            // 一次 terms-ids 查询取回"已入索引"的 id，与候选集求差集即"缺失"。
+            NativeQuery nativeQuery = NativeQuery.builder()
+                    .withQuery(q -> q.ids(i -> i.values(ids)))
+                    .withPageable(PageRequest.of(0, ids.size()))
+                    .build();
+            Set<String> indexed = elasticsearchOperations.search(nativeQuery, SearchArticle.class)
+                    .getSearchHits().stream()
+                    .map(SearchHit::getId)
+                    .collect(Collectors.toSet());
+            List<Long> missing = candidateIds.stream()
+                    .filter(id -> !indexed.contains(String.valueOf(id)))
+                    .collect(Collectors.toList());
+            if (!missing.isEmpty()) {
+                log.warn("[INDEX-RECONCILE] 发现 {} / {} 篇已发布文章不在 ES 索引里",
+                        missing.size(), candidateIds.size());
+            }
+            return missing;
+        } catch (Exception e) {
+            // 必须抛出：若降级成"没有缺失"，对账会把 ES 故障伪装成一切正常
+            log.error("对账查询 ES 已索引文章失败, candidateCount={}", candidateIds.size(), e);
+            throw new IllegalStateException("对账查询 ES 失败", e);
+        }
+    }
 }

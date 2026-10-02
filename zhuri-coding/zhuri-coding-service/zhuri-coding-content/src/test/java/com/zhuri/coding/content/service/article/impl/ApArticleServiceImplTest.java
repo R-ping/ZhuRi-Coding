@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
-import com.zhuri.coding.content.service.outbox.OutboxService;
+import com.zhuri.coding.content.service.article.ArticlePublishExecutor;
 import com.zhuri.coding.model.article.dtos.ArticleDto;
 import com.zhuri.coding.model.article.dtos.ArticleHomeDto;
 import com.zhuri.coding.model.article.pojos.ApArticle;
@@ -40,20 +40,19 @@ import static org.mockito.Mockito.when;
  * 继承 MyBatis-Plus ServiceImpl，私有 baseMapper 以反射注入；其余 @Autowired 依赖由 @InjectMocks 注入。
  * 覆盖：
  * - load：size 缺省/上限 50、type 非法回退、tag 缺省、时间缺省；null-safe 列表映射；
- * - createArticleEvent：参数为空、DB 无记录、落 Outbox 成功、幂等短路、落库异常；
+ * - submitPublish：参数为空、DB 无记录、落 Outbox 成功、幂等短路、落库异常；
  *   置位与 ES 同步属于异步执行体（ArticlePublishExecutor），在 ArticlePublishExecutorTest 覆盖；
  * - updateScoreByBehavior：文章不存在、正常更新热度分；
  * - listByAuthorId：仅作者、按频道/标签/删除过滤（JSON_OVERLAPS）。
  *
- * <p><b>迁移阶段 2（切读）后的断言口径</b>：本方法原先还要「写 article_event 锚点 + 发布
- * ArticlePublishEvent」，切读后这两处写入已移除，Outbox 是唯一执行依据 ——
- * 因此这里不再断言那两个动作，改为断言「落 Outbox」以及它的返回值语义。
+ * <p><b>断言口径</b>：Outbox 是发布的唯一执行依据（旧 {@code article_event} 链路已删除），
+ * 这里断言「落 Outbox」以及它的返回值语义。
  */
 class ApArticleServiceImplTest {
 
     @Mock private ApArticleMapper apArticleMapper;
-    /** 迁移阶段 2 起 Outbox 是文章发布的唯一落锚目标（旧链路写入已移除） */
-    @Mock private OutboxService outboxService;
+    /** Outbox 是文章发布的唯一落锚目标 */
+    @Mock private ArticlePublishExecutor articlePublishExecutor;
 
     @InjectMocks
     private ApArticleServiceImpl articleService;
@@ -101,60 +100,51 @@ class ApArticleServiceImplTest {
         assertEquals(1, list.size());
     }
 
-    // ==================== createArticleEvent ====================
+    // ==================== submitPublish ====================
 
     @Test
-    @DisplayName("createArticleEvent - 参数为空返回 false 且不落 Outbox")
+    @DisplayName("submitPublish - 参数为空返回 false 且不调发布方法")
     void testEventNullArticle() {
-        assertFalse(articleService.createArticleEvent(null));
-        verify(outboxService, never()).record(anyString(), anyString(), anyString());
+        assertFalse(articleService.submitPublish(null));
+        verify(articlePublishExecutor, never()).publishArticle(any());
     }
 
     @Test
-    @DisplayName("createArticleEvent - 文章不存在(被审核回滚)返回 false 且不落 Outbox")
+    @DisplayName("submitPublish - 文章不存在(被审核回滚)返回 false 且不调发布方法")
     void testEventArticleMissing() {
         when(apArticleMapper.selectById(1L)).thenReturn(null);
-        assertFalse(articleService.createArticleEvent(article(1L)));
-        verify(outboxService, never()).record(anyString(), anyString(), anyString());
+        assertFalse(articleService.submitPublish(article(1L)));
+        verify(articlePublishExecutor, never()).publishArticle(any());
     }
 
     @Test
-    @DisplayName("createArticleEvent - 落 Outbox 成功，幂等键与载荷符合 Handler 约定")
+    @DisplayName("submitPublish - 成功：只调用被注解标注的发布方法（幂等键/载荷由切面负责）")
     void testEventSuccess() {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
-        when(outboxService.record(anyString(), anyString(), anyString())).thenReturn(true);
 
-        assertTrue(articleService.createArticleEvent(article(1L)));
+        assertTrue(articleService.submitPublish(article(1L)));
 
-        verify(outboxService).record(
-                eq("article_publish:1"),
-                eq("ARTICLE_PUBLISH"),
-                eq("{\"articleId\":1}"));
+        verify(articlePublishExecutor).publishArticle(1L);
     }
 
     @Test
-    @DisplayName("createArticleEvent - 同 eventKey 已存在(幂等短路)仍返回 true，不阻断发布")
-    void testEventIdempotentShortCircuit() {
+    @DisplayName("submitPublish - 幂等由 uk_event_key 承担（在切面与数据库层），业务侧只管调用")
+    void testEventIdempotencyLivesInAspect() {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
-        // record 返回 false = uk_event_key 冲突，说明已有在途发布事件
-        when(outboxService.record(anyString(), anyString(), anyString())).thenReturn(false);
 
-        assertTrue(articleService.createArticleEvent(article(1L)));
-
-        verify(outboxService).record(
-                eq("article_publish:1"),
-                eq("ARTICLE_PUBLISH"),
-                eq("{\"articleId\":1}"));
+        // 服务侧不再自己判断幂等：切面如何短路是切面的事，只要方法不抛异常就算锚定成功
+        assertTrue(articleService.submitPublish(article(1L)));
+        verify(articlePublishExecutor).publishArticle(1L);
     }
 
     @Test
-    @DisplayName("createArticleEvent - 落 Outbox 异常返回 false（切读后无兜底链路，必须暴露失败）")
+    @DisplayName("submitPublish - 切面存档异常返回 false（切读后无兜底链路，必须暴露失败）")
     void testEventRecordFailure() {
         when(apArticleMapper.selectById(1L)).thenReturn(article(1L));
         doThrow(new RuntimeException("db down"))
-                .when(outboxService).record(anyString(), anyString(), anyString());
+                .when(articlePublishExecutor).publishArticle(any());
 
-        assertFalse(articleService.createArticleEvent(article(1L)));
+        assertFalse(articleService.submitPublish(article(1L)));
     }
 
     // ==================== updateScoreByBehavior ====================

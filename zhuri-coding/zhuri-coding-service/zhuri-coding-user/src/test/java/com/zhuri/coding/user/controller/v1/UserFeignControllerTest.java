@@ -13,6 +13,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -121,6 +122,53 @@ class UserFeignControllerTest {
             assertEquals("工程师", data.get("position"));
             assertEquals("示例公司", data.get("company"));
             assertEquals("简介", data.get("bio"));
+        }
+    }
+
+    @Nested
+    @DisplayName("getBasicInfoBatch 批量基本信息")
+    class BasicInfoBatch {
+
+        @Test
+        @DisplayName("空入参 / null → 返回空 Map，不查库")
+        void testEmpty() {
+            assertEquals(200, userFeignController.getBasicInfoBatch(List.of()).getCode());
+            assertTrue(((Map<?, ?>) userFeignController.getBasicInfoBatch(List.of()).getData()).isEmpty());
+            assertEquals(200, userFeignController.getBasicInfoBatch(null).getCode());
+        }
+
+        @Test
+        @DisplayName("正常：以 userId 为 key 返回昵称头像")
+        void testOk() {
+            when(apUserMapper.selectBatchIds(List.of(1L, 2L)))
+                    .thenReturn(List.of(user(1, "张三", "a.png"), user(2, "李四", "b.png")));
+
+            Map<String, Object> data =
+                    (Map<String, Object>) userFeignController.getBasicInfoBatch(List.of(1L, 2L)).getData();
+            assertEquals(2, data.size());
+            assertEquals("张三", ((Map<?, ?>) data.get("1")).get("nickname"));
+            assertEquals("b.png", ((Map<?, ?>) data.get("2")).get("avatar"));
+        }
+
+        @Test
+        @DisplayName("查不到的 id 不出现在结果里，由调用方按空串处理")
+        void testMissingIgnored() {
+            when(apUserMapper.selectBatchIds(List.of(9L))).thenReturn(List.of());
+
+            Map<String, Object> data =
+                    (Map<String, Object>) userFeignController.getBasicInfoBatch(List.of(9L)).getData();
+            assertTrue(data.isEmpty());
+        }
+
+        @Test
+        @DisplayName("昵称/头像为 null → 空串兜底")
+        void testNullFields() {
+            when(apUserMapper.selectBatchIds(List.of(3L))).thenReturn(List.of(user(3, null, null)));
+
+            Map<String, Object> data =
+                    (Map<String, Object>) userFeignController.getBasicInfoBatch(List.of(3L)).getData();
+            assertEquals("", ((Map<?, ?>) data.get("3")).get("nickname"));
+            assertEquals("", ((Map<?, ?>) data.get("3")).get("avatar"));
         }
     }
 }

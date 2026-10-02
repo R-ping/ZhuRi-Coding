@@ -6,6 +6,7 @@ import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.course.ApCourseMapper;
 import com.zhuri.coding.content.service.level.LevelService;
 import com.zhuri.coding.content.service.payment.PaymentRewardService;
+import com.zhuri.coding.content.service.outbox.localmsg.LocalMessage;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.course.pojos.ApCourse;
@@ -47,6 +48,7 @@ public class PaymentRewardServiceImpl implements PaymentRewardService {
     private ApArticleMapper articleMapper;
 
     @Override
+    @LocalMessage(eventType = "PAY_REWARD", key = "'PAY_REWARD:' + #a3")
     public void onCoursePurchaseSuccess(Long userId, Long courseId, BigDecimal paidAmount, String orderNo) {
         // 1. 按实际支付金额给付款用户加逐日等级经验（受每日上限控制，失败不影响支付主流程）
         BigDecimal gained = grantDailyScore(userId, ACTION_PURCHASE_COURSE, paidAmount, "购买课程ID:" + courseId);

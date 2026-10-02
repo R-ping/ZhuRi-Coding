@@ -6,6 +6,8 @@ import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 @Slf4j
 public class IFollowClientFallback implements IFollowClient {
@@ -18,6 +20,11 @@ public class IFollowClientFallback implements IFollowClient {
     @Override
     public ResponseResult isFollowing(Long userId, Long followUserId) {
         // 降级返回 false，避免开阻塞发送；IM 侧需兼容降级结果
+        return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, "关注关系查询不可用");
+    }
+
+    @Override
+    public ResponseResult isFollowingBatch(Long followUserId, List<Long> userIds) {
         return ResponseResult.errorResult(AppHttpCodeEnum.SERVER_ERROR, "关注关系查询不可用");
     }
 }

@@ -213,8 +213,9 @@ class NotificationProcessorTest {
         Map<String, Object> content = objectMapper.readValue(params.get("content").toString(), Map.class);
         assertEquals("follow", content.get("notification_type"));
         assertEquals("关注了你", content.get("action_type"));
-        // 更新未读计数
-        verify(notificationClient).incrUnread(789L);
+        // 未读计数由通知服务在 createNotification 内部按类型增量，这里不再重复失效一次
+        // （多调一次会把刚建好的缓存冲掉，活跃用户的未读缓存就永远命中不了）
+        verify(notificationClient, never()).incrUnread(any());
     }
 
     // ==================== 默认分支 ====================

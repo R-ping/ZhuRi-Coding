@@ -50,4 +50,13 @@ public class SessionManager {
     public int getOnlineCount() {
         return onlineUsers.size();
     }
+
+    /**
+     * 本实例当前在线的全部用户 ID。
+     * 供 {@link PresenceRenewalTask} 按本实例实际持有的连接刷新在线状态 TTL——
+     * Redis 里的全局在线表是各实例分别登记的，续期也只能各自续自己的。
+     */
+    public Set<Long> getOnlineUserIds() {
+        return Set.copyOf(onlineUsers.keySet());
+    }
 }

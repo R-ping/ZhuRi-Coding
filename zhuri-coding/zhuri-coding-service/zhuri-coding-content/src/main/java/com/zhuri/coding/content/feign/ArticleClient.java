@@ -3,14 +3,12 @@ package com.zhuri.coding.content.feign;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.zhuri.coding.apis.article.IArticleClient;
 import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
-import com.zhuri.coding.content.service.article.ApArticleEventService;
 import com.zhuri.coding.content.service.article.ApArticleService;
 import com.zhuri.coding.content.service.article.ArticleStatisticsService;
 import com.zhuri.coding.content.service.article.ArticleTaskService;
 import com.zhuri.coding.model.article.dtos.ArticleDto;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticleContent;
-import com.zhuri.coding.model.article.pojos.ArticleEvent;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import java.util.List;
@@ -31,18 +29,10 @@ public class ArticleClient implements IArticleClient {
     private ApArticleContentMapper apArticleContentMapper;
 
     @Autowired
-    private ApArticleEventService apArticleEventService;
-
-    @Autowired
     private ArticleTaskService articleTaskService;
 
     @Autowired
     private ArticleStatisticsService articleStatisticsService;
-
-    @PostMapping("/api/v1/article/event")
-    public void eventUpdate(@RequestBody ArticleEvent event) {
-        apArticleEventService.updateEvent(event);
-    }
 
     @GetMapping("/api/v1/article/content")
     public ResponseResult getContent(@RequestParam("articleId") Long articleId) {

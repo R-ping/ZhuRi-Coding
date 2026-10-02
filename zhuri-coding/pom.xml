@@ -49,6 +49,8 @@
     <ali.green.version>3.4.1</ali.green.version>
     <minio.version>8.5.2</minio.version>
     <hutool.version>5.8.41</hutool.version>
+    <!-- 动态线程池：Spring Boot 3 / Spring 6 必须用 -x 后缀版本（官方 FAQ 明确区分 SB2 与 SB3 两套构件） -->
+    <dynamic.tp.version>1.2.2-x</dynamic.tp.version>
   </properties>
   <dependencies>
     <!--日志处理包 - 使用logback + JSON格式输出，支持trace_id/span_id注入 -->
@@ -237,6 +239,27 @@
         <groupId>io.minio</groupId>
         <artifactId>minio</artifactId>
         <version>${minio.version}</version>
+      </dependency>
+      <!-- dynamic-tp（动态线程池）。
+           注意 groupId 是 org.dromara.dynamictp（旧坐标 cn.dynamictp 停在 1.1.2，且不支持 Boot 3）。
+
+           ⚠️ 这里刻意【不】import dynamic-tp-dependencies BOM。
+           原因：该 BOM 硬编码 <jackson.version>2.13.5</jackson.version>，
+           并把它写进自己的 dependencyManagement；一旦 import，就会覆盖 Spring Boot
+           自带的 Jackson 2.21.4 管理，导致运行期 NoClassDefFoundError:
+           com/fasterxml/jackson/databind/cfg/DatatypeFeature（该类 2.15 才引入）。
+           实测：import BOM 后 jackson-databind 由 2.21.4 降级为 2.13.5，Tomcat 都起不来。
+           故改为只显式声明用到的两个 starter（版本由 ${dynamic.tp.version} 统一控制），
+           让 Spring Boot 继续掌管 Jackson/OpenTelemetry 等公共依赖的版本。 -->
+      <dependency>
+        <groupId>org.dromara.dynamictp</groupId>
+        <artifactId>dynamic-tp-spring-boot-starter-common</artifactId>
+        <version>${dynamic.tp.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.dromara.dynamictp</groupId>
+        <artifactId>dynamic-tp-spring-boot-starter-nacos</artifactId>
+        <version>${dynamic.tp.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

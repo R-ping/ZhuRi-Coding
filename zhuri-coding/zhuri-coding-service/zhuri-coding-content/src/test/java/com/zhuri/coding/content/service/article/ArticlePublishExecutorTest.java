@@ -22,9 +22,9 @@ import static org.mockito.Mockito.when;
 /**
  * ArticlePublishExecutor 单元测试 —— 覆盖"置位 DB 发布态 + 同步 ES"这段被抽出的业务逻辑。
  *
- * <p>抽出来之后，这段逻辑**只在这里测一遍**，两条链路（旧 {@code article_event} 状态机、
- * 新 Outbox Handler）的状态机语义则在各自的测试里覆盖。这就是"按职责切分测试"的收益：
- * 业务逻辑改动不会让状态机测试整片失败，反之亦然。
+ * <p>抽出来之后，这段逻辑**只在这里测一遍**，消息层的重试/死信语义（Outbox Dispatcher、
+ * 失败策略）则在各自的测试里覆盖。这就是"按职责切分测试"的收益：
+ * 业务逻辑改动不会让消息层测试整片失败，反之亦然。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("文章发布执行体（置位 + ES 同步）")

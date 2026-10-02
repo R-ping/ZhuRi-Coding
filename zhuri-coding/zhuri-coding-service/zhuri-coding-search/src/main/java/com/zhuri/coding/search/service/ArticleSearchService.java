@@ -6,6 +6,7 @@ import com.zhuri.coding.model.search.dtos.UserSearchDto;
 
 import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.io.IOException;
+import java.util.List;
 
 public interface ArticleSearchService {
 
@@ -25,4 +26,14 @@ public interface ArticleSearchService {
     ResponseResult bm25Recall(Bm25RecallDto dto);
 
     ResponseResult syncArticle(SearchArticleVo searchArticleVo);
+
+    /**
+     * DB↔ES 索引对账：返回给定 id 中**不在索引里**的那些。
+     *
+     * <p>供 content 侧「已发布但索引缺失」的巡检做补推。单靠发布事件的失败重试覆盖不了
+     * 「同步返回成功、文档实际没落库」或「索引被误删」这类情况 —— 只有真的问一次 ES 才知道。
+     *
+     * <p>查询失败时**抛出异常**（而不是返回"没有缺失"）：把故障伪装成正常会让对账彻底失效。
+     */
+    List<Long> missingArticleIds(List<Long> candidateIds);
 }

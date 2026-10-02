@@ -32,18 +32,25 @@ public class OutboxServiceImpl implements OutboxService {
 
     @Override
     public boolean record(String eventKey, String eventType, String payload) {
+        return record(eventKey, eventType, payload, 0);
+    }
+
+    @Override
+    public boolean record(String eventKey, String eventType, String payload, int maxRetries) {
         OutboxEvent event = new OutboxEvent();
         event.setEventKey(eventKey);
         event.setEventType(eventType);
         event.setPayload(payload);
         event.setStatus(OutboxEvent.STATUS_PENDING);
         event.setRetryCount(0);
-        event.setMaxRetries(defaultMaxRetries());
+        // maxRetries <= 0 表示未指定，用全局默认（与建表 DEFAULT 5 一致）
+        event.setMaxRetries(maxRetries <= 0 ? defaultMaxRetries() : maxRetries);
         event.setCreatedTime(new Date());
         event.setUpdatedTime(new Date());
         try {
             outboxEventMapper.insert(event);
-            log.info("Outbox 事件已写入(同事务): eventKey={}, eventType={}", eventKey, eventType);
+            log.info("Outbox 事件已写入(同事务): eventKey={}, eventType={}, maxRetries={}",
+                    eventKey, eventType, event.getMaxRetries());
             return true;
         } catch (DuplicateKeyException e) {
             // uk_event_key 冲突 = 同一业务事件已写过（支付宝重复回调等），幂等短路不阻断主流程

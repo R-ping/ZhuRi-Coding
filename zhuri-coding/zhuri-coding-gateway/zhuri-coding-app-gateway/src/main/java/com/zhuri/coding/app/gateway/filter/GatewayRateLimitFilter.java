@@ -1,5 +1,6 @@
 package com.zhuri.coding.app.gateway.filter;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
@@ -97,11 +98,25 @@ public class GatewayRateLimitFilter implements GlobalFilter, Ordered {
         return -1;
     }
 
+    /**
+     * 拒绝请求。
+     *
+     * <p><b>为什么返回 HTTP 200 + 业务码，而不是标准的 429</b>：全站约定「业务级错误一律 200 + 业务码」——
+     * 应用层处理限流时也是显式 {@code setStatus(SC_OK)}（见 ExceptionCatch#handleRateLimitExceeded）。
+     * 若这里坚持 429，前端就得维护两套读法：429 走 axios 的 catch 分支，业务码走 then 分支，
+     * 而 request.js 目前只统一处理了后者 —— 网关限流会退化成 "Request failed with status code 429"
+     * 这类英文提示，甚至在部分页面的空 catch 里被静默吞掉。统一成 200 + code 8001 后，前端一套读法覆盖两层。
+     *
+     * <p>业务码 8001 = {@code AppHttpCodeEnum.RATE_LIMIT_EXCEEDED}；网关只依赖 utils 模块，
+     * 引用不到该枚举，故此处用同值字面量并在此注明，改动时两处需一起改。
+     */
     private Mono<Void> reject(ServerWebExchange exchange) {
         ServerHttpResponse response = exchange.getResponse();
-        response.setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+        response.setStatusCode(HttpStatus.OK);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
-        byte[] body = "{\"code\":429,\"message\":\"请求过于频繁，请稍后再试\"}".getBytes();
+        // 显式 UTF-8：不指定字符集时会用 JVM 默认编码，非 UTF-8 环境下中文提示会乱码
+        byte[] body = "{\"code\":8001,\"message\":\"请求过于频繁，请稍后再试\"}"
+                .getBytes(StandardCharsets.UTF_8);
         DataBuffer buffer = response.bufferFactory().wrap(body);
         return response.writeWith(Mono.just(buffer));
     }

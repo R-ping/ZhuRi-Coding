@@ -18,11 +18,22 @@ public interface OutboxService {
      * 典型场景：支付宝重复回调触发 handlePaySuccess 幂等短路前的重复写入。
      *
      * @param eventKey  业务幂等键，如 "PAY_REWARD:20260912..."
-     * @param eventType 事件类型（OutboxHandler 路由键）
+     * @param eventType 事件类型（路由键）
      * @param payload   JSON 载荷
      * @return true=新写入；false=event_key 已存在（幂等短路）
      */
     boolean record(String eventKey, String eventType, String payload);
+
+    /**
+     * 同 {@link #record(String, String, String)}，但可指定该事件的重试上限。
+     *
+     * <p><b>为什么要按事件指定</b>：重试预算该多大，取决于"死信之后有没有兜底"——
+     * 有对账巡检自动补（如文章同步 ES）的事件，少几次重试、快点进死信是合理的；
+     * 没有兜底、死信即人工介入的事件（如支付联动），多留几次重试能少几次人工。
+     *
+     * @param maxRetries 重试上限；≤0 表示未指定，用全局默认
+     */
+    boolean record(String eventKey, String eventType, String payload, int maxRetries);
 
     /** 标记事件执行成功（DONE） */
     void markDone(Long eventId);

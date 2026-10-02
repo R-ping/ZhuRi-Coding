@@ -6,12 +6,41 @@
         SELECT * FROM notifications
         WHERE user_id = #{userId}
           AND type = #{type}
-          <if test="cursor != null and cursor > 0">
-              AND id &lt; #{cursor}
+          <if test="cursorAt != null">
+              AND (last_event_at &lt; #{cursorAt}
+                   OR (last_event_at = #{cursorAt} AND id &lt; #{cursorId}))
           </if>
-        ORDER BY id DESC
+        ORDER BY last_event_at DESC, id DESC
         LIMIT #{size}
     </select>
+
+    <!--
+      聚合写入。命中 uk_agg 时合并，只推进计数、内容和 last_event_at，
+      刻意不动 is_read —— 已读与否由 flipToUnread 单独判定，
+      因为调用方需要知道"这一行是不是从已读变回了未读"来决定要不要加未读缓存。
+
+      实测（EXPLAIN）：uk_agg 让这次写入在命中时免去了先 SELECT 再 UPDATE 的往返，
+      也免掉了两个并发点赞各自 SELECT 到"不存在"然后都去 INSERT 的竞态。
+    -->
+    <insert id="upsertAggregated" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO notifications
+            (user_id, type, source_id, agg_key, content, agg_count, last_event_at, is_read, created_at)
+        VALUES
+            (#{userId}, #{type}, #{sourceId}, #{aggKey}, #{content},
+             COALESCE(#{aggCount}, 1), COALESCE(#{lastEventAt}, NOW()), 0, NOW())
+        ON DUPLICATE KEY UPDATE
+            agg_count     = agg_count + 1,
+            content       = VALUES(content),
+            last_event_at = VALUES(last_event_at),
+            id            = LAST_INSERT_ID(id)
+    </insert>
+
+    <update id="flipToUnread">
+        UPDATE notifications SET is_read = 0
+        WHERE user_id = #{userId}
+          AND agg_key = #{aggKey}
+          AND is_read = 1
+    </update>
 
     <select id="countUnread" resultType="int">
         SELECT COUNT(*) FROM notifications

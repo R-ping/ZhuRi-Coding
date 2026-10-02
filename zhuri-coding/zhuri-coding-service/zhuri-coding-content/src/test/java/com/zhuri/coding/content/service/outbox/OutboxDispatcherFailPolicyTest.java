@@ -123,7 +123,23 @@ class OutboxDispatcherFailPolicyTest {
     private OutboxDispatcher dispatcherWith(OutboxHandler handler, boolean casAcquired) {
         when(outboxEventMapper.update(isNull(), any(LambdaUpdateWrapper.class)))
                 .thenReturn(casAcquired ? 1 : 0);
-        return new OutboxDispatcher(outboxEventMapper, outboxService, List.of(handler));
+        com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry registry =
+                new com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry();
+        registry.register(handler.eventType(), handler, "test");
+        return new OutboxDispatcher(outboxEventMapper, outboxService, registry,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
+    /** 带多个 Handler 的 dispatcher（供生命周期护栏按类型分别校验用） */
+    private OutboxDispatcher dispatcherWith(OutboxHandler... handlers) {
+        when(outboxEventMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
+        com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry registry =
+                new com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry();
+        for (OutboxHandler handler : handlers) {
+            registry.register(handler.eventType(), handler, "test");
+        }
+        return new OutboxDispatcher(outboxEventMapper, outboxService, registry,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @Test
@@ -247,8 +263,7 @@ class OutboxDispatcherFailPolicyTest {
 
         when(outboxEventMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
 
-        new OutboxDispatcher(outboxEventMapper, outboxService, List.of(limited, unlimited))
-                .enforceLifetime();
+        dispatcherWith(limited, unlimited).enforceLifetime();
 
         // 只有声明上限的那个产生 UPDATE —— 默认不限，正是为了不误杀
         // 「必须完成、或等人工介入」的事件（如支付副作用）
@@ -262,8 +277,11 @@ class OutboxDispatcherFailPolicyTest {
         limited.lifetimeMinutes = 15;
         when(outboxEventMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(3);
 
-        OutboxDispatcher dispatcher =
-                new OutboxDispatcher(outboxEventMapper, outboxService, List.of(limited));
+        com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry registry =
+                new com.zhuri.coding.content.service.outbox.localmsg.LocalMessageReplayRegistry();
+        registry.register(limited.eventType(), limited, "test");
+        OutboxDispatcher dispatcher = new OutboxDispatcher(outboxEventMapper, outboxService, registry,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         dispatcher.enforceLifetime();
 
         assertEquals(Long.valueOf(3L), dispatcher.metricsSnapshot().get("lifetimeKilledTotal"));
