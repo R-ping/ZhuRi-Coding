@@ -163,10 +163,18 @@ public class AiAskServiceImpl implements AiAskService {
             return null;
         }
         int k = topK == null ? DEFAULT_TOP_K : Math.max(1, Math.min(topK, MAX_TOP_K));
+        Integer uid = currentUserId();
 
         // 0. 语义缓存：相似问题直返（命中即省掉 rewrite + rerank + 生成 三次模型调用）
-        AiAnswerVo cached = semanticCacheService.lookup(q, currentUserId());
+        // prompt 版本前置解析（P1-4）：命中判定与生成共用同一版本（避免二次解析漂移），签名随缓存读写传递
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+            prompt("ai_ask_system", SYSTEM_PROMPT, uid);
+        String promptStamp = com.zhuri.coding.content.service.ai.PromptStamp.of(
+            java.util.Map.of("ai_ask_system", sysPrompt.version));
+        AiAnswerVo cached = semanticCacheService.lookup(q, uid, promptStamp);
         if (cached != null) {
+            // 命中路径同样回填版本：否则归因缺失，灰度期会「返回 A 版答案、记 B 版」
+            cached.setPromptVersions(java.util.Map.of("ai_ask_system", sysPrompt.version));
             // 消费漏斗：缓存命中（省掉检索与生成）
             funnelMeter.incr(Boolean.TRUE.equals(fast) ? AiFeatures.ASK_FAST : AiFeatures.ASK,
                     com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
@@ -177,7 +185,7 @@ public class AiAskServiceImpl implements AiAskService {
 
         // fast 模式：单次向量召回 + 一次生成（跳过 rewrite/rerank，省 2/3 模型调用）
         if (Boolean.TRUE.equals(fast)) {
-            return askFast(q, k, start, history);
+            return askFast(q, k, start, history, sysPrompt, promptStamp);
         }
 
         // 1. Query Rewrite：口语问题 -> 利于向量检索的查询（失败回退原文）
@@ -203,12 +211,11 @@ public class AiAskServiceImpl implements AiAskService {
         }
 
         // 3. 生成回答（安全三层防御由 PromptSafetyAdvisor 横切处理；长期记忆/兴趣画像注入见 buildUser）
-        String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, currentUserId());
-        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
-            prompt("ai_ask_system", SYSTEM_PROMPT, currentUserId());
+        // sysPrompt 已在入口解析（与缓存命中判定同源），此处复用避免二次解析
+        String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, uid);
         String answer;
         try {
-            answer = genText(AiFeatures.ASK, sysPrompt.content, userPrompt, history, currentUserId());
+            answer = genText(AiFeatures.ASK, sysPrompt.content, userPrompt, history, uid);
         } catch (Exception e) {
             log.error("[AiAsk] 大模型生成失败, question={}", truncate(q, 50), e);
             return null;
@@ -229,8 +236,8 @@ public class AiAskServiceImpl implements AiAskService {
         pv.put("ai_ask_rerank", prompt("ai_ask_rerank", RERANK_PROMPT, null).version);
         vo.setPromptVersions(pv);
         // 回答成功：持久化会话记忆 + 沉淀语义记忆（Redis/PGVector，全部 fail-open 异步无关紧要）
-        persistMemory(currentUserId(), q, answer.trim(), r);
-        semanticCacheService.store(q, currentUserId(), vo.getAnswer(), r.sources);
+        persistMemory(uid, q, answer.trim(), r);
+        semanticCacheService.store(q, uid, vo.getAnswer(), r.sources, promptStamp);
         checkFaithfulness(vo, r);
         log.info("[AiAsk] question={}, hits={}, sources={}, latency={}ms, promptVersions={}",
             truncate(q, 50), r.hits, r.sources.size(), vo.getLatencyMs(), pv);
@@ -250,8 +257,15 @@ public class AiAskServiceImpl implements AiAskService {
         }
         int k = topK == null ? DEFAULT_TOP_K : Math.max(1, Math.min(topK, MAX_TOP_K));
         // 0. 语义缓存：命中则按 chunk 回放（前端 delta 协议不变），跳过检索与生成
-        AiAnswerVo cachedStream = semanticCacheService.lookup(q, userId);
+        // prompt 版本前置解析（P1-4）：命中判定与生成共用同一版本，签名随缓存读写传递
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+            prompt("ai_ask_system", SYSTEM_PROMPT, userId);
+        String promptStamp = com.zhuri.coding.content.service.ai.PromptStamp.of(
+            java.util.Map.of("ai_ask_system", sysPrompt.version));
+        AiAnswerVo cachedStream = semanticCacheService.lookup(q, userId, promptStamp);
         if (cachedStream != null) {
+            // 命中路径同样回填版本（否则归因缺失，灰度期答案与版本错配）
+            cachedStream.setPromptVersions(java.util.Map.of("ai_ask_system", sysPrompt.version));
             // 消费漏斗：缓存命中（省掉检索与生成）
             funnelMeter.incr(AiFeatures.ASK_STREAM, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
             replayDelta(cachedStream.getAnswer(), onDelta);
@@ -276,8 +290,7 @@ public class AiAskServiceImpl implements AiAskService {
             return emptyAnswer(start);
         }
         String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, userId);
-        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
-            prompt("ai_ask_system", SYSTEM_PROMPT, userId);
+        // sysPrompt 已在入口解析（与缓存命中判定同源），此处复用避免二次解析
         StringBuilder acc = new StringBuilder();
         boolean cancelled = false;
         try {
@@ -321,7 +334,7 @@ public class AiAskServiceImpl implements AiAskService {
         vo.setPromptVersions(java.util.Map.of("ai_ask_system", sysPrompt.version));
         // 回答成功：持久化会话记忆 + 沉淀语义记忆
         persistMemory(userId, q, vo.getAnswer(), r);
-        semanticCacheService.store(q, userId, vo.getAnswer(), r.sources);
+        semanticCacheService.store(q, userId, vo.getAnswer(), r.sources, promptStamp);
         checkFaithfulness(vo, r);
         log.info("[AiAsk-stream] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
         // 消费漏斗：生成成功（vo 返回给用户）
@@ -329,9 +342,16 @@ public class AiAskServiceImpl implements AiAskService {
         return vo;
     }
 
-    /** fast 模式：单次向量召回 + 一次生成（无 rewrite/rerank，低延迟低消耗） */
+    /**
+     * fast 模式：单次向量召回 + 一次生成（无 rewrite/rerank，低延迟低消耗）。
+     *
+     * <p>sysPrompt/promptStamp 由 {@link #ask} 入口解析后传入：与缓存命中判定同源，
+     * 避免二次解析导致「判定用的版本」与「生成用的版本」漂移。
+     */
     private AiAnswerVo askFast(String q, int k, long start,
-                               java.util.List<java.util.Map<String, String>> history) {
+                               java.util.List<java.util.Map<String, String>> history,
+                               com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt,
+                               String promptStamp) {
         Retrieval r = retrieveAndAssemble(q, q, k, false);
         if (r == null) {
             log.warn("[AiAsk-fast] 问题向量化失败，question={}", truncate(q, 50));
@@ -343,8 +363,6 @@ public class AiAskServiceImpl implements AiAskService {
             return emptyAnswer(start);
         }
         String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, currentUserId());
-        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
-            prompt("ai_ask_system", SYSTEM_PROMPT, currentUserId());
         String answer;
         try {
             answer = genText(AiFeatures.ASK_FAST, sysPrompt.content, userPrompt, history, currentUserId());
@@ -363,7 +381,7 @@ public class AiAskServiceImpl implements AiAskService {
         vo.setPromptVersions(java.util.Map.of("ai_ask_system", sysPrompt.version));
         // 回答成功：持久化会话记忆 + 沉淀语义记忆
         persistMemory(currentUserId(), q, answer.trim(), r);
-        semanticCacheService.store(q, currentUserId(), vo.getAnswer(), r.sources);
+        semanticCacheService.store(q, currentUserId(), vo.getAnswer(), r.sources, promptStamp);
         checkFaithfulness(vo, r);
         log.info("[AiAsk-fast] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
         // 消费漏斗：生成成功（vo 返回给用户）

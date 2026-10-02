@@ -148,7 +148,7 @@ class AiAskServiceImplTest {
         cached.setAnswer("缓存答案");
         cached.setSources(List.of());
         // currentUserId() 无登录态 → null
-        when(semanticCacheService.lookup("缓存命中问题", null)).thenReturn(cached);
+        when(semanticCacheService.lookup(eq("缓存命中问题"), any(), any())).thenReturn(cached);
 
         AiAnswerVo vo = service.ask("缓存命中问题", null, null, null);
 
@@ -163,7 +163,7 @@ class AiAskServiceImplTest {
     @Test
     @DisplayName("完整链路：Rewrite → 混合召回 → 生成 → 语义缓存落库")
     void askFullPipeline() {
-        when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
+        when(semanticCacheService.lookup(anyString(), any(), any())).thenReturn(null);
         stubRetrieval(true);
         stubChatModelBySystem();
 
@@ -177,13 +177,13 @@ class AiAskServiceImplTest {
         assertEquals(0.92, vo.getSources().get(0).getSimilarity());
         // 无登录态（userId=null）：记忆写回全部跳过，但语义缓存照常落库
         verify(conversationMemoryService, never()).appendTurn(any(), anyString(), anyString());
-        verify(semanticCacheService).store(anyString(), any(), anyString(), any(List.class));
+        verify(semanticCacheService).store(anyString(), any(), anyString(), any(List.class), any());
     }
 
     @Test
     @DisplayName("无命中时返回知识库兜底文案")
     void askNoHitReturnsEmptyAnswer() {
-        when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
+        when(semanticCacheService.lookup(anyString(), any(), any())).thenReturn(null);
         stubRetrieval(false);
 
         AiAnswerVo vo = service.ask("完全不存在的冷门问题", null, false, null);
@@ -196,7 +196,7 @@ class AiAskServiceImplTest {
     @Test
     @DisplayName("向量化失败时返回 null（调用方降级）")
     void askEmbeddingFailureReturnsNull() {
-        when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
+        when(semanticCacheService.lookup(anyString(), any(), any())).thenReturn(null);
         when(embeddingService.generateEmbedding(anyString())).thenReturn(null);
 
         assertNull(service.ask("问题", null, false, null));
@@ -207,7 +207,7 @@ class AiAskServiceImplTest {
     @Test
     @DisplayName("完整链路：ask 依次计数 recall_done → generated（feature=ask）")
     void askFunnelFullPipeline() {
-        when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
+        when(semanticCacheService.lookup(anyString(), any(), any())).thenReturn(null);
         stubRetrieval(true);
         stubChatModelBySystem();
 
@@ -228,7 +228,7 @@ class AiAskServiceImplTest {
         AiAnswerVo cached = new AiAnswerVo();
         cached.setAnswer("缓存答案");
         cached.setSources(List.of());
-        when(semanticCacheService.lookup("缓存命中问题", null)).thenReturn(cached);
+        when(semanticCacheService.lookup(eq("缓存命中问题"), any(), any())).thenReturn(cached);
 
         AiAnswerVo vo = service.ask("缓存命中问题", null, null, null);
 
@@ -244,7 +244,7 @@ class AiAskServiceImplTest {
     @Test
     @DisplayName("fast 模式：检索与生成按 ask_fast 计数（与完整问答区分成本档位）")
     void askFunnelFastFeature() {
-        when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
+        when(semanticCacheService.lookup(anyString(), any(), any())).thenReturn(null);
         stubRetrieval(true);
         stubChatModelBySystem();
 
@@ -267,7 +267,7 @@ class AiAskServiceImplTest {
         AiAnswerVo cached = new AiAnswerVo();
         cached.setAnswer("缓存答案内容" + "x".repeat(100));
         cached.setSources(List.of());
-        when(semanticCacheService.lookup("缓存问题", 7)).thenReturn(cached);
+        when(semanticCacheService.lookup(eq("缓存问题"), eq(7), any())).thenReturn(cached);
 
         AtomicInteger chunks = new AtomicInteger();
         AiAnswerVo vo = service.streamFastAsk("缓存问题", null, null, d -> chunks.incrementAndGet(), 7);
@@ -281,7 +281,7 @@ class AiAskServiceImplTest {
     @Test
     @DisplayName("流式：正常链路逐段回调，输出护栏放行，成功后写回记忆")
     void streamFastAskFullPath() {
-        when(semanticCacheService.lookup(anyString(), any())).thenReturn(null);
+        when(semanticCacheService.lookup(anyString(), any(), any())).thenReturn(null);
         stubRetrieval(true);
         // 流式生成：gateway 逐段回调增量文本并返回完整文本
         when(llmGateway.generateStreamOrNull(anyString(), anyString(), anyString(), any(), any(), any()))
@@ -305,7 +305,7 @@ class AiAskServiceImplTest {
         // 成功后会话记忆 + 语义记忆写回
         verify(conversationMemoryService).appendTurn(7, "Redis 怎么实现分布式锁", vo.getAnswer());
         verify(userMemoryService).remember(7, "Redis 怎么实现分布式锁", VEC);
-        verify(semanticCacheService).store(anyString(), any(), anyString(), any(List.class));
+        verify(semanticCacheService).store(anyString(), any(), anyString(), any(List.class), any());
     }
 
     // ==================== 向量回填 ====================
