@@ -48,6 +48,9 @@ class AiSemanticCacheServiceImplTest {
 
     private static final String DECENT_QUESTION = "Redis 分布式锁有哪些实现方式";
 
+    /** 当前生效的 prompt 版本签名（测试用固定值，对应 PromptStamp.of 格式） */
+    private static final String STAMP = "ai_ask_system@3";
+
     @Mock
     private ArticleEmbeddingServiceImpl embeddingService;
 
@@ -78,34 +81,34 @@ class AiSemanticCacheServiceImplTest {
     @DisplayName("总开关关闭时直接未命中")
     void disabledReturnsNull() {
         ReflectionTestUtils.setField(service, "enabled", false);
-        assertNull(service.lookup(DECENT_QUESTION, 7));
+        assertNull(service.lookup(DECENT_QUESTION, 7, STAMP));
         verify(embeddingService, never()).generateEmbedding(anyString());
     }
 
     @Test
     @DisplayName("userId 为空直接未命中")
     void nullUserIdReturnsNull() {
-        assertNull(service.lookup(DECENT_QUESTION, null));
+        assertNull(service.lookup(DECENT_QUESTION, null, STAMP));
         verify(embeddingService, never()).generateEmbedding(anyString());
     }
 
     @Test
     @DisplayName("过短问题不做缓存（信息量不足）")
     void shortQuestionNotCacheable() {
-        assertNull(service.lookup("嗯", 7));
+        assertNull(service.lookup("嗯", 7, STAMP));
         verify(embeddingService, never()).generateEmbedding(anyString());
         // store 同样短路：过短问题不落缓存
         service.store("嗯", 7, "这是一段足够长的答案，字数不少于二十个字，用于验证过滤逻辑。",
-            List.of(source(1L)));
+            List.of(source(1L)), STAMP);
         verify(pgVectorJdbcTemplate, never()).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
-            any(), any(), any(), any(), any(), any());
+            any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("含指代的问题不做缓存（语义相似≠意图相同）")
     void contextDependentQuestionNotCacheable() {
-        assertNull(service.lookup("它是什么意思", 7));
-        assertNull(service.lookup("上面的方案详细说说", 7));
+        assertNull(service.lookup("它是什么意思", 7, STAMP));
+        assertNull(service.lookup("上面的方案详细说说", 7, STAMP));
         verify(embeddingService, never()).generateEmbedding(anyString());
     }
 
@@ -135,7 +138,7 @@ class AiSemanticCacheServiceImplTest {
         when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
         when(embeddingService.getEmbeddingMeta(1L)).thenReturn(meta("hash-a"));
 
-        AiAnswerVo vo = service.lookup(DECENT_QUESTION, 7);
+        AiAnswerVo vo = service.lookup(DECENT_QUESTION, 7, STAMP);
 
         assertNotNull(vo);
         assertEquals("这是缓存的答案内容，足够长。", vo.getAnswer());
@@ -162,7 +165,7 @@ class AiSemanticCacheServiceImplTest {
         when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
         when(embeddingService.getEmbeddingMeta(1L)).thenReturn(meta("hash-new"));
 
-        assertNull(service.lookup(DECENT_QUESTION, 7));
+        assertNull(service.lookup(DECENT_QUESTION, 7, STAMP));
 
         verify(pgVectorJdbcTemplate).update(startsWith("DELETE FROM ap_ai_semantic_cache WHERE id"), eq(1L));
         verify(metrics).incr("ai_semcache_evict_stale");
@@ -185,7 +188,7 @@ class AiSemanticCacheServiceImplTest {
         when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
         when(embeddingService.getEmbeddingMeta(1L)).thenReturn(null);
 
-        assertNull(service.lookup(DECENT_QUESTION, 7));
+        assertNull(service.lookup(DECENT_QUESTION, 7, STAMP));
 
         verify(metrics).incr("ai_semcache_evict_stale");
     }
@@ -206,7 +209,7 @@ class AiSemanticCacheServiceImplTest {
         when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
         when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
 
-        assertNull(service.lookup(DECENT_QUESTION, 7));
+        assertNull(service.lookup(DECENT_QUESTION, 7, STAMP));
 
         verify(metrics).incr("ai_semcache_evict_stale");
     }
@@ -225,11 +228,86 @@ class AiSemanticCacheServiceImplTest {
         when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
         when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
 
-        AiAnswerVo vo = service.lookup(DECENT_QUESTION, 7);
+        AiAnswerVo vo = service.lookup(DECENT_QUESTION, 7, STAMP);
 
         assertNotNull(vo);
         verify(metrics).incr("ai_semcache_hit");
         verify(embeddingService, never()).getEmbeddingMeta(1L);
+    }
+
+    @Test
+    @DisplayName("版本签名一致 → 照常命中")
+    void lookupPromptStampMatchHits() throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.next()).thenReturn(true);
+        when(rs.getLong("id")).thenReturn(1L);
+        when(rs.getString("answer")).thenReturn("这是缓存的答案内容，足够长。");
+        when(rs.getString("sources_json"))
+            .thenReturn("[{\"articleId\":1,\"title\":\"t\",\"author\":\"a\",\"likes\":1,\"similarity\":0.9}]");
+        when(rs.getString("sources_hash_json")).thenReturn("{\"1\":\"hash-a\"}");
+        when(rs.getString("prompt_stamp")).thenReturn(STAMP);
+        when(rs.getDouble("similarity")).thenReturn(0.9);
+        stubLookupQuery(rs);
+        when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
+        when(embeddingService.getEmbeddingMeta(1L)).thenReturn(meta("hash-a"));
+
+        AiAnswerVo vo = service.lookup(DECENT_QUESTION, 7, STAMP);
+
+        assertNotNull(vo);
+        verify(metrics).incr("ai_semcache_hit");
+        verify(metrics, never()).incr("ai_semcache_evict_prompt_stale");
+    }
+
+    @Test
+    @DisplayName("命中但 prompt 版本已变更 → evict 且标记 prompt 指标（短路在语料指纹之前）")
+    void lookupPromptStampChangedEvicts() throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.next()).thenReturn(true);
+        when(rs.getLong("id")).thenReturn(1L);
+        when(rs.getString("answer")).thenReturn("这是缓存的答案内容，足够长。");
+        when(rs.getString("sources_json"))
+            .thenReturn("[{\"articleId\":1,\"title\":\"t\",\"author\":\"a\",\"likes\":1,\"similarity\":0.9}]");
+        when(rs.getString("sources_hash_json")).thenReturn("{\"1\":\"hash-a\"}");
+        // 该行由 ai_ask_system@1 生成，当前生效版本为 @3（STAMP）
+        when(rs.getString("prompt_stamp")).thenReturn("ai_ask_system@1");
+        when(rs.getDouble("similarity")).thenReturn(0.9);
+        stubLookupQuery(rs);
+        when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
+
+        assertNull(service.lookup(DECENT_QUESTION, 7, STAMP));
+
+        verify(pgVectorJdbcTemplate).update(startsWith("DELETE FROM ap_ai_semantic_cache WHERE id"), eq(1L));
+        verify(metrics).incr("ai_semcache_evict_prompt_stale");
+        verify(metrics, never()).incr("ai_semcache_hit");
+        // 版本比对是零成本校验且排在校验链前列：命中版本不一致时无需再做向量指纹查询
+        verify(embeddingService, never()).getEmbeddingMeta(1L);
+    }
+
+    @Test
+    @DisplayName("调用方未提供当前版本（空签名）→ fail-open 不校验版本，命中不受影响")
+    void lookupBlankCurrentStampSkipsVersionCheck() throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.next()).thenReturn(true);
+        when(rs.getLong("id")).thenReturn(1L);
+        when(rs.getString("answer")).thenReturn("这是缓存的答案内容，足够长。");
+        when(rs.getString("sources_json"))
+            .thenReturn("[{\"articleId\":1,\"title\":\"t\",\"author\":\"a\",\"likes\":1,\"similarity\":0.9}]");
+        when(rs.getString("sources_hash_json")).thenReturn("{\"1\":\"hash-a\"}");
+        when(rs.getString("prompt_stamp")).thenReturn("ai_ask_system@1");
+        when(rs.getDouble("similarity")).thenReturn(0.9);
+        stubLookupQuery(rs);
+        when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
+        when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(published(1L)));
+        when(embeddingService.getEmbeddingMeta(1L)).thenReturn(meta("hash-a"));
+
+        // 空签名 = 调用方未提供版本信息 → 跳过校验，绝不因元数据缺失误删缓存
+        AiAnswerVo vo = service.lookup(DECENT_QUESTION, 7, "");
+
+        assertNotNull(vo);
+        verify(metrics).incr("ai_semcache_hit");
+        verify(metrics, never()).incr("ai_semcache_evict_prompt_stale");
     }
 
     @Test
@@ -240,7 +318,7 @@ class AiSemanticCacheServiceImplTest {
         stubLookupQuery(rs);
         when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
 
-        assertNull(service.lookup(DECENT_QUESTION, 7));
+        assertNull(service.lookup(DECENT_QUESTION, 7, STAMP));
     }
 
     @Test
@@ -255,7 +333,7 @@ class AiSemanticCacheServiceImplTest {
         stubLookupQuery(rs);
         when(embeddingService.generateEmbedding(DECENT_QUESTION)).thenReturn(VEC);
 
-        assertNull(service.lookup(DECENT_QUESTION, 7));
+        assertNull(service.lookup(DECENT_QUESTION, 7, STAMP));
 
         verify(pgVectorJdbcTemplate).update(startsWith("DELETE FROM ap_ai_semantic_cache WHERE id"), eq(1L));
         verify(metrics).incr("ai_semcache_evict");
@@ -278,7 +356,7 @@ class AiSemanticCacheServiceImplTest {
         aigc.setIsAigc(1);
         when(apArticleMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(aigc));
 
-        assertNull(service.lookup(DECENT_QUESTION, 7));
+        assertNull(service.lookup(DECENT_QUESTION, 7, STAMP));
 
         verify(pgVectorJdbcTemplate).update(startsWith("DELETE FROM ap_ai_semantic_cache WHERE id"), eq(1L));
     }
@@ -293,12 +371,13 @@ class AiSemanticCacheServiceImplTest {
         when(embeddingService.getEmbeddingMeta(2L)).thenReturn(meta("hash-b"));
         List<AiSourceVo> sources = List.of(source(1L), source(2L));
 
-        service.store(DECENT_QUESTION, 7, "这是一段足够长的问答答案，字数满足最小长度要求，用于验证缓存写入。", sources);
+        service.store(DECENT_QUESTION, 7, "这是一段足够长的问答答案，字数满足最小长度要求，用于验证缓存写入。", sources,
+            STAMP);
 
-        // 第 6 参为语料指纹快照 JSON（articleId -> contentHash）
+        // 第 6 参为语料指纹快照 JSON（articleId -> contentHash）、第 7 参为 prompt 版本签名
         verify(pgVectorJdbcTemplate).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
             eq(7), eq(DECENT_QUESTION), any(), any(), any(),
-            contains("\"1\":\"hash-a\""));
+            contains("\"1\":\"hash-a\""), eq(STAMP));
         // 单用户条数上限裁剪（maxPerUser=50）
         verify(pgVectorJdbcTemplate).update(
             startsWith("DELETE FROM ap_ai_semantic_cache WHERE user_id = ? AND id NOT IN"), eq(7), eq(7), eq(50));
@@ -312,24 +391,24 @@ class AiSemanticCacheServiceImplTest {
         when(embeddingService.getEmbeddingMeta(1L)).thenReturn(null);
 
         service.store(DECENT_QUESTION, 7, "这是一段足够长的问答答案，字数满足最小长度要求，用于验证缓存写入。",
-            List.of(source(1L)));
+            List.of(source(1L)), STAMP);
 
         verify(pgVectorJdbcTemplate).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
-            eq(7), eq(DECENT_QUESTION), any(), any(), any(), eq("{}"));
+            eq(7), eq(DECENT_QUESTION), any(), any(), any(), eq("{}"), eq(STAMP));
     }
 
     @Test
     @DisplayName("答案过短或来源为空不落缓存")
     void storeShortAnswerSkipped() {
         // 答案过短（< MIN_ANSWER_LEN=20），不触发 embedding
-        service.store(DECENT_QUESTION, 7, "短答案", List.of(source(1L)));
+        service.store(DECENT_QUESTION, 7, "短答案", List.of(source(1L)), STAMP);
         verify(embeddingService, never()).generateEmbedding(anyString());
 
         // 来源为空也不落缓存
         service.store(DECENT_QUESTION, 7, "这是一段足够长的问答答案，字数满足最小长度要求，用于验证缓存写入。",
-            List.of());
+            List.of(), STAMP);
         verify(pgVectorJdbcTemplate, never()).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
-            any(), any(), any(), any(), any());
+            any(), any(), any(), any(), any(), any(), any());
     }
 
     // ==================== 辅助 ====================

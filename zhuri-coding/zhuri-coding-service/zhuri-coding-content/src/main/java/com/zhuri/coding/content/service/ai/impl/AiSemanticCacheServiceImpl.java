@@ -33,10 +33,12 @@ import org.springframework.stereotype.Service;
  * <p>设计取舍：
  * <ul>
  *   <li><b>按用户隔离</b>：答案 prompt 注入了长期记忆与兴趣画像，跨用户复用会泄露画像；</li>
- *   <li><b>三重失效</b>：TTL（默认 6h）兜底 + 命中时校验引用文章仍「已发布且非 AIGC」
+ *   <li><b>四重失效</b>：TTL（默认 6h）兜底 + 命中时校验引用文章仍「已发布且非 AIGC」
  *       + <b>语料指纹比对</b>（store 时快照每篇引用文章的 content_hash，命中时与
- *       ap_article_embedding.content_hash 逐篇比对，内容变了即失效——防止返回旧答案 + 失效引用）；
- *       存量行无指纹快照（NULL）退化为仅存活校验，随 TTL 自然淘汰；</li>
+ *       ap_article_embedding.content_hash 逐篇比对，内容变了即失效——防止返回旧答案 + 失效引用）
+ *       + <b>prompt 版本校验</b>（P1-4：store 时快照生成所用 system prompt 版本签名，
+ *       命中时与当前生效版本比对，不一致即失效——防止 prompt 更新在 TTL 内不生效、灰度期答案与归因错配）；
+ *       存量行无指纹快照/版本签名（NULL）退化为跳过对应校验，随 TTL 自然淘汰；</li>
  *   <li><b>不缓存上下文依赖问题</b>：含「它/上面/刚才」等指代或过短问题，语义相似 ≠ 意图相同；</li>
  *   <li><b>代价</b>：命中省 3 次 chat 调用，代价是 1 次 embedding 调用 + 至多 N 次指纹主键查询（轻量）；</li>
  * </ul>
@@ -88,7 +90,7 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    public AiAnswerVo lookup(String question, Integer userId) {
+    public AiAnswerVo lookup(String question, Integer userId, String promptStamp) {
         if (!enabled || userId == null || pgVectorJdbcTemplate == null || notCacheable(question)) {
             return null;
         }
@@ -100,7 +102,7 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
             String vecLiteral = PgVectorUtil.toLiteral(qEmb);
             Timestamp cutoff = new Timestamp(System.currentTimeMillis() - ttlHours * 3600_000L);
             Object[] row = pgVectorJdbcTemplate.query(
-                "SELECT id, answer, sources_json, sources_hash_json, "
+                "SELECT id, answer, sources_json, sources_hash_json, prompt_stamp, "
                     + "1 - (question_vec <=> CAST(? AS vector)) AS similarity "
                     + "FROM ap_ai_semantic_cache "
                     + "WHERE user_id = ? AND created_time > ? "
@@ -112,6 +114,7 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
                     }
                     return new Object[]{rs.getLong("id"), rs.getString("answer"),
                         rs.getString("sources_json"), rs.getString("sources_hash_json"),
+                        rs.getString("prompt_stamp"),
                         rs.getDouble("similarity")};
                 },
                 vecLiteral, userId, cutoff, vecLiteral, threshold);
@@ -130,6 +133,12 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
                 evict(id, "引用文章已失效");
                 return null;
             }
+            // prompt 版本校验：答案由旧版本 prompt 生成 → 返回会令 prompt 更新在 TTL 内不生效、灰度期归因错配
+            if (!promptConsistent((String) row[4], promptStamp)) {
+                evict(id, "prompt 版本已变更");
+                metrics.incr("ai_semcache_evict_prompt_stale");
+                return null;
+            }
             // 语料指纹校验：任一引用文章内容已更新 / 向量缺失 → 答案基于旧语料，不可信
             if (!corpusConsistent((String) row[3], sources)) {
                 evict(id, "语料已更新");
@@ -142,7 +151,7 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
             vo.setSources(sources);
             metrics.incr("ai_semcache_hit");
             log.info("[AiSemCache] 命中, userId={}, sim={}, id={}, q={}",
-                userId, String.format("%.4f", (Double) row[4]), id, brief(question));
+                userId, String.format("%.4f", (Double) row[5]), id, brief(question));
             return vo;
         } catch (Exception e) {
             log.warn("[AiSemCache] 查询异常，回退正常链路, userId={}", userId, e);
@@ -151,7 +160,8 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
     }
 
     @Override
-    public void store(String question, Integer userId, String answer, List<AiSourceVo> sources) {
+    public void store(String question, Integer userId, String answer, List<AiSourceVo> sources,
+                      String promptStamp) {
         if (!enabled || userId == null || pgVectorJdbcTemplate == null || notCacheable(question)) {
             return;
         }
@@ -169,9 +179,11 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
             String sourcesHashJson = buildSourcesHashSnapshot(sources);
             pgVectorJdbcTemplate.update(
                 "INSERT INTO ap_ai_semantic_cache "
-                    + "(user_id, question, question_vec, answer, sources_json, sources_hash_json, created_time) "
-                    + "VALUES (?, ?, CAST(? AS vector), ?, ?, ?, now())",
-                userId, brief(question), PgVectorUtil.toLiteral(qEmb), answer.trim(), sourcesJson, sourcesHashJson);
+                    + "(user_id, question, question_vec, answer, sources_json, sources_hash_json, "
+                    + "prompt_stamp, created_time) "
+                    + "VALUES (?, ?, CAST(? AS vector), ?, ?, ?, ?, now())",
+                userId, brief(question), PgVectorUtil.toLiteral(qEmb), answer.trim(), sourcesJson,
+                sourcesHashJson, promptStamp == null ? "" : promptStamp);
             // 单用户条数上限：超出则淘汰最旧（缓存是收益项，不做事务/重试）
             pgVectorJdbcTemplate.update(
                 "DELETE FROM ap_ai_semantic_cache WHERE user_id = ? AND id NOT IN "
@@ -202,6 +214,21 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
         } catch (Exception e) {
             log.debug("[AiSemCache] 删除失效缓存失败, id={}", id);
         }
+    }
+
+    /**
+     * prompt 版本校验（P1-4）：store 时快照的版本签名（{@link com.zhuri.coding.content.service.ai.PromptStamp}）
+     * 与当前生效版本比对，不一致 → 该答案由旧 prompt 生成，返回会令 prompt 更新在 TTL 内不生效、
+     * 灰度期出现「返回 A 版答案、归因记 B 版」的污染。
+     *
+     * <p>兼容语义（fail-open）：任一侧缺版本信息（存量行 NULL / 调用方未提供）→ 跳过校验，
+     * 绝不因元数据缺失误删缓存（缓存是收益项，正确性由 TTL 与其它三重失效兜底）。
+     */
+    private boolean promptConsistent(String storedStamp, String currentStamp) {
+        if (storedStamp == null || storedStamp.isBlank() || currentStamp == null || currentStamp.isBlank()) {
+            return true;
+        }
+        return storedStamp.equals(currentStamp);
     }
 
     /**
