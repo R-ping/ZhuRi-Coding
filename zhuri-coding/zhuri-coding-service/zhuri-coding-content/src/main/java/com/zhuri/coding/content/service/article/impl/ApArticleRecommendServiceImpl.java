@@ -42,6 +42,9 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
     /** 兴趣画像缓存 key 前缀 */
     private static final String INTEREST_CACHE_KEY = "recommend:interest:";
 
+    /** 更新回流出处 Redis key 前缀：记录每篇文章最近一次"更新回流"的时间，30 天内不重复触发 */
+    private static final String REFRESH_CACHE_KEY = "recommend:update-refresh:";
+
     /** 兴趣画像行为折算权重：浏览 */
     private static final double WEIGHT_BROWSE = 1.0;
     /** 兴趣画像行为折算权重：点赞 */
@@ -53,9 +56,17 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
     @Value("${recommend.max-candidates:2000}")
     private int maxCandidates;
 
-    /** 候选时间窗口（天），仅取最近 windowDays 天发布的文章 */
+    /** 候选时间窗口（天），取最近 windowDays 天内发布或被实质更新的文章 */
     @Value("${recommend.window-days:7}")
     private int windowDays;
+
+    /** 更新回流占比上限（0~1）：仅对"因更新进入候选池"的文章生效，新发布文章不受限 */
+    @Value("${recommend.update-article-ratio:0.3}")
+    private double updateArticleRatio;
+
+    /** 同一篇文章两次"更新回流"的最小间隔天数，防止反复微调反复曝光（与 F1 的 24 小时更新记录限制叠加使用） */
+    @Value("${recommend.refresh-interval-days:30}")
+    private int refreshIntervalDays;
 
     /** 多样性配额：全局推荐序列中同一标签最多出现的篇数 */
     @Value("${recommend.max-per-tag:2}")
@@ -280,6 +291,11 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
             return ResponseResult.okResult(buildEmptyResponse(seed, page, size));
         }
 
+        // F3 更新回流：识别"因更新进入候选池"的文章（发布超窗但近期被实质更新），
+        // 并对其做 30 天回流去重——冷却期内的文章从候选池剔除，避免反复微调反复曝光。
+        Date windowStart = new Date(System.currentTimeMillis() - windowDays * 86400000L);
+        Set<Long> eligibleRefreshIds = resolveEligibleRefreshIds(candidates, windowStart);
+
         // 个性化画像：从登录用户的行为（浏览/点赞/收藏）提炼兴趣标签权重；匿名用户不做个性化
         Map<String, Double> interestWeights = (currentUser != null && currentUser.getId() != null)
                 ? getInterestWeights(currentUser.getId())
@@ -320,8 +336,12 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
         }
         candidates.sort((a, b) -> Double.compare(scoreCache.get(b.getId()), scoreCache.get(a.getId())));
 
-        // 4. 全局配额贪心：标签配额 + 作者上限，产出横向覆盖的全局序列（跨页稳定）
-        List<ApArticle> globalSequence = buildGlobalSequence(candidates);
+        // 4. 全局配额贪心：标签配额 + 作者上限 + 更新回流占比上限，产出横向覆盖的全局序列（跨页稳定）
+        List<ApArticle> globalSequence = buildGlobalSequence(candidates, eligibleRefreshIds);
+
+        // F3 回流戳记：仅为真正进入推荐序列的更新回流文章落戳（30 天内不再重复触发），
+        // 只在原本配额内新增一次 Redis 写；Redis 不可用/异常时忽略，不影响主流程。
+        recordRefresh(globalSequence, eligibleRefreshIds);
 
         // 5. 分页截取
         int fromIndex = page * size;
@@ -388,16 +408,26 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
     /**
      * 全局配额贪心：对「评分降序」的候选做一次遍历，
      * 同一标签累计不超过 maxPerTag、同一作者累计不超过 maxPerAuthor，
+     * 更新回流文章（eligibleRefreshIds）累计不超过 {@link #computeUpdateCap} 计算的占比上限，
      * 产出跨页稳定的全局推荐序列。
      * 配额计数全局累计（跨页），保证横向覆盖，避免「本页与下页同标签」。
      * 若严格配额后序列不足候选总数（标签过于集中），放开配额按评分追加补齐，保证列表可填满。
+     *
+     * @param eligibleRefreshIds 更新回流文章ID集合（已通过 30 天回流去重）；空集合表示无更新回流约束
      */
-    private List<ApArticle> buildGlobalSequence(List<ApArticle> candidates) {
+    private List<ApArticle> buildGlobalSequence(List<ApArticle> candidates, Set<Long> eligibleRefreshIds) {
         Map<String, Integer> tagCount = new HashMap<>();
         Map<Long, Integer> authorCount = new HashMap<>();
         List<ApArticle> seq = new ArrayList<>(candidates.size());
 
+        int updateCap = computeUpdateCap(candidates, eligibleRefreshIds);
+        int updateUsed = 0;
+
         for (ApArticle art : candidates) {
+            boolean isUpdateRefresh = eligibleRefreshIds.contains(art.getId());
+            if (isUpdateRefresh && updateUsed >= updateCap) {
+                continue; // 更新回流占比上限已满 → 跳过，避免挤占新发布文章曝光
+            }
             String mainTag = resolveMainTag(art);
             if (tagCount.getOrDefault(mainTag, 0) >= maxPerTag) {
                 continue; // 标签配额已满 → 跳过
@@ -407,22 +437,149 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
                 continue; // 作者上限已满 → 跳过
             }
             seq.add(art);
+            if (isUpdateRefresh) {
+                updateUsed++;
+            }
             tagCount.put(mainTag, tagCount.getOrDefault(mainTag, 0) + 1);
             if (art.getAuthorId() != null) {
                 authorCount.put(art.getAuthorId(), authorCount.getOrDefault(art.getAuthorId(), 0) + 1);
             }
         }
 
-        // 配额不足降级：候选标签集中导致序列过短，按评分追加剩余候选补齐
+        // 配额不足降级：候选标签集中导致序列过短，按评分追加剩余候选补齐（更新回流上限仍未突破）
         if (seq.size() < candidates.size()) {
             Set<Long> seen = seq.stream().map(ApArticle::getId).collect(Collectors.toSet());
             for (ApArticle art : candidates) {
-                if (!seen.contains(art.getId())) {
-                    seq.add(art);
+                if (seen.contains(art.getId())) {
+                    continue;
+                }
+                boolean isUpdateRefresh = eligibleRefreshIds.contains(art.getId());
+                if (isUpdateRefresh && updateUsed >= updateCap) {
+                    continue; // 候选都来自更新回流且已占满上限 → 继续守上限
+                }
+                seq.add(art);
+                if (isUpdateRefresh) {
+                    updateUsed++;
                 }
             }
         }
         return seq;
+    }
+
+    /**
+     * 计算更新回流文章在推荐序列中的占比上限。
+     * <ul>
+     *   <li>上限 = 候选池数量 × updateArticleRatio（至少 1），对标「更新文章在候选池中占比 ≤30%」；</li>
+     *   <li>候选池中完全没有「非更新」内容（newCount=0）时放开上限，保证推荐流不空；</li>
+     *   <li>updateArticleRatio ≤ 0 视为不启用占比约束，全部放行。</li>
+     * </ul>
+     */
+    private int computeUpdateCap(List<ApArticle> candidates, Set<Long> eligibleRefreshIds) {
+        if (candidates == null || candidates.isEmpty()
+                || eligibleRefreshIds == null || eligibleRefreshIds.isEmpty()) {
+            return 0;
+        }
+        int size = candidates.size();
+        long newCount = candidates.stream()
+                .filter(a -> !eligibleRefreshIds.contains(a.getId())).count();
+        if (newCount <= 0) {
+            return eligibleRefreshIds.size(); // 候选池全为更新回流 → 放开上限保证推荐流不空
+        }
+        if (updateArticleRatio <= 0) {
+            return eligibleRefreshIds.size();
+        }
+        return Math.max(1, (int) Math.round(size * updateArticleRatio));
+    }
+
+    /**
+     * 判断文章是否为「因更新进入候选池」的更新回流文章：
+     * 发布时间已超出候选窗口（非正常新发布），但存在晚于发布的实质更新、且更新时间落在窗口内。
+     * 仅这类文章计入更新回流占比上限；新发布文章（publish_time 在窗口内）不受此限。
+     */
+    private boolean isUpdateRefreshed(ApArticle article, Date windowStart) {
+        Date p = article.getPublishTime();
+        Date u = article.getUpdateTime();
+        if (p == null || u == null || !u.after(p)) {
+            return false; // 无发布时间 / 无实质更新
+        }
+        if (!p.before(windowStart)) {
+            return false; // 发布时间仍在窗口内 → 属正常新发布，不占更新回流比例
+        }
+        return u.after(windowStart); // 发布时间超窗、更新在窗内 → 因更新回流
+    }
+
+    /**
+     * 解析本次更新回流文章并执行 30 天回流去重：
+     * 对「因更新进入候选池」的文章，若其 Redis 回流戳记仍处于冷却期（{@link #refreshIntervalDays} 天内），
+     * 从候选池剔除；其余记入合格集合供占比上限与回流戳记写入使用。
+     * <p>Redisson 未装配/异常时 fail-open：不剔除、均可回流，仅退化为占比上限约束。</p>
+     *
+     * @return 本次允许回流的文章ID集合（可能为空）
+     */
+    private Set<Long> resolveEligibleRefreshIds(List<ApArticle> candidates, Date windowStart) {
+        Set<Long> eligible = new HashSet<>();
+        if (candidates == null || candidates.isEmpty()) {
+            return eligible;
+        }
+        Iterator<ApArticle> it = candidates.iterator();
+        while (it.hasNext()) {
+            ApArticle a = it.next();
+            Long id = a.getId();
+            if (id == null || !isUpdateRefreshed(a, windowStart)) {
+                continue;
+            }
+            if (refreshInCooldown(id)) {
+                it.remove(); // 30 天内已回流过 → 本次不再因更新回流
+            } else {
+                eligible.add(id);
+            }
+        }
+        return eligible;
+    }
+
+    /** 判断某文章是否处于更新回流冷却期（Redis 戳记存在即冷却中）；失败 fail-open 为可回流 */
+    private boolean refreshInCooldown(Long articleId) {
+        if (redissonClient == null || articleId == null) {
+            return false;
+        }
+        try {
+            String v = (String) redissonClient.getBucket(REFRESH_CACHE_KEY + articleId).get();
+            return v != null && !v.isEmpty();
+        } catch (Exception e) {
+            log.warn("读取更新回流冷却戳记失败，按可回流处理 articleId={}", articleId, e);
+            return false;
+        }
+    }
+
+    /** 为真正进入推荐序列的更新回流文章写入回流戳记（TTL = refreshIntervalDays 天）；失败忽略不影响主流程 */
+    private void recordRefresh(List<ApArticle> sequence, Set<Long> eligibleRefreshIds) {
+        if (redissonClient == null || sequence == null || eligibleRefreshIds == null || eligibleRefreshIds.isEmpty()) {
+            return;
+        }
+        try {
+            for (ApArticle art : sequence) {
+                Long id = art.getId();
+                if (id != null && eligibleRefreshIds.contains(id)) {
+                    redissonClient.getBucket(REFRESH_CACHE_KEY + id)
+                            .set(new Date().getTime(), refreshIntervalDays, TimeUnit.DAYS);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("写入更新回流戳记失败，忽略（不影响推荐主流程）", e);
+        }
+    }
+
+    /**
+     * 文章的最后时效时间：有实质更新（update_time 晚于 publish_time）取 update_time，否则取 publish_time。
+     * 作为时效衰减（computeBaseScore）与候选排序（COALESCE(update_time, publish_time)）的基准。
+     */
+    private Date lastEffectiveTime(ApArticle article) {
+        Date u = article.getUpdateTime();
+        Date p = article.getPublishTime();
+        if (u != null && p != null && u.after(p)) {
+            return u;
+        }
+        return p;
     }
 
     /**
@@ -451,11 +608,16 @@ public class ApArticleRecommendServiceImpl implements ApArticleRecommendService 
         double normalizedScore = scoreNormalizeMax > 0
                 ? Math.min((double) score / scoreNormalizeMax, 1.0) : 0;
 
-        // 时效性因子：recencyWindowDays 天内线性衰减，0=最旧/超窗，1=刚刚发布
+        // 时效性因子：recencyWindowDays 天内线性衰减，0=最旧/超窗，1=刚刚（发布或更新）。
+        // F3 更新回流：衰减基准从发布时间改为「最后时效时间」（见 lastEffectiveTime），
+        // 使近期被实质更新的旧文章焕发时效优势，而非继续按原始发布时间老化。
         double recencyFactor = 0;
-        if (article.getPublishTime() != null && recencyWindowDays > 0) {
-            long daysSincePublished = (now - article.getPublishTime().getTime()) / (1000L * 60 * 60 * 24);
-            recencyFactor = Math.max(0, 1.0 - daysSincePublished / (double) recencyWindowDays);
+        if (recencyWindowDays > 0) {
+            Date effective = lastEffectiveTime(article);
+            if (effective != null) {
+                long daysSince = (now - effective.getTime()) / (1000L * 60 * 60 * 24);
+                recencyFactor = Math.max(0, 1.0 - daysSince / (double) recencyWindowDays);
+            }
         }
 
         // 用户互动指标（对数归一化到0-1）

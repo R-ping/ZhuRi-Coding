@@ -39,4 +39,6 @@ public final class LevelScoreActionCode {
     public static final String PURCHASE_COURSE = "purchase_course";
     /** 打赏文章 */
     public static final String REWARD_ARTICLE = "reward_article";
+    /** 答对每日一题（Coding 延展第一层：每天一题，答对计入逐日分） */
+    public static final String ANSWER_QUESTION = "answer_question";
 }

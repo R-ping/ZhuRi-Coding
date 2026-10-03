@@ -24,6 +24,8 @@ import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import com.zhuri.coding.model.course.pojos.ApCourse;
 import com.zhuri.coding.model.follow.pojos.ApFollow;
 import com.zhuri.coding.model.pins.pojos.ApPins;
+import com.zhuri.coding.model.user.pojos.ApUser;
+import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -306,28 +308,56 @@ public class UserHomeController {
 
     /**
      * 用户收藏集（收藏的文章列表，公开）
-     * GET /api/v1/user/home/{userId}/collections?page=1&size=10
+     * GET /api/v1/user/home/{userId}/collections?page=1&size=10&folderId=123&keyword=Redis
+     *
+     * <p>F4：支持按收藏夹筛选与标题关键词检索。收藏夹筛选仅对本人开放（收藏夹是私密的组织结构，
+     * 他人视角仍看到全部收藏）；{@code folderId=0} 约定为"默认收藏夹"（folder_id IS NULL）。
+     * 关键词检索为公开能力，不影响隐私口径。</p>
      */
     @GetMapping("/{userId}/collections")
     public ResponseResult collections(@PathVariable Long userId,
                                       @RequestParam(defaultValue = "1") Integer page,
-                                      @RequestParam(defaultValue = "10") Integer size) {
+                                      @RequestParam(defaultValue = "10") Integer size,
+                                      @RequestParam(required = false) Long folderId,
+                                      @RequestParam(required = false) String keyword) {
         if (userId == null || userId <= 0) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "userId不能为空");
         }
         if (page < 1) page = 1;
         if (size < 1 || size > 50) size = 10;
 
-        // 1. 查询用户收藏记录（时间线降序）
-        LambdaQueryWrapper<ApCollection> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ApCollection::getUserId, userId.intValue())
-                .orderByDesc(ApCollection::getCreatedTime);
-        IPage<ApCollection> result = apCollectionMapper.selectPage(new Page<>(page, size), wrapper);
-        List<ApCollection> records = result.getRecords();
+        // 收藏夹筛选参数仅在"本人查看自己"时生效；folderId=0 表示默认收藏夹
+        ApUser currentUser = AppThreadLocalUtil.getUser();
+        boolean self = currentUser != null && currentUser.getId() != null
+                && currentUser.getId().longValue() == userId;
+        Long folderFilter = null;
+        boolean defaultFolder = false;
+        if (self && folderId != null) {
+            if (folderId == 0L) {
+                defaultFolder = true;
+            } else {
+                folderFilter = folderId;
+            }
+        }
+        // 标题关键词检索（去空白、限长防超长 LIKE）
+        String kw = keyword == null ? null : keyword.trim();
+        if (kw != null && kw.isEmpty()) {
+            kw = null;
+        }
+        if (kw != null && kw.length() > 50) {
+            kw = kw.substring(0, 50);
+        }
+
+        // 1. 查询用户收藏记录（时间线降序，支持收藏夹筛选 + 标题检索）
+        int offset = (page - 1) * size;
+        List<ApCollection> records = apCollectionMapper.selectCollectedPage(
+                userId.intValue(), folderFilter, defaultFolder, kw, offset, size);
+        long total = apCollectionMapper.countCollectedPage(
+                userId.intValue(), folderFilter, defaultFolder, kw);
         if (records == null || records.isEmpty()) {
             Map<String, Object> empty = new HashMap<>();
             empty.put("list", new ArrayList<>());
-            empty.put("total", 0);
+            empty.put("total", total);
             return ResponseResult.okResult(empty);
         }
 
@@ -360,7 +390,7 @@ public class UserHomeController {
 
         Map<String, Object> data = new HashMap<>();
         data.put("list", list);
-        data.put("total", result.getTotal());
+        data.put("total", total);
         return ResponseResult.okResult(data);
     }
 

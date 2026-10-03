@@ -5,6 +5,7 @@ import com.zhuri.coding.content.behavior.service.BehaviorHandler;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
 import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
+import com.zhuri.coding.content.service.collection.CollectionFolderService;
 import com.zhuri.coding.model.behavior.BehaviorContext;
 import com.zhuri.coding.model.behavior.BehaviorResult;
 import com.zhuri.coding.model.behavior.BehaviorType;
@@ -33,6 +34,9 @@ public class CollectBehaviorHandler implements BehaviorHandler {
 
     @Autowired
     private ApArticleMapper apArticleMapper;
+
+    @Autowired
+    private CollectionFolderService collectionFolderService;
 
     @Override
     public BehaviorType getType() {
@@ -65,6 +69,8 @@ public class CollectBehaviorHandler implements BehaviorHandler {
         ApCollection collection = new ApCollection();
         collection.setUserId(userId);
         collection.setArticleId(targetId);
+        // 指定收藏夹（F4，来自 extra.folderId）：校验归属，无效时回退"默认收藏夹"（folder_id 为空）
+        collection.setFolderId(collectionFolderService.resolveValidFolderId(userId, context.getExtraLong("folderId")));
         collection.setCreatedTime(new Date());
         try {
             apCollectionMapper.insert(collection);

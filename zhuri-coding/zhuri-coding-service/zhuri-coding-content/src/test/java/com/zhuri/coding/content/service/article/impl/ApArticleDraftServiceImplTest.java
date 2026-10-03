@@ -258,6 +258,21 @@ class ApArticleDraftServiceImplTest {
     }
 
     @Test
+    @DisplayName("listDrafts - 排除修订草稿（source_article_id IS NULL）")
+    void testListDraftsExcludesRevisionDrafts() {
+        Page<ApArticleDraft> p = new Page<>(1, 10);
+        p.setRecords(java.util.Collections.emptyList());
+        when(apArticleDraftMapper.selectPage(any(IPage.class), any(Wrapper.class))).thenReturn(p);
+        draftService.listDrafts(5L, 1, 10);
+        // 捕获查询条件：普通草稿列表必须带 source_article_id IS NULL，避免修订草稿混入
+        org.mockito.ArgumentCaptor<Wrapper> captor =
+                org.mockito.ArgumentCaptor.forClass(Wrapper.class);
+        verify(apArticleDraftMapper).selectPage(any(IPage.class), captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertTrue(sql.contains("source_article_id"), "草稿列表应排除修订草稿, sql=" + sql);
+    }
+
+    @Test
     @DisplayName("deleteDraft - 守卫：空id/不存在")
     void testDeleteGuards() {
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), draftService.deleteDraft(null).getCode());

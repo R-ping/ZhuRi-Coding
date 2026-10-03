@@ -38,6 +38,8 @@ public class DraftManageServiceImpl extends ServiceImpl<ApArticleDraftMapper, Ap
         LambdaQueryWrapper<ApArticleDraft> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApArticleDraft::getAuthorId, userId);
         wrapper.eq(ApArticleDraft::getIsDeleted, false);
+        // 仅普通草稿（source_article_id 为空）：修订草稿不属于普通草稿，避免出现在草稿列表被误"从草稿发布"
+        wrapper.isNull(ApArticleDraft::getSourceArticleId);
         if (title != null && !title.isEmpty()) {
             wrapper.like(ApArticleDraft::getTitle, title);
         }
@@ -114,6 +116,8 @@ public class DraftManageServiceImpl extends ServiceImpl<ApArticleDraftMapper, Ap
         LambdaQueryWrapper<ApArticleDraft> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApArticleDraft::getAuthorId, authorId);
         wrapper.eq(ApArticleDraft::getIsDeleted, false);
+        // 仅统计普通草稿：否则草稿数超上限时会把待审修订草稿一并"清理"掉
+        wrapper.isNull(ApArticleDraft::getSourceArticleId);
         wrapper.orderByAsc(ApArticleDraft::getUpdatedTime);
         List<ApArticleDraft> drafts = list(wrapper);
         if (drafts.size() >= MAX_DRAFTS) {

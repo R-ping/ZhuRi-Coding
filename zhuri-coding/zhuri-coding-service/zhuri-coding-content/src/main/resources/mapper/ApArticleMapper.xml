@@ -64,9 +64,11 @@
             and aac.is_down != 1
             and aac.is_recommend = 1
             and aa.status = 9
-            <!-- 时间窗口：仅取最近 windowDays 天内发布的文章 -->
+            <!-- 时间窗口（F3 更新回流）：publish_time 在窗口内（新发布）或 update_time 在窗口内（近期被实质更新）。
+                 update_time 为 NULL 时 MySQL 中 NULL >= 时间 自动为 false，OR 表达式安全无损 -->
             <if test="windowDays != null and windowDays > 0">
-                and aa.publish_time &gt;= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
+                and (aa.publish_time &gt;= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
+                     OR aa.update_time &gt;= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY))
             </if>
             <if test="channelId != null">
                 and aa.channel_id = #{channelId}
@@ -81,8 +83,8 @@
                 </foreach>
             </if>
         </where>
-        <!-- 评分优先，其次发布时间，保证优质内容进入候选前部 -->
-        ORDER BY COALESCE(aa.score, 0) DESC, aa.publish_time DESC, aa.id DESC
+        <!-- 评分优先，其次最后时效时间（有更新取 update_time，否则取 publish_time），保证优质且新鲜内容进入候选前部 -->
+        ORDER BY COALESCE(aa.score, 0) DESC, COALESCE(aa.update_time, aa.publish_time) DESC, aa.id DESC
         LIMIT #{maxCandidates}
     </select>
 
@@ -98,8 +100,10 @@
             and aac.is_down != 1
             and aac.is_recommend = 1
             and aa.status = 9
+            <!-- 时间窗口（F3 更新回流）：publish_time 或 update_time 在窗口内；update_time 为 NULL 时 OR 安全为 false -->
             <if test="windowDays != null and windowDays > 0">
-                and aa.publish_time &gt;= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
+                and (aa.publish_time &gt;= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
+                     OR aa.update_time &gt;= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY))
             </if>
             <if test="authorIds != null and authorIds.size() > 0">
                 and aa.author_id IN
@@ -114,7 +118,7 @@
                 </foreach>
             </if>
         </where>
-        ORDER BY COALESCE(aa.score, 0) DESC, aa.publish_time DESC, aa.id DESC
+        ORDER BY COALESCE(aa.score, 0) DESC, COALESCE(aa.update_time, aa.publish_time) DESC, aa.id DESC
         LIMIT #{maxCandidates}
     </select>
 

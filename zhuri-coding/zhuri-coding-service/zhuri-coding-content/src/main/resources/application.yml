@@ -198,6 +198,9 @@ ai:
       appeal_audit: qwenFlashChatModel
       # 详情页 AI 摘要：低成本高频、质量要求不高于改写/精排 → flash 快模型（强模型 40-50s 不可接受）
       article_summary: qwenFlashChatModel
+      # 每日一题题库供给：出题与质检均为低成本批处理场景 → flash 快模型
+      question_generate: qwenFlashChatModel
+      question_audit: qwenFlashChatModel
     pricing-prompt:
       qwen3.7-max: 0.012          # 当前主模型（DASH_SCOPE_MODEL 默认值）
       qwen3.8-27b: 0.003          # 视觉/长文场景
@@ -275,6 +278,9 @@ recommend:
   # 曝光/行为闭环（负反馈：曝光而未消费 → 降权）
   exposure-window-days: 3     # 只看该天数内对该用户的曝光记录
   exposure-penalty-max: 0.10  # 曝光而未消费的最大降权幅度（分数段内）
+  # 内容时效更新回流（F3）
+  update-article-ratio: 0.3   # 更新回流文章在推荐候选池中的曝光占比上限（0~1），仅对"因更新进入候选池"的文章生效，新发布文章不受限
+  refresh-interval-days: 30   # 同一篇文章两次"更新回流"的最小间隔天数，防止反复微调反复曝光（与 F1 的 24 小时更新记录限制叠加）
 
 # 支付宝沙箱配置（通过环境变量注入）
 alipay:
@@ -349,6 +355,14 @@ app:
     index-reconcile-interval-ms: ${ARTICLE_RECONCILE_INTERVAL_MS:3600000}
     # 首次执行延迟（毫秒，避开启动高峰）
     index-reconcile-initial-delay-ms: ${ARTICLE_RECONCILE_INITIAL_DELAY_MS:60000}
+    # 收藏者更新提醒（F5）：文章实质更新后向收藏者发站内信，事务提交后异步投递、失败走 Outbox 重试
+    update-notify:
+      # 总开关
+      enabled: ${ARTICLE_UPDATE_NOTIFY_ENABLED:true}
+      # 同一文章对同一用户的提醒间隔（天）：7 天内只提醒一次，避免连续微调反复打扰
+      dedup-days: ${ARTICLE_UPDATE_NOTIFY_DEDUP_DAYS:7}
+      # 收藏者分批拉取/投递的批大小：大收藏量文章按收藏时间由近及远分批，避免一次性载入
+      batch-size: ${ARTICLE_UPDATE_NOTIFY_BATCH_SIZE:200}
 
 # 动态线程池（dynamic-tp）：AiAsyncConfig 中四个 @DynamicTp 执行器的运行时参数。
 #

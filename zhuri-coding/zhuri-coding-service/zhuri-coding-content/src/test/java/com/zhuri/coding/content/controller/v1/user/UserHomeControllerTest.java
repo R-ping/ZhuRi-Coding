@@ -39,6 +39,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
 /**
@@ -292,11 +294,11 @@ class UserHomeControllerTest {
     @Test
     @DisplayName("collections - 空记录返回 total=0")
     void testCollectionsEmpty() {
-        Page<ApCollection> p = new Page<>(1, 10);
-        p.setRecords(Collections.emptyList());
-        when(apCollectionMapper.selectPage(any(), any())).thenReturn(p);
-        ResponseResult r = controller.collections(1L, 1, 10);
-        assertEquals(0, data(r).get("total"));
+        when(apCollectionMapper.selectCollectedPage(any(), any(), anyBoolean(), any(), anyInt(), anyInt()))
+                .thenReturn(Collections.emptyList());
+        when(apCollectionMapper.countCollectedPage(any(), any(), anyBoolean(), any())).thenReturn(0L);
+        ResponseResult r = controller.collections(1L, 1, 10, null, null);
+        assertEquals(0L, data(r).get("total"));
         assertEquals(0, list(r).size());
     }
 
@@ -308,13 +310,13 @@ class UserHomeControllerTest {
         c1.setCreatedTime(new Date());
         ApCollection c2 = new ApCollection();
         c2.setArticleId(99L); // 无对应文章
-        Page<ApCollection> p = new Page<>(1, 10);
-        p.setRecords(Arrays.asList(c1, c2));
-        when(apCollectionMapper.selectPage(any(), any())).thenReturn(p);
+        when(apCollectionMapper.selectCollectedPage(any(), any(), anyBoolean(), any(), anyInt(), anyInt()))
+                .thenReturn(Arrays.asList(c1, c2));
+        when(apCollectionMapper.countCollectedPage(any(), any(), anyBoolean(), any())).thenReturn(2L);
         when(apArticleMapper.selectBatchIds(any()))
                 .thenReturn(Collections.singletonList(article(1L, "收藏")));
 
-        ResponseResult r = controller.collections(1L, 1, 10);
+        ResponseResult r = controller.collections(1L, 1, 10, null, null);
         List<Map<String, Object>> list = list(r);
         assertEquals(1, list.size());
         assertEquals("收藏", list.get(0).get("title"));

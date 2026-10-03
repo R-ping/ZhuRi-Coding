@@ -26,6 +26,12 @@ public class INotificationClientFallback implements FallbackFactory<INotificatio
             }
 
             @Override
+            public ResponseResult createCollectUpdateNotification(Map<String, Object> params) {
+                log.error("NotificationClient.createCollectUpdateNotification fallback, error: {}", cause.getMessage());
+                return ResponseResult.errorResult(500, "通知服务不可用");
+            }
+
+            @Override
             public ResponseResult sendActivityNotification(Map<String, Object> params) {
                 log.error("NotificationClient.sendActivityNotification fallback, error: {}", cause.getMessage());
                 return ResponseResult.errorResult(500, "通知服务不可用");

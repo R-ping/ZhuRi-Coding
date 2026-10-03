@@ -440,6 +440,68 @@ class NotificationServiceImplTest {
     }
 
     @Nested
+    @DisplayName("收藏文章更新提醒：按「用户 × 自然日」聚合")
+    class CollectUpdate {
+
+        @Test
+        @DisplayName("参数缺失 → 参数错误")
+        void testParam() {
+            assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
+                    notificationService.createCollectUpdateNotification(null, "2026-10-03", "{}").getCode());
+            assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(),
+                    notificationService.createCollectUpdateNotification(userId, " ", "{}").getCode());
+        }
+
+        @Test
+        @DisplayName("首次事件：agg_key=collect_update:{day}、type=4 系统类 → 未读 +1")
+        void testFirstEvent() {
+            when(hashOps.size("notif:unread:100")).thenReturn(5L);
+            when(notificationMapper.flipToUnread(userId, "collect_update:2026-10-03")).thenReturn(0);
+            when(notificationMapper.upsertAggregated(any(Notification.class))).thenReturn(1);
+
+            assertEquals(200, notificationService
+                    .createCollectUpdateNotification(userId, "2026-10-03", "{\"title\":\"t\"}").getCode());
+
+            verify(notificationMapper).upsertAggregated(ArgumentMatchers.<Notification>argThat(
+                    n -> "collect_update:2026-10-03".equals(n.getAggKey())
+                            && n.getType() == 4
+                            && "2026-10-03".equals(n.getSourceId())
+                            && n.getLastEventAt() != null));
+            // 刻意不走 insertPlain：同一天的多条更新必须合并进同一行
+            verify(notificationMapper, never()).insert(any(Notification.class));
+            verify(hashOps).increment("notif:unread:100", "system", 1L);
+        }
+
+        @Test
+        @DisplayName("合并进已读行：flip 命中 → 翻回未读，未读 +1")
+        void testMergeIntoRead() {
+            when(hashOps.size("notif:unread:100")).thenReturn(5L);
+            when(notificationMapper.flipToUnread(userId, "collect_update:2026-10-03")).thenReturn(1);
+            when(notificationMapper.upsertAggregated(any(Notification.class))).thenReturn(2);
+
+            notificationService.createCollectUpdateNotification(userId, "2026-10-03", "{}");
+
+            // flip 必须早于 upsert，否则再也问不出"原来是不是已读"
+            InOrder inOrder = inOrder(notificationMapper);
+            inOrder.verify(notificationMapper).flipToUnread(userId, "collect_update:2026-10-03");
+            inOrder.verify(notificationMapper).upsertAggregated(any(Notification.class));
+            verify(hashOps).increment("notif:unread:100", "system", 1L);
+        }
+
+        @Test
+        @DisplayName("合并进未读行：未读数不该变，不触碰缓存")
+        void testMergeIntoUnread() {
+            when(notificationMapper.flipToUnread(userId, "collect_update:2026-10-03")).thenReturn(0);
+            when(notificationMapper.upsertAggregated(any(Notification.class))).thenReturn(2);
+
+            notificationService.createCollectUpdateNotification(userId, "2026-10-03", "{}");
+
+            verifyNoInteractions(hashOps);
+            verify(stringRedisTemplate, never()).delete("notif:unread:100");
+        }
+    }
+
+    @Nested
     @DisplayName("复合游标：(last_event_at, id)")
     class Cursor {
 

@@ -22,6 +22,12 @@ public class ApArticleDraft implements Serializable {
     @TableField("article_id")
     private Long articleId;
 
+    /**
+     * 修订来源文章ID：非空表示本草稿是一条「已发布文章的修订草稿」，为空表示普通草稿
+     */
+    @TableField("source_article_id")
+    private Long sourceArticleId;
+
     private String title;
 
     @TableField("author_id")
@@ -64,6 +70,20 @@ public class ApArticleDraft implements Serializable {
     private Date updatedTime;
 
     private Byte status;
+
+    /**
+     * 本次修订是否达到"实质更新"阈值：1 是、0 否；仅修订草稿有意义
+     * （由提交审核时依据新旧正文差异率判定，达阈值才在生效时刷新文章的 update_time）
+     */
+    @TableField("revision_significant")
+    private Integer revisionSignificant;
+
+    /**
+     * 更新说明：仅修订草稿有意义，达实质更新阈值且生效时写入文章
+     */
+    @TableField("update_note")
+    private String updateNote;
+
     /**
      * 是否删除 0 未删除 1 已删除
      */

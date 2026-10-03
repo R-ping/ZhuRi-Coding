@@ -189,7 +189,13 @@
                         <span class="empty-text">暂无消息</span>
                     </div>
                     <div class="notification-list" v-else>
-                        <div class="notification-item" v-for="item in systemList" :key="item.id">
+                        <div
+                            class="notification-item"
+                            :class="{ 'is-clickable': !!item.link }"
+                            v-for="item in systemList"
+                            :key="item.id"
+                            @click="openSystemItem(item)"
+                        >
                             <div class="notify-content system-content">
                                 <!-- 左侧产品/系统图标 -->
                                 <div class="system-icon-wrap">
@@ -657,14 +663,23 @@ export default {
         getSystemTypeLabel(type) {
             var labels = {
                 'activity': '活动',
-                'system': '系统'
+                'system': '系统',
+                'collect_update': '内容更新'
             }
             return labels[type] || '系统'
         },
         getSystemIcon(type) {
             // 返回 FontAwesome 图标类名
             if (type === 'activity') return 'fa-bullhorn'
+            if (type === 'collect_update') return 'fa-refresh'
             return 'fa-bell'
+        },
+
+        /** 系统通知点击跳转：带 link 的条目（收藏更新提醒、活动通知）打开对应页面 */
+        openSystemItem(item) {
+            if (item && item.link) {
+                window.open(item.link, '_blank')
+            }
         }
     }
 }
@@ -763,6 +778,13 @@ export default {
     border-bottom: 1px solid #f2f3f5;
     &:last-child {
         border: none;
+    }
+    /* 可跳转条目（收藏更新提醒/活动通知）：给出可点击反馈 */
+    &.is-clickable {
+        cursor: pointer;
+        &:hover {
+            background: #f7f8fa;
+        }
     }
 }
 

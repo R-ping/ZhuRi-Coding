@@ -185,6 +185,9 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         vo.setIsCollect(isCollect);
         vo.setArticleContent(content);
         vo.setPublishTime(article.getPublishTime() != null ? DATE_FORMAT.format(article.getPublishTime()) : "");
+        // 时效印章：仅当存在实质更新时才有值，否则下发空串（对外字段不允许 null）
+        vo.setUpdateTime(article.getUpdateTime() != null ? DATE_FORMAT.format(article.getUpdateTime()) : "");
+        vo.setUpdateNote(article.getUpdateNote() != null ? article.getUpdateNote() : "");
         vo.setTocList(tocList != null ? tocList : new ArrayList<>());
 
         return ResponseResult.okResult(vo);

@@ -7,6 +7,7 @@ import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.interaction.ApArticleReportMapper;
 import com.zhuri.coding.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
+import com.zhuri.coding.content.service.collection.CollectionFolderService;
 import com.zhuri.coding.content.service.level.LevelService;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.behavior.dtos.ArticleReportDto;
@@ -50,6 +51,9 @@ public class ArticleInteractionController {
 
     @Autowired
     private LevelService levelService;
+
+    @Autowired
+    private CollectionFolderService collectionFolderService;
 
     /**
      * 点赞/取消点赞文章（切换式）
@@ -137,14 +141,16 @@ public class ArticleInteractionController {
 
     /**
      * 收藏/取消收藏文章（切换式）
-     * POST /api/v1/article/{id}/collect
+     * POST /api/v1/article/{id}/collect?folderId=123
      *
-     * @param id 文章ID
-     * @return { "collected": true/false, "collectCount": number }
+     * @param id       文章ID
+     * @param folderId 可选：目标收藏夹ID（缺省/无效时收藏到"默认收藏夹"）
+     * @return { "collected": true/false, "collectCount": number, "folderFallback": boolean }
      */
     @PostMapping("/{id}/collect")
     @Transactional(rollbackFor = Exception.class)
-    public ResponseResult collect(@PathVariable Long id) {
+    public ResponseResult collect(@PathVariable Long id,
+                                  @RequestParam(value = "folderId", required = false) Long folderId) {
         // 检查登录
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
@@ -156,6 +162,9 @@ public class ArticleInteractionController {
         if (article == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
         }
+
+        // 目标收藏夹归属校验：不存在/不属于当前用户时为 null，收藏落到"默认收藏夹"（PRD F4 边界）
+        Long validFolderId = collectionFolderService.resolveValidFolderId(user.getId(), folderId);
 
         // 查询是否已收藏
         LambdaQueryWrapper<ApCollection> query = new LambdaQueryWrapper<>();
@@ -185,6 +194,7 @@ public class ArticleInteractionController {
                 ApCollection collection = new ApCollection();
                 collection.setUserId(user.getId());
                 collection.setArticleId(id);
+                collection.setFolderId(validFolderId);
                 collection.setCreatedTime(new Date());
                 apCollectionMapper.insert(collection);
                 newlyInserted = true;
@@ -217,6 +227,10 @@ public class ArticleInteractionController {
         Map<String, Object> result = new HashMap<>();
         result.put("collected", collected);
         result.put("collectCount", collectCount);
+        // 指定收藏夹但已被删除/无效 → 已回退默认收藏夹，前端据此提示（PRD F4 边界）
+        if (collected && folderId != null && validFolderId == null) {
+            result.put("folderFallback", true);
+        }
         return ResponseResult.okResult(result);
     }
 

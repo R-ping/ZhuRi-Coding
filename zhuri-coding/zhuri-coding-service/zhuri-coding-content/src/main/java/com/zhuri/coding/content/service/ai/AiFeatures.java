@@ -45,6 +45,10 @@ public final class AiFeatures {
     public static final String PINS_COMMENT_AUDIT = "pins_comment_audit";
     /** 会话记忆摘要压缩（长会话 token 膨胀治理，异步低频） */
     public static final String MEMORY_COMPRESS = "memory_compress";
+    /** 每日一题·题库供给：从文章反向生成题目（低成本批处理场景） */
+    public static final String QUESTION_GENERATE = "question_generate";
+    /** 每日一题·题库质检：作者投稿的一次性 AI 质检（题干清晰/答案唯一/选项互斥） */
+    public static final String QUESTION_AUDIT = "question_audit";
     /** 其他/未归类（计量兜底，出现即说明有新调用点未归类） */
     public static final String OTHER = "other";
 }

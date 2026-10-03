@@ -35,6 +35,13 @@ public interface INotificationClient {
     void incrUnread(@RequestParam("userId") Long userId);
 
     /**
+     * 创建「收藏文章更新」聚合提醒：同一用户同一天的多条更新合并为一条站内信。
+     * @param params 包含: userId(Long), dayKey(yyyy-MM-dd), content(JSON字符串)
+     */
+    @PostMapping("/api/v1/notifications/feign/create-collect-update")
+    ResponseResult createCollectUpdateNotification(@RequestBody Map<String, Object> params);
+
+    /**
      * 发送活动/促销系统通知
      * @param params 包含: userId(Long), title(String), content(String), link(String, 可选)
      */

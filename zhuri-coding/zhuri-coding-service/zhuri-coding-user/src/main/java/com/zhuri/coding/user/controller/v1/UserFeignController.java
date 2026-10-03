@@ -1,5 +1,6 @@
 package com.zhuri.coding.user.controller.v1;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.user.pojos.ApUser;
 import com.zhuri.coding.model.user.pojos.UserProfile;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -100,5 +102,34 @@ public class UserFeignController {
             result.put(String.valueOf(user.getId()), info);
         }
         return ResponseResult.okResult(result);
+    }
+
+    /**
+     * 批量过滤「有效用户」（status=1，未注销/未锁定）。
+     *
+     * <p>给"向一批用户批量投递"的场景用（如文章更新后给收藏者发提醒）：投递前把已注销账号剔除，
+     * 避免给不存在的用户写站内信。注销是软删（{@code AccountServiceImpl#deleteAccount} 置 status=0），
+     * 其收藏等行为数据仍在，所以调用方无法自己判断，必须回用户服务确认。</p>
+     *
+     * @param userIds 待校验的用户ID列表；服务端去重并限量（超出部分忽略）
+     * @return data 为其中有效的用户ID列表（顺序不保证）；查不到的 id 视为无效，不出现在结果里
+     */
+    @GetMapping("/valid-ids")
+    public ResponseResult getValidUserIds(@RequestParam("userIds") List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return ResponseResult.okResult(List.of());
+        }
+        List<Long> ids = userIds.stream().filter(Objects::nonNull).distinct().limit(MAX_BATCH).toList();
+        if (ids.isEmpty()) {
+            return ResponseResult.okResult(List.of());
+        }
+        List<Long> valid = new ArrayList<>();
+        for (ApUser user : apUserMapper.selectList(new LambdaQueryWrapper<ApUser>()
+                .select(ApUser::getId)
+                .eq(ApUser::getStatus, true)
+                .in(ApUser::getId, ids))) {
+            valid.add(user.getId().longValue());
+        }
+        return ResponseResult.okResult(valid);
     }
 }

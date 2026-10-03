@@ -3,6 +3,7 @@ package com.zhuri.coding.content.controller.v1.article;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -14,6 +15,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.interaction.ApBehaviorLikesMapper;
 import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
+import com.zhuri.coding.content.service.collection.CollectionFolderService;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.behavior.pojos.ApBehaviorLikes;
 import com.zhuri.coding.model.behavior.pojos.ApCollection;
@@ -28,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
@@ -45,6 +48,9 @@ class ArticleInteractionControllerTest {
 
     @Mock
     private ApArticleMapper apArticleMapper;
+
+    @Mock
+    private CollectionFolderService collectionFolderService;
 
     @InjectMocks
     private ArticleInteractionController interactionController;
@@ -160,7 +166,7 @@ class ArticleInteractionControllerTest {
     void testCollectNotLoggedIn() {
         threadLocalMock.when(AppThreadLocalUtil::getUser).thenReturn(null);
 
-        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID);
+        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID, null);
         assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), result.getCode());
     }
 
@@ -169,7 +175,7 @@ class ArticleInteractionControllerTest {
     void testCollectArticleNotFound() {
         when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(null);
 
-        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID);
+        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID, null);
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), result.getCode());
     }
 
@@ -184,15 +190,58 @@ class ArticleInteractionControllerTest {
         updatedArticle.setCollection(6);
         when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle, updatedArticle);
 
-        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID);
+        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID, null);
         assertEquals(200, result.getCode());
 
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertNotNull(data);
         assertTrue((Boolean) data.get("collected"));
         assertEquals(6, data.get("collectCount"));
+        assertNull(data.get("folderFallback"));
 
         verify(apCollectionMapper).insert(any(ApCollection.class));
+    }
+
+    @Test
+    @DisplayName("收藏文章 - 指定有效收藏夹写入 folderId（F4）")
+    void testCollectWithFolderId() {
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle);
+        when(apCollectionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(apCollectionMapper.insert(any(ApCollection.class))).thenReturn(1);
+        when(collectionFolderService.resolveValidFolderId(TEST_USER_ID, 55L)).thenReturn(55L);
+        ApArticle updatedArticle = new ApArticle();
+        updatedArticle.setCollection(6);
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle, updatedArticle);
+
+        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID, 55L);
+
+        assertEquals(200, result.getCode());
+        ArgumentCaptor<ApCollection> captor = ArgumentCaptor.forClass(ApCollection.class);
+        verify(apCollectionMapper).insert(captor.capture());
+        assertEquals(55L, captor.getValue().getFolderId());
+        Map<String, Object> data = (Map<String, Object>) result.getData();
+        assertNull(data.get("folderFallback"));
+    }
+
+    @Test
+    @DisplayName("收藏文章 - 收藏夹无效时回退默认并标记 folderFallback（F4）")
+    void testCollectWithInvalidFolderIdFallback() {
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle);
+        when(apCollectionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(apCollectionMapper.insert(any(ApCollection.class))).thenReturn(1);
+        when(collectionFolderService.resolveValidFolderId(TEST_USER_ID, 66L)).thenReturn(null);
+        ApArticle updatedArticle = new ApArticle();
+        updatedArticle.setCollection(6);
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle, updatedArticle);
+
+        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID, 66L);
+
+        assertEquals(200, result.getCode());
+        ArgumentCaptor<ApCollection> captor = ArgumentCaptor.forClass(ApCollection.class);
+        verify(apCollectionMapper).insert(captor.capture());
+        assertNull(captor.getValue().getFolderId());
+        Map<String, Object> data = (Map<String, Object>) result.getData();
+        assertEquals(Boolean.TRUE, data.get("folderFallback"));
     }
 
     @Test
@@ -210,7 +259,7 @@ class ArticleInteractionControllerTest {
         updatedArticle.setCollection(4);
         when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle, updatedArticle);
 
-        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID);
+        ResponseResult result = interactionController.collect(TEST_ARTICLE_ID, null);
         assertEquals(200, result.getCode());
 
         Map<String, Object> data = (Map<String, Object>) result.getData();

@@ -187,6 +187,8 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
         Page<ApArticleDraft> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<ApArticleDraft> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(authorId != null, ApArticleDraft::getAuthorId, authorId);
+        // 仅普通草稿（source_article_id 为空）：修订草稿不属于普通草稿，避免出现在草稿列表被误"从草稿发布"
+        queryWrapper.isNull(ApArticleDraft::getSourceArticleId);
         queryWrapper.orderByDesc(ApArticleDraft::getUpdatedTime);
         IPage<ApArticleDraft> result = page(pageParam, queryWrapper);
         return ResponseResult.okResult(result);

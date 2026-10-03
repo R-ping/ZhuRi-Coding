@@ -590,25 +590,151 @@
         });
     }
 
+    // ========== 收藏夹选择面板（F4） ==========
+    var collectPanelCallback = null;
+
+    function closeCollectFolderPanel() {
+        var overlay = document.getElementById('folderOverlay');
+        if (overlay) overlay.classList.remove('open');
+    }
+
+    // 渲染收藏夹选项：默认收藏夹固定第一项，"最近使用"三个置顶，其余保持用户自定义顺序
+    function renderCollectFolderOptions(list) {
+        var box = document.getElementById('folderModalList');
+        if (!box) return;
+        var html = '<div class="folder-option" data-folder=""><span class="folder-option-icon">🗂</span>'
+            + '<span class="folder-option-name">默认收藏夹</span></div>';
+        var sorted = (list || []).slice();
+        var recent = sorted
+            .filter(function(f) { return f.lastUsedTime; })
+            .sort(function(a, b) { return b.lastUsedTime - a.lastUsedTime; })
+            .slice(0, 3);
+        var recentIds = recent.map(function(f) { return String(f.id); });
+        var rest = sorted.filter(function(f) { return recentIds.indexOf(String(f.id)) < 0; });
+        recent.concat(rest).forEach(function(f) {
+            var badge = recentIds.indexOf(String(f.id)) >= 0 ? '<span class="folder-option-badge">最近</span>' : '';
+            var count = f.articleCount ? '<span class="folder-option-count">' + f.articleCount + '</span>' : '';
+            html += '<div class="folder-option" data-folder="' + escapeHtml(f.id) + '">'
+                + '<span class="folder-option-icon">📁</span>'
+                + '<span class="folder-option-name">' + escapeHtml(f.name) + '</span>'
+                + badge + count + '</div>';
+        });
+        box.innerHTML = html;
+        Array.prototype.forEach.call(box.querySelectorAll('.folder-option'), function(el) {
+            el.addEventListener('click', function() {
+                var raw = this.getAttribute('data-folder');
+                var folderId = raw ? Number(raw) : null;
+                var nameEl = this.querySelector('.folder-option-name');
+                var name = nameEl ? nameEl.textContent : '';
+                closeCollectFolderPanel();
+                if (collectPanelCallback) collectPanelCallback(folderId, name);
+            });
+        });
+    }
+
+    function loadCollectFolders(cb) {
+        apiGet('/content/api/v1/user/collection/folders').then(function(res) {
+            cb(res && res.code === 200 && Array.isArray(res.data) ? res.data : []);
+        }).catch(function() { cb([]); });
+    }
+
+    function openCollectFolderPanel(cb) {
+        collectPanelCallback = cb;
+        var overlay = document.getElementById('folderOverlay');
+        if (!overlay) { cb(null, ''); return; }
+        loadCollectFolders(function(list) {
+            renderCollectFolderOptions(list);
+            var input = document.getElementById('folderNewName');
+            if (input) input.value = '';
+            overlay.classList.add('open');
+        });
+    }
+
+    // 新建收藏夹并直接收藏到新夹（PRD F4：面板内提供新建入口）
+    function createFolderAndCollect() {
+        var input = document.getElementById('folderNewName');
+        if (!input) return;
+        var name = (input.value || '').trim();
+        if (!name || name.length > 20) { showToast('收藏夹名称需在1-20字之间'); return; }
+        apiPost('/content/api/v1/user/collection/folders', { name: name }).then(function(res) {
+            if (res && res.code === 200 && res.data) {
+                closeCollectFolderPanel();
+                if (collectPanelCallback) collectPanelCallback(res.data.id, res.data.name || name);
+            } else {
+                showToast((res && res.message) || '新建收藏夹失败');
+            }
+        }).catch(function() { showToast('新建收藏夹失败，请重试'); });
+    }
+
+    (function bindCollectFolderPanel() {
+        var overlay = document.getElementById('folderOverlay');
+        if (!overlay) return;
+        var closeBtn = document.getElementById('folderModalClose');
+        if (closeBtn) closeBtn.addEventListener('click', closeCollectFolderPanel);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeCollectFolderPanel();
+        });
+        var newBtn = document.getElementById('folderNewBtn');
+        if (newBtn) newBtn.addEventListener('click', createFolderAndCollect);
+        var input = document.getElementById('folderNewName');
+        if (input) input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') createFolderAndCollect();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('open')) closeCollectFolderPanel();
+        });
+    })();
+
+    // 收藏结果应用到按钮/侧栏（收藏与取消共用）
+    function applyCollectResult(data) {
+        var btn = document.getElementById('collectBtn');
+        if (btn) btn.classList.toggle('active', data.collected);
+        var textEl = document.getElementById('collectBtnText');
+        if (textEl) textEl.textContent = data.collected ? '已收藏' : '收藏';
+        var prev = collectCount;
+        collectCount = data.collectCount || 0;
+        updateSidebarCounts();
+        var sideCountEl = document.querySelector('#sideCollectBtn .action-count');
+        if (sideCountEl) bumpCount(sideCountEl, collectCount, prev);
+        var sideCollectBtn = document.getElementById('sideCollectBtn');
+        if (sideCollectBtn) {
+            sideCollectBtn.classList.toggle('active', data.collected);
+            burstAction(sideCollectBtn);
+        }
+    }
+
+    function doCollectRequest(folderId) {
+        var url = '/content/api/v1/article/' + articleId + '/collect'
+            + (folderId ? '?folderId=' + encodeURIComponent(folderId) : '');
+        apiPost(url).then(function(res) {
+            if (res && res.code === 200 && res.data) {
+                applyCollectResult(res.data);
+                if (res.data.collected) {
+                    // 目标收藏夹已被删除 → 后端回退默认收藏夹并标记，前端补提示（PRD F4 边界）
+                    showToast(res.data.folderFallback ? '收藏夹已不存在，已收藏到默认收藏夹' : '收藏成功');
+                }
+            } else {
+                showToast((res && res.message) || '收藏失败');
+            }
+        }).catch(function(err) {
+            console.error('收藏失败:', err);
+            showToast('收藏失败，请重试');
+        });
+    }
+
     var collectBtn = document.getElementById('collectBtn');
     if (collectBtn) {
         collectBtn.addEventListener('click', function() {
             if (!isLoggedIn()) { showToast('请先登录'); openLoginModal(); return; }
             var btn = this;
             burstAction(btn);
-            apiPost('/content/api/v1/article/' + articleId + '/collect').then(function(res) {
-                if (res && res.code === 200 && res.data) {
-                    btn.classList.toggle('active', res.data.collected);
-                    document.getElementById('collectBtnText').textContent = res.data.collected ? '已收藏' : '收藏';
-                    var prev = collectCount;
-                    collectCount = res.data.collectCount || 0;
-                    updateSidebarCounts();
-                    bumpCount(document.querySelector('#sideCollectBtn .action-count'), collectCount, prev);
-                    var sideCollectBtn = document.getElementById('sideCollectBtn');
-                    sideCollectBtn.classList.toggle('active', res.data.collected);
-                    burstAction(sideCollectBtn);
-                }
-            }).catch(function(err) { console.error('收藏失败:', err); });
+            if (btn.classList.contains('active')) {
+                // 已收藏 → 直接取消收藏（保持切换语义）
+                doCollectRequest(null);
+                return;
+            }
+            // 未收藏 → 弹出收藏夹选择面板，选定（或新建）后提交
+            openCollectFolderPanel(function(folderId) { doCollectRequest(folderId); });
         });
     }
 
@@ -2575,7 +2701,48 @@
         aiAskSend();
     }
 
-    // 页面就绪后加载摘要 + 读完想问
+    // ---- 本文相关练习：读完文章 → 做题（Coding 延展第一层，题目 ←→ 文章双向导流） ----
+    function quizDifficultyLabel(difficulty) {
+        if (difficulty === 3) return '挑战';
+        if (difficulty === 2) return '进阶';
+        return '入门';
+    }
+    function loadArticleQuizzes() {
+        if (!articleId || articleId === '0') return;
+        var card = document.getElementById('codingQuizCard');
+        var listEl = document.getElementById('codingQuizList');
+        if (!card || !listEl) return;
+        // articleId 为雪花ID字符串，直接透传（不经过 Number 转换）
+        apiGet('/content/api/v1/coding/questions?articleId=' + encodeURIComponent(articleId) + '&size=3').then(function(res) {
+            var list = res && res.code === 200 && res.data ? res.data.list : null;
+            if (!list || !list.length) { card.style.display = 'none'; return; }
+            listEl.innerHTML = '';
+            for (var i = 0; i < list.length; i++) {
+                (function(item) {
+                    var li = document.createElement('li');
+                    li.className = 'coding-quiz-item';
+                    var a = document.createElement('a');
+                    a.className = 'coding-quiz-link';
+                    a.href = '/coding?articleId=' + encodeURIComponent(articleId) +
+                        '&questionId=' + encodeURIComponent(String(item.id));
+                    var diff = document.createElement('span');
+                    diff.className = 'coding-quiz-diff d' + (item.difficulty || 1);
+                    diff.textContent = quizDifficultyLabel(item.difficulty);
+                    var stem = document.createElement('span');
+                    stem.className = 'coding-quiz-stem';
+                    stem.textContent = item.stem || '';
+                    a.appendChild(diff);
+                    a.appendChild(stem);
+                    li.appendChild(a);
+                    listEl.appendChild(li);
+                })(list[i]);
+            }
+            card.style.display = 'block';
+        }).catch(function() { card.style.display = 'none'; });
+    }
+
+    // 页面就绪后加载摘要 + 读完想问 + 本文相关练习
     loadAiSummary();
     loadRelatedQuestions();
+    loadArticleQuizzes();
 })();

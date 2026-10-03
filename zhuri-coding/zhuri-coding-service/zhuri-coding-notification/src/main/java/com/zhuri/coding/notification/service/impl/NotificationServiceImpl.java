@@ -48,6 +48,9 @@ public class NotificationServiceImpl implements NotificationService {
      */
     private static final Set<Integer> AGGREGATABLE_TYPES = Set.of(2, 3);
 
+    /** 「收藏文章更新」聚合键前缀，完整键为 {@code collect_update:{yyyy-MM-dd}}（用户 × 自然日） */
+    private static final String COLLECT_UPDATE_AGG_PREFIX = "collect_update:";
+
     /** 复合游标分隔符：{@code last_event_at + "_" + id} */
     private static final String CURSOR_SEP = "_";
     /**
@@ -351,6 +354,35 @@ public class NotificationServiceImpl implements NotificationService {
         notification.setCreatedAt(LocalDateTime.now());
         notificationMapper.insert(notification);
         incrUnreadCache(userId, type);
+        return ResponseResult.okResult(notification.getId());
+    }
+
+    @Override
+    @Transactional
+    public ResponseResult createCollectUpdateNotification(Long userId, String dayKey, String content) {
+        if (userId == null || dayKey == null || dayKey.isBlank()) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "参数不能为空");
+        }
+        // 聚合维度是「用户 × 自然日」而不是「来源」：同一个用户当天被更新的多篇文章合并进同一条，
+        // 后续事件只推进 agg_count 并用最新内容覆盖（读者点进最新一篇即可，避免逐条刷屏）。
+        // 刻意不复用 createNotification：那里聚合键固定为 type:sourceId（按来源聚合），
+        // 也不把 type=4 放进 AGGREGATABLE_TYPES（那会顺带改变既有系统通知"一行一事件"的行为）。
+        String aggKey = COLLECT_UPDATE_AGG_PREFIX + dayKey;
+        Notification notification = new Notification();
+        notification.setUserId(userId);
+        notification.setType(4); // 系统类：内容型提醒，不冒充某人的互动行为
+        notification.setSourceId(dayKey);
+        notification.setAggKey(aggKey);
+        notification.setContent(content);
+        notification.setAggCount(1);
+        notification.setLastEventAt(LocalDateTime.now());
+
+        // 顺序不能反：flipToUnread 的 WHERE 依赖 is_read = 1，必须在 upsert 之前判定"是否由已读变回未读"
+        int flipped = notificationMapper.flipToUnread(userId, aggKey);
+        int affected = notificationMapper.upsertAggregated(notification);
+        if (flipped > 0 || affected == 1) {
+            incrUnreadCache(userId, 4);
+        }
         return ResponseResult.okResult(notification.getId());
     }
 

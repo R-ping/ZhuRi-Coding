@@ -173,6 +173,38 @@ class AuthorizeFilterTest {
     }
 
     @Test
+    @DisplayName("每日一题榜单/题库公开只读、无 token → 匿名放行")
+    void testCodingReadOnlyPublicNoToken() {
+        for (String path : new String[]{"/content/api/v1/coding/ranking", "/content/api/v1/coding/questions"}) {
+            ServerWebExchange exchange = exchange(path, null);
+            ServerHttpResponse response = exchange.getResponse();
+            GatewayFilterChain chain = mock(GatewayFilterChain.class);
+            when(chain.filter(any())).thenReturn(Mono.empty());
+
+            filter.filter(exchange, chain).subscribe();
+
+            verify(chain).filter(any());
+            verify(response, never()).setComplete();
+        }
+    }
+
+    @Test
+    @DisplayName("每日一题今日题/作答、无 token → 返回 444（写接口与个性化接口不放行）")
+    void testCodingDailyProtectedNoToken() {
+        for (String path : new String[]{"/content/api/v1/coding/today", "/content/api/v1/coding/answer", "/content/api/v1/coding/stat"}) {
+            ServerWebExchange exchange = exchange(path, null);
+            ServerHttpResponse response = exchange.getResponse();
+            GatewayFilterChain chain = mock(GatewayFilterChain.class);
+            when(chain.filter(any())).thenReturn(Mono.empty());
+
+            filter.filter(exchange, chain).subscribe();
+
+            verify(response).setStatusCode(HttpStatusCode.valueOf(444));
+            verify(chain, never()).filter(any());
+        }
+    }
+
+    @Test
     @DisplayName("非公开接口、token 无效（verifyToken=false）→ 返回 444")
     void testProtectedInvalidToken() {
         ServerWebExchange exchange = exchange("/content/api/v1/course/create", "tok");

@@ -29,6 +29,7 @@
         "description": "<#if metaDescription?has_content>${metaDescription?j_string}<#else></#if>",
 <#if coverImage?has_content>        "image": "${coverImage?j_string}",</#if>
 <#if publishTimeIso?has_content>        "datePublished": "${publishTimeIso}",</#if>
+<#if updateTimeIso?has_content>        "dateModified": "${updateTimeIso}",</#if>
 <#if authorName?has_content>        "author": { "@type": "Person", "name": "${authorName?j_string}" },</#if>
         "publisher": { "@type": "Organization", "name": "逐日 Coding" },
         "mainEntityOfPage": "<#if seoBaseUrl?has_content>${seoBaseUrl?j_string}<#else></#if>/content/article/${articleId?c}"
@@ -151,6 +152,37 @@
         .publish-time {
             font-size: 13px;
             color: #8a919f;
+        }
+        .update-time {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 13px;
+            color: #1e80ff;
+        }
+        .update-time.has-note {
+            cursor: pointer;
+            text-decoration: underline dotted;
+            text-underline-offset: 3px;
+        }
+        .update-note {
+            margin-top: 8px;
+            margin-left: 48px;
+            padding: 8px 12px;
+            border-left: 3px solid #1e80ff;
+            background: #f2f6ff;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #4a5568;
+            line-height: 1.6;
+        }
+        /* 站内信跳转锚点：链接以 #updateNoteBox 结尾时，说明框自动展开（覆盖内联的 display:none） */
+        .update-note:target { display: block !important; }
+        body.dark .update-time { color: #3b82f6; }
+        body.dark .update-note {
+            background: #1a2233;
+            border-left-color: #3b82f6;
+            color: #cbd5e1;
         }
         .follow-btn {
             margin-left: 16px;
@@ -2352,6 +2384,113 @@
         }
         .login-toast.show { opacity: 1; }
 
+        /* 收藏夹选择面板（F4：点击收藏弹出，最近使用三个置顶 + 新建入口） */
+        .folder-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 15000;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .folder-overlay.open { display: flex; }
+        .folder-modal {
+            width: 100%;
+            max-width: 400px;
+            max-height: 70vh;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .folder-modal-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .folder-modal-title { font-size: 16px; font-weight: 600; color: #333333; }
+        .folder-modal-close {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999999;
+            cursor: pointer;
+            border-radius: 50%;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .folder-modal-close:hover { background-color: #f5f5f5; color: #666666; }
+        .folder-modal-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+        .folder-option {
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #333333;
+            transition: background-color 0.15s;
+        }
+        .folder-option:hover { background-color: #f7f8fa; }
+        .folder-option-icon { margin-right: 10px; font-size: 15px; }
+        .folder-option-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .folder-option-count { color: #999999; font-size: 12px; margin-left: 8px; }
+        .folder-option-badge {
+            margin-left: 8px;
+            font-size: 11px;
+            color: #3194ff;
+            background-color: #eaf4ff;
+            border-radius: 4px;
+            padding: 1px 6px;
+            flex-shrink: 0;
+        }
+        .folder-modal-new {
+            display: flex;
+            gap: 8px;
+            padding: 12px 20px;
+            border-top: 1px solid #f0f0f0;
+            background-color: #fafbfc;
+        }
+        .folder-new-input {
+            flex: 1;
+            height: 36px;
+            padding: 0 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #333333;
+            outline: none;
+            box-sizing: border-box;
+            background-color: #ffffff;
+        }
+        .folder-new-input:focus { border-color: #3194ff; }
+        .folder-new-btn {
+            height: 36px;
+            padding: 0 16px;
+            border: none;
+            border-radius: 6px;
+            background-color: #3194ff;
+            color: #ffffff;
+            font-size: 14px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .folder-new-btn:hover { background-color: #1f7fe8; }
+        body.dark .folder-modal { background-color: #1e1e1e; }
+        body.dark .folder-modal-head, body.dark .folder-modal-new { border-color: #333333; }
+        body.dark .folder-modal-title, body.dark .folder-option { color: #dddddd; }
+        body.dark .folder-option:hover { background-color: #2a2a2a; }
+        body.dark .folder-modal-new { background-color: #242424; }
+        body.dark .folder-new-input { background-color: #2a2a2a; border-color: #444444; color: #dddddd; }
+
         @media (max-width: 960px) {
             .toc-sidebar { display: none; }
             .action-sidebar { display: none; }
@@ -2686,6 +2825,57 @@
         body.dark .ai-summary-card { background: #1c1e22; border-color: #2d333b; color: #e6e8eb; }
         body.dark .ai-summary-body.ai-summary-loading { color: #6b7280; }
         .ai-summary-note { margin-top: 6px; font-size: 12px; color: #8a919f; }
+        .coding-quiz-card {
+            margin-bottom: 20px;
+            border: 1px solid #e5e6eb;
+            border-left: 3px solid #00b42a;
+            border-radius: 8px;
+            padding: 12px 16px;
+            background: #f7fcf8;
+            font-size: 14px;
+            color: #252933;
+        }
+        .coding-quiz-head {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #00b42a;
+            margin-bottom: 8px;
+        }
+        .coding-quiz-sub { font-weight: 400; font-size: 12px; color: #8a919f; margin-left: 4px; }
+        .coding-quiz-list { list-style: none; margin: 0; padding: 0; }
+        .coding-quiz-item { border-top: 1px dashed #e5e6eb; }
+        .coding-quiz-item:first-child { border-top: none; }
+        .coding-quiz-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 8px 0;
+            color: #252933;
+            text-decoration: none;
+            line-height: 1.6;
+        }
+        .coding-quiz-link:hover { color: #1e80ff; }
+        .coding-quiz-diff {
+            flex-shrink: 0;
+            font-size: 12px;
+            border-radius: 4px;
+            padding: 1px 8px;
+            margin-top: 2px;
+            color: #1e80ff;
+            background: #e8f3ff;
+        }
+        .coding-quiz-diff.d2 { color: #d46b08; background: #fff3e6; }
+        .coding-quiz-diff.d3 { color: #cf1322; background: #ffedee; }
+        .coding-quiz-stem { flex: 1; word-break: break-word; }
+        .coding-quiz-foot { margin-top: 8px; }
+        .coding-quiz-more { font-size: 13px; color: #1e80ff; text-decoration: none; }
+        .coding-quiz-more:hover { text-decoration: underline; }
+        body.dark .coding-quiz-card { background: #1c1e22; border-color: #2d333b; color: #e6e8eb; }
+        body.dark .coding-quiz-link { color: #e6e8eb; }
+        body.dark .coding-quiz-item { border-top-color: #2d333b; }
         .aigc-badge {
             display: inline-block;
             vertical-align: middle;
@@ -3002,6 +3192,21 @@
     </div>
     <div class="login-toast" id="loginToast"></div>
 
+    <!-- 收藏夹选择面板（F4：点击收藏时弹出，选项由 JS 渲染） -->
+    <div class="folder-overlay" id="folderOverlay">
+        <div class="folder-modal">
+            <div class="folder-modal-head">
+                <span class="folder-modal-title">选择收藏夹</span>
+                <span class="folder-modal-close" id="folderModalClose">&#10005;</span>
+            </div>
+            <div class="folder-modal-list" id="folderModalList"></div>
+            <div class="folder-modal-new">
+                <input type="text" class="folder-new-input" id="folderNewName" maxlength="20" placeholder="新建收藏夹（1-20字）" />
+                <button class="folder-new-btn" id="folderNewBtn">新建</button>
+            </div>
+        </div>
+    </div>
+
     <div class="main-wrapper">
         <article class="content-area">
             <div class="content-card">
@@ -3025,6 +3230,13 @@
                             <span class="publish-time">
                                 <#if publishTime??>${publishTime?string('yyyy-MM-dd HH:mm')}</#if>
                             </span>
+                            <#if hasUpdate?? && hasUpdate>
+                            <span class="meta-divider">·</span>
+                            <span class="update-time<#if updateNote?has_content> has-note</#if>" id="updateStamp"<#if updateNote?has_content> onclick="var b=document.getElementById('updateNoteBox');b.style.display=(b.style.display==='block'||b.style.display==='')?'none':'block'" title="点击查看更新说明"<#else> title="文章已于近期实质更新"</#if>>
+                                <svg class="meta-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M12 8l6 8H6z" fill="currentColor"/></svg>
+                                更新于 <#if updateTime??>${updateTime?string('yyyy-MM-dd HH:mm')}</#if>
+                            </span>
+                            </#if>
                             <span class="meta-divider">·</span>
                             <span class="read-count">
                                 <svg class="meta-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" fill="#8a919f"/></svg>
@@ -3043,6 +3255,9 @@
                             </span>
                             </#if>
                         </div>
+                        <#if hasUpdate?? && hasUpdate && updateNote?has_content>
+                        <div class="update-note" id="updateNoteBox" style="display:none">${updateNote?html}</div>
+                        </#if>
                     </div>
                     <button class="follow-btn<#if relation?? && relation.isfollow?? && relation.isfollow> active</#if>" id="followBtn">
                         <#if relation?? && relation.isfollow?? && relation.isfollow>已关注<#else>+ 关注</#if>
@@ -3082,6 +3297,19 @@
                             <a href="/user/${(authorId!0)?c}" class="ea-link" target="_blank">查看主页</a>
                             <a href="/user/${(authorId!0)?c}?tab=article" class="ea-link" target="_blank">更多文章</a>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 本文相关练习（Coding 延展第一层：题目与来源文章双向导流，列表由 JS 填充，无题时整卡隐藏） -->
+                <div class="coding-quiz-card" id="codingQuizCard" style="display:none;">
+                    <div class="coding-quiz-head">
+                        <svg class="coding-quiz-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>
+                        <span>试试相关练习</span>
+                        <span class="coding-quiz-sub">由本文知识点生成 · 自由练习不计分</span>
+                    </div>
+                    <ul class="coding-quiz-list" id="codingQuizList"></ul>
+                    <div class="coding-quiz-foot">
+                        <a class="coding-quiz-more" href="/coding">去每日一题，练更多 →</a>
                     </div>
                 </div>
 

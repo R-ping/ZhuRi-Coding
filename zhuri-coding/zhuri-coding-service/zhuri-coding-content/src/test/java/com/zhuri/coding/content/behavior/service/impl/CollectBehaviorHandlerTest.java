@@ -3,6 +3,7 @@ package com.zhuri.coding.content.behavior.service.impl;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
 import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
+import com.zhuri.coding.content.service.collection.CollectionFolderService;
 import com.zhuri.coding.model.behavior.BehaviorContext;
 import com.zhuri.coding.model.behavior.BehaviorResult;
 import com.zhuri.coding.model.behavior.BehaviorType;
@@ -20,6 +21,7 @@ import org.springframework.dao.DuplicateKeyException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -42,6 +44,8 @@ class CollectBehaviorHandlerTest {
     private UserBehaviorRecordMapper behaviorRecordMapper;
     @Mock
     private ApArticleMapper apArticleMapper;
+    @Mock
+    private CollectionFolderService collectionFolderService;
 
     @InjectMocks
     private CollectBehaviorHandler handler;
@@ -132,6 +136,50 @@ class CollectBehaviorHandlerTest {
         assertFalse(r.isNewRecord());
         assertTrue((Boolean) r.getDataValue("collected"));
         verify(behaviorRecordMapper, never()).insert(any(UserBehaviorRecord.class));
+    }
+
+    @Test
+    @DisplayName("execute - 指定收藏夹有效时写入 folderId（F4）")
+    void testExecuteWithFolderId() {
+        when(apCollectionMapper.selectOne(any())).thenReturn(null);
+        when(collectionFolderService.resolveValidFolderId(1001, 55L)).thenReturn(55L);
+
+        BehaviorContext ctx = collectContext().withExtra("folderId", 55L);
+        BehaviorResult r = handler.execute(ctx);
+
+        assertTrue(r.isSuccess());
+        ArgumentCaptor<ApCollection> captor = ArgumentCaptor.forClass(ApCollection.class);
+        verify(apCollectionMapper).insert(captor.capture());
+        assertEquals(55L, captor.getValue().getFolderId());
+    }
+
+    @Test
+    @DisplayName("execute - 收藏夹无效时回退默认收藏夹（folder_id 为空，F4）")
+    void testExecuteWithInvalidFolderIdFallback() {
+        when(apCollectionMapper.selectOne(any())).thenReturn(null);
+        when(collectionFolderService.resolveValidFolderId(1001, 66L)).thenReturn(null);
+
+        BehaviorContext ctx = collectContext().withExtra("folderId", 66L);
+        BehaviorResult r = handler.execute(ctx);
+
+        assertTrue(r.isSuccess());
+        ArgumentCaptor<ApCollection> captor = ArgumentCaptor.forClass(ApCollection.class);
+        verify(apCollectionMapper).insert(captor.capture());
+        assertNull(captor.getValue().getFolderId());
+    }
+
+    @Test
+    @DisplayName("execute - 未指定收藏夹时 folderId 为空（F4 默认收藏夹）")
+    void testExecuteWithoutFolderId() {
+        when(apCollectionMapper.selectOne(any())).thenReturn(null);
+        when(collectionFolderService.resolveValidFolderId(1001, null)).thenReturn(null);
+
+        BehaviorResult r = handler.execute(collectContext());
+
+        assertTrue(r.isSuccess());
+        ArgumentCaptor<ApCollection> captor = ArgumentCaptor.forClass(ApCollection.class);
+        verify(apCollectionMapper).insert(captor.capture());
+        assertNull(captor.getValue().getFolderId());
     }
 
     // ==================== rollback ====================
