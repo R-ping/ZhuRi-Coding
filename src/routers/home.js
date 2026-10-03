@@ -21,6 +21,7 @@ const UserHistory = () => import('@/pages/user/history/index')
 const UserAiQuota = () => import('@/pages/user/ai_quota/index')
 const Coding = () => import('@/pages/coding/index')
 const CodingAbility = () => import('@/pages/coding/ability')
+const CodingAssessment = () => import('@/pages/coding/assessment')
 const Notification = () => import('@/pages/notification/index')
 const Pins = () => import('@/pages/pins/index.vue')
 const PinsCircles = () => import('@/pages/pins/circles.vue')
@@ -137,6 +138,12 @@ let routes = [
                 path:'/coding/ability',
                 name:'coding-ability',
                 component:CodingAbility
+            },
+            {
+                // 能力测评：开卷介绍 → 限时作答 → 成绩单
+                path:'/coding/assessment',
+                name:'coding-assessment',
+                component:CodingAssessment
             },
             {
                 path:'/notification',

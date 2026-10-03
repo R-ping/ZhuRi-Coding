@@ -20,4 +20,28 @@ public interface ApCodingAssessmentMapper extends BaseMapper<ApCodingAssessment>
     @Select("SELECT * FROM ap_coding_assessment WHERE user_id = #{userId} AND status = 2 "
         + "ORDER BY submitted_time DESC, id DESC LIMIT 1")
     ApCodingAssessment selectLatestSubmitted(@Param("userId") Integer userId);
+
+    /**
+     * 进行中的测评（一人同时只会有一卷：开卷前必查冷却与续答）。
+     *
+     * @param userId 用户ID
+     * @return 进行中记录；没有则返回 null
+     */
+    @Select("SELECT * FROM ap_coding_assessment WHERE user_id = #{userId} AND status = 1 "
+        + "ORDER BY id DESC LIMIT 1")
+    ApCodingAssessment selectOngoing(@Param("userId") Integer userId);
+
+    /**
+     * 已提交测评总数（百分位样本量，样本不足时不展示百分位）。
+     */
+    @Select("SELECT COUNT(*) FROM ap_coding_assessment WHERE status = 2")
+    long countSubmitted();
+
+    /**
+     * 分数严格低于给定分的已提交测评数（百分位计算：超过多少人）。
+     *
+     * @param score 本次得分
+     */
+    @Select("SELECT COUNT(*) FROM ap_coding_assessment WHERE status = 2 AND score < #{score}")
+    long countSubmittedBelow(@Param("score") int score);
 }

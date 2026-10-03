@@ -13,6 +13,7 @@ import com.zhuri.coding.content.mapper.coding.ApCodingAnswerRecordMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingQuestionMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingUserStatMapper;
 import com.zhuri.coding.content.service.coding.CodingAnswerTxService;
+import com.zhuri.coding.content.service.coding.CodingJudge;
 import com.zhuri.coding.content.service.coding.CodingQuestionService;
 import com.zhuri.coding.content.service.level.LevelService;
 import com.zhuri.coding.model.article.pojos.ApArticle;
@@ -151,7 +152,7 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
             || question.getStatus() != ApCodingQuestion.STATUS_PUBLISHED) {
             return ResponseResult.errorResult(400, "题目不存在或已下架");
         }
-        List<String> options = parseStringList(question.getOptions());
+        List<String> options = CodingJudge.parseStringList(question.getOptions());
         // 用户答案去重排序（防重复下标），并校验下标范围与题型
         Set<Integer> answerSet = new LinkedHashSet<>();
         for (Integer a : dto.getAnswers()) {
@@ -165,8 +166,8 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
             return ResponseResult.errorResult(400, "单选题只能选择一个选项");
         }
         List<Integer> userAnswers = new ArrayList<>(answerSet);
-        List<Integer> correctAnswers = parseIntList(question.getAnswer());
-        boolean correct = answerSet.equals(new HashSet<>(correctAnswers));
+        List<Integer> correctAnswers = CodingJudge.parseIntList(question.getAnswer());
+        boolean correct = CodingJudge.judge(correctAnswers, answerSet);
 
         boolean isDaily = Boolean.TRUE.equals(dto.getIsDaily());
         Date today = Date.valueOf(LocalDate.now());
@@ -192,7 +193,7 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
             }
             try {
                 record = txService.saveAnswer(userId, question,
-                    writeJson(userAnswers), correct, elapsedSeconds, true);
+                    CodingJudge.writeJson(userAnswers), correct, elapsedSeconds, true);
             } catch (IllegalStateException e) {
                 return ResponseResult.errorResult(400, "今日一题已作答，明天再来");
             } finally {
@@ -200,7 +201,7 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
             }
         } else {
             record = txService.saveAnswer(userId, question,
-                writeJson(userAnswers), correct, elapsedSeconds, false);
+                    CodingJudge.writeJson(userAnswers), correct, elapsedSeconds, false);
         }
 
         // 当日一题答对：计入逐日等级 + 触发幂等打卡（两处均 fail-open，不影响判分结果返回）
@@ -475,18 +476,18 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         vo.setId(question.getId());
         vo.setStem(question.getStem());
         vo.setQuestionType(question.getQuestionType());
-        vo.setOptions(parseStringList(question.getOptions()));
+        vo.setOptions(CodingJudge.parseStringList(question.getOptions()));
         vo.setDifficulty(question.getDifficulty());
-        vo.setTags(parseTags(question.getTags()));
+        vo.setTags(CodingJudge.parseTags(question.getTags()));
         vo.setSourceType(question.getSourceType());
         vo.setAnswerCount(nvl(question.getAnswerCount()));
         vo.setCorrectCount(nvl(question.getCorrectCount()));
         vo.setAnswered(record != null);
         fillSourceArticle(vo, question.getSourceArticleId());
         if (record != null) {
-            vo.setUserAnswer(parseIntList(record.getUserAnswer()));
+            vo.setUserAnswer(CodingJudge.parseIntList(record.getUserAnswer()));
             vo.setIsCorrect(record.getIsCorrect() != null && record.getIsCorrect() == 1);
-            vo.setCorrectAnswer(parseIntList(question.getAnswer()));
+            vo.setCorrectAnswer(CodingJudge.parseIntList(question.getAnswer()));
             vo.setExplanation(question.getExplanation());
             vo.setElapsedSeconds(record.getElapsedSeconds());
             vo.setScoreAwarded(record.getScoreAwarded());
@@ -563,54 +564,6 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         } catch (Exception e) {
             log.warn("解析领域分布失败: {}", json);
             return new HashMap<>();
-        }
-    }
-
-    private List<String> parseStringList(String json) {
-        if (json == null || json.isBlank()) {
-            return new ArrayList<>();
-        }
-        try {
-            List<String> list = objectMapper.readValue(json, new TypeReference<List<String>>() {});
-            return list == null ? new ArrayList<>() : list;
-        } catch (Exception e) {
-            log.warn("解析选项 JSON 失败: {}", json);
-            return new ArrayList<>();
-        }
-    }
-
-    private List<Integer> parseIntList(String json) {
-        if (json == null || json.isBlank()) {
-            return new ArrayList<>();
-        }
-        try {
-            List<Integer> list = objectMapper.readValue(json, new TypeReference<List<Integer>>() {});
-            return list == null ? new ArrayList<>() : list;
-        } catch (Exception e) {
-            log.warn("解析答案下标 JSON 失败: {}", json);
-            return new ArrayList<>();
-        }
-    }
-
-    private List<String> parseTags(String tags) {
-        List<String> list = new ArrayList<>();
-        if (tags == null || tags.isBlank()) {
-            return list;
-        }
-        for (String raw : tags.split(",")) {
-            String tag = raw == null ? "" : raw.trim();
-            if (!tag.isEmpty()) {
-                list.add(tag);
-            }
-        }
-        return list;
-    }
-
-    private String writeJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (Exception e) {
-            return "[]";
         }
     }
 

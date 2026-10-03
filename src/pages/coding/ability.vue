@@ -141,8 +141,14 @@
                                     <div class="assessment-time" v-if="blocks.assessment.submittedTime">
                                         {{ blocks.assessment.submittedTime }}
                                     </div>
+                                    <div class="assessment-actions" v-if="isSelf">
+                                        <button class="mini-btn" @click="goAssessment">再测一次</button>
+                                    </div>
                                 </div>
-                                <div v-else class="block-empty">暂未测评，能力测评即将上线</div>
+                                <div v-else class="block-empty block-empty-action">
+                                    <span>{{ isSelf ? '还没测评过：15 分钟拿到你的能力快照' : '暂未测评' }}</span>
+                                    <button v-if="isSelf" class="mini-btn" @click="goAssessment">开始测评</button>
+                                </div>
                             </template>
                             <div v-else class="block-empty">该板块未公开</div>
                         </div>
@@ -274,6 +280,10 @@
             },
             goDaily() {
                 this.$router.push('/coding').catch(() => {})
+            },
+            // 测评入口（第二层 Stage B）：开卷介绍 → 限时作答 → 成绩单
+            goAssessment() {
+                this.$router.push('/coding/assessment').catch(() => {})
             },
             async loadProfile() {
                 this.loadError = ''
@@ -686,6 +696,31 @@
     .assessment-time {
         font-size: 12PX;
         color: #c9cdd4;
+    }
+
+    /* 测评入口按钮（空态与再测一次共用） */
+    .assessment-actions {
+        margin-top: 6PX;
+    }
+
+    .block-empty-action {
+        flex-direction: column;
+        gap: 12PX;
+    }
+
+    .mini-btn {
+        background: #1E80FF;
+        color: #fff;
+        border: none;
+        border-radius: 14PX;
+        padding: 5PX 16PX;
+        font-size: 13PX;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .mini-btn:hover {
+        background: #1668dc;
     }
 
     /* 隐私设置 */

@@ -64,3 +64,33 @@ export const getAbilitySetting = () => {
 export const updateAbilitySetting = (data) => {
   return request.put('/api/v1/coding/profile/setting', data)
 }
+
+/**
+ * 能力测评（Coding 延展第二层 · Stage B）
+ * 全部需登录；交卷幂等（重复提交返回同一成绩单）。
+ */
+
+/** 能力测评：开卷（冷却内被拒并提示下次可考时间；有进行中返回续答） */
+export const startCodingAssessment = () => {
+  return request.post('/api/v1/coding/assessment/start')
+}
+
+/** 能力测评：进行中的卷（已超时返回空，后端懒过期） */
+export const getCurrentAssessment = () => {
+  return request.get('/api/v1/coding/assessment/current')
+}
+
+/** 能力测评：交卷（入参 {assessmentId, answers:[{questionId, userAnswer:[0]}]}） */
+export const submitAssessment = (data) => {
+  return request.post('/api/v1/coding/assessment/submit', data)
+}
+
+/** 能力测评：最近一次成绩单（无记录返回空） */
+export const getLatestAssessment = () => {
+  return request.get('/api/v1/coding/assessment/latest')
+}
+
+/** 能力测评：历史列表（分页，含进行中/已过期状态） */
+export const getAssessmentHistory = (params = {}) => {
+  return request.get('/api/v1/coding/assessment/history', { params })
+}
