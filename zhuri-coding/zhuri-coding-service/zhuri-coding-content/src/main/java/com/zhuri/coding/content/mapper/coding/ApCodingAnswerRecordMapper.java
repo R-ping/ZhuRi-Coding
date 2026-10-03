@@ -30,4 +30,16 @@ public interface ApCodingAnswerRecordMapper extends BaseMapper<ApCodingAnswerRec
         + "ORDER BY correctCount DESC, (SUM(is_correct) / COUNT(*)) DESC, avgSeconds ASC "
         + "LIMIT #{limit}")
     List<Map<String, Object>> selectRanking(@Param("startDate") Date startDate, @Param("limit") int limit);
+
+    /**
+     * 活跃月份数（能力档案"持续度"块）：作答题去重到"年-月"后计数，反映坚持跨度而非爆发。
+     *
+     * <p>每日一题与自由练习合并计算——练习同样是活跃信号；走 idx_user_date 覆盖。</p>
+     *
+     * @param userId 用户ID
+     * @return 有作答记录的自然月数（无记录为 0）
+     */
+    @Select("SELECT COUNT(DISTINCT DATE_FORMAT(answer_date, '%Y-%m')) FROM ap_coding_answer_record "
+        + "WHERE user_id = #{userId}")
+    int countActiveMonths(@Param("userId") Integer userId);
 }

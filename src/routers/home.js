@@ -20,6 +20,7 @@ const UserCourses = () => import('@/pages/user/courses/index')
 const UserHistory = () => import('@/pages/user/history/index')
 const UserAiQuota = () => import('@/pages/user/ai_quota/index')
 const Coding = () => import('@/pages/coding/index')
+const CodingAbility = () => import('@/pages/coding/ability')
 const Notification = () => import('@/pages/notification/index')
 const Pins = () => import('@/pages/pins/index.vue')
 const PinsCircles = () => import('@/pages/pins/circles.vue')
@@ -121,9 +122,21 @@ let routes = [
                 component:User
             },
             {
+                // 公开能力档案（分享页）：未公开时显示占位，匿名可访问
+                path:'/user/:id/ability',
+                name:'user-ability',
+                component:CodingAbility
+            },
+            {
                 path:'/coding',
                 name:'coding',
                 component:Coding
+            },
+            {
+                // 本人能力档案：档案 + 隐私设置 + 分享
+                path:'/coding/ability',
+                name:'coding-ability',
+                component:CodingAbility
             },
             {
                 path:'/notification',

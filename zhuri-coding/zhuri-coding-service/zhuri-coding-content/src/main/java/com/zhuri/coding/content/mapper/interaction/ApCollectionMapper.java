@@ -91,4 +91,18 @@ public interface ApCollectionMapper extends BaseMapper<ApCollection> {
                             @Param("folderId") Long folderId,
                             @Param("defaultFolder") boolean defaultFolder,
                             @Param("keyword") String keyword);
+
+    /**
+     * 我的已发布文章被收藏数（能力档案"输出能力"块）。
+     *
+     * <p><b>口径注意</b>：这是"我的文章被收藏数"，与 ArticleStatisticsService 的
+     * collectionCount（"我收藏的文章数"）方向相反，两者不可混用；只统计已发布且未删除的文章。</p>
+     *
+     * @param userId 作者用户ID
+     * @return 被收藏次数（无文章/无收藏为 0）
+     */
+    @Select("SELECT COUNT(*) FROM ap_collection c "
+        + "JOIN ap_article a ON a.id = c.article_id "
+        + "WHERE a.author_id = #{userId} AND a.is_deleted = 0 AND a.status = 9")
+    int countCollectedByArticleAuthor(@Param("userId") Integer userId);
 }

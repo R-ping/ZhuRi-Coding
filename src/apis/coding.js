@@ -39,3 +39,28 @@ export const generateQuestionsFromArticle = (articleId) => {
 export const submitCodingQuestion = (data) => {
   return request.post('/api/v1/coding/question/submit', data)
 }
+
+/**
+ * 能力档案（Coding 延展第二层）
+ * 本人档案与隐私开关需登录；公开档案匿名可访问（挂个人主页白名单前缀）。
+ */
+
+/** 能力档案：本人完整档案（需登录） */
+export const getMyAbilityProfile = () => {
+  return request.get('/api/v1/coding/profile/me')
+}
+
+/** 能力档案：公开档案（他人主页/分享页；登录且为本人时返回全量） */
+export const getUserAbilityProfile = (userId) => {
+  return request.get(`/api/v1/user/home/${userId}/ability`)
+}
+
+/** 能力档案隐私开关：读取（需登录，无记录返回默认值） */
+export const getAbilitySetting = () => {
+  return request.get('/api/v1/coding/profile/setting')
+}
+
+/** 能力档案隐私开关：保存（需登录，字段为空表示不修改） */
+export const updateAbilitySetting = (data) => {
+  return request.put('/api/v1/coding/profile/setting', data)
+}

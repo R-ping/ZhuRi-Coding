@@ -19,6 +19,7 @@
                     <span class="chip-value">{{ stat.totalCount || 0 }}</span>
                     <span class="chip-label">已答题数</span>
                 </div>
+                <button class="supply-btn" @click="goAbilityProfile">能力档案</button>
                 <button class="supply-btn" @click="openSupplyDialog">出题投稿</button>
             </div>
         </div>
@@ -421,6 +422,10 @@
         methods: {
             showLogin() {
                 this.$store.dispatch('showLogin')
+            },
+            // 能力档案入口（第二层）：本人档案 + 隐私设置 + 分享
+            goAbilityProfile() {
+                this.$router.push('/coding/ability').catch(() => {})
             },
             difficultyLabel(value) {
                 const found = this.difficultyOptions.find((item) => item.value === value)
