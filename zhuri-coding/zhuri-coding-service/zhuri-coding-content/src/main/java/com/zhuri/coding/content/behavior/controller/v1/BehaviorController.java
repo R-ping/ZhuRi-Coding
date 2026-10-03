@@ -89,7 +89,9 @@ public class BehaviorController {
     /**
      * 收藏文章
      * POST /api/v1/behavior/collect
-     * {"targetType": 1, "targetId": 456, "targetUserId": 789}
+     * {"targetType": 1, "targetId": 456, "targetUserId": 789, "folderId": 123}
+     *
+     * <p>folderId 可选（F4）：指定目标收藏夹；缺省或无效时收藏到"默认收藏夹"。</p>
      */
     @PostMapping("/collect")
     public ResponseResult collect(@RequestBody Map<String, Object> params) {
@@ -104,6 +106,8 @@ public class BehaviorController {
             ? Long.valueOf(params.get("targetId").toString()) : null;
         Integer targetUserId = params.get("targetUserId") != null
             ? Integer.valueOf(params.get("targetUserId").toString()) : null;
+        Long folderId = params.get("folderId") != null
+            ? Long.valueOf(params.get("folderId").toString()) : null;
 
         if (targetType == null || targetId == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "targetType和targetId不能为空");
@@ -113,6 +117,9 @@ public class BehaviorController {
         context.withTarget(targetType, targetId)
             .withTargetUser(targetUserId)
             .withUserInfo(user.getNickname(), user.getImage());
+        if (folderId != null) {
+            context.withExtra("folderId", folderId);
+        }
 
         return behaviorEventBus.execute(context);
     }

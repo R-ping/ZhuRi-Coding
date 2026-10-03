@@ -262,16 +262,65 @@
                 </div>
 
                 <div v-if="activeTab === 'collection'" class="tab-content">
-                    <div v-if="collectionList.length === 0" class="empty-state">
-                        <div class="empty-icon">⭐</div>
-                        <div class="empty-text">暂无收藏集</div>
+                    <div class="collection-toolbar">
+                        <input
+                            class="collection-search-input"
+                            v-model="collectionKeyword"
+                            @input="onCollectionKeywordInput"
+                            placeholder="搜索收藏的文章标题"
+                            maxlength="50"
+                        />
                     </div>
-                    <div v-else class="article-list">
-                        <div class="article-item" v-for="collection in collectionList" :key="collection.id">
-                            <div class="article-title">{{ collection.title }}</div>
-                            <div class="article-meta">
-                                <span class="article-time">{{ formatTime(collection.time) }}</span>
-                                <span class="article-read">{{ collection.readCount }}阅读</span>
+                    <div class="collection-layout" :class="{ 'with-aside': isOwnProfile && hasLogin }">
+                        <!-- 收藏夹筛选与管理（仅本人可见，F4） -->
+                        <aside v-if="isOwnProfile && hasLogin" class="folder-aside">
+                            <div
+                                class="folder-nav-item"
+                                :class="{ active: collectionFolderFilter === undefined }"
+                                @click="selectCollectionFolder(undefined)"
+                            >
+                                <span class="folder-nav-name">全部收藏</span>
+                            </div>
+                            <div
+                                class="folder-nav-item"
+                                :class="{ active: collectionFolderFilter === 0 }"
+                                @click="selectCollectionFolder(0)"
+                            >
+                                <span class="folder-nav-name">默认收藏夹</span>
+                            </div>
+                            <div
+                                class="folder-nav-item"
+                                v-for="folder in collectionFolders"
+                                :key="folder.id"
+                                :class="{ active: collectionFolderFilter === folder.id }"
+                                @click="selectCollectionFolder(folder.id)"
+                            >
+                                <span class="folder-nav-name">{{ folder.name }}</span>
+                                <span class="folder-nav-count">{{ folder.articleCount }}</span>
+                                <span class="folder-nav-ops">
+                                    <i class="folder-op" title="上移" @click.stop="moveFolder(folder, 'up')">↑</i>
+                                    <i class="folder-op" title="下移" @click.stop="moveFolder(folder, 'down')">↓</i>
+                                    <i class="folder-op" title="重命名" @click.stop="openRenameFolder(folder)">✎</i>
+                                    <i class="folder-op" title="删除" @click.stop="confirmRemoveFolder(folder)">✕</i>
+                                </span>
+                            </div>
+                            <div class="folder-create-row">
+                                <span class="folder-create-btn" @click="openCreateFolder">＋ 新建收藏夹</span>
+                            </div>
+                        </aside>
+                        <div class="collection-main">
+                            <div v-if="collectionList.length === 0" class="empty-state">
+                                <div class="empty-icon">⭐</div>
+                                <div class="empty-text">{{ collectionEmptyText }}</div>
+                            </div>
+                            <div v-else class="article-list">
+                                <div class="article-item" v-for="collection in collectionList" :key="collection.id">
+                                    <div class="article-title">{{ collection.title }}</div>
+                                    <div class="article-meta">
+                                        <span class="article-time">{{ formatTime(collection.time) }}</span>
+                                        <span class="article-read">{{ collection.readCount }}阅读</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -478,6 +527,25 @@
             </div>
         </el-dialog>
 
+        <!-- 收藏夹新建/重命名（F4，共用一个弹窗） -->
+        <el-dialog
+            :title="folderDialogMode === 'create' ? '新建收藏夹' : '重命名收藏夹'"
+            :visible.sync="folderDialogVisible"
+            width="420px"
+        >
+            <el-input
+                v-model="folderForm.name"
+                maxlength="20"
+                show-word-limit
+                placeholder="收藏夹名称（1-20字）"
+                @keyup.enter.native="submitFolderForm"
+            ></el-input>
+            <span slot="footer" class="dialog-footer">
+                <el-button @click="folderDialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="submitFolderForm">确定</el-button>
+            </span>
+        </el-dialog>
+
         <el-dialog
             title="我的勋章"
             :visible.sync="achievementDialog"
@@ -515,7 +583,7 @@ import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { toast } from '@/utils/toast'
 import { getUserAchievements } from '@/apis/achievement'
-import { getUserDynamic, getUserHomeData, getUserHomeArticles, getUserHomeColumns, getUserHomePins, getUserHomeFollowing, getUserHomeFollowers, getUserHomeCollections, getUserHomeLikes, getUserHomeCourses, getUserHomeTips } from '@/apis/author'
+import { getUserDynamic, getUserHomeData, getUserHomeArticles, getUserHomeColumns, getUserHomePins, getUserHomeFollowing, getUserHomeFollowers, getUserHomeCollections, getUserHomeLikes, getUserHomeCourses, getUserHomeTips, getCollectionFolders, createCollectionFolder, renameCollectionFolder, removeCollectionFolder, moveCollectionFolder } from '@/apis/author'
 
 export default {
     name: 'UserProfile',
@@ -568,6 +636,14 @@ export default {
             boilingList: [],
             columnList: [],
             collectionList: [],
+            // 收藏夹筛选与管理（F4）：undefined=全部, 0=默认收藏夹, >0=收藏夹ID
+            collectionFolders: [],
+            collectionFolderFilter: undefined,
+            collectionKeyword: '',
+            collectionSearchTimer: null,
+            folderDialogVisible: false,
+            folderDialogMode: 'create',
+            folderForm: { id: null, name: '' },
             coursesList: [],
             followingList: [],
             followersList: [],
@@ -607,6 +683,15 @@ export default {
         // 逐力值等级徽章
         powerLevelBadge() {
             return this.achievements.levels.find(l => l.type === 'power') || null
+        },
+        // 收藏列表空状态文案（检索无结果与无收藏区分，PRD F4 边界）
+        collectionEmptyText() {
+            return (this.collectionKeyword || '').trim() ? '没有匹配的收藏文章' : '暂无收藏集'
+        },
+        // 当前是否已登录（收藏夹管理仅登录本人可见）
+        hasLogin() {
+            const storeUser = this.$store.getters.userInfo
+            return !!(storeUser && storeUser.userId)
         }
     },
     mounted() {
@@ -739,6 +824,7 @@ export default {
                     break
                 case 'collection':
                     this.fetchCollections()
+                    this.fetchFolders()
                     break
                 case 'courses':
                     this.fetchCourses()
@@ -884,7 +970,16 @@ export default {
             const userId = this.profileUserId
             if (!userId) return
             try {
-                const res = await getUserHomeCollections(userId, { page: 1, size: 20 })
+                const params = { page: 1, size: 20 }
+                // 收藏夹筛选仅本人视角可见（后端对他人请求会忽略该参数，这里提前保持口径一致）
+                if (this.isOwnProfile && this.collectionFolderFilter !== undefined) {
+                    params.folderId = this.collectionFolderFilter
+                }
+                const keyword = (this.collectionKeyword || '').trim()
+                if (keyword) {
+                    params.keyword = keyword
+                }
+                const res = await getUserHomeCollections(userId, params)
                 if (res && res.code === 200 && res.data) {
                     const list = res.data.list || []
                     this.collectionList = list.map(item => ({
@@ -899,6 +994,89 @@ export default {
                 }
             } catch (e) {
                 // Keep empty list when API fails
+            }
+        },
+        // ==================== 收藏夹（F4，仅本人主页展示与管理） ====================
+        async fetchFolders() {
+            if (!this.isOwnProfile || !this.hasLogin) return
+            try {
+                const res = await getCollectionFolders()
+                if (res && res.code === 200 && Array.isArray(res.data)) {
+                    this.collectionFolders = res.data
+                }
+            } catch (e) {
+                // 收藏夹列表加载失败不阻塞收藏列表展示
+            }
+        },
+        selectCollectionFolder(folderId) {
+            this.collectionFolderFilter = folderId
+            this.fetchCollections()
+        },
+        // 搜索框即时过滤：300ms 防抖，避免每敲一个字都发请求
+        onCollectionKeywordInput() {
+            if (this.collectionSearchTimer) clearTimeout(this.collectionSearchTimer)
+            this.collectionSearchTimer = setTimeout(() => {
+                this.fetchCollections()
+            }, 300)
+        },
+        openCreateFolder() {
+            this.folderDialogMode = 'create'
+            this.folderForm = { id: null, name: '' }
+            this.folderDialogVisible = true
+        },
+        openRenameFolder(folder) {
+            this.folderDialogMode = 'rename'
+            this.folderForm = { id: folder.id, name: folder.name }
+            this.folderDialogVisible = true
+        },
+        async submitFolderForm() {
+            const name = (this.folderForm.name || '').trim()
+            if (!name || name.length > 20) {
+                toast('收藏夹名称需在1-20字之间')
+                return
+            }
+            try {
+                if (this.folderDialogMode === 'create') {
+                    await createCollectionFolder(name)
+                    toast('收藏夹已创建')
+                } else {
+                    await renameCollectionFolder(this.folderForm.id, name)
+                    toast('已重命名')
+                }
+                this.folderDialogVisible = false
+                this.fetchFolders()
+            } catch (e) {
+                toast((e && e.message) || '操作失败，请重试')
+            }
+        },
+        async moveFolder(folder, direction) {
+            try {
+                await moveCollectionFolder(folder.id, direction)
+                this.fetchFolders()
+            } catch (e) {
+                toast((e && e.message) || '排序失败')
+            }
+        },
+        async confirmRemoveFolder(folder) {
+            try {
+                await this.$confirm(
+                    `删除收藏夹「${folder.name}」后，其中的收藏将回到默认收藏夹（收藏记录不会删除）`,
+                    '删除收藏夹',
+                    { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+                )
+            } catch (e) {
+                return // 用户取消二次确认
+            }
+            try {
+                await removeCollectionFolder(folder.id)
+                toast('收藏夹已删除')
+                if (this.collectionFolderFilter === folder.id) {
+                    this.collectionFolderFilter = undefined
+                }
+                this.fetchFolders()
+                this.fetchCollections()
+            } catch (e) {
+                toast((e && e.message) || '删除失败')
             }
         },
         async fetchCourses() {
@@ -1562,6 +1740,106 @@ export default {
     color: #fff;
     font-size: 14px;
     cursor: pointer;
+}
+
+.collection-toolbar {
+    margin-bottom: 12px;
+}
+
+.collection-search-input {
+    width: 100%;
+    max-width: 360px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid #e4e6eb;
+    border-radius: 6px;
+    font-size: 14px;
+    color: #252933;
+    outline: none;
+    box-sizing: border-box;
+    &:focus {
+        border-color: #1e80ff;
+    }
+}
+
+.collection-layout {
+    display: flex;
+    gap: 20px;
+    &.with-aside {
+        align-items: flex-start;
+    }
+}
+
+.collection-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.folder-aside {
+    width: 200px;
+    flex-shrink: 0;
+    border-right: 1px solid #f2f3f5;
+    padding-right: 12px;
+}
+
+.folder-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    color: #515767;
+    cursor: pointer;
+    &:hover {
+        background: #f7f8fa;
+    }
+    &.active {
+        background: #eaf2ff;
+        color: #1e80ff;
+        font-weight: 500;
+    }
+    .folder-nav-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .folder-nav-count {
+        font-size: 12px;
+        color: #8a919f;
+    }
+    .folder-nav-ops {
+        display: none;
+        align-items: center;
+        gap: 2px;
+    }
+    &:hover .folder-nav-ops {
+        display: inline-flex;
+    }
+    .folder-op {
+        font-style: normal;
+        font-size: 12px;
+        color: #8a919f;
+        padding: 0 3px;
+        cursor: pointer;
+        &:hover {
+            color: #1e80ff;
+        }
+    }
+}
+
+.folder-create-row {
+    padding: 10px;
+}
+
+.folder-create-btn {
+    font-size: 13px;
+    color: #1e80ff;
+    cursor: pointer;
+    &:hover {
+        opacity: 0.85;
+    }
 }
 
 .collection-list {

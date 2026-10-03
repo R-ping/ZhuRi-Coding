@@ -22,6 +22,10 @@ public class ApCollection implements Serializable {
     @TableField("article_id")
     private Long articleId;
 
+    /** 所属收藏夹ID（NULL=默认收藏夹，F4） */
+    @TableField("folder_id")
+    private Long folderId;
+
     @TableField("created_time")
     private Date createdTime;
 }

@@ -2384,6 +2384,113 @@
         }
         .login-toast.show { opacity: 1; }
 
+        /* 收藏夹选择面板（F4：点击收藏弹出，最近使用三个置顶 + 新建入口） */
+        .folder-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 15000;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .folder-overlay.open { display: flex; }
+        .folder-modal {
+            width: 100%;
+            max-width: 400px;
+            max-height: 70vh;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .folder-modal-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .folder-modal-title { font-size: 16px; font-weight: 600; color: #333333; }
+        .folder-modal-close {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999999;
+            cursor: pointer;
+            border-radius: 50%;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .folder-modal-close:hover { background-color: #f5f5f5; color: #666666; }
+        .folder-modal-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+        .folder-option {
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #333333;
+            transition: background-color 0.15s;
+        }
+        .folder-option:hover { background-color: #f7f8fa; }
+        .folder-option-icon { margin-right: 10px; font-size: 15px; }
+        .folder-option-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .folder-option-count { color: #999999; font-size: 12px; margin-left: 8px; }
+        .folder-option-badge {
+            margin-left: 8px;
+            font-size: 11px;
+            color: #3194ff;
+            background-color: #eaf4ff;
+            border-radius: 4px;
+            padding: 1px 6px;
+            flex-shrink: 0;
+        }
+        .folder-modal-new {
+            display: flex;
+            gap: 8px;
+            padding: 12px 20px;
+            border-top: 1px solid #f0f0f0;
+            background-color: #fafbfc;
+        }
+        .folder-new-input {
+            flex: 1;
+            height: 36px;
+            padding: 0 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #333333;
+            outline: none;
+            box-sizing: border-box;
+            background-color: #ffffff;
+        }
+        .folder-new-input:focus { border-color: #3194ff; }
+        .folder-new-btn {
+            height: 36px;
+            padding: 0 16px;
+            border: none;
+            border-radius: 6px;
+            background-color: #3194ff;
+            color: #ffffff;
+            font-size: 14px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .folder-new-btn:hover { background-color: #1f7fe8; }
+        body.dark .folder-modal { background-color: #1e1e1e; }
+        body.dark .folder-modal-head, body.dark .folder-modal-new { border-color: #333333; }
+        body.dark .folder-modal-title, body.dark .folder-option { color: #dddddd; }
+        body.dark .folder-option:hover { background-color: #2a2a2a; }
+        body.dark .folder-modal-new { background-color: #242424; }
+        body.dark .folder-new-input { background-color: #2a2a2a; border-color: #444444; color: #dddddd; }
+
         @media (max-width: 960px) {
             .toc-sidebar { display: none; }
             .action-sidebar { display: none; }
@@ -3033,6 +3140,21 @@
         </div>
     </div>
     <div class="login-toast" id="loginToast"></div>
+
+    <!-- 收藏夹选择面板（F4：点击收藏时弹出，选项由 JS 渲染） -->
+    <div class="folder-overlay" id="folderOverlay">
+        <div class="folder-modal">
+            <div class="folder-modal-head">
+                <span class="folder-modal-title">选择收藏夹</span>
+                <span class="folder-modal-close" id="folderModalClose">&#10005;</span>
+            </div>
+            <div class="folder-modal-list" id="folderModalList"></div>
+            <div class="folder-modal-new">
+                <input type="text" class="folder-new-input" id="folderNewName" maxlength="20" placeholder="新建收藏夹（1-20字）" />
+                <button class="folder-new-btn" id="folderNewBtn">新建</button>
+            </div>
+        </div>
+    </div>
 
     <div class="main-wrapper">
         <article class="content-area">

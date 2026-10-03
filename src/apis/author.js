@@ -105,3 +105,46 @@ export const getUserHomeCourses = (userId, params = {}) => {
 export const getUserHomeTips = (userId, params = {}) => {
   return request.get(`/api/v1/user/home/${userId}/tips`, { params })
 }
+
+// ==================== 收藏夹（F4，仅本人可见） ====================
+
+/**
+ * 我的收藏夹列表（含条目数与最近使用时间，供收藏页筛选与收藏选择面板）
+ */
+export const getCollectionFolders = () => {
+  return request.get('/api/v1/user/collection/folders')
+}
+
+/**
+ * 新建收藏夹（名称 1-20 字、不可重名、单用户上限 50）
+ * @param {string} name 收藏夹名称
+ */
+export const createCollectionFolder = (name) => {
+  return request.post('/api/v1/user/collection/folders', { name })
+}
+
+/**
+ * 重命名收藏夹
+ * @param {number|string} folderId 收藏夹ID
+ * @param {string} name 新名称
+ */
+export const renameCollectionFolder = (folderId, name) => {
+  return request.put(`/api/v1/user/collection/folders/${folderId}`, { name })
+}
+
+/**
+ * 删除收藏夹（其中收藏回退默认收藏夹，收藏记录不删除）
+ * @param {number|string} folderId 收藏夹ID
+ */
+export const removeCollectionFolder = (folderId) => {
+  return request.delete(`/api/v1/user/collection/folders/${folderId}`)
+}
+
+/**
+ * 收藏夹排序（与相邻收藏夹交换）
+ * @param {number|string} folderId 收藏夹ID
+ * @param {'up'|'down'} direction 排序方向
+ */
+export const moveCollectionFolder = (folderId, direction) => {
+  return request.put(`/api/v1/user/collection/folders/${folderId}/move`, null, { params: { direction } })
+}
