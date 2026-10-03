@@ -32,8 +32,8 @@ public class CodingAnswerVO implements Serializable {
     /** 最新连续天数（仅当日一题答对时触发打卡；练习不回填） */
     private Integer continuousDays;
 
-    /** 来源文章ID（答错时的阅读入口） */
-    private Long sourceArticleId;
+    /** 来源文章ID（答错时的阅读入口）；字符串下发避免雪花ID在 JS 侧精度丢失 */
+    private String sourceArticleId;
 
     /** 来源文章标题 */
     private String sourceArticleTitle;

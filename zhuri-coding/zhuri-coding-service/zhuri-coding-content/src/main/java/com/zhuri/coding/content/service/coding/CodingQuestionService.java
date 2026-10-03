@@ -34,9 +34,10 @@ public interface CodingQuestionService {
     /**
      * 题库列表（练习）：分页返回上架题目，不含答案；登录用户标记已答。
      *
+     * @param articleId 按来源文章过滤（可为 null；文章详情页"相关练习"反向入口用）
      * @param userId 当前登录用户（可为 null，匿名浏览）
      */
-    ResponseResult questions(Integer difficulty, Integer page, Integer size, Integer userId);
+    ResponseResult questions(Integer difficulty, Long articleId, Integer page, Integer size, Integer userId);
 
     /**
      * 我的编码统计：连续天数（签到体系）+ 作答总数/正确率/领域分布 + 今日作答态。

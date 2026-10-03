@@ -36,8 +36,8 @@ public class CodingQuestionVO implements Serializable {
     /** 来源：0平台 1文章AI生成 2作者投稿 */
     private Integer sourceType;
 
-    /** 来源文章ID（解析后可跳转阅读，双向导流） */
-    private Long sourceArticleId;
+    /** 来源文章ID（解析后可跳转阅读，双向导流）；字符串下发避免雪花ID在 JS 侧精度丢失 */
+    private String sourceArticleId;
 
     /** 来源文章标题 */
     private String sourceArticleTitle;

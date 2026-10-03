@@ -443,7 +443,7 @@ class CodingQuestionServiceImplTest {
         answered.setQuestionId(9L);
         when(recordMapper.selectList(any())).thenReturn(List.of(answered));
 
-        ResponseResult result = service.questions(null, 1, 10, USER_ID);
+        ResponseResult result = service.questions(null, null, 1, 10, USER_ID);
 
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) result.getData();
@@ -454,6 +454,26 @@ class CodingQuestionServiceImplTest {
         assertFalse(list.get(1).getAnswered());
         assertNull(list.get(0).getCorrectAnswer());
         verify(recordMapper).selectList(any());
+    }
+
+    @Test
+    @DisplayName("questions - 按来源文章过滤（文章详情页相关练习反向入口）")
+    void testQuestionsFilterByArticle() {
+        Page<ApCodingQuestion> page = new Page<>(1, 3);
+        page.setRecords(List.of(question(9L, 1, 1, "[0]")));
+        page.setTotal(1);
+        doReturn(page).when(questionMapper).selectPage(any(), any());
+
+        ResponseResult result = service.questions(null, 555L, 1, 3, null);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) result.getData();
+        @SuppressWarnings("unchecked")
+        List<CodingQuestionVO> list = (List<CodingQuestionVO>) data.get("list");
+        assertEquals(1, list.size());
+        assertEquals(1L, data.get("total"));
+        assertFalse(list.get(0).getAnswered());
+        verify(recordMapper, never()).selectList(any());
     }
 
     // ==================== 我的统计 ====================

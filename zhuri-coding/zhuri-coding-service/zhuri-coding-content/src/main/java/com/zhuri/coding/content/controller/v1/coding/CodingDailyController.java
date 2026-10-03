@@ -75,15 +75,18 @@ public class CodingDailyController {
     }
 
     /**
-     * 题库列表（公开只读，不含答案；登录时标记已答）：练习入口
-     * GET /api/v1/coding/questions?difficulty=1&page=1&size=10
+     * 题库列表（公开只读，不含答案；登录时标记已答）：练习入口，
+     * 支持按难度与来源文章过滤（文章详情页"相关练习"反向入口）
+     * GET /api/v1/coding/questions?difficulty=1&articleId=123&page=1&size=10
      */
     @GetMapping("/questions")
     public ResponseResult questions(@RequestParam(value = "difficulty", required = false) Integer difficulty,
+                                    @RequestParam(value = "articleId", required = false) Long articleId,
                                     @RequestParam(value = "page", defaultValue = "1") Integer page,
                                     @RequestParam(value = "size", defaultValue = "10") Integer size) {
         ApUser user = AppThreadLocalUtil.getUser();
-        return questionService.questions(difficulty, page, size, user == null ? null : user.getId());
+        return questionService.questions(difficulty, articleId, page, size,
+            user == null ? null : user.getId());
     }
 
     /**

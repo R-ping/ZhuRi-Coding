@@ -288,7 +288,7 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
     }
 
     @Override
-    public ResponseResult questions(Integer difficulty, Integer page, Integer size, Integer userId) {
+    public ResponseResult questions(Integer difficulty, Long articleId, Integer page, Integer size, Integer userId) {
         int pageNo = page == null || page < 1 ? 1 : page;
         int pageSize = size == null || size < 1 || size > 50 ? 10 : size;
 
@@ -296,6 +296,10 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         wrapper.eq(ApCodingQuestion::getStatus, ApCodingQuestion.STATUS_PUBLISHED);
         if (isValidDifficulty(difficulty)) {
             wrapper.eq(ApCodingQuestion::getDifficulty, difficulty);
+        }
+        // 来源文章过滤：文章详情页"相关练习"反向入口（题目 ←→ 文章双向导流）
+        if (articleId != null) {
+            wrapper.eq(ApCodingQuestion::getSourceArticleId, articleId);
         }
         wrapper.orderByDesc(ApCodingQuestion::getId);
         IPage<ApCodingQuestion> result = questionMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
@@ -498,7 +502,7 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         try {
             ApArticle article = articleMapper.selectById(articleId);
             if (article != null && article.isPublished()) {
-                vo.setSourceArticleId(articleId);
+                vo.setSourceArticleId(String.valueOf(articleId));
                 vo.setSourceArticleTitle(article.getTitle());
             }
         } catch (Exception e) {
@@ -514,7 +518,7 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         try {
             ApArticle article = articleMapper.selectById(articleId);
             if (article != null && article.isPublished()) {
-                vo.setSourceArticleId(articleId);
+                vo.setSourceArticleId(String.valueOf(articleId));
                 vo.setSourceArticleTitle(article.getTitle());
             }
         } catch (Exception e) {

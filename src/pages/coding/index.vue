@@ -114,6 +114,12 @@
                         </div>
                     </div>
 
+                    <!-- 来源文章过滤（文章详情页"相关练习"跳转而来） -->
+                    <div class="filter-banner" v-if="articleFilter">
+                        <span class="filter-text">仅显示本文相关题目</span>
+                        <span class="filter-clear" @click="clearArticleFilter">查看全部题目</span>
+                    </div>
+
                     <div v-if="questionList.length === 0" class="loading">暂无题目</div>
                     <template v-else>
                         <div v-for="q in questionList" :key="q.id" class="practice-item">
@@ -350,6 +356,9 @@
                 practiceResult: null,
                 practiceStartAt: null,
                 submittingPractice: false,
+                // 来源文章过滤（文章详情页 -> /coding?articleId=xx&questionId=yy 反向入口）
+                articleFilter: null,
+                pendingQuestionId: null,
 
                 rankingPeriod: 'day',
                 ranking: [],
@@ -398,6 +407,10 @@
             }
         },
         mounted() {
+            // 文章详情页反向入口：/coding?articleId=xx&questionId=yy（ID 均为字符串，避免雪花ID精度丢失）
+            const query = this.$route.query || {}
+            this.articleFilter = query.articleId ? String(query.articleId) : null
+            this.pendingQuestionId = query.questionId ? String(query.questionId) : null
             this.loadToday()
             this.loadRanking()
             this.loadQuestions()
@@ -525,10 +538,14 @@
                     if (this.practiceDifficulty) {
                         params.difficulty = this.practiceDifficulty
                     }
+                    if (this.articleFilter) {
+                        params.articleId = this.articleFilter
+                    }
                     const res = await getCodingQuestions(params)
                     if (res && res.code === 200 && res.data) {
                         this.questionList = res.data.list || []
                         this.totalQuestions = res.data.total || 0
+                        this.autoOpenPendingQuestion()
                     } else {
                         this.questionList = []
                         this.totalQuestions = 0
@@ -537,6 +554,38 @@
                     this.questionList = []
                     this.totalQuestions = 0
                 }
+            },
+            /** 从文章页带 questionId 进入时，自动展开该题并滚动到练习区 */
+            autoOpenPendingQuestion() {
+                if (!this.pendingQuestionId) {
+                    return
+                }
+                const questionId = this.pendingQuestionId
+                this.pendingQuestionId = null
+                const target = this.questionList.find((item) => String(item.id) === questionId)
+                if (!target) {
+                    return
+                }
+                if (this.practiceActive && this.practiceActive.id === target.id) {
+                    return
+                }
+                this.togglePractice(target)
+                this.$nextTick(() => {
+                    const el = document.querySelector('.practice-card')
+                    if (el && el.scrollIntoView) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }
+                })
+            },
+            /** 清除来源文章过滤，回到完整题库 */
+            clearArticleFilter() {
+                this.articleFilter = null
+                this.page = 1
+                const query = this.$route.query || {}
+                if (query.articleId || query.questionId) {
+                    this.$router.replace({ path: '/coding' }).catch(() => {})
+                }
+                this.loadQuestions()
             },
             switchPracticeDifficulty(value) {
                 if (this.practiceDifficulty === value) {
@@ -586,6 +635,11 @@
 
             // ============ 提交作答（当日题 / 练习共用） ============
             async submitAnswer(isDaily) {
+                if (!this.isLoggedIn) {
+                    toast('登录后才能提交答案', 2)
+                    this.showLogin()
+                    return
+                }
                 const question = isDaily ? this.todayQuestion : this.practiceActive
                 const answers = isDaily ? this.selected.slice() : this.practiceSelected.slice()
                 if (!question || !question.id || answers.length === 0) {
@@ -701,9 +755,10 @@
                 this.supplyVisible = true
             },
             async handleGenerate() {
-                const articleId = Number(this.genArticleId)
-                if (!articleId) {
-                    toast('请输入文章 ID', 2)
+                // 文章ID 为雪花长整型：按字符串传递，避免 Number 转换丢精度
+                const articleId = this.genArticleId ? String(this.genArticleId).trim() : ''
+                if (!articleId || !/^\d+$/.test(articleId)) {
+                    toast('请输入正确的文章 ID', 2)
                     return
                 }
                 this.generating = true
@@ -774,7 +829,8 @@
                         explanation: form.explanation ? form.explanation.trim() : null,
                         difficulty: form.difficulty,
                         tags: form.tags ? form.tags.trim() : null,
-                        articleId: form.articleId ? Number(form.articleId) : null
+                        // 文章ID 为雪花长整型：按字符串传递，避免 Number 转换丢精度
+                        articleId: form.articleId ? String(form.articleId).trim() : null
                     }
                     const res = await submitCodingQuestion(payload)
                     if (res && res.code === 200) {
@@ -1163,6 +1219,31 @@
     }
 
     /* 题库练习 */
+    .filter-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #F0F7FF;
+        border-radius: 6PX;
+        padding: 8PX 12PX;
+        margin-bottom: 10PX;
+    }
+
+    .filter-text {
+        font-size: 13PX;
+        color: #1E80FF;
+    }
+
+    .filter-clear {
+        font-size: 13PX;
+        color: #86909C;
+        cursor: pointer;
+    }
+
+    .filter-clear:hover {
+        color: #1E80FF;
+    }
+
     .practice-item {
         border-bottom: 1PX solid #f2f3f5;
     }
