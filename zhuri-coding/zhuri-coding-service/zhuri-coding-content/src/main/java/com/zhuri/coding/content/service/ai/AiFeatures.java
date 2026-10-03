@@ -49,6 +49,12 @@ public final class AiFeatures {
     public static final String QUESTION_GENERATE = "question_generate";
     /** 每日一题·题库质检：作者投稿的一次性 AI 质检（题干清晰/答案唯一/选项互斥） */
     public static final String QUESTION_AUDIT = "question_audit";
+    /** 模拟面试·提纲生成（开面时一次：主题 + 主问题 + 关键考点清单） */
+    public static final String INTERVIEW_PLAN = "interview_plan";
+    /** 模拟面试·逐轮追问判定（流式：控制行 FOLLOWUP/NEXT + 追问文本；实时性优先走 flash） */
+    public static final String INTERVIEW_TURN = "interview_turn";
+    /** 模拟面试·报告生成（逐题三维等级 + 覆盖清单 + 总评建议；质量优先走默认强模型） */
+    public static final String INTERVIEW_REPORT = "interview_report";
     /** 其他/未归类（计量兜底，出现即说明有新调用点未归类） */
     public static final String OTHER = "other";
 }

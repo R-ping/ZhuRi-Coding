@@ -201,6 +201,10 @@ ai:
       # 每日一题题库供给：出题与质检均为低成本批处理场景 → flash 快模型
       question_generate: qwenFlashChatModel
       question_audit: qwenFlashChatModel
+      # 模拟面试：提纲生成与逐轮追问走 flash（流式实时性 + 成本）；报告不在此映射，
+      # 走默认强模型（报告质量优先，可由评审调整）
+      interview_plan: qwenFlashChatModel
+      interview_turn: qwenFlashChatModel
     pricing-prompt:
       qwen3.7-max: 0.012          # 当前主模型（DASH_SCOPE_MODEL 默认值）
       qwen3.8-27b: 0.003          # 视觉/长文场景
@@ -311,6 +315,14 @@ app:
   # 本地开发为空 → 输出相对路径便于调试；正式部署用环境变量 SEO_BASE_URL 覆盖，如 https://www.zhuri-coding.com
   seo:
     base-url: ${SEO_BASE_URL:}
+  # 模拟面试（Coding 延展第三层）可调参数
+  coding:
+    interview:
+      question-count: 5            # 主题数（每主题 1 主问题 + ≤followup-max 次追问）
+      followup-max: 1              # 每主题最大追问次数（服务端强制，不依赖模型自觉）
+      duration-minutes: 45         # 总限时（分钟）
+      daily-limit: 3               # 每日场次上限（0=不限；进行中与已完成计入，已过期不计）
+      report-timeout-seconds: 30   # 报告生成超时（超时按“结构化失败”降级，可重试）
   # 发布预检「显式工作流」可调参数（增量2：失败自愈 + 分级降级）
   ai-precheck:
     # 单专家一次 LLM 调用超时上限（毫秒，含重试各次）

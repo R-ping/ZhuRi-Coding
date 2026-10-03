@@ -20,6 +20,7 @@
                     <span class="chip-label">已答题数</span>
                 </div>
                 <button class="supply-btn" @click="goAbilityProfile">能力档案</button>
+                <button class="supply-btn" @click="goInterview">模拟面试</button>
                 <button class="supply-btn" @click="openSupplyDialog">出题投稿</button>
             </div>
         </div>
@@ -426,6 +427,10 @@
             // 能力档案入口（第二层）：本人档案 + 隐私设置 + 分享
             goAbilityProfile() {
                 this.$router.push('/coding/ability').catch(() => {})
+            },
+            // 模拟面试入口（第三层）：方向/难度 → 逐轮流式问答 → 面试报告
+            goInterview() {
+                this.$router.push('/coding/interview').catch(() => {})
             },
             difficultyLabel(value) {
                 const found = this.difficultyOptions.find((item) => item.value === value)
