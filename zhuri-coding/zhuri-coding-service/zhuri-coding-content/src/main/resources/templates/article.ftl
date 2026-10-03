@@ -29,6 +29,7 @@
         "description": "<#if metaDescription?has_content>${metaDescription?j_string}<#else></#if>",
 <#if coverImage?has_content>        "image": "${coverImage?j_string}",</#if>
 <#if publishTimeIso?has_content>        "datePublished": "${publishTimeIso}",</#if>
+<#if updateTimeIso?has_content>        "dateModified": "${updateTimeIso}",</#if>
 <#if authorName?has_content>        "author": { "@type": "Person", "name": "${authorName?j_string}" },</#if>
         "publisher": { "@type": "Organization", "name": "逐日 Coding" },
         "mainEntityOfPage": "<#if seoBaseUrl?has_content>${seoBaseUrl?j_string}<#else></#if>/content/article/${articleId?c}"
@@ -151,6 +152,35 @@
         .publish-time {
             font-size: 13px;
             color: #8a919f;
+        }
+        .update-time {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 13px;
+            color: #1e80ff;
+        }
+        .update-time.has-note {
+            cursor: pointer;
+            text-decoration: underline dotted;
+            text-underline-offset: 3px;
+        }
+        .update-note {
+            margin-top: 8px;
+            margin-left: 48px;
+            padding: 8px 12px;
+            border-left: 3px solid #1e80ff;
+            background: #f2f6ff;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #4a5568;
+            line-height: 1.6;
+        }
+        body.dark .update-time { color: #3b82f6; }
+        body.dark .update-note {
+            background: #1a2233;
+            border-left-color: #3b82f6;
+            color: #cbd5e1;
         }
         .follow-btn {
             margin-left: 16px;
@@ -3025,6 +3055,13 @@
                             <span class="publish-time">
                                 <#if publishTime??>${publishTime?string('yyyy-MM-dd HH:mm')}</#if>
                             </span>
+                            <#if hasUpdate?? && hasUpdate>
+                            <span class="meta-divider">·</span>
+                            <span class="update-time<#if updateNote?has_content> has-note</#if>"<#if updateNote?has_content> onclick="var b=document.getElementById('updateNoteBox');b.style.display=(b.style.display==='block'||b.style.display==='')?'none':'block'" title="点击查看更新说明"<#else> title="文章已于近期实质更新"</#if>>
+                                <svg class="meta-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M12 8l6 8H6z" fill="currentColor"/></svg>
+                                更新于 <#if updateTime??>${updateTime?string('yyyy-MM-dd HH:mm')}</#if>
+                            </span>
+                            </#if>
                             <span class="meta-divider">·</span>
                             <span class="read-count">
                                 <svg class="meta-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" fill="#8a919f"/></svg>
@@ -3043,6 +3080,9 @@
                             </span>
                             </#if>
                         </div>
+                        <#if hasUpdate?? && hasUpdate && updateNote?has_content>
+                        <div class="update-note" id="updateNoteBox" style="display:none">${updateNote?html}</div>
+                        </#if>
                     </div>
                     <button class="follow-btn<#if relation?? && relation.isfollow?? && relation.isfollow> active</#if>" id="followBtn">
                         <#if relation?? && relation.isfollow?? && relation.isfollow>已关注<#else>+ 关注</#if>

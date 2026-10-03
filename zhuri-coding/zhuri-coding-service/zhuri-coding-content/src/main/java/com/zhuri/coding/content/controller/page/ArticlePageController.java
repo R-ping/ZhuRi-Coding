@@ -103,6 +103,13 @@ public class ArticlePageController {
         // 作者ID（用于正文尾部作者卡片：拉取作者信息、跳转作者主页）
         model.addAttribute("authorId", article.getAuthorId() != null ? article.getAuthorId() : 0L);
         model.addAttribute("publishTime", article.getPublishTime());
+        // 时效印章（F2）：仅当存在"实质更新"（update_time 非空且晚于 publish_time，异常数据以发布为准）才展示"更新于"
+        Date updateTime = article.getUpdateTime();
+        boolean hasUpdate = updateTime != null && article.getPublishTime() != null
+                && updateTime.after(article.getPublishTime());
+        model.addAttribute("hasUpdate", hasUpdate);
+        model.addAttribute("updateTime", updateTime);
+        model.addAttribute("updateNote", nullSafe(article.getUpdateNote()));
         model.addAttribute("readCount", article.getViews() != null ? article.getViews() : 0);
         // 正文纯文本只清洗一次：阅读时长与 meta description 共用，避免同一请求内重复执行全文正则
         String plainContent = plainText(content);
@@ -119,6 +126,8 @@ public class ArticlePageController {
         model.addAttribute("metaDescription", buildMetaDescription(article.getSummary(), plainContent));
         model.addAttribute("coverImage", article.getCoverImage() != null ? article.getCoverImage() : "");
         model.addAttribute("publishTimeIso", toIso(article.getPublishTime()));
+        // dateModified：有实质更新时输出，否则为空（模板仅在 scene 存在时注入，兼顾 datePublished/dateModified 一致）
+        model.addAttribute("updateTimeIso", toIso(updateTime));
 
         // 3. 补充作者信息：逐力值等级（创作等级）、职位、公司、文章数、粉丝数
         fillAuthorExtras(article, model);
