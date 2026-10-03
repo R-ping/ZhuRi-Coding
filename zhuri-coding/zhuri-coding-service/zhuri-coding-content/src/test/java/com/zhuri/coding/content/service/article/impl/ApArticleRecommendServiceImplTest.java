@@ -97,6 +97,9 @@ class ApArticleRecommendServiceImplTest {
         // 曝光/行为闭环（负反馈）
         ReflectionTestUtils.setField(recommendService, "exposureWindowDays", 3);
         ReflectionTestUtils.setField(recommendService, "exposurePenaltyMax", 0.10);
+        // 内容时效更新回流（F3）
+        ReflectionTestUtils.setField(recommendService, "updateArticleRatio", 0.3);
+        ReflectionTestUtils.setField(recommendService, "refreshIntervalDays", 30);
     }
 
     @AfterEach
@@ -554,5 +557,125 @@ class ApArticleRecommendServiceImplTest {
         assertEquals(4.0, w.get("java"));
         // 未命中 → 回源计算 + 写入缓存（带 TTL）
         org.mockito.Mockito.verify(bucket).set(any(), anyLong(), any());
+    }
+
+    // ---------- F3 内容时效更新回流：识别 + 占比上限 + 30 天回流去重 ----------
+
+    private ApArticle updatedArticle(Long id, String tag, Date publishTime, Date updateTime, int score) {
+        ApArticle a = article(id, tag, 0, 0, 0, 0, score);
+        a.setPublishTime(publishTime);
+        a.setUpdateTime(updateTime);
+        return a;
+    }
+
+    private Date daysAgo(int days) {
+        return new Date(System.currentTimeMillis() - days * 86400000L);
+    }
+
+    private boolean inviteIsUpdateRefreshed(ApArticle a, Date windowStart) {
+        return (Boolean) ReflectionTestUtils.invokeMethod(recommendService, "isUpdateRefreshed", a, windowStart);
+    }
+
+    @Test
+    @DisplayName("F3 isUpdateRefreshed：仅发布超窗且更新在窗内的近更新旧文才算更新回流")
+    void isUpdateRefreshedScenarios() {
+        Date windowStart = daysAgo(7);
+        // 发布 20 天前、更新 2 天前 → 更新回流
+        assertTrue(inviteIsUpdateRefreshed(updatedArticle(1L, "a", daysAgo(20), daysAgo(2), 0), windowStart));
+        // 发布 2 天前（在窗内）→ 属正常新发布，不占更新回流比例
+        assertFalse(inviteIsUpdateRefreshed(updatedArticle(2L, "b", daysAgo(2), daysAgo(1), 0), windowStart));
+        // 有 update 但早于 publish（数据异常）→ 不算
+        assertFalse(inviteIsUpdateRefreshed(updatedArticle(3L, "c", daysAgo(10), daysAgo(20), 0), windowStart));
+        // 无 updateTime → 不算
+        assertFalse(inviteIsUpdateRefreshed(article(4L, "d", 0, 0, 0, 0, 0), windowStart));
+    }
+
+    @Test
+    @DisplayName("F3 computeUpdateCap：混合池按 size×ratio，全更新池放开上限，ratio<=0 全放行")
+    void computeUpdateCapScenarios() {
+        List<ApArticle> mixed = new ArrayList<>();
+        for (long i = 1; i <= 7; i++) {
+            mixed.add(updatedArticle(i, "u" + i, daysAgo(20), daysAgo(2), 0));
+        }
+        mixed.add(article(101L, "n1", 0, 0, 0, 0, 0));
+        mixed.add(article(102L, "n2", 0, 0, 0, 0, 0));
+        mixed.add(article(103L, "n3", 0, 0, 0, 0, 0));
+        java.util.Set<Long> eligible = new java.util.HashSet<>(List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L));
+
+        Integer cap = ReflectionTestUtils.invokeMethod(recommendService, "computeUpdateCap", mixed, eligible);
+        // size=10, 更新占比 0.3 → round(10×0.3)=3
+        assertEquals(Integer.valueOf(3), cap);
+
+        // 全更新池（newCount=0）→ 放开上限（返回全部更新回流数）
+        List<ApArticle> allUp = new ArrayList<>();
+        for (long i = 1; i <= 4; i++) {
+            allUp.add(updatedArticle(i, "u" + i, daysAgo(20), daysAgo(2), 0));
+        }
+        java.util.Set<Long> allEligible = new java.util.HashSet<>(List.of(1L, 2L, 3L, 4L));
+        Integer capAllUp = ReflectionTestUtils.invokeMethod(recommendService, "computeUpdateCap", allUp, allEligible);
+        assertEquals(Integer.valueOf(4), capAllUp);
+
+        // ratio<=0 视为不启用上限 → 全放行
+        ReflectionTestUtils.setField(recommendService, "updateArticleRatio", 0);
+        Integer capDisabled = ReflectionTestUtils.invokeMethod(recommendService, "computeUpdateCap", mixed, eligible);
+        ReflectionTestUtils.setField(recommendService, "updateArticleRatio", 0.3);
+        assertEquals(Integer.valueOf(7), capDisabled);
+    }
+
+    @Test
+    @DisplayName("F3 更新回流占比上限：7更新+3新文，返回序仅含3篇更新回流")
+    void updateRefreshCapLimitsOutput() {
+        // 关闭作者上限，隔离出"更新占比"这一约束（标签各不相同，也无标签配额干扰）
+        ReflectionTestUtils.setField(recommendService, "maxPerAuthor", 0);
+        List<ApArticle> cands = new ArrayList<>();
+        for (long i = 1; i <= 7; i++) {
+            cands.add(updatedArticle(i, "u" + i, daysAgo(20), daysAgo(2), 0));
+        }
+        cands.add(article(101L, "n1", 0, 0, 0, 0, 0));
+        cands.add(article(102L, "n2", 0, 0, 0, 0, 0));
+        cands.add(article(103L, "n3", 0, 0, 0, 0, 0));
+        when(apArticleMapper.selectRecommendCandidates(any(), anyInt(), any(), anyInt(), any()))
+                .thenReturn(cands);
+
+        Map<?, ?> data = (Map<?, ?>) recommendService.recommendAll(dto(50, 0, "__all__", "recommend")).getData();
+        List<?> list = (List<?>) data.get("list");
+        assertEquals(6, list.size()); // 3 篇新文 + 3 篇被允许回流的更新文
+        long refreshCount = list.stream()
+                .filter(m -> Long.parseLong(String.valueOf(((Map<?, ?>) m).get("id"))) <= 7)
+                .count();
+        assertEquals(3, refreshCount);
+    }
+
+    @Test
+    @DisplayName("F3 30 天回流去重：冷却期内（Redis 有戳记）的更新回流文章被剔除")
+    void updateRefreshCooldownDeduped() {
+        org.redisson.api.RedissonClient rc = org.mockito.Mockito.mock(org.redisson.api.RedissonClient.class);
+        org.redisson.api.RBucket bucket = org.mockito.Mockito.mock(org.redisson.api.RBucket.class);
+        org.mockito.Mockito.when(rc.getBucket(anyString())).thenReturn(bucket);
+        org.mockito.Mockito.when(bucket.get()).thenReturn("1"); // 冷却戳记存在
+        ReflectionTestUtils.setField(recommendService, "redissonClient", rc);
+
+        List<ApArticle> cands = new ArrayList<>();
+        cands.add(updatedArticle(1L, "u1", daysAgo(20), daysAgo(2), 0)); // 冷却中 → 应被剔除
+        cands.add(article(5L, "n5", 0, 0, 0, 0, 0));                    // 新发布，不影响
+        java.util.Set<Long> eligible = ReflectionTestUtils.invokeMethod(
+                recommendService, "resolveEligibleRefreshIds", cands, daysAgo(7));
+
+        // 冷却期内的文章 1 已从候选移除，故无可回流文章
+        assertFalse(cands.stream().anyMatch(a -> Long.valueOf(1L).equals(a.getId())));
+        assertTrue(eligible.isEmpty());
+    }
+
+    @Test
+    @DisplayName("F3 lastEffectiveTime：有实质更新取 update_time，否则取 publish_time")
+    void lastEffectiveTimeScenarios() {
+        Date update = daysAgo(2);
+        ApArticle refreshed = updatedArticle(1L, "a", daysAgo(20), update, 0);
+        Date eff = ReflectionTestUtils.invokeMethod(recommendService, "lastEffectiveTime", refreshed);
+        assertEquals(update.getTime(), eff.getTime());
+
+        ApArticle noUpdate = article(2L, "b", 0, 0, 0, 0, 0); // publish=now，无 update
+        Date eff2 = ReflectionTestUtils.invokeMethod(recommendService, "lastEffectiveTime", noUpdate);
+        assertEquals(noUpdate.getPublishTime(), eff2);
     }
 }
