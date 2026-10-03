@@ -3,6 +3,9 @@ package com.zhuri.coding.content.service.article.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +16,7 @@ import com.zhuri.coding.content.mapper.article.ApArticleDraftMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.ArticleAutoScanService;
 import com.zhuri.coding.content.service.article.ArticlePublishExecutor;
+import com.zhuri.coding.content.service.article.ArticleUpdateNotifyService;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import com.zhuri.coding.model.article.pojos.ApArticleDraft;
@@ -49,6 +53,7 @@ class ArticleRevisionServiceImplTest {
     @Mock private ApArticleDraftMapper apArticleDraftMapper;
     @Mock private ArticleAutoScanService articleAutoScanService;
     @Mock private ArticlePublishExecutor articlePublishExecutor;
+    @Mock private ArticleUpdateNotifyService articleUpdateNotifyService;
 
     @InjectMocks
     private ArticleRevisionServiceImpl revisionService;
@@ -213,5 +218,53 @@ class ArticleRevisionServiceImplTest {
             captor.getValue().afterCommit();
             verify(articleAutoScanService).autoScanRevision(ARTICLE_ID);
         }
+    }
+
+    // ==================== applyRevision（实质更新 → 收藏者提醒） ====================
+
+    private ApArticleDraft significantDraft() {
+        ApArticleDraft draft = new ApArticleDraft();
+        draft.setId(DRAFT_ID);
+        draft.setTitle("新标题");
+        draft.setContent("重写后的正文内容");
+        draft.setRevisionSignificant(1);
+        draft.setUpdateNote("适配 Spring Boot 3.5");
+        return draft;
+    }
+
+    private void stubApplyContext(ApArticleDraft draft) {
+        when(apArticleMapper.selectById(ARTICLE_ID))
+                .thenReturn(article(AUTHOR_ID, ApArticle.Status.PUBLISHED.getCode(), DRAFT_ID));
+        when(apArticleDraftMapper.selectById(DRAFT_ID)).thenReturn(draft);
+        // 线上正文不存在 → 走 insert 分支，不与覆盖分支耦合
+        when(apArticleContentMapper.selectOne(any())).thenReturn(null);
+    }
+
+    @Test
+    @DisplayName("applyRevision - 实质更新：刷新 update_time 并登记收藏者提醒（幂等键含更新时间）")
+    void testApplyRevisionNotifiesCollectors() {
+        ApArticleDraft draft = significantDraft();
+        stubApplyContext(draft);
+
+        revisionService.applyRevision(ARTICLE_ID);
+
+        ArgumentCaptor<ApArticle> patch = ArgumentCaptor.forClass(ApArticle.class);
+        verify(apArticleMapper).updateById(patch.capture());
+        assertNotNull(patch.getValue().getUpdateTime());
+        assertEquals("适配 Spring Boot 3.5", patch.getValue().getUpdateNote());
+        // 提醒事件登记：携带本次更新时间，后续合法再更新不会被幂等键误判为重复
+        verify(articleUpdateNotifyService).notifyCollectors(eq(ARTICLE_ID), anyLong());
+    }
+
+    @Test
+    @DisplayName("applyRevision - 非实质更新（改错别字）：只覆盖正文，不发提醒")
+    void testApplyRevisionNotSignificantNoNotify() {
+        ApArticleDraft draft = significantDraft();
+        draft.setRevisionSignificant(0);
+        stubApplyContext(draft);
+
+        revisionService.applyRevision(ARTICLE_ID);
+
+        verify(articleUpdateNotifyService, never()).notifyCollectors(anyLong(), anyLong());
     }
 }

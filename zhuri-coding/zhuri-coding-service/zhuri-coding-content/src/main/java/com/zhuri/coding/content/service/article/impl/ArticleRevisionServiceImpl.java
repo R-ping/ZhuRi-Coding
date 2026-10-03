@@ -8,6 +8,7 @@ import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.ArticleAutoScanService;
 import com.zhuri.coding.content.service.article.ArticlePublishExecutor;
 import com.zhuri.coding.content.service.article.ArticleRevisionService;
+import com.zhuri.coding.content.service.article.ArticleUpdateNotifyService;
 import com.zhuri.coding.content.utils.ArticleRevisionDiff;
 import com.zhuri.coding.content.utils.MarkdownUtils;
 import com.zhuri.coding.model.article.pojos.ApArticle;
@@ -43,6 +44,7 @@ public class ArticleRevisionServiceImpl implements ArticleRevisionService {
     private final ApArticleDraftMapper apArticleDraftMapper;
     private final ArticleAutoScanService articleAutoScanService;
     private final ArticlePublishExecutor articlePublishExecutor;
+    private final ArticleUpdateNotifyService articleUpdateNotifyService;
 
     /** 实质更新阈值：新旧正文差异率（4-gram Jaccard）达到该值即视为实质更新 */
     @Value("${app.article.revision.significant-threshold:0.15}")
@@ -239,8 +241,10 @@ public class ArticleRevisionServiceImpl implements ArticleRevisionService {
             hasFields = true;
         }
         // ③ 达实质更新阈值：刷新最后更新时间与更新说明（供详情页时效印章）
+        Date updateTime = null;
         if (significant) {
-            patch.setUpdateTime(new Date());
+            updateTime = new Date();
+            patch.setUpdateTime(updateTime);
             hasFields = true;
             if (draft.getUpdateNote() != null) {
                 patch.setUpdateNote(draft.getUpdateNote());
@@ -254,7 +258,13 @@ public class ArticleRevisionServiceImpl implements ArticleRevisionService {
         clearPendingRevision(articleId);
         apArticleDraftMapper.deleteById(draft.getId());
 
-        // ⑤ 同步 ES：事务提交后执行，避免 search 端反向拉取到未提交的旧正文
+        // ⑤ 实质更新：登记「收藏者更新提醒」事件（本地消息表锚点，事务提交后异步投递，
+        //     失败走既有重试/死信链路，不影响修订生效）。幂等键含更新时间，后续的合法再更新不会被误判为重复。
+        if (significant && updateTime != null) {
+            articleUpdateNotifyService.notifyCollectors(articleId, updateTime.getTime());
+        }
+
+        // ⑥ 同步 ES：事务提交后执行，避免 search 端反向拉取到未提交的旧正文
         syncToEsAfterCommit(articleId);
         log.info("修订已生效, articleId={}, draftId={}, significant={}", articleId, draft.getId(), significant);
     }

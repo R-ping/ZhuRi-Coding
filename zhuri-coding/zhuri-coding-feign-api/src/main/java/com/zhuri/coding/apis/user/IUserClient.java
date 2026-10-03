@@ -35,4 +35,16 @@ public interface IUserClient {
      */
     @GetMapping("/api/v1/user/feign/basic-info/batch")
     ResponseResult getBasicInfoBatch(@RequestParam("userIds") List<Long> userIds);
+
+    /**
+     * 批量过滤有效用户（status=1，未注销/未锁定）。
+     *
+     * <p>给"向一批用户批量投递"的场景在投递前剔除已注销账号用；注销是软删（行为数据仍在），
+     * 调用方无法自行判断，必须回用户服务确认。</p>
+     *
+     * @param userIds 待校验的用户 ID 列表；服务端会去重并限量，超出的忽略
+     * @return data 为有效用户 ID 列表；查不到的 id 视为无效
+     */
+    @GetMapping("/api/v1/user/feign/valid-ids")
+    ResponseResult getValidUserIds(@RequestParam("userIds") List<Long> userIds);
 }

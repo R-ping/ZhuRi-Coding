@@ -120,6 +120,21 @@ public class NotificationController {
     }
 
     /**
+     * Feign内部接口：创建「收藏文章更新」聚合提醒（同一用户同一天合并为一条）
+     */
+    @PostMapping("/feign/create-collect-update")
+    public ResponseResult createCollectUpdate(@RequestBody Map<String, Object> params) {
+        Object userIdObj = params.get("userId");
+        Object dayKeyObj = params.get("dayKey");
+        if (userIdObj == null || dayKeyObj == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "参数不能为空");
+        }
+        String content = params.get("content") != null ? params.get("content").toString() : null;
+        return notificationService.createCollectUpdateNotification(
+                Long.valueOf(userIdObj.toString()), dayKeyObj.toString(), content);
+    }
+
+    /**
      * Feign内部接口：发送活动/促销系统通知
      */
     @PostMapping("/feign/activity")

@@ -176,6 +176,8 @@
             color: #4a5568;
             line-height: 1.6;
         }
+        /* 站内信跳转锚点：链接以 #updateNoteBox 结尾时，说明框自动展开（覆盖内联的 display:none） */
+        .update-note:target { display: block !important; }
         body.dark .update-time { color: #3b82f6; }
         body.dark .update-note {
             background: #1a2233;
@@ -3057,7 +3059,7 @@
                             </span>
                             <#if hasUpdate?? && hasUpdate>
                             <span class="meta-divider">·</span>
-                            <span class="update-time<#if updateNote?has_content> has-note</#if>"<#if updateNote?has_content> onclick="var b=document.getElementById('updateNoteBox');b.style.display=(b.style.display==='block'||b.style.display==='')?'none':'block'" title="点击查看更新说明"<#else> title="文章已于近期实质更新"</#if>>
+                            <span class="update-time<#if updateNote?has_content> has-note</#if>" id="updateStamp"<#if updateNote?has_content> onclick="var b=document.getElementById('updateNoteBox');b.style.display=(b.style.display==='block'||b.style.display==='')?'none':'block'" title="点击查看更新说明"<#else> title="文章已于近期实质更新"</#if>>
                                 <svg class="meta-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M12 8l6 8H6z" fill="currentColor"/></svg>
                                 更新于 <#if updateTime??>${updateTime?string('yyyy-MM-dd HH:mm')}</#if>
                             </span>

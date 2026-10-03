@@ -352,6 +352,14 @@ app:
     index-reconcile-interval-ms: ${ARTICLE_RECONCILE_INTERVAL_MS:3600000}
     # 首次执行延迟（毫秒，避开启动高峰）
     index-reconcile-initial-delay-ms: ${ARTICLE_RECONCILE_INITIAL_DELAY_MS:60000}
+    # 收藏者更新提醒（F5）：文章实质更新后向收藏者发站内信，事务提交后异步投递、失败走 Outbox 重试
+    update-notify:
+      # 总开关
+      enabled: ${ARTICLE_UPDATE_NOTIFY_ENABLED:true}
+      # 同一文章对同一用户的提醒间隔（天）：7 天内只提醒一次，避免连续微调反复打扰
+      dedup-days: ${ARTICLE_UPDATE_NOTIFY_DEDUP_DAYS:7}
+      # 收藏者分批拉取/投递的批大小：大收藏量文章按收藏时间由近及远分批，避免一次性载入
+      batch-size: ${ARTICLE_UPDATE_NOTIFY_BATCH_SIZE:200}
 
 # 动态线程池（dynamic-tp）：AiAsyncConfig 中四个 @DynamicTp 执行器的运行时参数。
 #
