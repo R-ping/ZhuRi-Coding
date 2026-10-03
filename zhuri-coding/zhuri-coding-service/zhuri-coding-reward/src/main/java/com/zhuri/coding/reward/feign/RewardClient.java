@@ -83,6 +83,20 @@ public class RewardClient implements IRewardClient {
     }
 
     /**
+     * 幂等完成今日签到（每日一题答对时由内容服务内部调用；已签到/限流不视为错误）
+     */
+    @PostMapping("/user/{userId}/checkin/complete")
+    @Override
+    public ResponseResult completeCheckin(@PathVariable("userId") Long userId) {
+        ResponseResult done = checkinService.doCheckin(userId);
+        if (done != null && done.getCode() != null && done.getCode() != 200
+            && done.getCode() != 400 && done.getCode() != 429) {
+            return done;
+        }
+        return checkinService.getContinuousCheckinDays(userId);
+    }
+
+    /**
      * 校验用户是否持有指定虚拟道具并返回折扣比例（课程下单前调用）
      */
     @GetMapping("/user/{userId}/virtual-asset/hold")

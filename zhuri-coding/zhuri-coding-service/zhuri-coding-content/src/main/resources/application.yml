@@ -198,6 +198,9 @@ ai:
       appeal_audit: qwenFlashChatModel
       # 详情页 AI 摘要：低成本高频、质量要求不高于改写/精排 → flash 快模型（强模型 40-50s 不可接受）
       article_summary: qwenFlashChatModel
+      # 每日一题题库供给：出题与质检均为低成本批处理场景 → flash 快模型
+      question_generate: qwenFlashChatModel
+      question_audit: qwenFlashChatModel
     pricing-prompt:
       qwen3.7-max: 0.012          # 当前主模型（DASH_SCOPE_MODEL 默认值）
       qwen3.8-27b: 0.003          # 视觉/长文场景

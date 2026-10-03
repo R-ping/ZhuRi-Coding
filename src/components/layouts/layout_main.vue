@@ -116,8 +116,12 @@
             </div>
 
             <div class="desktop-container">
-                <div class="desktop-sidebar" v-if="!isUserPage && !isPinsPage && !isCoursePage && !isSearchPage">
+                <div class="desktop-sidebar" v-if="!isUserPage && !isPinsPage && !isCoursePage && !isSearchPage && !isCodingPage">
                     <div class="sidebar-nav">
+                        <div class="nav-item" :class="{ active: isCodingPage }" @click="goToCoding">
+                            <span class="nav-icon">&#xf059;</span>
+                            <span class="nav-text">每日一题</span>
+                        </div>
                         <div class="nav-item" :class="{ active: currentCategory === 'ranking' || isHotPage }" @click="selectCategory('ranking')">
                             <span class="nav-icon">&#xf091;</span>
                             <span class="nav-text">排行榜</span>
@@ -161,11 +165,11 @@
                     </div>
                 </div>
 
-                <div class="desktop-content" :class="{ 'user-page-content': isUserPage, 'search-page-content': isSearchPage }">
+                <div class="desktop-content" :class="{ 'user-page-content': isUserPage, 'search-page-content': isSearchPage, 'coding-page-content': isCodingPage }">
                     <router-view/>
                 </div>
 
-                <div class="desktop-aside" v-if="!isUserPage && !isPinsPage && !isCoursePage && !isSearchPage">
+                <div class="desktop-aside" v-if="!isUserPage && !isPinsPage && !isCoursePage && !isSearchPage && !isCodingPage">
                     <!-- 签到入口 -->
                     <div class="aside-card checkin-card">
                         <div class="greeting-section">
@@ -352,6 +356,9 @@
             },
             isCoursePage() {
                 return this.$route.path.startsWith('/course');
+            },
+            isCodingPage() {
+                return this.$route.path.startsWith('/coding');
             },
             isHotPage() {
                 return this.$route.path === '/hot'
@@ -597,6 +604,10 @@
                 this.currentNav = 'course'
                 this.searchKeyword = ''
                 this.$router.push('/course')
+            },
+            goToCoding() {
+                this.searchKeyword = ''
+                this.$router.push('/coding')
             },
             selectCategory(category) {
                 // 点击当前已处于的频道分栏时，主动触发列表刷新（而非无操作）
@@ -1323,6 +1334,10 @@
         }
 
         .user-page-content {
+            max-width: 100%;
+        }
+
+        .coding-page-content {
             max-width: 100%;
         }
 

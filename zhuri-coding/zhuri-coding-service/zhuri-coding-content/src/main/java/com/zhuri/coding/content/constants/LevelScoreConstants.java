@@ -32,6 +32,7 @@ public final class LevelScoreConstants {
         ACTION_SCORE_MAP.put(LevelScoreActionCode.COLLECT_ARTICLE, 1);
         ACTION_SCORE_MAP.put(LevelScoreActionCode.BROWSE_ARTICLE, 0);
         ACTION_SCORE_MAP.put("browse_course", 0);
+        ACTION_SCORE_MAP.put(LevelScoreActionCode.ANSWER_QUESTION, 3);
     }
 
     /** 行为类型 → 每日次数上限（key 统一引用 LevelScoreActionCode） */
@@ -48,6 +49,7 @@ public final class LevelScoreConstants {
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.COLLECT_ARTICLE, 2);
         DAILY_ACTION_LIMIT.put(LevelScoreActionCode.BROWSE_ARTICLE, 10);
         DAILY_ACTION_LIMIT.put("browse_course", 10);
+        DAILY_ACTION_LIMIT.put(LevelScoreActionCode.ANSWER_QUESTION, 1);
     }
 
     /** 逐力变更类型 → 每日次数上限 */
