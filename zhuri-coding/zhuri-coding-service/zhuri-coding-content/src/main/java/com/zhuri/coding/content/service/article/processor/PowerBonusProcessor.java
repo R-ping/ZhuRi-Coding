@@ -31,6 +31,15 @@ public class PowerBonusProcessor implements ArticleAuditProcessor {
         return true;
     }
 
+    /**
+     * 不参与修订审核：修订不是新发布。逐力值的当日幂等只覆盖"同一天"，跨日修订会重复发放逐力值，
+     * 并可能重复发送"质量优秀"首页推荐通知，故修订审核跳过本处理器。
+     */
+    @Override
+    public boolean acceptRevision() {
+        return false;
+    }
+
     @Override
     public boolean process(ApArticle article, String content, AuditProcessorContext context) {
         Map<String, Object> aiResult = context.getAiAnalysisResult();

@@ -175,6 +175,25 @@ public class ApArticle implements Serializable {
     private Date publishTime;
 
     /**
+     * 最后实质更新时间：仅当已发布文章的修订幅度达到"实质更新"阈值时才刷新，
+     * 供详情页时效印章展示；小改动（如改错别字）走审核但不刷新该字段。
+     */
+    @TableField("update_time")
+    private Date updateTime;
+
+    /**
+     * 更新说明：与 updateTime 一同写入，说明本次实质更新的内容
+     */
+    @TableField("update_note")
+    private String updateNote;
+
+    /**
+     * 待审核修订草稿ID：非空表示该文章有一份修订草稿正在审核中，审核期间线上继续展示旧内容
+     */
+    @TableField("pending_revision_id")
+    private Long pendingRevisionId;
+
+    /**
      * 同步状态
      */
     @TableField("sync_status")

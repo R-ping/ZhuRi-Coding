@@ -3,8 +3,10 @@ package com.zhuri.coding.content.service.article.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.zhuri.coding.common.constants.ArticleConstants;
 import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleDraftMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.ArticleAutoScanService;
+import com.zhuri.coding.content.service.article.ArticleRevisionService;
 import com.zhuri.coding.content.service.article.ArticleTaskService;
 import com.zhuri.coding.content.service.article.AuditRecordService;
 import com.zhuri.coding.content.service.article.processor.ArticleAuditProcessor;
@@ -14,11 +16,14 @@ import com.zhuri.coding.content.service.article.processor.AuditRetryableExceptio
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticle.Status;
 import com.zhuri.coding.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.model.article.pojos.ApArticleDraft;
 import java.util.List;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -54,6 +59,18 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
     private final AuditFailProcessor auditFailProcessor;
     private final ArticleTaskService articleTaskService;
     private final AuditRecordService auditRecordService;
+
+    /** 修订草稿Mapper：修订审核需读取待审草稿正文 */
+    @Autowired
+    private ApArticleDraftMapper apArticleDraftMapper;
+
+    /**
+     * 修订服务：审核通过应用修订 / 驳回放弃修订。
+     * 使用 @Lazy 打破与 ArticleRevisionServiceImpl（其构造器依赖本服务）的循环依赖。
+     */
+    @Autowired
+    @Lazy
+    private ArticleRevisionService articleRevisionService;
 
     /** 辅助环节单阶段最大重试次数（默认3次） */
     @Value("${app.audit.aux-retry-attempts:3}")
@@ -133,6 +150,85 @@ public class ArticleAutoScanServiceImpl implements ArticleAutoScanService {
 
         // 审核通过后：添加到定时发布调度任务
         articleTaskService.addArticleToTask(article.getId(), article.getPublishTime());
+        return CompletableFuture.completedFuture(true);
+    }
+
+    /**
+     * 已发布文章修订的自动审核。
+     *
+     * <p>与 {@link #autoScanArticle} 复用同一套责任链与 {@link #performWithRetry} 重试语义；
+     * 但修订审核的"失败"绝不能把已发布文章下线——因此顶层兜底只放弃本次修订（清空待审指针、
+     * 删除草稿），线上旧内容继续展示，不走 {@link AuditFailProcessor} 的 SUBMIT→FAIL 状态迁移。</p>
+     */
+    @Override
+    @Async
+    public CompletableFuture<Boolean> autoScanRevision(Long articleId) {
+        try {
+            return doAutoScanRevision(articleId);
+        } catch (Exception e) {
+            // 顶层兜底：任何未预期异常都不应影响线上已发布文章，仅放弃本次修订
+            log.error("修订审核出现未预期异常，放弃本次修订, articleId={}", articleId, e);
+            try {
+                articleRevisionService.rejectRevision(articleId);
+            } catch (Exception ex) {
+                log.error("放弃修订（清理待审草稿）失败, articleId={}", articleId, ex);
+            }
+            return CompletableFuture.completedFuture(false);
+        }
+    }
+
+    /**
+     * 修订审核主流程：取待审草稿正文 → 走同一套责任链 → 全通过生效，任一驳回则放弃。
+     */
+    private CompletableFuture<Boolean> doAutoScanRevision(Long articleId) {
+        ApArticle article = apArticleMapper.selectById(articleId);
+        if (article == null) {
+            log.error("ArticleAutoScanServiceImpl-修订审核文章不存在, articleId={}", articleId);
+            return CompletableFuture.completedFuture(false);
+        }
+        // 前置校验：仅已发布且有待审修订的文章才处理（否则跳过，状态永不改变）
+        if (article.getStatus() == null || article.getStatus() != Status.PUBLISHED.getCode()
+                || article.getPendingRevisionId() == null) {
+            log.info("文章非已发布或无待审修订，跳过修订审核, articleId={}, status={}",
+                    articleId, article.getStatus());
+            return CompletableFuture.completedFuture(true);
+        }
+
+        ApArticleDraft draft = apArticleDraftMapper.selectById(article.getPendingRevisionId());
+        if (draft == null) {
+            log.warn("待审修订草稿不存在，清理待审指针, articleId={}", articleId);
+            articleRevisionService.rejectRevision(articleId);
+            return CompletableFuture.completedFuture(false);
+        }
+        String content = draft.getContent() != null ? draft.getContent() : "";
+
+        // 初始化审核上下文，按 @Order 顺序执行审核责任链（跳过"新发布语义"处理器）
+        AuditProcessorContext context = new AuditProcessorContext();
+        for (ArticleAuditProcessor processor : auditProcessors) {
+            // 修订不是新发布：跳过 acceptRevision=false 的处理器（逐力值加成、发布行为事件），避免重复发奖/重复投递；@Order 顺序不变
+            if (!processor.acceptRevision()) {
+                log.info("修订审核跳过处理器, articleId={}, processor={}", articleId, processor.getClass().getSimpleName());
+                continue;
+            }
+            String stageName = processor.getClass().getSimpleName();
+            boolean pass = performWithRetry(stageName, () -> processor.process(article, content, context));
+            if (!pass) {
+                String failReason = context.getExtra("failReason");
+                if (failReason == null || failReason.isBlank()) {
+                    failReason = "修订内容未通过审核";
+                }
+                // 驳回：仅放弃本次修订，线上旧内容继续展示，绝不将已发布文章置为 FAIL 下线
+                articleRevisionService.rejectRevision(articleId);
+                auditRecordService.record(article, content, ArticleConstants.AUDIT_STATUS_FAIL, failReason);
+                log.info("修订审核未通过, articleId={}, stage={}, reason={}", articleId, stageName, failReason);
+                return CompletableFuture.completedFuture(false);
+            }
+        }
+
+        // 全部通过：应用修订（替换正文/字段）并写入 PASS 审计轨迹
+        articleRevisionService.applyRevision(articleId);
+        auditRecordService.record(article, content, ArticleConstants.AUDIT_STATUS_PASS, "修订审核通过");
+        log.info("修订审核通过并生效, articleId={}", articleId);
         return CompletableFuture.completedFuture(true);
     }
 

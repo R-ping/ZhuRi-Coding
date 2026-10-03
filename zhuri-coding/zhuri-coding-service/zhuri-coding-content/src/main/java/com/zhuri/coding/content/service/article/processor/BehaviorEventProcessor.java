@@ -27,6 +27,15 @@ public class BehaviorEventProcessor implements ArticleAuditProcessor {
         return true;
     }
 
+    /**
+     * 不参与修订审核：修订不是新发布。避免修订审核通过时重复投递 PUBLISH_ARTICLE 发布行为事件
+     * （该事件承载"新发布"的等级积分语义），否则会重复触发发布相关的后置处理。
+     */
+    @Override
+    public boolean acceptRevision() {
+        return false;
+    }
+
     @Override
     public boolean process(ApArticle article, String content, AuditProcessorContext context) {
         if (article.getAuthorId() == null) {

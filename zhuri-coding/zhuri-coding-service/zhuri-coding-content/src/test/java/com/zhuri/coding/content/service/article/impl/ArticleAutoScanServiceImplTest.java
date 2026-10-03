@@ -9,25 +9,35 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.zhuri.coding.content.behavior.service.BehaviorEventBus;
+import com.zhuri.coding.content.mapper.article.ApArticleConfigMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
+import com.zhuri.coding.content.mapper.article.ApArticleDraftMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.article.ArticleRevisionService;
 import com.zhuri.coding.content.service.article.ArticleTaskService;
 import com.zhuri.coding.content.service.article.AuditRecordService;
 import com.zhuri.coding.content.service.article.processor.AIViolationProcessor;
+import com.zhuri.coding.content.service.article.processor.ArticleAuditProcessor;
 import com.zhuri.coding.content.service.article.processor.AuditFailProcessor;
 import com.zhuri.coding.content.service.article.processor.AuditProcessorContext;
 import com.zhuri.coding.content.service.article.processor.AuditRetryableException;
 import com.zhuri.coding.content.service.article.processor.BehaviorEventProcessor;
 import com.zhuri.coding.content.service.article.processor.ImageScanProcessor;
 import com.zhuri.coding.content.service.article.processor.PowerBonusProcessor;
+import com.zhuri.coding.content.service.article.processor.QualityNotificationProcessor;
 import com.zhuri.coding.content.service.article.processor.SimilarityProcessor;
+import com.zhuri.coding.content.service.level.LevelService;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticle.Status;
 import com.zhuri.coding.model.article.pojos.ApArticleContent;
+import com.zhuri.coding.model.article.pojos.ApArticleDraft;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -41,6 +51,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * ArticleAutoScanServiceImpl 单元测试
@@ -74,6 +85,10 @@ class ArticleAutoScanServiceImplTest {
     private ArticleTaskService articleTaskService;
     @Mock
     private AuditRecordService auditRecordService;
+    @Mock
+    private ApArticleDraftMapper apArticleDraftMapper;
+    @Mock
+    private ArticleRevisionService articleRevisionService;
 
     private ArticleAutoScanServiceImpl autoScanService;
 
@@ -352,5 +367,53 @@ class ArticleAutoScanServiceImplTest {
         verify(auditFailProcessor, never()).handleFail(any(), anyString());
         // 审核通过：写入 PASS 审计轨迹
         verify(auditRecordService).record(any(), anyString(), eq(com.zhuri.coding.common.constants.ArticleConstants.AUDIT_STATUS_PASS), anyString());
+    }
+
+    // ==================== 修订审核（autoScanRevision） ====================
+
+    @Test
+    @DisplayName("修订审核：跳过 acceptRevision=false 的处理器，全通过后应用修订")
+    void testRevisionSkipsNewPublishProcessors() throws Exception {
+        // 用真实 PowerBonusProcessor / BehaviorEventProcessor（其 acceptRevision 覆写为 false），
+        // 协作者用 mock 以便断言"被过滤、零交互"
+        LevelService levelService = mock(LevelService.class);
+        PowerBonusProcessor powerBonus = new PowerBonusProcessor(
+                levelService, mock(ApArticleConfigMapper.class), mock(QualityNotificationProcessor.class));
+        BehaviorEventBus behaviorEventBus = mock(BehaviorEventBus.class);
+        BehaviorEventProcessor behaviorEvent = new BehaviorEventProcessor(behaviorEventBus);
+
+        // 内容安全类处理器（参与修订）用 mock 表示（mock 的 acceptRevision 默认 false，需显式置 true）
+        ArticleAuditProcessor contentSafe = mock(ArticleAuditProcessor.class);
+        when(contentSafe.acceptRevision()).thenReturn(true);
+        when(contentSafe.process(any(), anyString(), any())).thenReturn(true);
+
+        ArticleAutoScanServiceImpl svc = new ArticleAutoScanServiceImpl(apArticleMapper, apArticleContentMapper,
+                List.of(contentSafe, powerBonus, behaviorEvent),
+                auditFailProcessor, articleTaskService, auditRecordService);
+        ReflectionTestUtils.setField(svc, "apArticleDraftMapper", apArticleDraftMapper);
+        ReflectionTestUtils.setField(svc, "articleRevisionService", articleRevisionService);
+
+        ApArticle published = new ApArticle();
+        published.setId(TEST_ARTICLE_ID);
+        published.setAuthorId(TEST_AUTHOR_ID);
+        published.setStatus(Status.PUBLISHED.getCode());
+        published.setPendingRevisionId(999L);
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(published);
+        ApArticleDraft draft = new ApArticleDraft();
+        draft.setId(999L);
+        draft.setContent("修订后的正文内容");
+        when(apArticleDraftMapper.selectById(999L)).thenReturn(draft);
+
+        CompletableFuture<Boolean> future = svc.autoScanRevision(TEST_ARTICLE_ID);
+        assertTrue(future.get());
+
+        // 参与修订的处理器被调用；"新发布语义"处理器被过滤跳过（其协作者零交互）
+        verify(contentSafe).process(any(), anyString(), any());
+        verifyNoInteractions(levelService);
+        verifyNoInteractions(behaviorEventBus);
+        // 全部通过 → 应用修订并写入 PASS 审计轨迹
+        verify(articleRevisionService).applyRevision(TEST_ARTICLE_ID);
+        verify(auditRecordService).record(any(), anyString(),
+                eq(com.zhuri.coding.common.constants.ArticleConstants.AUDIT_STATUS_PASS), anyString());
     }
 }

@@ -35,5 +35,9 @@ public class ArticleDetailVO implements Serializable {
     private Boolean isCollect;
     private String articleContent;
     private String publishTime;
+    /** 最后实质更新时间（格式化字符串）；无实质更新时为空串 */
+    private String updateTime;
+    /** 更新说明；无实质更新时为空串 */
+    private String updateNote;
     private List<TocItemVO> tocList;
 }
