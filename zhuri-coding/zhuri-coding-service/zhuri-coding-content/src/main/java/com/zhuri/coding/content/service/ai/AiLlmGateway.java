@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 /**
  * 统一 LLM 调用出口（唯一入口）。
  *
- * <p><b>为什么要有这个类</b>：改造前 ChatClient 在 4 处各自 `ChatClient.builder(chatModel).build()`，
+ * <p><b>为什么要有这个类</b>：改造前 ChatClient 在 4 处各自 {@code ChatClient.builder(chatModel).build()}，
  * 导致三个问题：
  * <ol>
  *   <li><b>用量采集只能靠逐处补代码</b> —— 新增调用点极易漏计量（成本盲区）；</li>
@@ -27,8 +27,34 @@ import java.util.function.Consumer;
  * 收敛到本类后：<b>所有 LLM 调用自动带安全横切 + 自动计量 token</b>，
  * 且后续加熔断/降级只需改这一处。
  *
+ * <p><b>客户端装配（2026-09-30 修正）</b>：主路径的 ChatClient 由 {@link #client(ChatModel)}
+ * 按 model <b>缓存复用</b>，不再每调用一次重建（改造后曾遗留的每请求 build 已消除）。
+ * 仍需保留 builder 的地方只有三处，且均为<b>有意的例外</b>：
+ * <ul>
+ *   <li>{@code AiExpertConfig#aiExpertChatClient} —— 单例 Bean，一次构建；</li>
+ *   <li>{@code AgentRunner} 构造期 —— 一次构建；</li>
+ *   <li>{@link #probeInternal} —— 探针要求"裸链路"，<b>刻意不挂</b> advisor，故不使用带安全横切的缓存客户端。</li>
+ * </ul>
+ *
  * <p><b>异常语义（与改造前保持一致，调用方无需改动）</b>：任何异常都内部消化并返回 null——
  * 安全护栏命中（{@link SafetyGuardException}）记 WARN，其余记 ERROR；调用方按"生成失败"降级。
+ *
+ * <p><b>为什么没有重试（有意的，不是遗漏）</b>：Spring AI 官方框架<b>不内置容错</b>，
+ * 只把 Advisor 作为横切挂载点。社区主流做法是"按失败模式分别处理"——
+ * <b>不重试是一刀切，确实比"分模式重试"粗糙</b>。本类仍选择不重试，理由是三条权衡：
+ * <ol>
+ *   <li><b>成本放大</b> —— 失败的那一次可能已产生（部分）计费，重试即翻倍 token 成本；</li>
+ *   <li><b>时延放大</b> —— LLM 调用本身就是秒级，重试会把用户等待拉长到不可接受；</li>
+ *   <li><b>已有熔断兜底</b> —— 故障期由 {@link AiCircuitBreaker} 快速失败，重试只会加剧打满线程池的风险。</li>
+ * </ol>
+ * <b>已知落后项</b>：外部最佳实践把 LLM 失败分为 429 / 5xx / 超时 / 格式错误 / 安全拦截五类，分别处理
+ * （429 重试需尊重 {@code Retry-After}；格式错误只重试一次；安全拦截永不重试）。
+ * 本类只做了"安全拦截永不重试"这一类（{@link SafetyGuardException} 单独处理），其余四类是统一不重试。
+ * 失败经 {@code FailPolicy} 走 fail-open（返回 null 让调用方降级）。
+ * <b>若将来要补重试</b>，必须遵守：① 只重试<b>连接层</b>失败（{@code ConnectException} / 5xx），
+ * 绝不重试"模型已开始生成"的失败（会重复计费）；② 重试放在<b>熔断内侧</b>
+ * （熔断打开时直接失败，不进重试循环）；③ 429 重试必须尊重 {@code Retry-After}；
+ * ④ <b>不要做成 Advisor</b>——Advisor 是同步的，在链里做阻塞重试会拖长整条链。
  *
  * <p><b>会话记忆</b>：由调用方构建 {@link ChatMemory} 传入（保持既有"请求级实例、固定会话 key"语义），
  * 传 null 即不挂记忆 advisor（如 Query Rewrite / Rerank 等内部调用）。
@@ -69,10 +95,21 @@ public class AiLlmGateway {
     @Autowired(required = false)
     private AiMetricsCollector metrics;
 
-    /** LLM 是否可用（未配置 api-key / 自动装配未生效时为 false，调用方据此降级） */
-    public boolean available() {
-        return chatModel != null || resolveModel(null) != null;
-    }
+    /**
+     * ChatClient 缓存（model → client）。
+     *
+     * <p>改造前的 {@link #client} 每调用一次就 {@code ChatClient.builder(...).build()}，
+     * 本类 3 条调用路径（同步 / 流式 / 探针）× 每次请求都在重建：builder 会分配 spec、解析
+     * observation 等，属纯浪费；且每次重建都拿不到 Spring AI 自动配置里
+     * {@code ChatClientBuilderCustomizer} 的定制（用 {@code ChatClient.builder(model)} 静态方法
+     * 绕过了自动配置的 {@code ChatClient.Builder} bean）。
+     *
+     * <p>用 {@link java.util.concurrent.ConcurrentHashMap} 缓存：模型 bean 是单例、数量固定
+     * （当前 2~3 个），键基数不增长，无泄漏风险。探针路径刻意走裸 client（不挂 advisor），
+     * 故不在此缓存内。
+     */
+    private final java.util.concurrent.ConcurrentHashMap<ChatModel, ChatClient> clientCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * 同步生成（非流式）：自动挂安全横切（+ 可选会话记忆）+ 自动计量。
@@ -101,13 +138,13 @@ public class AiLlmGateway {
             return null;
         }
         // 熔断打开：快速失败（不去建立连接等超时），调用方按"生成失败"降级
-        if (!allowByCircuit(feature)) {
+        if (!allowByCircuit(AiCircuitBreaker.TARGET_LLM, feature)) {
             return null;
         }
         try {
-            ChatClient.ChatClientRequestSpec spec = client(explicitModel, memory, conversationId)
-                    .prompt().system(systemPrompt).user(user == null ? "" : user);
-            spec = withConversation(spec, memory, conversationId);
+            ChatClient.ChatClientRequestSpec spec = withAdvisors(
+                    client(explicitModel).prompt().system(systemPrompt).user(user == null ? "" : user),
+                    memory, conversationId);
             ChatResponse response = spec.call().chatResponse();
             circuitSuccess();
             tokenMeter.record(feature, response);
@@ -125,15 +162,21 @@ public class AiLlmGateway {
         }
     }
 
-    /** 熔断放行判定；打开时记指标并打印降级日志 */
-    private boolean allowByCircuit(String feature) {
-        if (circuitBreaker == null || circuitBreaker.allow(AiCircuitBreaker.TARGET_LLM)) {
+    /**
+     * 熔断放行判定；打开时记指标并打印降级日志。
+     *
+     * @param target  熔断目标（{@link AiCircuitBreaker} 的 TARGET_*），决定查哪一个熔断器；
+     *                曾把 feature 当 target 传（feature 只进日志），语义错位已修正
+     * @param feature 功能标识，仅用于日志定位，不影响熔断判定
+     */
+    private boolean allowByCircuit(String target, String feature) {
+        if (circuitBreaker == null || circuitBreaker.allow(target)) {
             return true;
         }
         if (metrics != null) {
-            metrics.incr("ai_circuit_rejected_llm");
+            metrics.incr("ai_circuit_rejected_" + target);
         }
-        log.warn("[AiLlmGateway] LLM 熔断打开中，快速失败（不发起调用）: feature={}", feature);
+        log.warn("[AiLlmGateway] {} 熔断打开中，快速失败（不发起调用）: feature={}", target, feature);
         return false;
     }
 
@@ -175,7 +218,7 @@ public class AiLlmGateway {
             log.warn("[AiLlmGateway] 模型未装配，跳过流式调用: feature={}", feature);
             return null;
         }
-        if (!allowByCircuit(feature)) {
+        if (!allowByCircuit(AiCircuitBreaker.TARGET_LLM, feature)) {
             return null;
         }
         // 声明在 try 外：catch（取消）分支需要读取已生成内容与 usage 做计量
@@ -188,9 +231,9 @@ public class AiLlmGateway {
         final int promptTokens = estimateTokens(
                 (systemPrompt == null ? 0 : systemPrompt.length()) + (user == null ? 0 : user.length()));
         try {
-            ChatClient.ChatClientRequestSpec spec = client(explicitModel, memory, conversationId)
-                    .prompt().system(systemPrompt).user(user == null ? "" : user);
-            spec = withConversation(spec, memory, conversationId);
+            ChatClient.ChatClientRequestSpec spec = withAdvisors(
+                    client(explicitModel).prompt().system(systemPrompt).user(user == null ? "" : user),
+                    memory, conversationId);
             spec.stream().chatResponse()
                     .doOnNext(resp -> {
                         if (resp == null) {
@@ -296,7 +339,7 @@ public class AiLlmGateway {
             log.warn("[AiLlmGateway] 探针跳过：模型未装配");
             return null;
         }
-        if (!allowByCircuit(AiFeatures.OTHER)) {
+        if (!allowByCircuit(AiCircuitBreaker.TARGET_LLM, AiFeatures.OTHER)) {
             return null;
         }
         try {
@@ -463,7 +506,22 @@ public class AiLlmGateway {
         }
     }
 
-    /** 字符 → token 估算（中文为主约 1 token ≈ 2 字符，宁低估不虚报） */
+    /**
+     * 字符 → token 估算（1 token ≈ 2 字符），<b>仅用于网关未回传真实 usage 的兜底</b>。
+     *
+     * <p><b>口径方向（务必看清）</b>：本方法<b>低估</b> token 数（中文实际约 1.5 字符/token，
+     * 此处按 2 字符/token 粗算，故算出来的 token 偏少）。选"低估"是因为它同时承担两个目标且
+     * 两害相权取其轻：
+     * <ul>
+     *   <li><b>结算</b>（{@link #settleQuota}）——低估 = 平台少收，用户侧无投诉风险；</li>
+     *   <li><b>限额</b>（{@link #resolveStreamQuotaLimit} 的 doOnNext 到线即停）——低估 = 用户可能
+     *       实际消耗略超预算，属"少拦一点"，比"误拦正常请求"体验伤害小。</li>
+     * </ul>
+     *
+     * <p><b>已知取舍</b>：两个目标对估算方向的要求是<b>相反</b>的（结算想不虚报=低估，
+     * 硬限额想不超支=高估）。当前实现统一选低估。若将来需要"硬限额不超支"，应改为
+     * <b>按真实 usage 前置预扣</b>，而不是把这里的比例调大——调大会连带把结算也算高。
+     */
     static int estimateTokens(int chars) {
         return chars <= 0 ? 0 : Math.max(1, chars / 2);
     }
@@ -527,28 +585,45 @@ public class AiLlmGateway {
         return chatModel;
     }
 
-    /** 统一客户端装配：安全横切必挂；memory 非空时挂会话记忆 advisor */
-    private ChatClient client(ChatModel model, ChatMemory memory, String conversationId) {
-        if (memory != null && conversationId != null) {
-            return ChatClient.builder(model)
-                    .defaultAdvisors(promptSafetyAdvisor,
-                            MessageChatMemoryAdvisor.builder(memory).build())
-                    .build();
-        }
-        return ChatClient.builder(model)
+    /**
+     * 统一客户端装配：安全横切必挂（走 defaultAdvisors，可缓存复用）；会话记忆 advisor
+     * <b>不在此处装配</b>，由调用方经 {@link #withConversation} 在请求级挂载。
+     *
+     * <p><b>为什么不把 memory advisor 放进 defaultAdvisors</b>：{@code ChatMemory} 是<b>请求级实例</b>
+     * （每个会话一次构建，见调用方），而 {@code defaultAdvisors} 属于"客户端级"配置——
+     * 若把 {@code MessageChatMemoryAdvisor.builder(memory).build()} 放进来，就必须为每个请求
+     * 重建 ChatClient（本类改造前的做法），客户端复用彻底失效，且 advisor 重复构建产生无谓对象。
+     *
+     * <p><b>为什么缓存是安全的</b>：ChatClient 自身不可变——{@code prompt()} 会复制一份请求级
+     * {@code DefaultChatClientRequestSpec}，运行时的 {@code advisors(...)} / {@code options(...)}
+     * 等改动<b>只作用于该副本</b>（字节码实证：拷贝构造器与 {@code advisors(...)} 均为
+     * {@code List.addAll} 到新 spec，不触碰 default 配置）。因此按 model 缓存 client 后，
+     * 各请求的 advisor 叠加互不干扰。
+     */
+    private ChatClient client(ChatModel model) {
+        return clientCache.computeIfAbsent(model, m -> ChatClient.builder(m)
                 .defaultAdvisors(promptSafetyAdvisor)
-                .build();
+                .build());
     }
 
     /**
-     * 会话记忆必须显式传 CONVERSATION_ID，否则 MessageChatMemoryAdvisor 会回退到默认 key，
-     * 读不到预载窗口（记忆静默失效）——改造前逐处手写同样的 param，此处收敛为单一实现。
+     * 会话记忆 advisor 的请求级挂载。
+     *
+     * <p>与 {@link #withConversation} 合并为一次 {@code advisors(...)} 调用（两者都是对同一个
+     * advisor 规格的补充：一个加 advisor 本体、一个加它的 param）。运行时 {@code advisors(...)}
+     * 是 <b>append 语义</b>，叠加在 {@code defaultAdvisors} 之后 → 最终链为
+     * {@code [promptSafetyAdvisor, MessageChatMemoryAdvisor]}，与改造前顺序一致。
+     *
+     * <p>{@code MessageChatMemoryAdvisor} 必须<b>每个请求新建</b>：它持有该请求的
+     * {@code ChatMemory} 实例，跨请求复用会把别人的记忆窗口串进当前会话。
      */
-    private ChatClient.ChatClientRequestSpec withConversation(ChatClient.ChatClientRequestSpec spec,
-                                                              ChatMemory memory, String conversationId) {
+    private ChatClient.ChatClientRequestSpec withAdvisors(ChatClient.ChatClientRequestSpec spec,
+                                                          ChatMemory memory, String conversationId) {
         if (memory == null || conversationId == null) {
             return spec;
         }
-        return spec.advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId));
+        return spec.advisors(a -> a
+                .advisors(MessageChatMemoryAdvisor.builder(memory).build())
+                .param(ChatMemory.CONVERSATION_ID, conversationId));
     }
 }
