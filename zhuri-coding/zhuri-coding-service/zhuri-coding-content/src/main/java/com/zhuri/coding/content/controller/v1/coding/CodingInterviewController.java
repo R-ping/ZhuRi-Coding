@@ -3,6 +3,7 @@ package com.zhuri.coding.content.controller.v1.coding;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhuri.coding.content.service.ai.AiLlmGateway;
 import com.zhuri.coding.content.service.coding.CodingInterviewService;
+import com.zhuri.coding.content.service.coding.CodingResumeService;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewFinishDTO;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewStartDTO;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewTurnDTO;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -45,15 +47,32 @@ public class CodingInterviewController {
     @Autowired
     private CodingInterviewService interviewService;
 
+    @Autowired
+    private CodingResumeService resumeService;
+
     /** SSE 流式专用线程池（见 AiAsyncConfig）：隔离 LLM 长阻塞，且 TaskDecorator 传递用户上下文保配额结算 */
     @Autowired
     @Qualifier("aiSseExecutor")
     private Executor aiSseExecutor;
 
     /**
+     * 解析简历文件为文本（PDF/DOCX/DOC/TXT/MD），<b>不落库</b>：前端回填到可编辑输入框后随开面提交
+     * POST /api/v1/coding/interview/resume/parse  (multipart/form-data, field=file)
+     */
+    @PostMapping("/resume/parse")
+    public ResponseResult parseResume(@RequestParam("file") MultipartFile file) {
+        // 先判登录再读文件：匿名请求不该触发文件读取与 Tika 解析
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        return resumeService.parse(file);
+    }
+
+    /**
      * 开面：进行中未超时直接续答；否则每日场次校验 → 额度预检 → 提纲生成 → 落库
      * POST /api/v1/coding/interview/start
-     * {"direction": "Java 后端", "difficulty": 2}
+     * {"direction": "Java 后端", "difficulty": 2, "questionCount": 5, "resumeText": "..."}
      */
     @PostMapping("/start")
     public ResponseResult start(@RequestBody CodingInterviewStartDTO dto) {
@@ -132,7 +151,9 @@ public class CodingInterviewController {
                         try {
                             emitter.send(SseEmitter.event()
                                 .name("error").data(message, MediaType.TEXT_PLAIN));
-                        } catch (Exception ignore) {
+                        } catch (Exception sendFail) {
+                            // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                            log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                         }
                     }
                 });
@@ -144,14 +165,18 @@ public class CodingInterviewController {
                         .name("error")
                         .data("[" + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode() + "] "
                             + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getErrorMessage(), MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } catch (Exception e) {
                 log.error("模拟面试轮次异常", e);
                 try {
                     emitter.send(SseEmitter.event()
                         .name("error").data("面试官暂时离线，请重试", MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } finally {
                 emitter.complete();

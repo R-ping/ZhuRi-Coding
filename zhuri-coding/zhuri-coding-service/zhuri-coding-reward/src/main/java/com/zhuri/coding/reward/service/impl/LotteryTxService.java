@@ -16,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.stream.Collectors;
 
 /**
  * 抽奖<b>事务体内核</b>（P0-6 修复：无锁/无幂等/空池越界）。
@@ -129,7 +128,7 @@ public class LotteryTxService {
                 List<LotteryPrizePool> physicalPrizes = effectivePool.stream()
                         .filter(p -> p.getIsPhysical() != null && p.getIsPhysical()
                                 && (p.getUnlockRequiredDraws() == null || p.getUnlockRequiredDraws() <= unlockThreshold))
-                        .collect(Collectors.toList());
+                        .toList();
                 if (!physicalPrizes.isEmpty()) {
                     selectedPrize = physicalPrizes.get(0);
                 } else {
@@ -322,7 +321,7 @@ public class LotteryTxService {
         // 构建有效奖池（排除未解锁的）
         List<LotteryPrizePool> effective = pool.stream()
                 .filter(p -> p.getUnlockRequiredDraws() == null || p.getUnlockRequiredDraws() <= todayDrawCount)
-                .collect(Collectors.toList());
+                .toList();
 
         if (effective.isEmpty()) {
             log.warn("抽奖有效奖池为空（全部未解锁），兜底矿石奖品: todayDrawCount={}", todayDrawCount);

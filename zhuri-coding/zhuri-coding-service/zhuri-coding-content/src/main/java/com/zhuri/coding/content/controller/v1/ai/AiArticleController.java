@@ -113,7 +113,9 @@ public class AiArticleController {
                 emitter.send(SseEmitter.event().name("error")
                     .data("[" + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode() + "] "
                         + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getErrorMessage(), MediaType.TEXT_PLAIN));
-            } catch (Exception ignore) {
+            } catch (Exception sendFail) {
+                // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
             }
             emitter.complete();
             return emitter;
@@ -143,7 +145,9 @@ public class AiArticleController {
                 try {
                     emitter.send(SseEmitter.event().name("error")
                         .data(e.getMessage(), MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } catch (com.zhuri.coding.content.service.ai.AiLlmGateway.QuotaExhaustedException qe) {
                 // 额度到线被动中断：不是服务故障，给用户可理解的原因（已下发的增量文本保留）
@@ -152,14 +156,18 @@ public class AiArticleController {
                     emitter.send(SseEmitter.event().name("error")
                         .data("本次 AI 额度已用完，回答已中断；已生成内容仍然可用，可购买额度包或次日再试",
                             MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } catch (Exception e) {
                 log.error("AI 单篇问答异常, articleId={}", articleId, e);
                 try {
                     emitter.send(SseEmitter.event().name("error")
                         .data("AI 服务暂不可用，请稍后再试", MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } finally {
                 emitter.complete();

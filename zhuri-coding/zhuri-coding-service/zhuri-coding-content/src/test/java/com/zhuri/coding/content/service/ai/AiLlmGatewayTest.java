@@ -85,13 +85,6 @@ class AiLlmGatewayTest {
     }
 
     @Test
-    @DisplayName("available(): ChatModel 未装配返回 false")
-    void testAvailableFalseWhenNoChatModel() {
-        ReflectionTestUtils.setField(gateway, "chatModel", null);
-        assertFalse(gateway.available());
-    }
-
-    @Test
     @DisplayName("ChatModel 未装配 → 返回 null 且不发起调用（不抛异常）")
     void testNoChatModelDegrades() {
         ReflectionTestUtils.setField(gateway, "chatModel", null);

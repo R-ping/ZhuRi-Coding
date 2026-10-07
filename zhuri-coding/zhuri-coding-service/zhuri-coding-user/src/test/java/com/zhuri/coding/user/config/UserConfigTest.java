@@ -1,6 +1,7 @@
 package com.zhuri.coding.user.config;
 
 import com.aliyun.oss.OSS;
+import com.zhuri.coding.common.admin.AdminAuthInterceptor;
 import com.zhuri.coding.user.interceptor.UserTokenInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - OssClientConfig：基于 OssConfig 装配 OSS 客户端；
  * - RestTemplateConfig：返回带超时设置的 RestTemplate；
  * - PasswordConfig：返回可用的 BCrypt 编码器；
- * - UserWebMvcConfig：注册 UserTokenInterceptor 并匹配所有路径。
+ * - UserWebMvcConfig：注册身份拦截器与运营鉴权拦截器，且顺序、路径范围都正确。
  */
 @DisplayName("config 配置类")
 class UserConfigTest {
@@ -68,17 +69,23 @@ class UserConfigTest {
     }
 
     @Test
-    @DisplayName("UserWebMvcConfig：注册 UserTokenInterceptor 并匹配所有路径")
+    @DisplayName("UserWebMvcConfig：注册身份拦截器（全路径）+ 运营鉴权拦截器（仅运营前缀）")
     void testWebMvcConfig() {
         ExposedRegistry registry = new ExposedRegistry();
         new UserWebMvcConfig().addInterceptors(registry);
 
         MappedInterceptor[] mapped = registry.listAll();
         assertNotNull(mapped);
-        assertEquals(1, mapped.length);
+        // 两个拦截器，且顺序不能反：运营鉴权要读身份拦截器写入的当前用户
+        assertEquals(2, mapped.length);
         assertInstanceOf(UserTokenInterceptor.class, mapped[0].getInterceptor());
-        // addPathPatterns("/**") 后路径模式长度为 1
+        assertInstanceOf(AdminAuthInterceptor.class, mapped[1].getInterceptor());
+
         assertNotNull(mapped[0].getPathPatterns());
         assertEquals(1, mapped[0].getPathPatterns().length);
+
+        // 运营鉴权的路径范围必须与公开常量一致 —— 这个常量是「接口有没有被挂上鉴权」的唯一边界，
+        // 少一条就等于一批运营接口裸奔（注解只有请求真的过拦截器才生效）
+        assertArrayEquals(UserWebMvcConfig.ADMIN_PATH_PATTERNS, mapped[1].getPathPatterns());
     }
 }

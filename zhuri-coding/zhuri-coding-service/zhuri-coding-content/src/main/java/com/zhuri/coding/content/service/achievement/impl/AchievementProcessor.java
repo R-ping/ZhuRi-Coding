@@ -22,7 +22,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
@@ -245,7 +244,7 @@ public class AchievementProcessor implements BehaviorPostProcessor {
         }
         List<Long> articleIds = articles.stream()
             .map(ApArticle::getId)
-            .collect(Collectors.toList());
+            .toList();
         return apBehaviorLikesMapper.selectCount(new LambdaQueryWrapper<ApBehaviorLikes>()
             .in(ApBehaviorLikes::getEntryId, articleIds)
             .eq(ApBehaviorLikes::getType, 0)

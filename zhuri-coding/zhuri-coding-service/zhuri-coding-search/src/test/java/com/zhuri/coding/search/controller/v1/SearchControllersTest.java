@@ -1,8 +1,11 @@
 package com.zhuri.coding.search.controller.v1;
 
+import com.zhuri.coding.apis.search.IContentSearchClient;
+import com.zhuri.coding.apis.search.IUserSearchClient;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import com.zhuri.coding.model.search.dtos.HistorySearchDto;
+import com.zhuri.coding.model.search.dtos.SearchDto;
 import com.zhuri.coding.model.search.dtos.UserSearchDto;
 import com.zhuri.coding.search.service.ApAssociateWordsService;
 import com.zhuri.coding.search.service.ApUserSearchService;
@@ -12,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -19,13 +23,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * 搜索模块三个 Controller 的薄层委托测试
+ * 搜索模块四个 Controller 的薄层委托测试
  *
  * 直接以 @InjectMocks 调用方法，验证：
  * - ArticleSearchController：pageSize/minBehotTime 默认值补全后转发检索；
+ * - SearchController：统一聚合入口按 idType 分发（0/1 本地 ES，2 课程，3 标签，4 用户）；
  * - ApUserSearchController / ApAssociateWordsController：原样转发历史/联想请求。
  */
 @ExtendWith(MockitoExtension.class)
@@ -38,6 +44,10 @@ class SearchControllersTest {
     private ApUserSearchService apUserSearchService;
     @Mock
     private ApAssociateWordsService apAssociateWordsService;
+    @Mock
+    private IContentSearchClient contentSearchClient;
+    @Mock
+    private IUserSearchClient userSearchClient;
 
     @InjectMocks
     private ArticleSearchController articleSearchController;
@@ -45,6 +55,8 @@ class SearchControllersTest {
     private ApUserSearchController apUserSearchController;
     @InjectMocks
     private ApAssociateWordsController apAssociateWordsController;
+    @InjectMocks
+    private SearchController searchController;
 
     @BeforeEach
     void setUp() {
@@ -130,6 +142,123 @@ class SearchControllersTest {
             assertNotNull(r);
             assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), r.getCode());
             verify(apAssociateWordsService).search(dto);
+        }
+    }
+
+    @Nested
+    @DisplayName("统一搜索聚合入口 Controller")
+    class UnifiedSearch {
+
+        @Test
+        @DisplayName("入参为空 / 关键字为空 → 参数非法，不触达任何下游")
+        void rejectsBlankQuery() throws Exception {
+            ResponseResult r1 = searchController.search(null);
+            assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), r1.getCode());
+
+            SearchDto blank = new SearchDto();
+            blank.setQuery("   ");
+            ResponseResult r2 = searchController.search(blank);
+            assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), r2.getCode());
+
+            verifyNoInteractions(articleSearchService, contentSearchClient, userSearchClient);
+        }
+
+        @Test
+        @DisplayName("idType 缺省=综合 → 走本地 ES，并补发布时间窗与 trim 关键字")
+        void defaultIdTypeGoesToLocalEs() throws Exception {
+            SearchDto dto = new SearchDto();
+            dto.setQuery("  Java  ");
+            when(articleSearchService.search(any(UserSearchDto.class)))
+                    .thenReturn(ResponseResult.okResult());
+
+            searchController.search(dto);
+
+            ArgumentCaptor<UserSearchDto> captor = ArgumentCaptor.forClass(UserSearchDto.class);
+            verify(articleSearchService).search(captor.capture());
+            assertEquals("Java", captor.getValue().getSearchWords());
+            assertNotNull(captor.getValue().getMinBehotTime());
+            verifyNoInteractions(contentSearchClient, userSearchClient);
+        }
+
+        @Test
+        @DisplayName("idType=1 文章 → 同样走本地 ES")
+        void idTypeArticleGoesToLocalEs() throws Exception {
+            SearchDto dto = new SearchDto();
+            dto.setQuery("Java");
+            dto.setIdType(1);
+            when(articleSearchService.search(any(UserSearchDto.class)))
+                    .thenReturn(ResponseResult.okResult());
+
+            searchController.search(dto);
+
+            verify(articleSearchService).search(any(UserSearchDto.class));
+            verifyNoInteractions(contentSearchClient, userSearchClient);
+        }
+
+        @Test
+        @DisplayName("idType=2 课程 → 转发 content 课程搜索，且不补时间窗")
+        void idTypeCourseGoesToContent() throws Exception {
+            SearchDto dto = new SearchDto();
+            dto.setQuery("Java");
+            dto.setIdType(2);
+            when(contentSearchClient.searchCourse(any(UserSearchDto.class)))
+                    .thenReturn(ResponseResult.okResult());
+
+            searchController.search(dto);
+
+            ArgumentCaptor<UserSearchDto> captor = ArgumentCaptor.forClass(UserSearchDto.class);
+            verify(contentSearchClient).searchCourse(captor.capture());
+            assertNull(captor.getValue().getMinBehotTime());
+            verifyNoInteractions(articleSearchService, userSearchClient);
+        }
+
+        @Test
+        @DisplayName("idType=3 标签 → 转发 content 标签搜索")
+        void idTypeTagGoesToContent() throws Exception {
+            SearchDto dto = new SearchDto();
+            dto.setQuery("Java");
+            dto.setIdType(3);
+            when(contentSearchClient.searchTag(any(UserSearchDto.class)))
+                    .thenReturn(ResponseResult.okResult());
+
+            searchController.search(dto);
+
+            verify(contentSearchClient).searchTag(any(UserSearchDto.class));
+            verifyNoInteractions(articleSearchService, userSearchClient);
+        }
+
+        @Test
+        @DisplayName("idType=4 用户 → 转发 user 服务")
+        void idTypeUserGoesToUserService() throws Exception {
+            SearchDto dto = new SearchDto();
+            dto.setQuery("Java");
+            dto.setIdType(4);
+            when(userSearchClient.searchUser(any(UserSearchDto.class)))
+                    .thenReturn(ResponseResult.okResult());
+
+            searchController.search(dto);
+
+            verify(userSearchClient).searchUser(any(UserSearchDto.class));
+            verifyNoInteractions(articleSearchService, contentSearchClient);
+        }
+
+        @Test
+        @DisplayName("页码/条数非法 → 兜底 1 / 20")
+        void defaultsPagingWhenInvalid() throws Exception {
+            SearchDto dto = new SearchDto();
+            dto.setQuery("Java");
+            dto.setIdType(2);
+            dto.setPageNum(0);
+            dto.setPageSize(-5);
+            when(contentSearchClient.searchCourse(any(UserSearchDto.class)))
+                    .thenReturn(ResponseResult.okResult());
+
+            searchController.search(dto);
+
+            ArgumentCaptor<UserSearchDto> captor = ArgumentCaptor.forClass(UserSearchDto.class);
+            verify(contentSearchClient).searchCourse(captor.capture());
+            assertEquals(1, captor.getValue().getPageNum());
+            assertEquals(20, captor.getValue().getPageSize());
         }
     }
 }

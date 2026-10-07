@@ -67,6 +67,9 @@ public class CodingInterviewSessionVO implements Serializable {
 
         /** 当前应回答的问题（主问题或最近一次追问） */
         private String question;
+
+        /** 主题来源：resume=针对你的简历深挖 / direction=方向通用考察 */
+        private String source;
     }
 
     @Data

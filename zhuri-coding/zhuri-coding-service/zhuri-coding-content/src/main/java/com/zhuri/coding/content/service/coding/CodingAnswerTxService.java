@@ -56,6 +56,9 @@ public class CodingAnswerTxService {
     /**
      * 落库一次作答：记录流水 → 题目计数累加（仅当日一题）→ 用户统计 upsert。
      *
+     * <p>当日一题的重复提交有两道防线：事务内预查询（快路径）+ 唯一键 {@code uk_user_daily}
+     * （并发兜底）。两者抛出的是同一个 {@link IllegalStateException}，调用方不必区分。</p>
+     *
      * @param userAnswersJson 用户答案 JSON（落库前已在服务层校验下标范围）
      * @throws IllegalStateException 当日一题重复提交（事务回滚，由调用方转成友好错误）
      */
@@ -78,7 +81,17 @@ public class CodingAnswerTxService {
         record.setIsDaily(isDaily ? 1 : 0);
         record.setScoreAwarded(0);
         record.setCreatedTime(new Date());
-        recordMapper.insert(record);
+        try {
+            recordMapper.insert(record);
+        } catch (DuplicateKeyException e) {
+            // 兜底第二道：上方 findDailyRecord 是"锁 + 预查询"，锁过期（10s）或事务拉长时
+            // 两个并发请求可能都通过预检查。这时由 uk_user_daily（见
+            // db/migrations/add_coding_daily_answer_unique.sql）拦下后到的那条，
+            // 转成与预检查完全一致的异常语义，调用方无需区分是哪道拦下的。
+            // 注意：MySQL/InnoDB 下唯一键冲突不会使整个事务进入失败态，这里捕获后再抛出，
+            // 事务仍会因 IllegalStateException 正常回滚（rollbackFor = Exception.class）。
+            throw new IllegalStateException("今日一题已作答");
+        }
 
         // 题目热度计数只服务"当日一题"（练习不参与，避免热度被重复刷）
         if (isDaily) {

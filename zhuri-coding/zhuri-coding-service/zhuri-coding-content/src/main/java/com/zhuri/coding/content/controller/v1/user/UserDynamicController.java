@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * 个人主页动态聚合接口
@@ -186,7 +185,7 @@ public class UserDynamicController {
 
     private Map<Long, ApArticle> loadArticles(List<Long> ids) {
         Map<Long, ApArticle> map = new HashMap<>();
-        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.isEmpty()) {
             return map;
         }
@@ -201,7 +200,7 @@ public class UserDynamicController {
 
     private Map<Long, ApPins> loadPins(List<Long> ids) {
         Map<Long, ApPins> map = new HashMap<>();
-        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.isEmpty()) {
             return map;
         }
@@ -216,7 +215,7 @@ public class UserDynamicController {
 
     private Map<Integer, Map<String, Object>> loadUsers(List<Integer> ids) {
         Map<Integer, Map<String, Object>> map = new HashMap<>();
-        List<Integer> distinct = ids.stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        List<Integer> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.isEmpty()) {
             return map;
         }

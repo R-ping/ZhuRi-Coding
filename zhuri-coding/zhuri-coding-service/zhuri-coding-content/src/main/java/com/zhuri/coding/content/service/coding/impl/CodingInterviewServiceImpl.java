@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhuri.coding.common.bailian.PromptSanitizer;
 import com.zhuri.coding.content.mapper.coding.ApCodingInterviewMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingQuestionMapper;
@@ -14,8 +13,14 @@ import com.zhuri.coding.content.service.ai.AiFeatures;
 import com.zhuri.coding.content.service.ai.AiLlmGateway;
 import com.zhuri.coding.content.service.ai.AiPromptRegistry;
 import com.zhuri.coding.content.service.ai.AiQuotaService;
+import com.zhuri.coding.content.service.coding.CodingInterviewJson;
+import com.zhuri.coding.content.service.coding.CodingInterviewJson.PlanTopic;
+import com.zhuri.coding.content.service.coding.CodingInterviewJson.ReportData;
+import com.zhuri.coding.content.service.coding.CodingInterviewJson.ReportItemData;
+import com.zhuri.coding.content.service.coding.CodingInterviewJson.TurnRecord;
 import com.zhuri.coding.content.service.coding.CodingInterviewService;
 import com.zhuri.coding.content.service.coding.CodingJudge;
+import com.zhuri.coding.content.service.coding.CodingReportService;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewFinishDTO;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewStartDTO;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewTurnDTO;
@@ -44,16 +49,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import static com.zhuri.coding.content.service.coding.CodingInterviewJson.appendDialogueLine;
+import static com.zhuri.coding.content.service.coding.CodingInterviewJson.difficultyLabel;
+import static com.zhuri.coding.content.service.coding.CodingInterviewJson.isBlank;
+import static com.zhuri.coding.content.service.coding.CodingInterviewJson.nvl;
+import static com.zhuri.coding.content.service.coding.CodingInterviewJson.parseTurns;
 
 /**
  * 模拟面试服务实现（Coding 延展第三层 · Stage A）
@@ -69,6 +75,11 @@ import org.springframework.stereotype.Service;
  * <p><b>防重与幂等</b>：turnSeq 与 DB turn_count 校验 + 原子 UPDATE
  * （{@code where id=? and status=1 and turn_count=?}）；finish 原子占位、重复 finish 幂等回放；
  * 报告解析失败/超时存原文并 reportReady=false（重试走 finish 幂等回放，可恢复）。</p>
+ *
+ * <p><b>报告链路已抽到 {@link CodingReportService}</b>：分批逐题评估 → 批内逐位对齐 → 二次汇总 →
+ * 解析规范化，连带三层降级（单批失败补「未评估」占位 / 汇总失败确定性兜底 / 全批失败存原文）都在那边；
+ * 本类对报告只剩「生成 + 落库 + 幂等回放」三件事。三段 JSON 列的契约与共用小工具见
+ * {@link CodingInterviewJson}。</p>
  *
  * <p><b>额度</b>：开面 {@code tryConsume} 预检；每轮/报告由 {@link AiLlmGateway} 自动按 token 结算；
  * 流式耗尽经 {@code QuotaExhaustedException} 上抛由控制器转 {@code [3301]} 事件。</p>
@@ -91,10 +102,12 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
     private static final int TURN_WINDOW_MESSAGES = 8;
     /** 轮次窗口内单条消息截断长度（字符，防历史追问上下文膨胀） */
     private static final int WINDOW_TRUNCATE = 300;
-    /** 报告输入中单条消息截断长度（字符，答案要多保留，取 1200） */
-    private static final int REPORT_TRUNCATE = 1_200;
     /** 作答文本长度上限（字符，防 prompt 成本失控） */
     private static final int ANSWER_MAX_LENGTH = 2_000;
+    /** 已考主题回看场次（近 N 场已完成面试） */
+    private static final int HISTORY_SESSION_LIMIT = 5;
+    /** 已考主题注入条数上限（防 prompt 膨胀） */
+    private static final int HISTORY_TOPIC_LIMIT = 15;
     /** 方向长度上限（DB 列 64） */
     private static final int DIRECTION_MAX_LENGTH = 64;
     /** 换题过渡语 */
@@ -107,24 +120,38 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
     private static final int MATERIAL_TAG_LIMIT = 10;
     /** 素材池取样条数 */
     private static final int MATERIAL_POOL_SIZE = 100;
+    /** 主题数可选范围（入参越界由服务端夹取，前端只做展示约束） */
+    private static final int MIN_QUESTION_COUNT = 3;
+    private static final int MAX_QUESTION_COUNT = 10;
+    /** 提纲主题来源标记：简历深挖 / 方向通用 */
+    static final String SOURCE_RESUME = "resume";
+    static final String SOURCE_DIRECTION = "direction";
 
-    /** prompt 注册表 key（DB 可按需灰度覆盖） */
+    /**
+     * prompt 注册表 key（DB 可按需灰度覆盖）。
+     * 报告链路的两个 key（{@code coding_interview_report_topic} / {@code coding_interview_report}）
+     * 随报告逻辑一起搬到了 {@link CodingReportService}。
+     */
     static final String PROMPT_KEY_PLAN = "coding_interview_plan";
     static final String PROMPT_KEY_TURN = "coding_interview_turn";
-    static final String PROMPT_KEY_REPORT = "coding_interview_report";
 
     /** 提纲生成 system（代码兜底） */
     static final String FALLBACK_PLAN_SYSTEM = String.join("\n",
         "你是资深技术面试官，负责为一场模拟面试生成提纲。",
         "你必须只输出一个 JSON 数组，不能有任何解释文字、markdown 代码块或多余符号。",
         "数组元素格式：",
-        "{\"topic\":\"主题名\",\"mainQuestion\":\"主问题\",\"keyPoints\":[\"考点1\",\"考点2\",\"考点3\"],\"tag\":\"技术标签\"}",
+        "{\"topic\":\"主题名\",\"mainQuestion\":\"主问题\",\"keyPoints\":[\"考点1\",\"考点2\",\"考点3\"],\"tag\":\"技术标签\",\"source\":\"resume\"}",
         "生成要求：",
         "1. 主题数量严格按用户消息中「主题数量」的要求；",
         "2. 每个主题 1 个开放式主问题（可展开回答 3-5 分钟，不要选择题、不要是非题）；",
         "3. 每个主题给出 3-5 个关键考点 keyPoints，它们是判断回答覆盖度的锚点，必须具体、可判定；",
         "4. 难度与方向以用户消息为准；",
-        "5. 只输出 JSON 数组本身。");
+        "5. source 只能取 resume 或 direction（小写）：主题来自候选人简历里写到的项目/经历取 resume，"
+            + "通用技术考察取 direction；",
+        "6. 严格按用户消息中「简历题配额」分配两类主题的数量；没给简历时全部取 direction；",
+        "7. 若用户消息给出了「已考过的主题」，本次提纲要与它们区分开（换角度、换深度或换考点），"
+            + "不要原题重问；",
+        "8. 只输出 JSON 数组本身。");
 
     /** 逐轮判定 system（代码兜底；首行控制行协议） */
     static final String FALLBACK_TURN_SYSTEM = String.join("\n",
@@ -139,19 +166,6 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         "- 回答完整、清晰、覆盖关键考点 → NEXT；",
         "- 不要点评对错，不要总结，不要鼓励式套话；像真实面试官一样简短直接；",
         "- 追问要基于候选人的回答内容，不要复述题干。");
-
-    /** 报告生成 system（代码兜底） */
-    static final String FALLBACK_REPORT_SYSTEM = String.join("\n",
-        "你是资深技术面试官，面试已结束，请基于面试提纲与完整对话输出面试报告。",
-        "你必须只输出一个 JSON 对象，不能有 markdown 代码块或解释文字：",
-        "{\"items\":[{\"topic\":\"主题名\",\"structure\":1,\"coverage\":{\"covered\":[\"已覆盖考点\"],\"missing\":[\"未覆盖考点\"]},\"accuracy\":1,\"comment\":\"点评\"}],\"overall\":\"总评\",\"suggestions\":[\"改进建议\"]}",
-        "评分纪律：",
-        "1. 覆盖度先行：逐项对照提纲中该主题的关键考点，判断是否被候选人讲到，考点的原文对齐到 covered/missing；",
-        "2. structure（回答结构）与 accuracy（技术准确性）都给 1-5 整数等级：1=几乎空白/错误，2=明显缺失，3=基本合格，4=良好，5=优秀；没有把握时从低；",
-        "3. comment 必须给出依据：引用候选人的原话要点或指出其遗漏的考点，不许空泛评价；",
-        "4. overall 是整体结论（优势与短板，3-4 句）；suggestions 给 3-5 条可执行的改进建议；",
-        "5. 候选人未作答的主题也要输出 item：covered 为空、comment 说明「未作答」；",
-        "6. 只评价技术内容与表达，不评价人格，不编造候选人没说过的内容。");
 
     // ==================== 配置 ====================
 
@@ -171,9 +185,13 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
     @Value("${app.coding.interview.daily-limit:3}")
     private int dailyLimit = 3;
 
-    /** 报告生成超时（秒；超时按结构化失败降级，可重试） */
-    @Value("${app.coding.interview.report-timeout-seconds:30}")
-    private int reportTimeoutSeconds = 30;
+    /** 简历文本上限（字符）；超出按入参截断，与解析接口的 resume-max-chars 保持一致 */
+    @Value("${app.coding.interview.resume-max-chars:8000}")
+    private int resumeMaxChars = 8000;
+
+    /** 有简历时简历深挖题在大纲中的目标占比（其余为方向通用题） */
+    @Value("${app.coding.interview.resume-topic-ratio:0.6}")
+    private double resumeTopicRatio = 0.6;
 
     // ==================== 依赖 ====================
 
@@ -200,12 +218,12 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
     @Autowired
     private PromptSanitizer promptSanitizer;
 
-    /** SSE 执行池（报告超时保护用；单测/未装配时同步直调） */
-    @Autowired(required = false)
-    @Qualifier("aiSseExecutor")
-    private Executor aiSseExecutor;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    /**
+     * 报告链路（分批评估 → 逐位对齐 → 二次汇总 → 解析/规范化）。
+     * 抽成独立服务：报告有自己的名词体系与降级层次，和开面、轮次编排放一起会互相干扰阅读。
+     */
+    @Autowired
+    private CodingReportService reportService;
 
     // ==================== 开面 / 续答 ====================
 
@@ -220,6 +238,8 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
                 "面试方向最多 " + DIRECTION_MAX_LENGTH + " 字");
         }
         int difficulty = dto.getDifficulty() == null ? 2 : Math.max(1, Math.min(3, dto.getDifficulty()));
+        int topicCount = resolveTopicCount(dto.getQuestionCount());
+        String resume = normalizeResumeText(dto.getResumeText());
         Date now = new Date();
 
         // 1. 单场并发：进行中且未超时直接续答（deadline 不变、不重新生成提纲）；已超时懒置过期
@@ -245,23 +265,43 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
             return ResponseResult.errorResult(AppHttpCodeEnum.AI_QUOTA_EXHAUSTED);
         }
 
-        // 4. 素材池标签 + 用户弱项（标签不足自然降级为纯方向生成，不阻断）
+        // 4. 素材池标签 + 用户弱项 + 近几场已考主题（标签不足自然降级为纯方向生成，不阻断）
         List<String> materialTags = materialTags(direction);
         List<String> weakTags = weakTags(userId);
+        List<String> historyTopics = recentTopics(userId);
 
         // 5. 提纲生成（同步 LLM；失败/不合格拒绝开面——不落库、不产生脏数据）
+        //    简历只作用于本次生成，不落库；有简历时按 resume-topic-ratio 分配简历深挖题配额
         String system = resolvePrompt(PROMPT_KEY_PLAN, FALLBACK_PLAN_SYSTEM, userId);
-        String userPrompt = buildPlanUserPrompt(direction, difficultyLabel(difficulty), materialTags, weakTags);
+        String userPrompt = buildPlanUserPrompt(direction, difficultyLabel(difficulty),
+            topicCount, resume, materialTags, weakTags, historyTopics);
         String raw = aiLlmGateway.generateOrNull(AiFeatures.INTERVIEW_PLAN, system, userPrompt, null, null);
         List<PlanTopic> plan = parsePlan(raw);
-        int minTopics = Math.min(PLAN_MIN_TOPICS, Math.max(1, questionCount));
+        int minTopics = Math.min(PLAN_MIN_TOPICS, Math.max(1, topicCount));
         if (plan == null || plan.size() < minTopics) {
-            log.warn("[CodingInterview] 提纲生成失败或不合格，拒绝开面: userId={}, rawLen={}",
-                userId, raw == null ? 0 : raw.length());
+            log.warn("[CodingInterview] 提纲生成失败或不合格，拒绝开面: userId={}, rawLen={}, topicCount={}, hasResume={}",
+                userId, raw == null ? 0 : raw.length(), topicCount, resume != null);
             return ResponseResult.errorResult(500, "面试提纲生成失败，请稍后重试");
         }
-        if (plan.size() > questionCount) {
-            plan = new ArrayList<>(plan.subList(0, questionCount));
+        if (plan.size() > topicCount) {
+            plan = new ArrayList<>(plan.subList(0, topicCount));
+        }
+
+        // 5.1 无简历时来源一律归为方向题：prompt 已说明"没给简历全部取 direction"，
+        //     但模型仍可能凭空标 resume——不修的话前端会显示"简历深挖"而用户根本没传简历
+        if (resume == null) {
+            plan.forEach(t -> t.source = SOURCE_DIRECTION);
+        }
+
+        // 5.2 简历题配额留痕：模型没按配额分配时只告警不阻断——题目本身仍可用，
+        //     且事后无法可靠重贴来源（改标而已，不如留痕观察 prompt 效果）
+        if (resume != null) {
+            long actual = plan.stream().filter(t -> SOURCE_RESUME.equals(t.source)).count();
+            int expect = resumeTopicQuota(plan.size());
+            if (actual != expect) {
+                log.warn("[CodingInterview] 简历题配额未命中: userId={}, 期望={}, 实际={}, 主题数={}",
+                    userId, expect, actual, plan.size());
+            }
         }
 
         // 6. 落库：turns 预置首题（提纲含 keyPoints，仅服务端可见，不下发）
@@ -462,7 +502,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
             return ResponseResult.errorResult(400, "面试已过期，无法生成报告");
         }
         // 幂等回放：已完成且报告可用 → 直接回放（重复 finish 不重复生成）
-        if (isStatus(record, ApCodingInterview.STATUS_FINISHED) && hasUsableReport(record)) {
+        if (isStatus(record, ApCodingInterview.STATUS_FINISHED) && reportService.hasUsableReport(record)) {
             return ResponseResult.okResult(toFinishVO(record, true));
         }
         Date now = new Date();
@@ -473,10 +513,10 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         }
 
         // 生成报告（超时保护；失败/解析失败存原文降级，重试可恢复）
-        String raw = generateReportWithTimeout(record);
-        ReportData report = parseReport(raw);
+        String raw = reportService.generateReport(record);
+        ReportData report = reportService.parseReport(raw);
         String stored = report == null ? raw : CodingJudge.writeJson(report);
-        Integer overallScore = report == null ? null : computeOverallScore(report);
+        Integer overallScore = report == null ? null : reportService.computeOverallScore(report);
         Date finished = new Date();
 
         ApCodingInterview update = new ApCodingInterview();
@@ -492,7 +532,8 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         if (rows == 0) {
             // 并发结束/过期：回读——已完成则幂等回放，否则拒绝
             ApCodingInterview fresh = interviewMapper.selectById(record.getId());
-            if (fresh != null && isStatus(fresh, ApCodingInterview.STATUS_FINISHED) && hasUsableReport(fresh)) {
+            if (fresh != null && isStatus(fresh, ApCodingInterview.STATUS_FINISHED)
+                && reportService.hasUsableReport(fresh)) {
                 return ResponseResult.okResult(toFinishVO(fresh, true));
             }
             if (fresh != null && isStatus(fresh, ApCodingInterview.STATUS_EXPIRED)) {
@@ -523,8 +564,15 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
     public ResponseResult history(Integer userId, Integer page, Integer size) {
         int p = page == null || page < 1 ? 1 : page;
         int s = size == null || size < 1 || size > 50 ? 10 : size;
+        // 显式投影：turns / report 是两列大 TEXT（对话流水、报告 JSON），列表页一条都用不到。
+        // 不写 select(...) 时 MyBatis-Plus 会 `SELECT` 全列，等于把每页 10 条的大字段一起读进内存。
+        // plan_snapshot 虽然也是大列，但下面要用它统计主题数，必须留在投影里。
         IPage<ApCodingInterview> result = interviewMapper.selectPage(new Page<>(p, s),
             new LambdaQueryWrapper<ApCodingInterview>()
+                .select(ApCodingInterview::getId, ApCodingInterview::getDirection,
+                    ApCodingInterview::getDifficulty, ApCodingInterview::getOverallScore,
+                    ApCodingInterview::getStatus, ApCodingInterview::getPlanSnapshot,
+                    ApCodingInterview::getStartedTime, ApCodingInterview::getFinishedTime)
                 .eq(ApCodingInterview::getUserId, userId)
                 .eq(ApCodingInterview::getStatus, ApCodingInterview.STATUS_FINISHED)
                 .orderByDesc(ApCodingInterview::getId));
@@ -546,140 +594,65 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         return ResponseResult.okResult(data);
     }
 
-    // ==================== 报告生成 / 解析 ====================
+    // ==================== Prompt 组装 ====================
 
-    /** 报告生成（超时保护）：超时返回 null → 按结构化失败降级（report 留空，finish 重试可恢复） */
-    private String generateReportWithTimeout(ApCodingInterview record) {
-        String system = resolvePrompt(PROMPT_KEY_REPORT, FALLBACK_REPORT_SYSTEM, record.getUserId());
-        String userPrompt = buildReportUserPrompt(record);
-        if (aiSseExecutor == null) {
-            return aiLlmGateway.generateOrNull(AiFeatures.INTERVIEW_REPORT, system, userPrompt, null, null);
+    /** 主题数：入参缺省取配置默认，越界夹取到 [MIN, MAX]（不报错，与 difficulty 同口径） */
+    private int resolveTopicCount(Integer requested) {
+        if (requested == null) {
+            return Math.max(MIN_QUESTION_COUNT, Math.min(MAX_QUESTION_COUNT, questionCount));
         }
-        try {
-            return CompletableFuture.supplyAsync(() -> aiLlmGateway.generateOrNull(
-                    AiFeatures.INTERVIEW_REPORT, system, userPrompt, null, null), aiSseExecutor)
-                .get(Math.max(5, reportTimeoutSeconds), TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            log.warn("[CodingInterview] 报告生成超时（{}s），按结构化失败降级: interviewId={}",
-                reportTimeoutSeconds, record.getId());
-            return null;
-        } catch (Exception e) {
-            log.warn("[CodingInterview] 报告生成失败: interviewId={}, err={}", record.getId(), e.getMessage());
-            return null;
-        }
+        return Math.max(MIN_QUESTION_COUNT, Math.min(MAX_QUESTION_COUNT, requested));
     }
 
-    /**
-     * 解析报告 JSON（模型输出容错：剥离代码块/前后缀文本）；失败返回 null（调用方存原文降级）。
-     *
-     * <p>服务端规范化：考点清单缺失补空列表、等级夹取 1-5、覆盖度等级按
-     * covered/(covered+missing) 比例映射（不信任模型自评的覆盖分）。</p>
-     */
-    private ReportData parseReport(String raw) {
+    /** 简历文本：去空白、按上限截断；空串归一为 null（后续据此判断"有无简历"） */
+    private String normalizeResumeText(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        String json = extractJsonObject(raw);
-        if (json == null) {
-            return null;
+        String trimmed = raw.trim();
+        if (trimmed.length() > resumeMaxChars) {
+            return trimmed.substring(0, resumeMaxChars) + "\n...(简历内容过长，已截断)";
         }
-        ReportData data;
-        try {
-            data = objectMapper.readValue(json, ReportData.class);
-        } catch (Exception e) {
-            log.warn("[CodingInterview] 报告 JSON 解析失败（存原文降级）: {}", e.getMessage());
-            return null;
-        }
-        if (data == null || data.items == null || data.items.isEmpty()) {
-            return null;
-        }
-        for (ReportItemData item : data.items) {
-            if (item == null) {
-                return null;
-            }
-            if (item.coverage == null) {
-                item.coverage = new CoverageData();
-            }
-            if (item.coverage.covered == null) {
-                item.coverage.covered = new ArrayList<>();
-            }
-            if (item.coverage.missing == null) {
-                item.coverage.missing = new ArrayList<>();
-            }
-            item.structure = clampLevel(item.structure);
-            item.accuracy = clampLevel(item.accuracy);
-            item.coverageScore = coverageLevel(item.coverage.covered.size(), item.coverage.missing.size());
-            if (item.topic == null) {
-                item.topic = "";
-            }
-            if (item.comment == null) {
-                item.comment = "";
-            }
-        }
-        if (data.suggestions == null) {
-            data.suggestions = new ArrayList<>();
-        }
-        return data;
+        return trimmed;
     }
 
-    /** 报告是否可用（结构化可解析）：finish 幂等回放/重试的判据 */
-    private boolean hasUsableReport(ApCodingInterview record) {
-        return parseReport(record.getReport()) != null;
+    /**
+     * 简历题配额：按占比四舍五入后夹在 [1, topicCount-1]。
+     * 上下都夹住是为了保证两类主题都出现——全给简历题会丢掉方向通用考察，反之则白传简历。
+     */
+    private int resumeTopicQuota(int topicCount) {
+        if (topicCount <= 1) {
+            return 0;
+        }
+        int quota = (int) Math.round(topicCount * resumeTopicRatio);
+        return Math.max(1, Math.min(topicCount - 1, quota));
     }
 
-    /** 综合等级 = 三维均值四舍五入（仅供档案块与列表展示；不给百分制总分） */
-    private static int computeOverallScore(ReportData report) {
-        double sum = 0;
-        int count = 0;
-        for (ReportItemData item : report.items) {
-            sum += item.structure + item.coverageScore + item.accuracy;
-            count += 3;
-        }
-        if (count == 0) {
-            return 1;
-        }
-        return (int) Math.max(1, Math.min(5, Math.round(sum / count)));
-    }
-
-    /** 等级夹取 1-5；缺失按 3（基本合格）中性处理（模型未给等级时不虚高也不误伤） */
-    private static int clampLevel(Integer level) {
-        return level == null ? 3 : Math.max(1, Math.min(5, level));
-    }
-
-    /** 覆盖度等级：covered/(covered+missing) 比例映射 1-5（覆盖度先行，无考点信息从低） */
-    private static int coverageLevel(int covered, int missing) {
-        int total = covered + missing;
-        if (total <= 0) {
-            return 1;
-        }
-        double ratio = covered * 1.0 / total;
-        if (ratio >= 0.8) {
-            return 5;
-        }
-        if (ratio >= 0.6) {
-            return 4;
-        }
-        if (ratio >= 0.4) {
-            return 3;
-        }
-        if (ratio >= 0.2) {
-            return 2;
-        }
-        return 1;
-    }
-
-    // ==================== Prompt 组装 ====================
-
-    private String buildPlanUserPrompt(String direction, String difficultyLabel,
-                                       List<String> materialTags, List<String> weakTags) {
+    private String buildPlanUserPrompt(String direction, String difficultyLabel, int topicCount,
+                                       String resumeText, List<String> materialTags,
+                                       List<String> weakTags, List<String> historyTopics) {
         StringBuilder sb = new StringBuilder();
         sb.append("【面试方向】").append(promptSanitizer.sanitize(direction)).append('\n');
         sb.append("【难度】").append(difficultyLabel).append('\n');
-        sb.append("【主题数量】").append(questionCount).append('\n');
+        sb.append("【主题数量】").append(topicCount).append('\n');
         sb.append("【参考技术标签】").append(materialTags.isEmpty()
             ? "无（请按方向自行覆盖常见考点）" : promptSanitizer.sanitize(String.join("、", materialTags))).append('\n');
         sb.append("【候选人薄弱方向（可适当侧重考察）】").append(weakTags.isEmpty()
             ? "无" : promptSanitizer.sanitize(String.join("、", weakTags))).append('\n');
+        // 跨场去重：同一用户连做多场时避免原题重问（近 N 场已完成面试的提纲主题）
+        sb.append("【已考过的主题（本用户近几场；请换角度、换深度或换考点）】").append(historyTopics.isEmpty()
+            ? "无" : promptSanitizer.sanitize(String.join("、", historyTopics))).append('\n');
+
+        if (resumeText == null) {
+            sb.append("【简历题配额】无简历，全部主题取 source=direction\n");
+        } else {
+            int resumeQuota = resumeTopicQuota(topicCount);
+            sb.append("【简历题配额】").append(resumeQuota).append(" 个主题取 source=resume（针对简历里的")
+                .append("项目/技术栈深挖），其余 ").append(topicCount - resumeQuota).append(" 个取 source=direction\n");
+            sb.append("【候选人简历】\n")
+                .append(promptSanitizer.sanitizeAndWrap("resume", resumeText)).append('\n');
+        }
+
         sb.append("请生成这次模拟面试的提纲（JSON 数组）。");
         return sb.toString();
     }
@@ -698,18 +671,9 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         return sb.toString();
     }
 
-    private String buildReportUserPrompt(ApCodingInterview record) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("【面试方向】").append(promptSanitizer.sanitize(record.getDirection())).append('\n');
-        sb.append("【面试提纲（JSON）】\n").append(record.getPlanSnapshot()).append('\n');
-        sb.append("【完整对话】\n").append(fullDialogue(record)).append('\n');
-        sb.append("请输出面试报告（JSON 对象）。");
-        return sb.toString();
-    }
-
     /** 当前应回答的问题：最近一条面试官发言（可能是追问）；兜底为主题主问题 */
     private static String currentQuestion(ApCodingInterview record, PlanTopic topic) {
-        List<TurnRecord> turns = parseTurnsStatic(record.getTurns());
+        List<TurnRecord> turns = parseTurns(record.getTurns());
         for (int i = turns.size() - 1; i >= 0; i--) {
             TurnRecord t = turns.get(i);
             if ("interviewer".equals(t.role) && t.content != null && !t.content.isBlank()) {
@@ -728,34 +692,43 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         int from = Math.max(0, turns.size() - TURN_WINDOW_MESSAGES);
         StringBuilder sb = new StringBuilder();
         for (int i = from; i < turns.size(); i++) {
-            appendDialogueLine(sb, turns.get(i), WINDOW_TRUNCATE);
+            appendDialogueLine(sb, turns.get(i), WINDOW_TRUNCATE, promptSanitizer);
         }
         return sb.toString().trim();
     }
 
-    /** 全量对话（报告输入；用户内容净化 + 适度截断） */
-    private String fullDialogue(ApCodingInterview record) {
-        List<TurnRecord> turns = parseTurns(record.getTurns());
-        if (turns.isEmpty()) {
-            return "（候选人未作答任何问题）";
+    /**
+     * 近 N 场已考主题（去重后限条数）。
+     * 无历史、查询失败、快照解析失败一律返回空列表 —— 去重是锦上添花，不能拖垮开面。
+     */
+    private List<String> recentTopics(Integer userId) {
+        List<String> snapshots;
+        try {
+            snapshots = interviewMapper.selectRecentPlanSnapshots(userId, HISTORY_SESSION_LIMIT);
+        } catch (Exception e) {
+            log.warn("[CodingInterview] 查询历史主题失败（本次不做跨场去重）: userId={}, err={}",
+                userId, e.getMessage());
+            return new ArrayList<>();
         }
-        StringBuilder sb = new StringBuilder();
-        for (TurnRecord turn : turns) {
-            appendDialogueLine(sb, turn, REPORT_TRUNCATE);
+        if (snapshots == null || snapshots.isEmpty()) {
+            return new ArrayList<>();
         }
-        return sb.toString().trim();
-    }
-
-    private void appendDialogueLine(StringBuilder sb, TurnRecord turn, int truncate) {
-        String content = turn.content == null ? "" : turn.content;
-        if ("user".equals(turn.role)) {
-            content = promptSanitizer.sanitize(content);
+        LinkedHashSet<String> topics = new LinkedHashSet<>();
+        for (String snapshot : snapshots) {
+            for (PlanTopic topic : parsePlanList(snapshot)) {
+                if (isBlank(topic.topic)) {
+                    continue;
+                }
+                topics.add(topic.topic.trim());
+                if (topics.size() >= HISTORY_TOPIC_LIMIT) {
+                    break;
+                }
+            }
+            if (topics.size() >= HISTORY_TOPIC_LIMIT) {
+                break;
+            }
         }
-        if (content.length() > truncate) {
-            content = content.substring(0, truncate) + "…";
-        }
-        sb.append("user".equals(turn.role) ? "候选人：" : "面试官：");
-        sb.append(content).append('\n');
+        return new ArrayList<>(topics);
     }
 
     /** prompt 解析：注册表（灰度）→ 代码兜底；注册表缺失/异常一律 fail-open */
@@ -807,7 +780,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         }
         Map<String, Object> raw;
         try {
-            raw = objectMapper.readValue(stat.getTagStats(), new TypeReference<Map<String, Object>>() {});
+            raw = CodingInterviewJson.mapper().readValue(stat.getTagStats(), new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             log.warn("[CodingInterview] 解析答题领域分布失败（提纲忽略弱项）: userId={}", userId);
             return new ArrayList<>();
@@ -838,70 +811,29 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
 
     // ==================== JSON 解析 / VO 组装 ====================
 
-    /** 解析并校验提纲（生成校验用，不合格返回 null；存储重载请用 parsePlanList） */
-    private List<PlanTopic> parsePlan(String raw) {
-        if (raw == null || raw.isBlank()) {
+    /**
+     * 解析并校验提纲（生成校验用，不合格返回 null；存储重载请用 {@link #parsePlanList}）。
+     *
+     * <p>{@link CodingInterviewJson#parsePlan(String)} 只做"形状"层面的校验，
+     * <b>source 归一留在这一层</b>：只认 {@code resume}，其余（含缺失、拼错、模型自创值）一律
+     * {@code direction} —— 模型随手写的值不该被原样落库，否则前端会出现"既不是简历深挖、
+     * 也不是方向题"的第三种来源。</p>
+     */
+    private static List<PlanTopic> parsePlan(String raw) {
+        List<PlanTopic> plan = CodingInterviewJson.parsePlan(raw);
+        if (plan == null) {
             return null;
         }
-        String json = extractJsonArray(raw);
-        if (json == null) {
-            return null;
+        for (PlanTopic t : plan) {
+            t.source = SOURCE_RESUME.equalsIgnoreCase(t.source) ? SOURCE_RESUME : SOURCE_DIRECTION;
         }
-        List<PlanTopic> list;
-        try {
-            list = objectMapper.readValue(json, new TypeReference<List<PlanTopic>>() {});
-        } catch (Exception e) {
-            log.warn("[CodingInterview] 提纲 JSON 解析失败: {}", e.getMessage());
-            return null;
-        }
-        if (list == null) {
-            return null;
-        }
-        List<PlanTopic> valid = new ArrayList<>();
-        for (PlanTopic t : list) {
-            if (t == null || isBlank(t.topic) || isBlank(t.mainQuestion) || t.keyPoints == null) {
-                continue;
-            }
-            List<String> keyPoints = t.keyPoints.stream()
-                .filter(s -> s != null && !s.isBlank())
-                .map(String::trim)
-                .collect(Collectors.toList());
-            if (keyPoints.isEmpty()) {
-                continue;
-            }
-            t.topic = t.topic.trim();
-            t.mainQuestion = t.mainQuestion.trim();
-            t.keyPoints = keyPoints;
-            if (t.tag == null) {
-                t.tag = "";
-            }
-            valid.add(t);
-        }
-        return valid;
+        return plan;
     }
 
     /** 存储提纲重载（快照为服务端写出，异常时返回空列表 = 不可用） */
-    private List<PlanTopic> parsePlanList(String json) {
+    private static List<PlanTopic> parsePlanList(String json) {
         List<PlanTopic> list = parsePlan(json);
         return list == null ? new ArrayList<>() : list;
-    }
-
-    private List<TurnRecord> parseTurns(String json) {
-        return new ArrayList<>(parseTurnsStatic(json));
-    }
-
-    private static List<TurnRecord> parseTurnsStatic(String json) {
-        if (json == null || json.isBlank()) {
-            return new ArrayList<>();
-        }
-        try {
-            List<TurnRecord> list = ObjectMapperHolder.MAPPER.readValue(json,
-                new TypeReference<List<TurnRecord>>() {});
-            return list == null ? new ArrayList<>() : list;
-        } catch (Exception e) {
-            log.warn("[CodingInterview] 对话流水解析失败");
-            return new ArrayList<>();
-        }
     }
 
     private CodingInterviewSessionVO toSessionVO(ApCodingInterview record, Date now) {
@@ -927,6 +859,8 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         if (topic != null) {
             current.setTopic(topic.topic);
             current.setQuestion(currentQuestion(record, topic));
+            // 只暴露当前主题的来源（不下发后续主题，避免提前看到全部题目）
+            current.setSource(SOURCE_RESUME.equals(topic.source) ? SOURCE_RESUME : SOURCE_DIRECTION);
         }
         vo.setCurrentTopic(current);
         vo.setTurns(toTurnItems(parseTurns(record.getTurns())));
@@ -963,7 +897,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         vo.setCompletedTopics(completedTopics(turns));
         vo.setTurns(toTurnItems(turns));
 
-        ReportData report = parseReport(record.getReport());
+        ReportData report = reportService.parseReport(record.getReport());
         if (report != null) {
             vo.setReportReady(true);
             vo.setOverall(report.overall);
@@ -976,6 +910,8 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
                 item.setCoverageScore(data.coverageScore);
                 item.setAccuracy(data.accuracy);
                 item.setComment(data.comment);
+                // 未评估占位：等级为空，前端据此标「未评估」而不是显示 0/5
+                item.setPending(Boolean.TRUE.equals(data.pending));
                 CodingInterviewReportVO.Coverage coverage = new CodingInterviewReportVO.Coverage();
                 coverage.setCovered(data.coverage.covered);
                 coverage.setMissing(data.coverage.missing);
@@ -1051,25 +987,6 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         return record.getStatus() != null && record.getStatus() == status;
     }
 
-    private static int nvl(Integer value) {
-        return value == null ? 0 : value;
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-
-    private static String difficultyLabel(int difficulty) {
-        switch (difficulty) {
-            case 1:
-                return "入门";
-            case 3:
-                return "挑战";
-            default:
-                return "进阶";
-        }
-    }
-
     private static Date startOfDay() {
         return Date.from(LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant());
     }
@@ -1094,41 +1011,6 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         } catch (NumberFormatException e) {
             return null;
         }
-    }
-
-    /** 剥离 markdown 代码块围栏（模型可能仍输出 ```json ... ```） */
-    private static String stripFences(String raw) {
-        String t = raw.trim();
-        if (!t.startsWith("```")) {
-            return t;
-        }
-        int firstNl = t.indexOf('\n');
-        if (firstNl < 0) {
-            return t;
-        }
-        String body = t.substring(firstNl + 1);
-        int fence = body.lastIndexOf("```");
-        return fence >= 0 ? body.substring(0, fence).trim() : body.trim();
-    }
-
-    private static String extractJsonArray(String raw) {
-        String t = stripFences(raw);
-        int start = t.indexOf('[');
-        int end = t.lastIndexOf(']');
-        if (start < 0 || end <= start) {
-            return null;
-        }
-        return t.substring(start, end + 1);
-    }
-
-    private static String extractJsonObject(String raw) {
-        String t = stripFences(raw);
-        int start = t.indexOf('{');
-        int end = t.lastIndexOf('}');
-        if (start < 0 || end <= start) {
-            return null;
-        }
-        return t.substring(start, end + 1);
     }
 
     /** 剥离 FOLLOWUP 独占行时的行内前缀（无换行输出的兜底，如 "FOLLOWUP：你提到…"） */
@@ -1242,49 +1124,4 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         boolean completed;
     }
 
-    /** Jackson 静态持有（parseTurnsStatic 用，避免静态方法访问实例字段） */
-    private static final class ObjectMapperHolder {
-        static final ObjectMapper MAPPER = new ObjectMapper();
-    }
-
-    // ==================== JSON 结构 ====================
-
-    /** 提纲主题（仅服务端可见，含 keyPoints） */
-    static class PlanTopic {
-        public String topic;
-        public String mainQuestion;
-        public List<String> keyPoints;
-        public String tag;
-    }
-
-    /** 对话流水（turns JSON 元素） */
-    static class TurnRecord {
-        public String role;
-        public String type;
-        public String content;
-        public Integer topicIndex;
-        public Long ts;
-    }
-
-    /** 报告结构（解析成功时写库；失败时 report 存原文） */
-    static class ReportData {
-        public List<ReportItemData> items;
-        public String overall;
-        public List<String> suggestions;
-    }
-
-    static class ReportItemData {
-        public String topic;
-        public Integer structure;
-        public CoverageData coverage;
-        public Integer accuracy;
-        public String comment;
-        /** 服务端按 covered/(covered+missing) 计算的覆盖度等级（1-5） */
-        public Integer coverageScore;
-    }
-
-    static class CoverageData {
-        public List<String> covered;
-        public List<String> missing;
-    }
 }

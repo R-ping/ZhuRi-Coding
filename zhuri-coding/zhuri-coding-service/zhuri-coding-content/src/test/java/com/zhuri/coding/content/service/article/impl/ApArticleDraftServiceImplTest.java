@@ -53,11 +53,11 @@ import static org.mockito.Mockito.when;
  *
  * 继承 ServiceImpl(草稿Mapper)，私有 baseMapper 反射注入；其余依赖 @InjectMocks。提供 getApArticle@NotNull。
  * 覆盖：
- * - createDraft：写入作者ID/时间并 save；
- * - updateDraft：id 为空、草稿不存在、成功(补作者ID/时间)；
- * - publishFromDraft：id 为空、草稿不存在、成功创建 article/config/content + 删除草稿(返回 article)；
- * - getDraftById：不存在/正常；
- * - listDrafts：按作者过滤分页；
+ * - createDraft：未登录拒绝、写入作者ID/时间并 save；
+ * - updateDraft：未登录、id 为空、草稿不存在、越权改写被拒、请求体 authorId 被强制覆盖、成功；
+ * - publishFromDraft：id 为空、草稿不存在、越权发布被拒、成功创建 article/config/content + 删除草稿(返回 article)；
+ * - getDraftById：未登录、不存在、他人草稿不可见、本人草稿正常；
+ * - listDrafts：未登录、只查当前用户（断言作者过滤值）、排除修订草稿；
  * - deleteDraft：id 为空、未登录、草稿不存在、越权、本人成功；
  * - getApArticle：publishTime/layout 缺省、authorId 回退当前用户、作者信息填充。
  */
@@ -102,10 +102,14 @@ class ApArticleDraftServiceImplTest {
     }
 
     private ApArticleDraft draft(Long id, String title) {
+        return draft(id, title, 5L);
+    }
+
+    private ApArticleDraft draft(Long id, String title, Long authorId) {
         ApArticleDraft d = new ApArticleDraft();
         d.setId(id);
         d.setTitle(title);
-        d.setAuthorId(5L);
+        d.setAuthorId(authorId);
         d.setChannelId(1);
         d.setLayout((short) 1);
         d.setTags(Arrays.asList("a"));
@@ -128,6 +132,13 @@ class ApArticleDraftServiceImplTest {
         assertEquals(1L, d.getAuthorId());
         assertNotNull(d.getCreatedTime());
         verify(apArticleDraftMapper).insert((ApArticleDraft) any(ApArticleDraft.class));
+    }
+
+    @Test
+    @DisplayName("createDraft - 未登录返回 NEED_LOGIN（原实现直接 user.getId() 会 NPE 500）")
+    void testCreateNeedLogin() {
+        assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(),
+                draftService.createDraft(new ApArticleDraft()).getCode());
     }
 
     // ==================== updateDraft ====================
@@ -157,12 +168,47 @@ class ApArticleDraftServiceImplTest {
         ApArticleDraft d = new ApArticleDraft();
         d.setId(1L);
         d.setTitle("改后");
-        when(apArticleDraftMapper.selectById(1L)).thenReturn(draft(1L, "旧"));
+        when(apArticleDraftMapper.selectById(1L)).thenReturn(draft(1L, "旧", 1L));
         when(apArticleDraftMapper.updateById(any(ApArticleDraft.class))).thenReturn(1);
         ResponseResult r = draftService.updateDraft(d);
         assertEquals(200, r.getCode());
         assertEquals(1L, d.getAuthorId());
         assertNotNull(d.getUpdatedTime());
+    }
+
+    @Test
+    @DisplayName("updateDraft - 请求体传入他人 authorId 被强制覆盖为当前用户（防越权过户）")
+    void testUpdateIgnoresBodyAuthorId() {
+        AppThreadLocalUtil.setUser(user(1));
+        ApArticleDraft d = new ApArticleDraft();
+        d.setId(1L);
+        d.setTitle("改后");
+        d.setAuthorId(99L); // 试图把草稿过户给 99
+        when(apArticleDraftMapper.selectById(1L)).thenReturn(draft(1L, "旧", 1L));
+        when(apArticleDraftMapper.updateById(any(ApArticleDraft.class))).thenReturn(1);
+        assertEquals(200, draftService.updateDraft(d).getCode());
+        assertEquals(1L, d.getAuthorId(), "authorId 必须被强制覆盖为当前登录用户");
+    }
+
+    @Test
+    @DisplayName("updateDraft - 越权改写他人草稿被拒且不落库")
+    void testUpdateNoAuth() {
+        AppThreadLocalUtil.setUser(user(99));
+        ApArticleDraft d = new ApArticleDraft();
+        d.setId(1L);
+        d.setTitle("篡改");
+        when(apArticleDraftMapper.selectById(1L)).thenReturn(draft(1L, "别人的草稿", 5L));
+        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), draftService.updateDraft(d).getCode());
+        org.mockito.Mockito.verify(apArticleDraftMapper, org.mockito.Mockito.never())
+                .updateById(any(ApArticleDraft.class));
+    }
+
+    @Test
+    @DisplayName("updateDraft - 未登录返回 NEED_LOGIN")
+    void testUpdateNeedLogin() {
+        ApArticleDraft d = new ApArticleDraft();
+        d.setId(1L);
+        assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), draftService.updateDraft(d).getCode());
     }
 
     // ==================== publishFromDraft ====================
@@ -182,6 +228,17 @@ class ApArticleDraftServiceImplTest {
         when(levelPermissionService.hasPermission(anyLong(), anyString())).thenReturn(true);
         when(apArticleDraftMapper.selectById(1L)).thenReturn(null);
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), draftService.publishFromDraft(1L).getCode());
+    }
+
+    @Test
+    @DisplayName("publishFromDraft - 越权发布他人草稿被拒（原实现会直接发布并删除他人草稿）")
+    void testPublishNoAuth() {
+        AppThreadLocalUtil.setUser(user(99));
+        when(levelPermissionService.hasPermission(anyLong(), anyString())).thenReturn(true);
+        when(apArticleDraftMapper.selectById(1L)).thenReturn(draft(1L, "别人的草稿", 5L));
+        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), draftService.publishFromDraft(1L).getCode());
+        org.mockito.Mockito.verify(apArticleMapper, org.mockito.Mockito.never()).insert(any(ApArticle.class));
+        org.mockito.Mockito.verify(apArticleDraftMapper, org.mockito.Mockito.never()).deleteById(1L);
     }
 
     @Test
@@ -238,32 +295,62 @@ class ApArticleDraftServiceImplTest {
     // ==================== getDraftById / listDrafts / deleteDraft ====================
 
     @Test
-    @DisplayName("getDraftById - 不存在/正常")
+    @DisplayName("getDraftById - 不存在/他人草稿/本人草稿")
     void testGetDraft() {
+        AppThreadLocalUtil.setUser(user(5));
         when(apArticleDraftMapper.selectById(1L)).thenReturn(null);
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), draftService.getDraftById(1L).getCode());
-        when(apArticleDraftMapper.selectById(1L)).thenReturn(draft(1L, "D"));
+        // 他人草稿（authorId=9）对当前用户 user(5) 不可见，且返回码与"不存在"一致，不泄露存在性
+        when(apArticleDraftMapper.selectById(1L)).thenReturn(draft(1L, "D", 9L));
+        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), draftService.getDraftById(1L).getCode());
+        // 本人草稿正常返回
+        when(apArticleDraftMapper.selectById(1L)).thenReturn(draft(1L, "D", 5L));
         assertEquals(200, draftService.getDraftById(1L).getCode());
     }
 
     @Test
-    @DisplayName("listDrafts - 按作者过滤分页")
+    @DisplayName("getDraftById - 未登录返回 NEED_LOGIN")
+    void testGetDraftNeedLogin() {
+        assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), draftService.getDraftById(1L).getCode());
+    }
+
+    @Test
+    @DisplayName("listDrafts - 只查当前用户自己的草稿")
+    @SuppressWarnings("unchecked")
     void testListDrafts() {
+        AppThreadLocalUtil.setUser(user(5));
         Page<ApArticleDraft> p = new Page<>(1, 10);
-        p.setRecords(java.util.Collections.singletonList(draft(1L, "D")));
+        p.setRecords(java.util.Collections.singletonList(draft(1L, "D", 5L)));
         when(apArticleDraftMapper.selectPage(any(IPage.class), any(Wrapper.class))).thenReturn(p);
-        ResponseResult r = draftService.listDrafts(5L, 1, 10);
+        ResponseResult r = draftService.listDrafts(1, 10);
         assertEquals(200, r.getCode());
         assertEquals(1, ((Page<?>) r.getData()).getRecords().size());
+
+        org.mockito.ArgumentCaptor<Wrapper> captor =
+                org.mockito.ArgumentCaptor.forClass(Wrapper.class);
+        verify(apArticleDraftMapper).selectPage(any(IPage.class), captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertTrue(sql.contains("author_id"), "草稿列表必须带作者过滤, sql=" + sql);
+        java.util.Map<String, Object> params = (java.util.Map<String, Object>)
+                ReflectionTestUtils.getField(captor.getValue(), "paramNameValuePairs");
+        assertNotNull(params, "应捕获到查询参数");
+        assertTrue(params.containsValue(5L), "作者过滤值应为当前登录用户 5L, params=" + params);
+    }
+
+    @Test
+    @DisplayName("listDrafts - 未登录返回 NEED_LOGIN（原实现匿名即可拉全站草稿）")
+    void testListDraftsNeedLogin() {
+        assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), draftService.listDrafts(1, 10).getCode());
     }
 
     @Test
     @DisplayName("listDrafts - 排除修订草稿（source_article_id IS NULL）")
     void testListDraftsExcludesRevisionDrafts() {
+        AppThreadLocalUtil.setUser(user(5));
         Page<ApArticleDraft> p = new Page<>(1, 10);
         p.setRecords(java.util.Collections.emptyList());
         when(apArticleDraftMapper.selectPage(any(IPage.class), any(Wrapper.class))).thenReturn(p);
-        draftService.listDrafts(5L, 1, 10);
+        draftService.listDrafts(1, 10);
         // 捕获查询条件：普通草稿列表必须带 source_article_id IS NULL，避免修订草稿混入
         org.mockito.ArgumentCaptor<Wrapper> captor =
                 org.mockito.ArgumentCaptor.forClass(Wrapper.class);

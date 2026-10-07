@@ -105,7 +105,9 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
      * 并将原来的 3 次 DB 往返（读+写计数+读+写评分）收敛为 1 次。
      * </p>
      * @param articleId  文章ID
-     * @param field      待递增的计数字段，仅允许 likes/views/collection/comment（由调用方白名单限定，防止 SQL 注入）
+     * @param field      待递增的计数字段，仅允许 likes/views/collection/comment。
+     *                   合法取值由 ApArticleMapper.xml 中的 choose 分支硬编码展开（不再做字符串拼接），
+     *                   传入其它值会直接抛 NumberFormatException 而不是被拼进 SQL
      * @param increment  增量（+1 或 -1）
      */
     void updateInteractionAndScore(@Param("articleId") Long articleId, @Param("field") String field, @Param("increment") int increment);

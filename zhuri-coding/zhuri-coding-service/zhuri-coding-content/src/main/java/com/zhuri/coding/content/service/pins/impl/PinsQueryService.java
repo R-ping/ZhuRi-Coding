@@ -183,7 +183,7 @@ public class PinsQueryService {
         List<ApFollow> follows = apFollowMapper.selectList(followWrapper);
         List<Long> followedIds = follows.stream()
                 .map(f -> f.getFollowUserId().longValue())
-                .collect(Collectors.toList());
+                .toList();
 
         if (followedIds.isEmpty()) {
             Map<String, Object> data = new HashMap<>();
@@ -311,12 +311,13 @@ public class PinsQueryService {
 
         boolean hot = "hot".equalsIgnoreCase(sort);
 
-        // 分页查询顶级评论（AI 折叠评论 is_hidden=1 全局隐藏，不展示）
+        // 分页查询顶级评论（AI 折叠评论 is_hidden=1 全局隐藏；违规软删 is_deleted=1 任何人不可见）
         Page<ApPinsComment> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<ApPinsComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApPinsComment::getPinsId, pinsId);
         wrapper.and(w -> w.isNull(ApPinsComment::getParentId).or().eq(ApPinsComment::getParentId, 0));
         wrapper.eq(ApPinsComment::getIsHidden, 0);
+        wrapper.eq(ApPinsComment::getIsDeleted, 0);
         if (hot) {
             wrapper.orderByDesc(ApPinsComment::getLikeCount).orderByDesc(ApPinsComment::getCreatedTime);
         } else {
@@ -329,10 +330,11 @@ public class PinsQueryService {
         // 批量查询子回复
         List<ApPinsComment> allSubReplies = new ArrayList<>();
         if (!pageComments.isEmpty()) {
-            List<Long> parentIds = pageComments.stream().map(ApPinsComment::getId).collect(Collectors.toList());
+            List<Long> parentIds = pageComments.stream().map(ApPinsComment::getId).toList();
             LambdaQueryWrapper<ApPinsComment> replyWrapper = new LambdaQueryWrapper<>();
             replyWrapper.in(ApPinsComment::getParentId, parentIds);
             replyWrapper.eq(ApPinsComment::getIsHidden, 0);
+            replyWrapper.eq(ApPinsComment::getIsDeleted, 0);
             replyWrapper.orderByAsc(ApPinsComment::getCreatedTime);
             allSubReplies = apPinsCommentMapper.selectList(replyWrapper);
         }
@@ -345,7 +347,7 @@ public class PinsQueryService {
             List<ApPinsComment> replies = replyMap.getOrDefault(comment.getId(), new ArrayList<>());
             List<PinsCommentVO> replyVOs = replies.stream()
                     .map(this::convertCommentToVO)
-                    .collect(Collectors.toList());
+                    .toList();
             vo.setReplies(replyVOs);
             return vo;
         }).collect(Collectors.toList());
@@ -469,7 +471,7 @@ public class PinsQueryService {
         // 批量查询当前用户是否已点赞
         Set<Long> likedPinsIds = new HashSet<>();
         if (currentUser != null) {
-            List<Long> pinsIds = pinsList.stream().map(ApPins::getId).collect(Collectors.toList());
+            List<Long> pinsIds = pinsList.stream().map(ApPins::getId).toList();
             LambdaQueryWrapper<ApPinsLike> likeWrapper = new LambdaQueryWrapper<>();
             likeWrapper.in(ApPinsLike::getPinsId, pinsIds);
             likeWrapper.eq(ApPinsLike::getUserId, currentUser.getId());

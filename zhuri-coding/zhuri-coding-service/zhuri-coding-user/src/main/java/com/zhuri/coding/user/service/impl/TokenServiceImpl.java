@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.zhuri.coding.common.redis.CacheService;
 import com.zhuri.coding.model.user.dtos.LoginResultVo;
 import com.zhuri.coding.user.service.TokenService;
+import com.zhuri.coding.user.service.UserBanChecker;
 import com.zhuri.coding.utils.common.AppJwtUtil;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,6 +16,15 @@ import org.springframework.stereotype.Service;
 
 /**
  * 双Token认证服务实现
+ *
+ * <p><b>本类是「账号是否还能登录」的唯一判定出口</b>：手机验证码登录、密码登录、社交登录、
+ * 公众号登录四条链路，以及 refresh_token 刷新（内部也是调 {@link #generateDualToken}），
+ * 全部汇聚到 {@code generateDualToken}。所以封禁校验放在这里 —— 一次拦住全部入口，
+ * 而不必去改四个登录实现（那样迟早会漏掉后来新增的第五种）。
+ *
+ * <p>已知边界（重要）：{@code access_token} 是无状态 JWT，服务端不留台账，
+ * <b>封禁无法吊销已经签发出去的 token</b>，它在过期前（≤1 小时）仍然有效。
+ * 也就是说封禁的准确语义是"拦住新的登录与续期"，不是"立刻踢下线"。详见 {@code UserBanChecker}。
  */
 @Slf4j
 @Service
@@ -28,8 +38,16 @@ public class TokenServiceImpl implements TokenService {
     @Autowired
     private CacheService cacheService;
 
+    /** 封禁闸口：放在签发 token 之前，被封账号既登不进来也续不了期 */
+    @Autowired
+    private UserBanChecker banChecker;
+
     @Override
     public LoginResultVo generateDualToken(Integer userId, String nickName, String phone, String image) {
+        // 0. 封禁校验（最先做）：命中会抛 BusinessException，由 ExceptionCatch 转成
+        //    "账号已被封禁，解封时间…原因…" 的响应。这是被封账号唯一能拿到的权威告知 ——
+        //    他登不进来，站内信是看不到的。
+        banChecker.assertNotBanned(userId);
         // 1. 生成 JWT access_token（1小时有效期）
         Map<String, Object> extraClaims = new HashMap<>();
         extraClaims.put("nickName", nickName);

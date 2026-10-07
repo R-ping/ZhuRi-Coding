@@ -17,7 +17,11 @@ const PERMISSIONS = {
 export const permission = {
   PERMISSIONS,
 
-  // ===== 小册编辑白名单（与后端 EditorConfig.EDITOR_USER_IDS 保持一致） =====
+  // ===== 小册编辑入口的本地镜像（仅用于本端界面显隐，不是权限边界） =====
+  // 后端已不再使用编辑器白名单：小册审核/沸点管理的鉴权改由 ap_admin_user_role 角色表
+  // + BOOKLET_MANAGE / PINS_MANAGE 权限点决定（后端没权限时接口直接 403）。
+  // 这个常量只决定「编辑入口显不显示」，改错不会越权，最多是入口显示不对；
+  // 运营后台前端接入后应改为从服务端读取身份，不再需要本地镜像。
   EDITOR_USER_IDS: [4],
 
   /**

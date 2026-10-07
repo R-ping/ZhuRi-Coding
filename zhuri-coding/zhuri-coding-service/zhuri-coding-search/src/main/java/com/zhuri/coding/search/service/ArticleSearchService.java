@@ -36,4 +36,12 @@ public interface ArticleSearchService {
      * <p>查询失败时**抛出异常**（而不是返回"没有缺失"）：把故障伪装成正常会让对账彻底失效。
      */
     List<Long> missingArticleIds(List<Long> candidateIds);
+
+    /**
+     * 从索引中移除一篇文章（内容被平台下架时调用）。
+     *
+     * <p>与 {@link #syncArticle} 相反：把文档从 ES 删掉，使检索结果里不再出现它。
+     * 删除不存在的文档是幂等的（ES delete 对未命中 id 不会报错），因此重放安全。
+     */
+    ResponseResult removeArticleIndex(Long articleId);
 }

@@ -20,7 +20,6 @@ import org.springframework.stereotype.Component;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * 沸点异步审核服务（数据库可靠队列版）。
@@ -135,7 +134,7 @@ public class PinsReviewService implements AuditTaskHandler {
             List<String> imageUrls = Arrays.stream(pins.getImageUrls().split(","))
                     .map(String::trim)
                     .filter(url -> !url.isEmpty())
-                    .collect(Collectors.toList());
+                    .toList();
             auditContext.withImageUrls(imageUrls);
         }
 

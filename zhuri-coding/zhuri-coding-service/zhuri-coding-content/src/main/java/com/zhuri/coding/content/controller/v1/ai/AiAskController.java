@@ -135,7 +135,9 @@ public class AiAskController {
                     .data("[" + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode() + "] "
                         + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getErrorMessage(),
                         org.springframework.http.MediaType.TEXT_PLAIN));
-            } catch (Exception ignore) {
+            } catch (Exception sendFail) {
+                // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
             }
             emitter.complete();
             return emitter;
@@ -200,7 +202,9 @@ public class AiAskController {
                         .name("error")
                         .data("本次 AI 额度已用完，预检已中断；可购买额度包或次日再试",
                             org.springframework.http.MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } catch (java.util.concurrent.CancellationException ce) {
                 log.warn("AI 流式预检被取消: {}", ce.getMessage());
@@ -210,7 +214,9 @@ public class AiAskController {
                     emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
                         .name("error").data("AI 服务暂不可用，请稍后再试",
                             org.springframework.http.MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } finally {
                 emitter.complete();
@@ -268,7 +274,9 @@ public class AiAskController {
                     .data("[" + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode() + "] "
                         + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getErrorMessage(),
                         org.springframework.http.MediaType.TEXT_PLAIN));
-            } catch (Exception ignore) {
+            } catch (Exception sendFail) {
+                // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
             }
             emitter.complete();
             return emitter;
@@ -326,7 +334,9 @@ public class AiAskController {
                         .name("error")
                         .data("本次 AI 额度已用完，回答已中断；已生成内容仍然可用，可购买额度包或次日再试",
                             org.springframework.http.MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } catch (Exception e) {
                 log.error("AI 流式问答异常", e);
@@ -334,7 +344,9 @@ public class AiAskController {
                     emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
                         .name("error").data("AI 服务暂不可用，请稍后再试",
                             org.springframework.http.MediaType.TEXT_PLAIN));
-                } catch (Exception ignore) {
+                } catch (Exception sendFail) {
+                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
+                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
                 }
             } finally {
                 emitter.complete();

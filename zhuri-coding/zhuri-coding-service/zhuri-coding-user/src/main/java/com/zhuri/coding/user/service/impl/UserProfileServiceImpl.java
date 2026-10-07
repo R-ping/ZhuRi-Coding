@@ -31,7 +31,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -100,7 +99,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         List<UserTagRelation> relations = userTagRelationMapper.selectList(relationWrapper);
         List<Integer> selectedTagIds = relations.stream()
                 .map(UserTagRelation::getTagId)
-                .collect(Collectors.toList());
+                .toList();
         vo.setSelectedTagIds(selectedTagIds);
 
         // 查询全量标签并分组（标签表为小表，加排序和上限保证安全）

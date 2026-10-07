@@ -312,15 +312,15 @@ public class RateLimitAspect {
         if (obj == null) {
             return null;
         }
-        if (obj instanceof Long) {
-            return (Long) obj;
+        if (obj instanceof Long value) {
+            return value;
         }
-        if (obj instanceof Integer) {
-            return ((Integer) obj).longValue();
+        if (obj instanceof Integer value) {
+            return value.longValue();
         }
-        if (obj instanceof String) {
+        if (obj instanceof String text) {
             try {
-                return Long.parseLong((String) obj);
+                return Long.parseLong(text);
             } catch (NumberFormatException e) {
                 return null;
             }

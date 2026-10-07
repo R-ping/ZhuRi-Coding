@@ -2,10 +2,12 @@ package com.zhuri.coding.content.service.aigc.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -13,6 +15,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhuri.coding.content.mapper.aigc.AigcRecordMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
@@ -28,8 +34,10 @@ import com.zhuri.coding.model.course.pojos.ApCourseChapter;
 import com.zhuri.coding.model.pins.pojos.ApPins;
 import java.util.List;
 import java.util.concurrent.Executor;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -276,5 +284,90 @@ class AigcDetectServiceImplTest {
         verify(apArticleMapper, atLeastOnce()).updateById(artCap.capture());
         assertEquals(Integer.valueOf(1), artCap.getValue().getIsAigc(),
             "LLM 不可用时应维持 L2 高分决断（仍 flagged）");
+    }
+
+    // ==================== 人工复核放行：clearAigcFlag ====================
+
+    @Nested
+    @DisplayName("复核放行清标记")
+    class ClearAigcFlag {
+
+        @BeforeEach
+        void initTableInfo() {
+            // LambdaUpdateWrapper.set() 在构造时就急切解析列名（query 的 eq 才是惰性的），
+            // 单测没有 MyBatis 会话，必须先手动初始化实体元信息
+            TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApArticle.class);
+            TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApPins.class);
+            TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), ApCourseChapter.class);
+        }
+
+        @Test
+        @DisplayName("文章：SET is_aigc=0 + aigc_score=0，只动文章表")
+        @SuppressWarnings("unchecked")
+        void clearsArticle() {
+            when(apArticleMapper.update(isNull(), any())).thenReturn(1);
+
+            service.clearAigcFlag(AigcRecord.TYPE_ARTICLE, 1L);
+
+            ArgumentCaptor<Wrapper<ApArticle>> captor = ArgumentCaptor.forClass(Wrapper.class);
+            verify(apArticleMapper).update(isNull(), captor.capture());
+            LambdaUpdateWrapper<ApArticle> wrapper = (LambdaUpdateWrapper<ApArticle>) captor.getValue();
+            String sqlSet = wrapper.getSqlSet();
+            assertTrue(sqlSet.contains("is_aigc"), "要清 AI 标记：" + sqlSet);
+            assertTrue(sqlSet.contains("aigc_score"), "疑似分一并归零（对齐申诉终审 revertDisposal）：" + sqlSet);
+            String where = wrapper.getSqlSegment();
+            assertTrue(where.contains("id ="), "WHERE 锚定到内容主键：" + where);
+            verify(apPinsMapper, never()).update(any(), any());
+            verify(courseChapterMapper, never()).update(any(), any());
+        }
+
+        @Test
+        @DisplayName("沸点：只动沸点表")
+        void clearsPins() {
+            when(apPinsMapper.update(isNull(), any())).thenReturn(1);
+
+            service.clearAigcFlag(AigcRecord.TYPE_PINS, 2L);
+
+            verify(apPinsMapper).update(isNull(), any());
+            verify(apArticleMapper, never()).update(any(), any());
+            verify(courseChapterMapper, never()).update(any(), any());
+        }
+
+        @Test
+        @DisplayName("课程小节：只动章节表")
+        void clearsChapter() {
+            when(courseChapterMapper.update(isNull(), any())).thenReturn(1);
+
+            service.clearAigcFlag(AigcRecord.TYPE_CHAPTER, 3L);
+
+            verify(courseChapterMapper).update(isNull(), any());
+            verify(apArticleMapper, never()).update(any(), any());
+            verify(apPinsMapper, never()).update(any(), any());
+        }
+
+        @Test
+        @DisplayName("未知类型 → IllegalArgumentException：坏数据要炸出来，不能伪装成放行成功")
+        void unknownTypeFails() {
+            assertThrows(IllegalArgumentException.class, () -> service.clearAigcFlag(9, 1L));
+        }
+
+        @Test
+        @DisplayName("内容主表 0 行（已被删除）→ IllegalStateException：放行对象不存在必须显式失败")
+        void missingContentFails() {
+            when(apArticleMapper.update(isNull(), any())).thenReturn(0);
+
+            assertThrows(IllegalStateException.class,
+                () -> service.clearAigcFlag(AigcRecord.TYPE_ARTICLE, 1L));
+        }
+
+        @Test
+        @DisplayName("id 为空 → IllegalArgumentException")
+        void nullIdFails() {
+            assertThrows(IllegalArgumentException.class,
+                () -> service.clearAigcFlag(AigcRecord.TYPE_ARTICLE, null));
+        }
     }
 }

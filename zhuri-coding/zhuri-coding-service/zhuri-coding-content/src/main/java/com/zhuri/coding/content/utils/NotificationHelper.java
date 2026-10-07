@@ -148,6 +148,48 @@ public class NotificationHelper {
         }
     }
 
+    /**
+     * 发送"复核放行已恢复"通知（人工复核放行违规内容后，发给内容作者）。
+     *
+     * <p><b>为什么是补发正向通知而不是撤回旧通知</b>：违规通知在处置时已发、
+     * 站内信没有撤回机制 —— 旧通知作为"当时确被处置"的事实保留，
+     * 恢复时补发一条让作者知道内容已回来，两件事都有痕可查。
+     *
+     * @param notificationClient 通知客户端
+     * @param userId              内容作者用户ID
+     * @param contentTypeDesc     内容类型描述（"评论"/"沸点"/"沸点评论"）
+     * @param content             内容摘要
+     */
+    public static void sendReviewRestoreNotification(
+            INotificationClient notificationClient,
+            Long userId, String contentTypeDesc, String content) {
+        if (notificationClient == null) {
+            log.warn("通知服务不可用，跳过发送复核放行通知");
+            return;
+        }
+        try {
+            String message = String.format(
+                    "你发布的%s经人工复核无违规，已恢复展示。内容: %s",
+                    contentTypeDesc,
+                    truncate(content != null ? content : "", 50)
+            );
+
+            Map<String, Object> contentMap = new HashMap<>();
+            contentMap.put("message", message);
+            contentMap.put("notification_type", "system");
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("userId", userId);
+            params.put("type", 4); // 系统通知
+            params.put("content", objectMapper.writeValueAsString(contentMap));
+
+            notificationClient.createNotification(params);
+            log.info("复核放行恢复通知已发送, userId={}, contentType={}", userId, contentTypeDesc);
+        } catch (Exception e) {
+            log.error("发送复核放行通知失败, userId={}", userId, e);
+        }
+    }
+
     private static String truncate(String str, int maxLen) {
         if (str == null) return "";
         return str.length() > maxLen ? str.substring(0, maxLen) + "..." : str;

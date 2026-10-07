@@ -85,6 +85,24 @@ class CodingAnswerTxServiceTest {
     }
 
     @Test
+    @DisplayName("saveAnswer - 并发越过预检查：唯一键拦下重复当日题，转成同一语义异常")
+    void testDailyDuplicateCaughtByUniqueKey() {
+        // 预检查放行（模拟另一并发请求在预检查之后才插入），由 uk_user_daily 兜底
+        when(recordMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(recordMapper.insert(any(ApCodingAnswerRecord.class)))
+            .thenThrow(new DuplicateKeyException("uk_user_daily"));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+            () -> service.saveAnswer(USER_ID, question(), "[0]", true, 10, true));
+        assertEquals("今日一题已作答", ex.getMessage());
+
+        // 唯一键拦下后事务回滚：题目热度与用户统计都不应被写
+        verify(recordMapper).insert(any(ApCodingAnswerRecord.class));
+        verify(questionMapper, never()).incrementAnswerStats(any(), anyInt());
+        verify(statMapper, never()).updateById(any(ApCodingUserStat.class));
+    }
+
+    @Test
     @DisplayName("saveAnswer - 当日题答对：落记录 + 题目计数 + 统计 upsert")
     void testSaveDailyCorrect() {
         when(recordMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);

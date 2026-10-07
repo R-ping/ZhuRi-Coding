@@ -24,6 +24,7 @@ import org.springframework.ai.chat.model.ChatModel;
  */
 @Slf4j
 @Component
+@org.springframework.boot.context.properties.ConfigurationProperties(prefix = "ai.model-router")
 public class AiModelRouter {
 
     /** 默认模型 key（application 可配置 ai.model-router.default） */
@@ -31,18 +32,35 @@ public class AiModelRouter {
     private String defaultModelKey;
 
     /** 功能 → 模型 key 映射（application 可配置 ai.model-router.features.xxx=key） */
-    @org.springframework.beans.factory.annotation.Value("#{${ai.model-router.features:{}}}")
     private Map<String, String> featureMapping = Collections.emptyMap();
 
     /**
      * 模型定价（元 / 千 token）。成本报表按 model key 折算金额；
      * 未配置的模型按 0 计（报表会标注 unpriced，避免把"没配价格"误读成"免费"）。
      */
-    @org.springframework.beans.factory.annotation.Value("#{${ai.model-router.pricing-prompt:{}}}")
     private Map<String, Double> promptPrice = Collections.emptyMap();
 
-    @org.springframework.beans.factory.annotation.Value("#{${ai.model-router.pricing-completion:{}}}")
     private Map<String, Double> completionPrice = Collections.emptyMap();
+
+    /**
+     * 三个嵌套 map 的绑定走 @ConfigurationProperties setter（而不是原先的
+     * {@code @Value("#{${ai.model-router.features:{}}}")}）：YAML 嵌套 map 会被解析为
+     * features.xxx 叶子键，前缀键本身没有单值形态，SpEL 占位符恒落默认 {} ——
+     * 路由与定价静默失效（2026-10-04 联调 /router/config 实测 features:{}、pricing:{}，
+     * 所有功能实际都跑默认强模型）。setter 名与 yml 键对齐：
+     * features → featureMapping、pricing-prompt → promptPrice、pricing-completion → completionPrice。
+     */
+    public void setFeatures(Map<String, String> features) {
+        this.featureMapping = features == null ? Collections.emptyMap() : features;
+    }
+
+    public void setPricingPrompt(Map<String, Double> pricingPrompt) {
+        this.promptPrice = pricingPrompt == null ? Collections.emptyMap() : pricingPrompt;
+    }
+
+    public void setPricingCompletion(Map<String, Double> pricingCompletion) {
+        this.completionPrice = pricingCompletion == null ? Collections.emptyMap() : pricingCompletion;
+    }
 
     /** 全部已注册 ChatModel Bean（key=bean 名），Spring 自动收集 */
     private final Map<String, ChatModel> models;

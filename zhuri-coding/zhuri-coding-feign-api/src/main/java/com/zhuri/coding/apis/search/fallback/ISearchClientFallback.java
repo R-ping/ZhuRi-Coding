@@ -39,4 +39,16 @@ public class ISearchClientFallback implements ISearchClient {
         log.warn("[IndexReconcile] search 服务不可用，跳过本轮索引对账");
         throw new RuntimeException("search 服务不可用，索引对账跳过本轮");
     }
+
+    /**
+     * 索引移除**不做降级**：与 syncArticle 同理，但后果更严重 ——
+     * 返回成功会让调用方（本地消息表）把这次下架副作用标记为"已完成"，
+     * 于是被下架的内容**永远留在检索结果里**且再也不会重试。
+     * 抛异常让消息表按普通失败计次重试。
+     */
+    @Override
+    public ResponseResult removeArticleIndex(Long articleId) {
+        log.error("远程移除ES索引异常, articleId={}", articleId);
+        throw new RuntimeException("移除ES索引异常, articleId=" + articleId);
+    }
 }

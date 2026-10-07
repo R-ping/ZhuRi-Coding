@@ -62,6 +62,38 @@
                                   @click="difficulty = opt.value">{{ opt.label }}</span>
                         </div>
                     </div>
+                    <div class="form-block">
+                        <div class="form-label">题数</div>
+                        <div class="switch-row">
+                            <span v-for="n in questionCountOptions" :key="n" class="switch-item"
+                                  :class="{ active: questionCount === n }"
+                                  @click="questionCount = n">{{ n }} 题</span>
+                        </div>
+                    </div>
+                    <div class="form-block">
+                        <div class="form-label">
+                            简历（可选）
+                            <span class="form-label-hint">给了简历会针对你的项目经历深挖，约 6 成题目来自简历</span>
+                        </div>
+                        <div class="resume-row">
+                            <button type="button" class="ghost-btn small-btn"
+                                    :disabled="resumeParsing || starting" @click="pickResumeFile">
+                                {{ resumeParsing ? '解析中...' : '上传简历文件' }}
+                            </button>
+                            <span class="resume-file" v-if="resumeFileName">{{ resumeFileName }}</span>
+                            <span class="resume-clear" v-if="resumeText" @click="clearResume">清空</span>
+                            <input ref="resumeInput" type="file" class="hidden-file"
+                                   accept=".pdf,.doc,.docx,.txt,.md" @change="onResumeFileChange" />
+                        </div>
+                        <textarea v-model="resumeText" class="form-input resume-input" rows="4"
+                                  maxlength="8000"
+                                  placeholder="也可以直接粘贴简历文本。内容只用于本次出题，服务端不留存；草稿仅存在本机浏览器。"></textarea>
+                        <div class="resume-meta">
+                            <span>{{ (resumeText || '').length }}/8000</span>
+                            <span class="resume-notice" v-if="resumeNotice">{{ resumeNotice }}</span>
+                            <span class="resume-error" v-if="resumeError">{{ resumeError }}</span>
+                        </div>
+                    </div>
                     <div class="prep-actions">
                         <button class="primary-btn" :disabled="starting" @click="startInterview">
                             {{ starting ? '面试官出题中...' : '开始面试' }}
@@ -101,6 +133,8 @@
                     <div class="chat-meta">
                         <span class="chat-direction">{{ session.direction }}</span>
                         <span class="mini-tag">{{ difficultyLabel(session.difficulty) }}</span>
+                        <span class="mini-tag source-resume"
+                              v-if="session.currentTopic && session.currentTopic.source === 'resume'">简历深挖</span>
                         <span class="chat-progress">主题 {{ chatProgress }}</span>
                     </div>
                     <div class="chat-right">
@@ -191,22 +225,24 @@
                             <span class="overall-note">三维均值（回答结构 / 考点覆盖 / 技术准确性），不给百分制</span>
                         </div>
 
-                        <div class="card item-card" v-for="(it, ii) in (report.items || [])" :key="ii">
+                        <div class="card item-card" v-for="(it, ii) in (report.items || [])" :key="ii"
+                             :class="{ 'item-pending': it.pending }">
                             <div class="item-head">
                                 <span class="item-index">{{ ii + 1 }}</span>
                                 <span class="item-topic">{{ it.topic }}</span>
-                                <span class="coverage-count" v-if="it.coverage">
+                                <span class="coverage-count pending-tag" v-if="it.pending">未评估</span>
+                                <span class="coverage-count" v-else-if="it.coverage">
                                     你覆盖了 {{ coveredCount(it) }}/{{ coveredCount(it) + (it.coverage.missing || []).length }} 个考点
                                 </span>
                             </div>
-                            <div class="level-rows">
+                            <div class="level-rows" v-if="!it.pending">
                                 <div class="level-row" v-for="lv in itemLevels(it)" :key="lv.name">
                                     <span class="level-name">{{ lv.name }}</span>
                                     <span class="level-bar"><span class="level-bar-inner" :style="{ width: (lv.value * 20) + '%' }"></span></span>
                                     <span class="level-value">{{ lv.value }}/5</span>
                                 </div>
                             </div>
-                            <div class="coverage-block" v-if="it.coverage">
+                            <div class="coverage-block" v-if="!it.pending && it.coverage">
                                 <div class="coverage-row" v-if="(it.coverage.covered || []).length">
                                     <span class="coverage-tag ok">已覆盖</span>
                                     <span class="coverage-chip ok" v-for="c in it.coverage.covered" :key="'c' + c">{{ c }}</span>
@@ -250,6 +286,7 @@
 <script>
     import {
         startInterview,
+        parseInterviewResume,
         getCurrentInterview,
         interviewTurnStream,
         finishInterview,
@@ -258,6 +295,9 @@
     } from '@/apis/coding'
     import { getAiQuotaStatus } from '@/apis/ai'
     import { toast } from '@/utils/toast'
+
+    /** 简历草稿只存本机浏览器（服务端不落库），键名带版本便于后续调整结构 */
+    const RESUME_DRAFT_KEY = 'coding_interview_resume_draft_v1'
 
     export default {
         name: 'CodingInterview',
@@ -275,7 +315,15 @@
                     { value: 3, label: '挑战' }
                 ],
                 questionCount: 5,
+                questionCountOptions: [3, 5, 8, 10],
                 durationMinutes: 45,
+                // ---- 简历（可选，只用于本次出题） ----
+                resumeText: '',
+                resumeFileName: '',
+                resumeParsing: false,
+                resumeNotice: '',
+                resumeError: '',
+                resumeDraftTimer: null,
                 starting: false,
                 startError: '',
                 quota: null,
@@ -333,10 +381,24 @@
                 if (this.report.status === 3) {
                     return '该场次已过期（超时未完成），不生成报告'
                 }
-                return '报告结构化生成失败，已保留模型原文'
+                // 后端两种降级：解析失败（存模型原文，rawText 有值）与生成失败/超时（无原文）
+                return this.report.rawText ? '报告结构化解析失败，以下为模型原文（可重试）' : '报告生成失败，请点击下方重试'
+            }
+        },
+        watch: {
+            // 简历草稿防抖落本机（400ms）：打字时不逐字符写 localStorage
+            resumeText() {
+                if (this.resumeDraftTimer) {
+                    clearTimeout(this.resumeDraftTimer)
+                }
+                this.resumeDraftTimer = setTimeout(() => {
+                    this.resumeDraftTimer = null
+                    this.saveResumeDraft()
+                }, 400)
             }
         },
         mounted() {
+            this.restoreResumeDraft()
             // 历史回看入口：/coding/interview?id=xx 直接进报告态
             const query = this.$route.query || {}
             if (query.id && this.isLoggedIn) {
@@ -352,6 +414,10 @@
         beforeDestroy() {
             this.stopTimer()
             this.abortTurnStream()
+            if (this.resumeDraftTimer) {
+                clearTimeout(this.resumeDraftTimer)
+                this.resumeDraftTimer = null
+            }
         },
         methods: {
             showLogin() {
@@ -446,7 +512,16 @@
                 this.starting = true
                 this.startError = ''
                 try {
-                    const res = await startInterview({ direction, difficulty: this.difficulty })
+                    const payload = {
+                        direction,
+                        difficulty: this.difficulty,
+                        questionCount: this.questionCount
+                    }
+                    const resume = (this.resumeText || '').trim()
+                    if (resume) {
+                        payload.resumeText = resume
+                    }
+                    const res = await startInterview(payload)
                     if (res && res.code === 200 && res.data) {
                         this.ongoing = null
                         this.enterChat(res.data)
@@ -463,6 +538,95 @@
                     }
                 } finally {
                     this.starting = false
+                }
+            },
+
+            // ============ 简历（可选，服务端不落库） ============
+
+            pickResumeFile() {
+                if (this.resumeParsing || this.starting) {
+                    return
+                }
+                const input = this.$refs.resumeInput
+                if (!input) {
+                    return
+                }
+                // 清空 value，否则连续选同一个文件不触发 change
+                input.value = ''
+                input.click()
+            },
+
+            async onResumeFileChange(e) {
+                const file = e && e.target && e.target.files && e.target.files[0]
+                if (!file) {
+                    return
+                }
+                // 前端先拦一道：超过容器 multipart 上限会被直接拒绝，报错信息对用户没意义
+                if (file.size > 10 * 1024 * 1024) {
+                    this.resumeError = '文件大小不能超过 10MB'
+                    this.resumeNotice = ''
+                    const rejectInput = this.$refs.resumeInput
+                    if (rejectInput) {
+                        rejectInput.value = ''
+                    }
+                    return
+                }
+                this.resumeParsing = true
+                this.resumeNotice = ''
+                this.resumeError = ''
+                try {
+                    const res = await parseInterviewResume(file)
+                    if (res && res.code === 200 && res.data) {
+                        this.resumeText = res.data.text || ''
+                        this.resumeFileName = file.name
+                        if (res.data.truncated) {
+                            this.resumeNotice = '原文 ' + res.data.chars + ' 字，已截断后填入'
+                        }
+                        this.saveResumeDraft()
+                    } else {
+                        this.resumeError = (res && res.message) || '简历解析失败，请重试或直接粘贴文本'
+                    }
+                } catch (err) {
+                    this.resumeError = (err && err.message) || '简历解析失败，请重试或直接粘贴文本'
+                } finally {
+                    this.resumeParsing = false
+                }
+            },
+
+            clearResume() {
+                this.resumeText = ''
+                this.resumeFileName = ''
+                this.resumeNotice = ''
+                this.resumeError = ''
+                const input = this.$refs.resumeInput
+                if (input) {
+                    input.value = ''
+                }
+                this.saveResumeDraft()
+            },
+
+            /** 草稿存本机浏览器：服务端不留存简历，刷新后靠这里回填 */
+            saveResumeDraft() {
+                try {
+                    const text = (this.resumeText || '').trim()
+                    if (text) {
+                        window.localStorage.setItem(RESUME_DRAFT_KEY, text)
+                    } else {
+                        window.localStorage.removeItem(RESUME_DRAFT_KEY)
+                    }
+                } catch (e) {
+                    // 隐私模式等场景 localStorage 不可用：静默放弃，不影响开面
+                }
+            },
+
+            restoreResumeDraft() {
+                try {
+                    const saved = window.localStorage.getItem(RESUME_DRAFT_KEY)
+                    if (saved) {
+                        this.resumeText = saved
+                    }
+                } catch (e) {
+                    // 同上，读取失败按无草稿处理
                 }
             },
 
@@ -928,6 +1092,12 @@
         padding: 1PX 8PX;
     }
 
+    /* 当前主题来自简历深挖（只有开面时传了简历才会出现） */
+    .mini-tag.source-resume {
+        color: #1E80FF;
+        background: #E8F3FF;
+    }
+
     .mini-tag.status-1 {
         color: #1E80FF;
         background: #E8F3FF;
@@ -1014,6 +1184,68 @@
 
     .form-input:focus {
         border-color: #1E80FF;
+    }
+
+    .form-label-hint {
+        margin-left: 6PX;
+        font-size: 12PX;
+        color: #999;
+    }
+
+    .resume-row {
+        display: flex;
+        align-items: center;
+        gap: 10PX;
+        flex-wrap: wrap;
+        margin-bottom: 8PX;
+    }
+
+    .small-btn {
+        font-size: 12PX;
+        padding: 4PX 12PX;
+    }
+
+    .resume-file {
+        font-size: 12PX;
+        color: #4E5969;
+        max-width: 220PX;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .resume-clear {
+        font-size: 12PX;
+        color: #1E80FF;
+        cursor: pointer;
+    }
+
+    .hidden-file {
+        display: none;
+    }
+
+    .resume-input {
+        resize: vertical;
+        min-height: 78PX;
+        line-height: 1.6;
+        font-family: inherit;
+    }
+
+    .resume-meta {
+        display: flex;
+        align-items: center;
+        gap: 10PX;
+        margin-top: 6PX;
+        font-size: 12PX;
+        color: #999;
+    }
+
+    .resume-notice {
+        color: #FF7D00;
+    }
+
+    .resume-error {
+        color: #F53F3F;
     }
 
     .switch-row {
@@ -1431,6 +1663,16 @@
         background: #FFF3E6;
         border-radius: 10PX;
         padding: 2PX 10PX;
+    }
+
+    /* 未评估占位（该主题所属批次调用失败）：弱化显示，避免被误读成"答得差" */
+    .item-pending .item-topic {
+        color: #86909C;
+    }
+
+    .pending-tag {
+        color: #86909C;
+        background: #F2F3F5;
     }
 
     .level-rows {

@@ -19,7 +19,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 语义搜索实现（向量化增强）
@@ -76,7 +75,7 @@ public class SemanticSearchServiceImpl implements SemanticSearchService {
             .sorted((a1, a2) -> Double.compare(
                 simMap.getOrDefault(a2.getId(), 0d), simMap.getOrDefault(a1.getId(), 0d)))
             .limit(topK)
-            .collect(Collectors.toList());
+            .toList();
 
         List<Map<String, Object>> list = new ArrayList<>();
         for (ApArticle a : articles) {

@@ -301,7 +301,7 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
             return Collections.emptyList();
         }
         try {
-            List<String> ids = candidateIds.stream().map(String::valueOf).collect(Collectors.toList());
+            List<String> ids = candidateIds.stream().map(String::valueOf).toList();
             // 按文档 _id 查，而不是按字段查：SearchArticle.id 标了 @Id，映射到 ES 的 _id，不是可检索字段。
             // 一次 terms-ids 查询取回"已入索引"的 id，与候选集求差集即"缺失"。
             NativeQuery nativeQuery = NativeQuery.builder()
@@ -314,7 +314,7 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
                     .collect(Collectors.toSet());
             List<Long> missing = candidateIds.stream()
                     .filter(id -> !indexed.contains(String.valueOf(id)))
-                    .collect(Collectors.toList());
+                    .toList();
             if (!missing.isEmpty()) {
                 log.warn("[INDEX-RECONCILE] 发现 {} / {} 篇已发布文章不在 ES 索引里",
                         missing.size(), candidateIds.size());
@@ -324,6 +324,32 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
             // 必须抛出：若降级成"没有缺失"，对账会把 ES 故障伪装成一切正常
             log.error("对账查询 ES 已索引文章失败, candidateCount={}", candidateIds.size(), e);
             throw new IllegalStateException("对账查询 ES 失败", e);
+        }
+    }
+
+    /**
+     * 从索引移除一篇文章（内容被平台下架）。
+     *
+     * <p>用 {@code delete(id, Class)} 按文档 _id 删，而不是"查出文档再改状态保存"——
+     * 检索查询本身不带状态过滤，留着文档只会让它继续被搜到。
+     *
+     * <p>ES 对不存在的 id 执行 delete 不报错（返回 not_found 而非异常），因此本方法天然幂等，
+     * 被本地消息表重放多次也安全。
+     */
+    @Override
+    public ResponseResult removeArticleIndex(Long articleId) {
+        if (articleId == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "articleId 不能为空");
+        }
+        try {
+            // 返回值是被删除文档的 id；文档本来就不存在时同样返回 id，无异常
+            elasticsearchOperations.delete(String.valueOf(articleId), SearchArticle.class);
+            log.info("文章已从ES索引移除, articleId={}", articleId);
+            return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+        } catch (Exception e) {
+            // 必须抛出：调用方要靠它判断"下架是否真的生效"，吞掉等于让内容留在检索结果里
+            log.error("从ES索引移除文章失败, articleId={}", articleId, e);
+            throw new IllegalStateException("从ES索引移除文章失败, articleId=" + articleId, e);
         }
     }
 }

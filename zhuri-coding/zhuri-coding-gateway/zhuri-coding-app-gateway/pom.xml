@@ -14,7 +14,7 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <!-- JaCoCo 门禁底线：网关模块行覆盖率（当前约 85%，设 0.70 防回归）。
+        <!-- JaCoCo 门禁底线：网关模块行覆盖率（当前约 78%，设 0.70 防回归）。
              后续可随测试补充继续上调。 -->
         <jacoco.line.min>0.70</jacoco.line.min>
     </properties>
@@ -37,6 +37,14 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+        </dependency>
+        <!-- Spring Session：运营后台走服务端会话，不用 C 端那套 accToken/refToken 双 token。
+             本项目刻意不用 @EnableRedisHttpSession / @EnableRedisWebSession 注解，
+             而是交给 Spring Boot 自动配置 + 自定义 WebSessionIdResolver（见 GatewaySessionConfig），
+             这样 Cookie 的 SameSite/HttpOnly/超时都在一处能看清。 -->
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-data-redis</artifactId>
         </dependency>
 
         <!-- Test dependencies -->

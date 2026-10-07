@@ -36,6 +36,10 @@ public enum AppHttpCodeEnum {
     // 数据错误 3000~3500
     NO_OPERATOR_AUTH(3000,"无权限操作"),
     NEED_ADMIND(3001,"需要管理员权限"),
+    // 账号被封禁：区别于 NEED_LOGIN（没登录）与 status=0（已注销）。
+    // 文案在这里只是兜底默认值，实际返回时会被 BusinessException 里的动态文案覆盖
+    // （要带上封禁原因与解封时间），见 common 模块 BusinessException。
+    USER_BANNED(3002,"账号已被封禁"),
 
     // 订单/支付错误 3200~3250
     ORDER_CLOSED(3200,"订单已关闭，请重新下单"),

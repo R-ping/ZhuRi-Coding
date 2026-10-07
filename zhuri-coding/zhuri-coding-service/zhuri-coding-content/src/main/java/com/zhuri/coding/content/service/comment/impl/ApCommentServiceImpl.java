@@ -61,11 +61,12 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         int page = dto.getPage() != null ? dto.getPage() : 1;
         int size = dto.getSize() != null ? dto.getSize() : 3;
 
-        // 查询一级评论：parentId IS NULL（AI 折叠评论 is_hidden=1 不展示）
+        // 查询一级评论：parentId IS NULL（AI 折叠评论 is_hidden=1 不展示；违规软删 is_deleted=1 任何人不可见）
         LambdaQueryWrapper<ApComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApComment::getArticleId, dto.getArticleId())
                .isNull(ApComment::getParentId)
                .eq(ApComment::getIsHidden, 0)
+               .eq(ApComment::getIsDeleted, 0)
                .orderByDesc(ApComment::getCreatedTime);
 
         // 分页
@@ -78,10 +79,11 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         }
 
         // 查询每个一级评论的子评论（最多2条），折叠回复不展示
-        List<Long> parentIds = topComments.stream().map(ApComment::getId).collect(Collectors.toList());
+        List<Long> parentIds = topComments.stream().map(ApComment::getId).toList();
         LambdaQueryWrapper<ApComment> childWrapper = new LambdaQueryWrapper<>();
         childWrapper.in(ApComment::getParentId, parentIds)
                     .eq(ApComment::getIsHidden, 0)
+                    .eq(ApComment::getIsDeleted, 0)
                     .orderByAsc(ApComment::getCreatedTime)
                     .last("LIMIT " + (parentIds.size() * 2)); // 粗略限制
 
@@ -303,6 +305,7 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         LambdaQueryWrapper<ApComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApComment::getArticleId, articleId)
                .isNull(ApComment::getParentId)
+               .eq(ApComment::getIsDeleted, 0)
                .orderByDesc(ApComment::getCreatedTime);
         appendHiddenVisible(wrapper, currentUserId);
 
@@ -345,7 +348,7 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         List<Long> visibleTopIds = topComments.stream()
                 .filter(c -> !isHiddenComment(c))
                 .map(ApComment::getId)
-                .collect(Collectors.toList());
+                .toList();
         Set<Long> topIdSet = new HashSet<>(visibleTopIds);
         Map<Long, List<ApComment>> childrenMap = new HashMap<>();
         if (!visibleTopIds.isEmpty()) {
@@ -353,6 +356,7 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             LambdaQueryWrapper<ApComment> childWrapper = new LambdaQueryWrapper<>();
             childWrapper.and(w -> w.in(ApComment::getRootId, visibleTopIds)
                         .or(v -> v.in(ApComment::getParentId, visibleTopIds)))
+                    .eq(ApComment::getIsDeleted, 0)
                     .orderByAsc(ApComment::getCreatedTime);
             appendHiddenVisible(childWrapper, currentUserId);
             List<ApComment> allChildren = list(childWrapper);
@@ -611,6 +615,10 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         if (comment == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "评论不存在");
         }
+        // 违规软删的评论对所有人不可见：交互面也不给点赞入口（否则用户会以为评论还在）
+        if (comment.getIsDeleted() != null && comment.getIsDeleted() == 1) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "评论不存在");
+        }
         // 折叠评论仅本人可见（折叠条），禁止继续点赞互动
         if (isHiddenComment(comment)) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "该评论已被折叠，无法点赞");
@@ -655,11 +663,12 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
             return 0;
         }
         // 一级评论数（parent_id IS NULL）：与 getArticleComments 列表口径一致，避免与 article.comment 冗余计数漂移不符。
-        // AI 折叠评论（is_hidden=1）不计数，保持"展示数=计数"一致
+        // AI 折叠评论（is_hidden=1）不计数，违规软删（is_deleted=1）同样不计数，保持"展示数=计数"一致
         return count(new LambdaQueryWrapper<ApComment>()
                 .eq(ApComment::getArticleId, articleId)
                 .isNull(ApComment::getParentId)
-                .eq(ApComment::getIsHidden, 0));
+                .eq(ApComment::getIsHidden, 0)
+                .eq(ApComment::getIsDeleted, 0));
     }
 
     @Override
@@ -686,6 +695,7 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         // 折叠回复（is_hidden=1）对他人隐藏；仅其作者本人可见折叠条。
         LambdaQueryWrapper<ApComment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApComment::getRootId, rootId)
+               .eq(ApComment::getIsDeleted, 0)
                .orderByAsc(ApComment::getCreatedTime);
         appendHiddenVisible(wrapper, currentUserId);
         if (cursor != null && cursor > 0) {
@@ -856,7 +866,7 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         // 批量统计每篇文章的评论总数与最新评论时间
         List<Long> articleIds = p.getRecords().stream()
                 .map(ApArticle::getId)
-                .collect(Collectors.toList());
+                .toList();
 
         Map<Long, Long> commentCountMap = new HashMap<>();
         Map<Long, Date> latestCommentTimeMap = new HashMap<>();

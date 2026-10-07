@@ -252,9 +252,17 @@ public class CommentAuditService extends AbstractAuditService implements AuditTa
             return;
         }
 
-        // 软删除评论（通过 is_deleted 字段，但 ap_comment 表没有 is_deleted 字段）
-        // 直接物理删除
-        apCommentMapper.deleteById(comment.getId());
+        // 红线违规改为软删除（is_deleted=1）而非物理删除：行与 root_id/parent_id 都保留，
+        // AI 高置信度误判可由运营在复核队列人工放行（恢复 = 翻回 0）—— 删了就再也找不回来的是历史。
+        // CAS（WHERE is_deleted=0）挡并发/重复回调：输家不重复撤销行为记录、不重复发通知。
+        int rows = apCommentMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ApComment>()
+            .set(ApComment::getIsDeleted, 1)
+            .eq(ApComment::getId, comment.getId())
+            .eq(ApComment::getIsDeleted, 0));
+        if (rows == 0) {
+            log.info("评论已被处置过，跳过重复违规动作, commentId={}", comment.getId());
+            return;
+        }
 
         // 更新行为记录状态为已撤销
         if (context.getUserId() != null) {

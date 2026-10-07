@@ -1,16 +1,22 @@
 package com.zhuri.coding.app.gateway.filter;
 
+import com.zhuri.coding.app.gateway.session.AdminSessionKeys;
 import com.zhuri.coding.utils.common.AppJwtUtil;
 import io.jsonwebtoken.Claims;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Mono;
 
 import java.net.URLEncoder;
@@ -19,6 +25,7 @@ import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -33,12 +40,28 @@ import static org.mockito.Mockito.when;
  *  - 公开接口（未登录放行 / 带有效 token 注入用户头）；
  *  - 非公开接口缺失、无效、过期 token 返回 444；
  *  - 有效 token 注入 userId/nickName/image 请求头并放行；
- *  - JWT 解析异常按 444 拦截。
+ *  - JWT 解析异常按 444 拦截；
+ *  - <b>运营路径只认服务端会话</b>：C 端 token 一律不认（账号隔离的落点）。
  */
 @DisplayName("AuthorizeFilter 网关鉴权过滤器")
 class AuthorizeFilterTest {
 
-    private final AuthorizeFilter filter = new AuthorizeFilter();
+    private final ReactiveStringRedisTemplate redisTemplate = mock(ReactiveStringRedisTemplate.class);
+
+    private final AuthorizeFilter filter = new AuthorizeFilter(redisTemplate);
+
+    /**
+     * 撤销标记查询的默认值：**没有**停用标记。
+     *
+     * <p>刻意放在 {@code @BeforeEach} 而不是各用例里各写一遍：漏写会让 mock 返回 null，
+     * 于是 flatMap 里的 NPE 被 subscribe() 吞掉，请求什么都没做 —— 这时
+     * {@code verify(chain, never()).filter(...)} 这类断言会<b>空跑通过</b>，
+     * 测试看起来是绿的却什么都没验。给一个"正常账号"的默认值，把"忘了 stub"变成不可能。
+     */
+    @BeforeEach
+    void defaultNoRevocationMarker() {
+        when(redisTemplate.hasKey(anyString())).thenReturn(Mono.just(false));
+    }
 
     private ServerWebExchange exchange(String path, String accToken) {
         ServerWebExchange exchange = mock(ServerWebExchange.class);
@@ -360,6 +383,188 @@ class AuthorizeFilterTest {
         verify(response).setStatusCode(HttpStatusCode.valueOf(444));
         verify(response).setComplete();
         verify(chain, never()).filter(any());
+    }
+
+    // ==================== 运营后台路径：只认服务端会话 ====================
+
+    /**
+     * 给请求挂上一个 WebSession。
+     *
+     * @param accountId 会话里的运营账号ID；null 表示"没有会话"（未登录）
+     */
+    private WebSession setUpAdminSession(ServerWebExchange exchange, Object accountId, String nickName,
+                                        Boolean mustChangePassword) {
+        WebSession session = mock(WebSession.class);
+        when(exchange.getSession()).thenReturn(Mono.just(session));
+        when(session.getAttribute(AdminSessionKeys.ATTR_ACCOUNT_ID)).thenReturn(accountId);
+        when(session.getAttribute(AdminSessionKeys.ATTR_NICK_NAME)).thenReturn(nickName);
+        when(session.getAttribute(AdminSessionKeys.ATTR_MUST_CHANGE_PASSWORD)).thenReturn(mustChangePassword);
+        when(session.invalidate()).thenReturn(Mono.empty());
+        return session;
+    }
+
+    /** 让 respondJson 能写完（它要拿 Headers、BufferFactory 与 writeWith） */
+    private void stubJsonResponse(ServerHttpResponse response) {
+        when(response.getHeaders()).thenReturn(new HttpHeaders());
+        when(response.bufferFactory()).thenReturn(new DefaultDataBufferFactory());
+        when(response.writeWith(any())).thenReturn(Mono.empty());
+    }
+
+    @Test
+    @DisplayName("运营路径没有会话 → 444，且压根不去解析 C 端 token（哪怕它有效）")
+    void adminPathDoesNotAcceptClientToken() {
+        ServerWebExchange exchange = exchange("/user/api/v1/admin/me", "tok");
+        ServerHttpResponse response = exchange.getResponse();
+        setUpAdminSession(exchange, null, null, null);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(any())).thenReturn(Mono.empty());
+
+        try (MockedStatic<AppJwtUtil> jwt = mockStatic(AppJwtUtil.class)) {
+            filter.filter(exchange, chain).subscribe();
+            // 这条才是"账号隔离"的落点：一旦运营路径去解析 accToken，就等于承认 C 端账号可以当运营身份用，
+            // 而两套 ID 空间里的数字是会重合的。
+            jwt.verify(() -> AppJwtUtil.getClaimsBody(any()), never());
+        }
+
+        verify(response).setStatusCode(HttpStatusCode.valueOf(444));
+        verify(chain, never()).filter(any());
+    }
+
+    @Test
+    @DisplayName("运营路径会话有效 → 用运营账号ID注入身份头并放行（降级为 C 端 token 会在这里被看出来）")
+    void adminPathInjectsAccountIdentity() {
+        HttpHeaders captured = new HttpHeaders();
+        ServerWebExchange exchange = exchange("/user/api/v1/admin/accounts", null);
+        setUpAdminSession(exchange, 1001, "运营小王", Boolean.FALSE);
+        setupInjection(exchange, exchange.getRequest(), captured);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(any())).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        assertEquals("1001", captured.getFirst("userId"));
+        // 下发的是 URL 编码后的昵称，签名用原始值 —— 下游解码后再验签，中文昵称才不会全军覆没
+        assertEquals(URLEncoder.encode("运营小王", StandardCharsets.UTF_8), captured.getFirst("nickName"));
+        assertEquals("", captured.getFirst("image"));
+        verify(chain).filter(any());
+    }
+
+    @Test
+    @DisplayName("账号已停用（撤销标记存在）→ 就地销毁会话并返回 444，不必等它自然过期")
+    void revokedAccountSessionIsDestroyed() {
+        ServerWebExchange exchange = exchange("/user/api/v1/admin/accounts", null);
+        WebSession session = setUpAdminSession(exchange, 1001, "运营小王", Boolean.FALSE);
+        ServerHttpResponse response = exchange.getResponse();
+        when(redisTemplate.hasKey(AdminSessionKeys.revokedKey(1001))).thenReturn(Mono.just(true));
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(any())).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(session).invalidate();
+        verify(response).setStatusCode(HttpStatusCode.valueOf(444));
+        verify(chain, never()).filter(any());
+    }
+
+    @Test
+    @DisplayName("仍在使用初始口令 → 除身份自述与改口令外一律 403（业务码 3003），否则强制改密形同虚设")
+    void mustChangePasswordBlocksOtherAdminPaths() {
+        ServerWebExchange exchange = exchange("/user/api/v1/admin/accounts", null);
+        setUpAdminSession(exchange, 1001, "运营小王", Boolean.TRUE);
+        ServerHttpResponse response = exchange.getResponse();
+        stubJsonResponse(response);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(any())).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(response).setStatusCode(HttpStatus.FORBIDDEN);
+        verify(response).writeWith(any());
+        verify(chain, never()).filter(any());
+    }
+
+    @Test
+    @DisplayName("仍在使用初始口令 + 改口令接口本身 → 放行（否则初始口令永远换不掉，成了死锁）")
+    void mustChangePasswordAllowsSelfServicePaths() {
+        HttpHeaders captured = new HttpHeaders();
+        ServerWebExchange exchange = exchange(AdminSessionKeys.PASSWORD_CHANGE_PATH, null);
+        setUpAdminSession(exchange, 1001, "运营小王", Boolean.TRUE);
+        setupInjection(exchange, exchange.getRequest(), captured);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        when(chain.filter(any())).thenReturn(Mono.empty());
+
+        filter.filter(exchange, chain).subscribe();
+
+        assertEquals("1001", captured.getFirst("userId"));
+        verify(chain).filter(any());
+    }
+
+    @Test
+    @DisplayName("服务间内部路径一律不对外提供（/user/internal/** 经 StripPrefix 后正好落到 @internal 上）")
+    void internalPathIsForbidden() {
+        ServerWebExchange exchange = exchange("/user/internal/admin/verify", null);
+        ServerHttpResponse response = exchange.getResponse();
+        stubJsonResponse(response);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(response).setStatusCode(HttpStatus.FORBIDDEN);
+        verify(chain, never()).filter(any());
+    }
+
+    @Test
+    @DisplayName("运营会话接口若被路由接管 → 报配置异常，绝不转发（否则登录请求会神秘 404）")
+    void sessionEndpointIsNeverForwarded() {
+        // 正常情况这些路径由网关自身的 @Controller 处理（RequestMappingHandlerMapping order=0
+        // 优先于 RoutePredicateHandlerMapping 默认 order=1），压根不会进这个过滤器。
+        // 这条用例守的是"前提被破坏时要说出来"：宁可 500 + 明确日志，也不要 404 让人去查登录逻辑。
+        ServerWebExchange exchange = exchange(AdminSessionKeys.SESSION_ENDPOINT_PREFIX + "/login", null);
+        ServerHttpResponse response = exchange.getResponse();
+        stubJsonResponse(response);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+
+        filter.filter(exchange, chain).subscribe();
+
+        verify(response).setStatusCode(HttpStatus.INTERNAL_SERVER_ERROR);
+        verify(response).writeWith(any());
+        verify(chain, never()).filter(any());
+    }
+
+    @Test
+    @DisplayName("申诉终审走运营会话，同前缀的提交/查询仍是 C 端接口")
+    void appealReviewIsAdminGatedButSubmitIsNot() {
+        // 终审：带有效 C 端 token 也没用，没有运营会话就是 444
+        ServerWebExchange review = exchange("/content/api/v1/audit/appeal/review", "tok");
+        setUpAdminSession(review, null, null, null);
+        ServerHttpResponse reviewResponse = review.getResponse();
+        GatewayFilterChain reviewChain = mock(GatewayFilterChain.class);
+
+        filter.filter(review, reviewChain).subscribe();
+
+        verify(reviewResponse).setStatusCode(HttpStatusCode.valueOf(444));
+        verify(reviewChain, never()).filter(any());
+
+        // 同前缀的提交：不在运营清单里，仍然走 C 端 token，注入的是 C 端用户ID
+        HttpHeaders captured = new HttpHeaders();
+        ServerWebExchange submit = exchange("/content/api/v1/audit/appeal/submit", "tok");
+        setupInjection(submit, submit.getRequest(), captured);
+        GatewayFilterChain submitChain = mock(GatewayFilterChain.class);
+        when(submitChain.filter(any())).thenReturn(Mono.empty());
+
+        try (MockedStatic<AppJwtUtil> jwt = mockStatic(AppJwtUtil.class)) {
+            Claims claims = mock(Claims.class);
+            when(claims.get("userId")).thenReturn(555L);
+            when(claims.get("nickName")).thenReturn("普通用户");
+            when(claims.get("image")).thenReturn(null);
+            when(AppJwtUtil.getClaimsBody("tok")).thenReturn(claims);
+            when(AppJwtUtil.verifyToken(claims)).thenReturn(-1);
+
+            filter.filter(submit, submitChain).subscribe();
+        }
+
+        assertEquals("555", captured.getFirst("userId"));
+        verify(submitChain).filter(any());
     }
 
     @Test

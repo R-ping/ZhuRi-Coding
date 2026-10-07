@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -299,7 +298,7 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
             .map(AiSourceVo::getArticleId)
             .filter(Objects::nonNull)
             .distinct()
-            .collect(Collectors.toList());
+            .toList();
         if (ids.isEmpty()) {
             return false;
         }

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.user.pojos.ApUser;
 import com.zhuri.coding.model.user.pojos.UserProfile;
+import com.zhuri.coding.user.admin.LocalAdminRoleResolver;
 import com.zhuri.coding.user.mapper.ApUserMapper;
 import com.zhuri.coding.user.mapper.UserProfileMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,9 @@ public class UserFeignController {
 
     @Autowired
     private UserProfileMapper userProfileMapper;
+
+    @Autowired
+    private LocalAdminRoleResolver localAdminRoleResolver;
 
     /**
      * 获取用户基本信息（供其他服务Feign调用）
@@ -131,5 +135,32 @@ public class UserFeignController {
             valid.add(user.getId().longValue());
         }
         return ResponseResult.okResult(valid);
+    }
+
+    /**
+     * 查询运营账号的运营角色编码列表（运营后台鉴权用）。
+     *
+     * <p>角色与权限点的映射写在代码里（{@code AdminRole} 枚举），本接口只负责把
+     * 「运营账号 → 角色编码」这一事实返回；库中若存在代码认不出的编码也照原样返回，
+     * 由调用方按 fail-closed 忽略 —— 在这里过滤会让"配错角色"变得难以排查。</p>
+     *
+     * <p><b>形参名为 {@code accountId} 而不是 {@code userId}，这是有意的</b>：它必须是
+     * {@code ap_admin_account.id}，与 C 端 {@code ap_user.id} 是两个互不相交的空间。
+     * 叫 {@code userId} 太容易被顺手塞进一个 C 端 ID，而两类 ID 都是整数、传错没有任何信号。</p>
+     *
+     * <p><b>复用 {@link LocalAdminRoleResolver} 而不是自己写一次查询</b>：本服务内部的运营鉴权
+     * 也要做同一件事，两处各写一遍的话，将来加过滤条件必然只改一侧，表现成
+     * "运营后台里能用，但 content 侧鉴权认不出这个人"—— 一个极难定位的不一致。</p>
+     *
+     * @param accountId 运营账号 ID（{@code ap_admin_account.id}）
+     * @return data 为角色编码列表；无角色、ID 不是启用中的运营账号均为空列表
+     *         （**空列表等价于"不是运营"，不是故障**）
+     */
+    @GetMapping("/admin-roles")
+    public ResponseResult getAdminRoles(@RequestParam("accountId") Long accountId) {
+        if (accountId == null) {
+            return ResponseResult.okResult(List.of());
+        }
+        return ResponseResult.okResult(localAdminRoleResolver.roleCodesOf(accountId.intValue()));
     }
 }

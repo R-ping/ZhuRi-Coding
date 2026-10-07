@@ -129,3 +129,6 @@ docs/
 # !docs/ai-agent-precheck-design.md
 # !docs/ai-aigc-content-integrity-design.md
 # !docs/ai-commercialization-roadmap.md
+
+# Local AI probe output
+.ai-probe/

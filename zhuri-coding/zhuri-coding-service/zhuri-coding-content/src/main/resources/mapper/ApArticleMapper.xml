@@ -181,10 +181,23 @@
         WHERE id = #{articleId}
     </update>
 
-    <!-- 原子递增互动字段并同步重算热度分（单条 UPDATE，避免并发读-改-写丢计数） -->
+    <!-- 原子递增互动字段并同步重算热度分（单条 UPDATE，避免并发读-改-写丢计数）。
+         计数字段用 choose 展开为字面列名，而不是 ${field} 拼字符串：
+         合法取值由本文件硬编码，不再依赖调用方自觉遵守白名单；调用方传入非法值时
+         会在 otherwise 分支抛 NumberFormatException（消息内含字段名），fail-fast 而非拼进 SQL。 -->
     <update id="updateInteractionAndScore">
         UPDATE ap_article
-        SET ${field} = COALESCE(${field}, 0) + #{increment},
+        SET
+        <choose>
+            <when test="field == 'likes'">likes = COALESCE(likes, 0) + #{increment},</when>
+            <when test="field == 'views'">views = COALESCE(views, 0) + #{increment},</when>
+            <when test="field == 'comment'">comment = COALESCE(comment, 0) + #{increment},</when>
+            <when test="field == 'collection'">collection = COALESCE(collection, 0) + #{increment},</when>
+            <otherwise>
+                <bind name="rejectIllegalField"
+                      value="@java.lang.Long@parseLong('illegal interaction field: ' + field)"/>
+            </otherwise>
+        </choose>
             score = COALESCE(likes,0) * 3 + COALESCE(views,0) + COALESCE(comment,0) * 3 + COALESCE(collection,0) * 6
         WHERE id = #{articleId}
     </update>

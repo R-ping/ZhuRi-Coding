@@ -310,7 +310,7 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         List<ApCodingQuestion> records = result.getRecords();
         if (userId != null && records != null && !records.isEmpty()) {
             List<Long> questionIds = records.stream()
-                .map(ApCodingQuestion::getId).filter(Objects::nonNull).collect(Collectors.toList());
+                .map(ApCodingQuestion::getId).filter(Objects::nonNull).toList();
             if (!questionIds.isEmpty()) {
                 List<ApCodingAnswerRecord> answered = recordMapper.selectList(
                     new LambdaQueryWrapper<ApCodingAnswerRecord>()

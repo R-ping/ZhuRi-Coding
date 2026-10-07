@@ -603,7 +603,7 @@ public class UserHomeController {
     /** 按文章ID批量加载文章 */
     private Map<Long, ApArticle> loadArticleMap(List<Long> ids) {
         Map<Long, ApArticle> map = new HashMap<>();
-        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.isEmpty()) {
             return map;
         }
@@ -619,7 +619,7 @@ public class UserHomeController {
     /** 按沸点ID批量加载沸点 */
     private Map<Long, ApPins> loadPinsMap(List<Long> ids) {
         Map<Long, ApPins> map = new HashMap<>();
-        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.isEmpty()) {
             return map;
         }

@@ -46,4 +46,26 @@ public interface AigcDetectService {
 
     /** 课程小节创建/更新后检测 */
     void detectAndFlagChapter(Long chapterId);
+
+    /**
+     * 人工复核放行：清除业务主表上的 AI 标记（{@code is_aigc=0, aigc_score=0}）。
+     *
+     * <p>口径与申诉终审 {@code ContentAppealServiceImpl#revertDisposal} 完全一致 ——
+     * 同一个"撤销 AIGC 标注"语义不该有两套写法。所有下游处置（打赏关闭、RAG 排除、
+     * 课程禁售、语义搜索过滤）都是读时判断 {@code is_aigc}，清掉标记即自动恢复，
+     * 不需要逐个通知下游。
+     *
+     * <p>只清业务表、不动 {@code ap_aigc_record}：判定历史（分数、信号明细）要留着
+     * 供阈值调优与追责，记录状态由调用方（复核服务）按自己的幂等闸口推进。
+     *
+     * <p><b>与检测链路相反，本方法不吞异常</b>：检测失败可以 fail-open（漏检一次的代价
+     * 远小于阻断发布主链路），而复核是运营的显式动作 —— 返回成功就必须真的写成功，
+     * 静默失败会让运营以为已经放行，作者那边却依旧被打赏关闭/禁售。
+     *
+     * @param type 内容类型：{@link com.zhuri.coding.model.aigc.pojos.AigcRecord} 的 TYPE_* 常量
+     * @param id   内容主键
+     * @throws IllegalArgumentException 类型未知或 id 为空
+     * @throws IllegalStateException    内容主表对应行不存在（可能已被删除）
+     */
+    void clearAigcFlag(int type, Long id);
 }

@@ -1,6 +1,8 @@
 package com.zhuri.coding.app.gateway.filter;
 
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhuri.coding.app.gateway.session.AdminSessionKeys;
 import com.zhuri.coding.utils.common.AppJwtUtil;
 import io.jsonwebtoken.Claims;
 import io.micrometer.common.util.StringUtils;
@@ -8,6 +10,8 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.extern.slf4j.Slf4j;
@@ -15,11 +19,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Mono;
 
 @Component
@@ -32,9 +41,30 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
     /** 与下游服务一致的签名固定前缀 */
     private static final String INTERNAL_SIGN_PREFIX = "zhuri-coding-internal-v1";
 
+    /** 未登录/会话失效统一回 444：前端约定收到它就跳登录页 */
+    private static final int UNAUTHENTICATED_STATUS = 444;
+
+    /** 「仍在用初始口令」的业务码（HTTP 层 403），与前端约定 */
+    private static final int CODE_MUST_CHANGE_PASSWORD = 3003;
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     /** 网关与下游共享的内部身份签名密钥（未配置则不写签名，下游按 fail-closed 拒绝信任身份头） */
     @Value("${app.internal-auth.secret:}")
     private String internalAuthSecret;
+
+    /**
+     * 用于查「账号已停用」的撤销标记（键格式见 {@link AdminSessionKeys#REVOKED_PREFIX}）。
+     *
+     * <p>没有这一查，停用一个运营账号要等它的会话自然过期才生效（最长 8 小时）——
+     * 比 C 端 accToken 的 1 小时还久，那是倒退。服务端会话相对 JWT 的核心好处就是
+     * "能立刻撤销"，所以这个每请求一次的 Redis GET 必须留着。
+     */
+    private final ReactiveStringRedisTemplate redisTemplate;
+
+    public AuthorizeFilter(ReactiveStringRedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
 
     /**
      * 启动期自检：密钥缺失时网关不写签名、下游 fail-closed 拒绝信任身份头，
@@ -55,6 +85,36 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
         ServerHttpResponse response = exchange.getResponse();
         String path = request.getURI().getPath();
         String accToken = request.getHeaders().getFirst("accToken");
+
+        //1.4 运营会话接口（/admin-session/**）不该进到这个过滤器。
+        //   这些路径刻意不落在任何网关路由前缀下，正常情况下由网关自身的 @Controller 处理：
+        //   WebFlux 的 RequestMappingHandlerMapping 是 order=0，而 RoutePredicateHandlerMapping
+        //   默认 order=1（spring.cloud.gateway.server.webflux.handler-mapping.order），
+        //   全局过滤器只在后者的过滤链里执行 —— 所以会话接口根本走不到这一行。
+        //   能走到这里，说明这个前提被破坏了（调小了 handler-mapping.order，或新增了一条覆盖
+        //   /admin-session 的路由），此时继续往下走只会把登录请求转发进下游服务、返回一个
+        //   与"账号密码错"混在一起的神秘 404。与其静默失败，不如直接报出配置异常。
+        if (AdminSessionKeys.isSessionEndpoint(path)) {
+            log.error("运营会话接口被路由接管，网关配置异常（会话接口应由网关自身的 @Controller 处理）: path={}", path);
+            return respondJson(response, HttpStatus.INTERNAL_SERVER_ERROR, 500, "网关路由配置异常");
+        }
+
+        //1.5 服务间内部路径一律不对外提供。
+        //   它们本意是"只在集群内被调用"（如 user 服务的 /internal/admin/verify），
+        //   但 /user/internal/** 经 StripPrefix=1 之后正好映射到那里，也就**外部可达**。
+        //   不显式拦一下，这个"内部"接口就只是名字叫内部而已。
+        if (AdminSessionKeys.isInternalPath(path)) {
+            return respondJson(response, HttpStatus.FORBIDDEN, 403, "内部接口不对外提供");
+        }
+
+        //1.6 运营后台路径：只认服务端会话，**刻意不认 accToken**。
+        //   这一步是运营账号与 C 端账号彻底隔离的关键：若这里仍然接受 accToken，
+        //   那么任何 C 端账号只要其 id 与某个持有角色的运营账号相同，就能调运营接口 ——
+        //   而运营账号与 C 端账号是两套独立的 ID 空间，碰撞是必然会发生的事。
+        //   代价是运营前端不再能复用 C 端的 token，这正是本次改造的目的。
+        if (AdminSessionKeys.isAdminPath(path)) {
+            return authorizeAdmin(exchange, chain, path, request, response);
+        }
 
         //2.判断是否是登录/注册/token刷新/社交登录相关接口（放行）
         // 注意：使用精确前缀/后缀匹配，避免 path.contains() 被路径中包含关键词的任意请求绕过
@@ -248,6 +308,102 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             // 站点 SEO 基础文件（robots.txt / sitemap.xml）：爬虫无 token，公开放行
             || path.startsWith("/content/robots.txt")
             || path.startsWith("/content/sitemap.xml");
+    }
+
+    /**
+     * 运营路径的鉴权：把服务端会话翻译成与 token 路径**完全相同**的一组身份头。
+     *
+     * <p>下游服务（content / user）只认 {@code userId/nickName/image + X-Internal-Sign}，
+     * 不关心这个身份是从 JWT 来的还是从会话来的。所以整个改造只动了网关这一层，
+     * 两个服务的鉴权代码一行没改 —— 这是沿用本项目"网关是唯一认证点"这个约定的收益。
+     *
+     * <p>判定顺序（先便宜的、后需要 IO 的）：
+     * <ol>
+     *   <li>会话里有没有账号ID —— 没有直接 444，让前端跳登录页；</li>
+     *   <li>账号有没有被停用（Redis 撤销标记）—— 停用就当场销毁会话并 444；</li>
+     *   <li>是否仍在用初始口令 —— 是则除身份自述与改口令外一律 403；</li>
+     *   <li>注入身份头放行。</li>
+     * </ol>
+     */
+    private Mono<Void> authorizeAdmin(ServerWebExchange exchange, GatewayFilterChain chain, String path,
+                                      ServerHttpRequest request, ServerHttpResponse response) {
+        return exchange.getSession().flatMap(session -> {
+            Object accountId = session.getAttribute(AdminSessionKeys.ATTR_ACCOUNT_ID);
+            if (accountId == null) {
+                response.setStatusCode(HttpStatusCode.valueOf(UNAUTHENTICATED_STATUS));
+                return response.setComplete();
+            }
+            return redisTemplate.hasKey(AdminSessionKeys.revokedKey(accountId))
+                .defaultIfEmpty(false)
+                .flatMap(revoked -> {
+                    if (Boolean.TRUE.equals(revoked)) {
+                        log.info("运营账号已被停用，销毁其会话, accountId={}", accountId);
+                        return session.invalidate().then(Mono.defer(() -> {
+                            response.setStatusCode(HttpStatusCode.valueOf(UNAUTHENTICATED_STATUS));
+                            return response.setComplete();
+                        }));
+                    }
+                    if (mustChangePassword(session)
+                        && !AdminSessionKeys.MUST_CHANGE_PASSWORD_ALLOWED.contains(path)) {
+                        return respondJson(response, HttpStatus.FORBIDDEN, CODE_MUST_CHANGE_PASSWORD,
+                            "当前仍在使用初始口令，请先修改口令后再使用运营后台");
+                    }
+
+                    String nickName = rawNickName(session);
+                    ServerHttpRequest mutated = request.mutate().headers(headers -> {
+                        headers.add("userId", String.valueOf(accountId));
+                        headers.add("nickName", encodeNickName(nickName));
+                        headers.add("image", "");
+                        // ⚠️ 签名用【原始】昵称，下发用【URL 编码后】的 —— 下游解码后再验签，
+                        //    两边必须一致，否则中文昵称会让所有运营请求被判定为身份不可信
+                        addInternalSign(headers, String.valueOf(accountId), nickName, "");
+                    }).build();
+
+                    Mono<Void> downstream = chain.filter(exchange.mutate().request(mutated).build());
+                    if (AdminSessionKeys.PASSWORD_CHANGE_PATH.equals(path)) {
+                        // 改口令成功后清掉会话标记：下一次请求起不再被拦。
+                        // 放在响应完成之后执行，是为了确认真成功了 —— 失败还清掉的话，
+                        // 用户会被放行去用后台，而口令其实还是初始的。
+                        return downstream.then(Mono.fromRunnable(() -> {
+                            HttpStatusCode status = response.getStatusCode();
+                            if (status != null && status.is2xxSuccessful()) {
+                                session.getAttributes().remove(AdminSessionKeys.ATTR_MUST_CHANGE_PASSWORD);
+                            }
+                        }));
+                    }
+                    return downstream;
+                });
+        });
+    }
+
+    /** 会话里的展示名（原始值，未 URL 编码） */
+    private String rawNickName(WebSession session) {
+        Object nickName = session.getAttribute(AdminSessionKeys.ATTR_NICK_NAME);
+        return nickName == null ? null : String.valueOf(nickName);
+    }
+
+    private boolean mustChangePassword(WebSession session) {
+        return Boolean.TRUE.equals(session.getAttribute(AdminSessionKeys.ATTR_MUST_CHANGE_PASSWORD));
+    }
+
+    /**
+     * 写一个带业务码的 JSON 响应体（HTTP 状态与业务码分开：HTTP 表达"请求被拒"，
+     * 业务码告诉前端"为什么被拒、该怎么处理"）。
+     */
+    private Mono<Void> respondJson(ServerHttpResponse response, HttpStatus status, int code, String message) {
+        response.setStatusCode(status);
+        response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("code", code);
+        payload.put("message", message);
+        payload.put("data", null);
+        try {
+            DataBuffer buffer = response.bufferFactory().wrap(JSON.writeValueAsBytes(payload));
+            return response.writeWith(Mono.just(buffer));
+        } catch (Exception e) {
+            log.error("写鉴权响应体失败", e);
+            return response.setComplete();
+        }
     }
 
     /**

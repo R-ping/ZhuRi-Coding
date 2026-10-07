@@ -1,6 +1,7 @@
 package com.zhuri.coding.content.service.aigc.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhuri.coding.content.mapper.aigc.AigcRecordMapper;
@@ -464,6 +465,44 @@ public class AigcDetectServiceImpl implements AigcDetectService {
             }
         } catch (Exception e) {
             log.warn("[Aigc] 打标更新失败, type={}, id={}", type, id, e);
+        }
+    }
+
+    /**
+     * 人工复核放行：清业务主表标记。为什么放在本类而不是复核服务里 ——
+     * "哪三种内容各有哪些 AIGC 列"这个知识已经在 {@link #applyFlag} 里了，
+     * 拆到第二处的话，将来加第四种内容类型时要记得改两个地方。
+     */
+    @Override
+    public void clearAigcFlag(int type, Long id) {
+        if (id == null) {
+            throw new IllegalArgumentException("AIGC 放行：内容ID不能为空");
+        }
+        int rows;
+        if (type == AigcRecord.TYPE_ARTICLE) {
+            rows = apArticleMapper.update(null, new LambdaUpdateWrapper<ApArticle>()
+                .set(ApArticle::getIsAigc, 0)
+                .set(ApArticle::getAigcScore, 0)
+                .eq(ApArticle::getId, id));
+        } else if (type == AigcRecord.TYPE_PINS) {
+            rows = apPinsMapper.update(null, new LambdaUpdateWrapper<ApPins>()
+                .set(ApPins::getIsAigc, 0)
+                .set(ApPins::getAigcScore, 0)
+                .eq(ApPins::getId, id));
+        } else if (type == AigcRecord.TYPE_CHAPTER) {
+            rows = courseChapterMapper.update(null, new LambdaUpdateWrapper<ApCourseChapter>()
+                .set(ApCourseChapter::getIsAigc, 0)
+                .set(ApCourseChapter::getAigcScore, 0)
+                .eq(ApCourseChapter::getId, id));
+        } else {
+            // 未知类型不是"无事可做"而是数据异常（记录表里的类型必须是这三种之一），
+            // 静默返回会让一条坏数据看起来像"放行成功"
+            throw new IllegalArgumentException("AIGC 放行：未知的内容类型 " + type);
+        }
+        if (rows == 0) {
+            // 记录在、内容没了：作者删文/管理删除都可能造成。放行的本意是"恢复可见性"，
+            // 对象不存在时继续推进只会留下一条看似成功的放行记录
+            throw new IllegalStateException("AIGC 放行：内容主表记录不存在（contentId=" + id + "，可能已被删除）");
         }
     }
 
