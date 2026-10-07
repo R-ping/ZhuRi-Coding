@@ -20,7 +20,7 @@ public class ArticleDetailController {
      */
     @GetMapping("/detail/{id}")
     public ResponseResult getArticleDetail(@PathVariable("id") Long id) {
-        log.info("查询文章详情, id={}", id);
+        log.debug("查询文章详情, id={}", id);
         return articleDetailService.getArticleDetail(id);
     }
 
@@ -30,7 +30,7 @@ public class ArticleDetailController {
      */
     @GetMapping("/{id}/column")
     public ResponseResult getArticleColumn(@PathVariable("id") Long id) {
-        log.info("查询文章专栏信息, id={}", id);
+        log.debug("查询文章专栏信息, id={}", id);
         return articleDetailService.getArticleColumn(id);
     }
 

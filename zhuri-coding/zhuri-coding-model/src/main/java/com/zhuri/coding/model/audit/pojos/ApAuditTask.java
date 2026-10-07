@@ -52,6 +52,13 @@ public class ApAuditTask implements Serializable {
     /** 任务状态：重试超限，降级通过（系统故障不误伤正常内容） */
     public static final int STATUS_DEGRADED_PASSED = 4;
 
+    /** 人工复核状态：未复核（违规任务默认值，出现在复核队列中） */
+    public static final int REVIEW_PENDING = 0;
+    /** 人工复核状态：复核放行 —— 内容已恢复可见（软删翻回 / 沸点状态翻转） */
+    public static final int REVIEW_RESTORED = 1;
+    /** 人工复核状态：维持违规 —— 内容保持不可见，任务退出队列 */
+    public static final int REVIEW_UPHELD = 2;
+
     /** 最大重试次数（与旧表 MAX_RETRY 保持一致） */
     public static final int MAX_RETRY = 5;
 
@@ -109,6 +116,18 @@ public class ApAuditTask implements Serializable {
 
     @TableField("status")
     private Integer status;
+
+    /** 违规原因（调度器在违规终态时统一回填；此前只存在于通知与业务表，任务表不留痕） */
+    @TableField("violation_reason")
+    private String violationReason;
+
+    /** 人工复核状态：0-未复核（在队列中）1-复核放行（内容已恢复）2-维持违规 */
+    @TableField("review_status")
+    private Integer reviewStatus;
+
+    /** 人工复核完成时间 */
+    @TableField("review_time")
+    private Date reviewTime;
 
     @TableField("retry_count")
     private Integer retryCount;

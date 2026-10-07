@@ -120,11 +120,13 @@ public class AuditTaskDispatcher {
             AuditResult result = handler.audit(task);
 
             if (result.isPassed()) {
-                markDone(taskId, ApAuditTask.STATUS_PASSED);
+                markDone(taskId, ApAuditTask.STATUS_PASSED, null);
                 log.info("审核通过, bizType={}, bizId={}", task.getBizType(), task.getBizId());
                 safeCallback(handler, task, CallbackKind.PASSED);
             } else {
-                markDone(taskId, ApAuditTask.STATUS_VIOLATION);
+                // 违规原因随终态一起落库：复核队列要靠它展示"机器为什么判违规"，
+                // 此前原因只存在于通知与业务表，任务表本身不留痕
+                markDone(taskId, ApAuditTask.STATUS_VIOLATION, result.getReason());
                 log.info("审核违规, bizType={}, bizId={}, reason={}",
                         task.getBizType(), task.getBizId(), result.getReason());
                 safeCallback(handler, task, CallbackKind.VIOLATION);
@@ -164,12 +166,13 @@ public class AuditTaskDispatcher {
                 .set(ApAuditTask::getUpdateTime, new Date())) > 0;
     }
 
-    /** 标记任务完成（通过 / 违规） */
-    private void markDone(Long taskId, int status) {
+    /** 标记任务完成（通过 / 违规）；违规时附带原因供复核队列展示 */
+    private void markDone(Long taskId, int status, String violationReason) {
         Date now = new Date();
         auditTaskMapper.update(null, new LambdaUpdateWrapper<ApAuditTask>()
                 .eq(ApAuditTask::getId, taskId)
                 .set(ApAuditTask::getStatus, status)
+                .set(ApAuditTask::getViolationReason, violationReason)
                 .set(ApAuditTask::getAuditTime, now)
                 .set(ApAuditTask::getUpdateTime, now));
     }

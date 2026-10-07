@@ -56,6 +56,9 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult createDraft(ApArticleDraft draft) {
         ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null || user.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
         draft.setCreatedTime(new Date());
         draft.setUpdatedTime(new Date());
         draft.setAuthorId(user.getId().longValue());
@@ -68,17 +71,24 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
     @Transactional(rollbackFor = Exception.class)
     public ResponseResult updateDraft(ApArticleDraft draft) {
         ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null || user.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
         if (draft.getId() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "草稿ID不能为空");
         }
         ApArticleDraft existing = getById(draft.getId());
-        if (existing == null) {
+        // 归属校验：不存在与无权一律返回"草稿不存在"，避免用响应码差异探测他人草稿 id 是否存在。
+        // 注意：authorId 为 Long、user.getId() 为 Integer，不能用 equals（Long.equals(Integer) 恒 false），
+        // 须统一为 long 再比较。
+        if (existing == null || existing.getAuthorId() == null
+                || existing.getAuthorId().longValue() != user.getId().longValue()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "草稿不存在");
         }
         draft.setUpdatedTime(new Date());
-        if (draft.getAuthorId() == null) {
-            draft.setAuthorId(user.getId().longValue());
-        }
+        // 所有者字段强制为当前登录用户，不接受请求体传入的 authorId。
+        // 原实现只在 authorId 为 null 时才补当前用户，导致请求体带 authorId 即可把他人草稿"过户"到自己名下。
+        draft.setAuthorId(user.getId().longValue());
         updateById(draft);
         return ResponseResult.okResult(draft);
     }
@@ -99,7 +109,10 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "草稿ID不能为空");
         }
         ApArticleDraft draft = getById(draftId);
-        if (draft == null) {
+        // 归属校验：发布是破坏性操作（会把内容公开并删除原草稿），必须确认草稿属于当前用户，
+        // 否则可拿他人 draftId 把别人未发布的草稿发出去。不存在与无权同样返回"草稿不存在"。
+        if (draft == null || draft.getAuthorId() == null
+                || draft.getAuthorId().longValue() != user.getId().longValue()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "草稿不存在");
         }
 
@@ -175,18 +188,35 @@ public class ApArticleDraftServiceImpl extends ServiceImpl<ApArticleDraftMapper,
 
     @Override
     public ResponseResult getDraftById(Long id) {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null || user.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        if (id == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "草稿ID不能为空");
+        }
         ApArticleDraft draft = getById(id);
-        if (draft == null) {
+        // 草稿是未发布的私密内容，读取同样要校验归属：
+        // 原实现只判存在，任何登录用户都能遍历 id 读到他人草稿正文。
+        if (draft == null || draft.getAuthorId() == null
+                || draft.getAuthorId().longValue() != user.getId().longValue()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
         }
         return ResponseResult.okResult(draft);
     }
 
     @Override
-    public ResponseResult listDrafts(Long authorId, Integer page, Integer size) {
+    public ResponseResult listDrafts(Integer page, Integer size) {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null || user.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
         Page<ApArticleDraft> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<ApArticleDraft> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(authorId != null, ApArticleDraft::getAuthorId, authorId);
+        // 只能查自己的草稿：authorId 一律取当前登录用户，不再接受请求参数。
+        // 原实现的 authorId 是可选参数且"为 null 即不过滤"，等于对外开了一个
+        // 「不传参就能拿到全站所有人草稿」的入口。
+        queryWrapper.eq(ApArticleDraft::getAuthorId, user.getId().longValue());
         // 仅普通草稿（source_article_id 为空）：修订草稿不属于普通草稿，避免出现在草稿列表被误"从草稿发布"
         queryWrapper.isNull(ApArticleDraft::getSourceArticleId);
         queryWrapper.orderByDesc(ApArticleDraft::getUpdatedTime);

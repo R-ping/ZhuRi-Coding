@@ -9,6 +9,6 @@ public interface ApArticleDraftService extends IService<ApArticleDraft> {
     ResponseResult updateDraft(ApArticleDraft draft);
     ResponseResult publishFromDraft(Long draftId);
     ResponseResult getDraftById(Long id);
-    ResponseResult listDrafts(Long authorId, Integer page, Integer size);
+    ResponseResult listDrafts(Integer page, Integer size);
     ResponseResult deleteDraft(Long id);
 }

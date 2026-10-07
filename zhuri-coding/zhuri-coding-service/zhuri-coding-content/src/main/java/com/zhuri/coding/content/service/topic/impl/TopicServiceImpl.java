@@ -194,7 +194,7 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
                     .map(TopicRelation::getTargetId)
                     .filter(java.util.Objects::nonNull)
                     .distinct()
-                    .collect(Collectors.toList());
+                    .toList();
             if (!articleIds.isEmpty()) {
                 LambdaQueryWrapper<ApArticle> articleWrapper = new LambdaQueryWrapper<>();
                 articleWrapper.in(ApArticle::getId, articleIds)
@@ -308,7 +308,7 @@ public class TopicServiceImpl extends ServiceImpl<TopicMapper, ApTopic> implemen
             return result;
         }
         List<Long> articleIds = relations.stream().map(TopicRelation::getTargetId)
-                .filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
+                .filter(java.util.Objects::nonNull).distinct().toList();
         if (articleIds.isEmpty()) {
             result.put("list", list);
             result.put("cursor", cursor + size);

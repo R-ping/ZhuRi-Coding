@@ -170,6 +170,10 @@ public class PinsInteractionService {
         // 如果是回复，更新父评论的回复数
         if (dto.getParentId() != null) {
             ApPinsComment parentComment = apPinsCommentMapper.selectById(dto.getParentId());
+            if (parentComment != null && parentComment.getIsDeleted() != null && parentComment.getIsDeleted() == 1) {
+                // 违规软删的评论对所有人不可见，禁止在其下继续回复
+                return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "评论不存在");
+            }
             if (parentComment != null && parentComment.getIsHidden() != null && parentComment.getIsHidden() == 1) {
                 // 折叠评论已全局隐藏，禁止在其下继续回复（防争议在已折叠评论上生长）
                 return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "该评论已被折叠，无法回复");

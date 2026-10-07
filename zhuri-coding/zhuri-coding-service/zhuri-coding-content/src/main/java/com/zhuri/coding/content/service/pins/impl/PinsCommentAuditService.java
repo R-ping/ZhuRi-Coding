@@ -204,13 +204,21 @@ public class PinsCommentAuditService extends AbstractAuditService implements Aud
 
     @Override
     protected void handleFailed(AuditContext context, String reason) {
-        // 红线违规：物理删除评论 + 撤销行为记录 + 发送违规系统通知给评论者
+        // 红线违规：软删除评论（is_deleted=1，行保留供人工复核放行）+ 撤销行为记录 + 发送违规系统通知
         ApPinsComment comment = pinsCommentMapper.selectById(context.getEntityId());
         if (comment == null) {
             return;
         }
 
-        pinsCommentMapper.deleteById(comment.getId());
+        // CAS（WHERE is_deleted=0）挡并发/重复回调：输家不重复撤销行为记录、不重复发通知
+        int rows = pinsCommentMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ApPinsComment>()
+            .set(ApPinsComment::getIsDeleted, 1)
+            .eq(ApPinsComment::getId, comment.getId())
+            .eq(ApPinsComment::getIsDeleted, 0));
+        if (rows == 0) {
+            log.info("沸点评论已被处置过，跳过重复违规动作, commentId={}", comment.getId());
+            return;
+        }
 
         // 更新行为记录状态为已撤销（沸点评论行为类型固定 comment_pin，targetType=2）
         if (context.getUserId() != null) {

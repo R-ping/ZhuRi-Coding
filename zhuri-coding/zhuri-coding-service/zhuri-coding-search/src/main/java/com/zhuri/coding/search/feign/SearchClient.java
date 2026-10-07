@@ -41,4 +41,12 @@ public class SearchClient implements ISearchClient {
         return ResponseResult.okResult(articleSearchService.missingArticleIds(candidateIds));
     }
 
+    /**
+     * 索引移除（内部接口）：内容被平台下架时，把文档从 ES 删掉，使其不再出现在检索结果里。
+     */
+    @PostMapping("/api/v1/search/article/remove")
+    public ResponseResult removeArticleIndex(@RequestBody Long articleId){
+        return articleSearchService.removeArticleIndex(articleId);
+    }
+
 }

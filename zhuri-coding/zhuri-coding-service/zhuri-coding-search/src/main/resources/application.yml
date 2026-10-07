@@ -46,4 +46,8 @@ management:
 # 网关-下游内部身份签名密钥（HMAC，网关与各服务必须一致；生产务必用 INTERNAL_AUTH_SECRET 环境变量覆盖）
 app:
   internal-auth:
-    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
+    # 刻意不设默认值：未配置时下游按 fail-closed 拒绝信任任何身份头（需登录的接口返回"未登录"），
+    # 而不是退化为"任何人拿仓库里的公开默认值就能伪造 userId 冒充他人"。
+    # 本地开发启动前：export INTERNAL_AUTH_SECRET=zhuri-coding-internal-dev-secret
+    # 生产环境：使用随机密钥，切勿使用上述开发值。
+    secret: ${INTERNAL_AUTH_SECRET:}

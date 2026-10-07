@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -35,7 +36,17 @@ public class ContentDataServiceImpl implements ContentDataService {
     private ApPinsMapper apPinsMapper;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+
+    /**
+     * Date → yyyy-MM-dd，按 JVM 默认时区。
+     *
+     * <p>原先此处另有一个格式完全相同的 {@code static final SimpleDateFormat}：它内部持有
+     * 可变的 Calendar，并发 format 会互相覆盖字段（同一请求可能读到别的请求的日期）。
+     * DateTimeFormatter 不可变、线程安全，且格式与本类既有的 DATE_FORMATTER 一致，故直接合并为一处。
+     */
+    private static String formatDay(Date date) {
+        return DATE_FORMATTER.format(date.toInstant().atZone(ZoneId.systemDefault()));
+    }
 
     // ==================== Article ====================
 
@@ -87,7 +98,7 @@ public class ContentDataServiceImpl implements ContentDataService {
 
         // 按日期分组
         Map<String, List<ApArticle>> grouped = articles.stream()
-                .collect(Collectors.groupingBy(a -> dateFormat.format(a.getPublishTime())));
+                .collect(Collectors.groupingBy(a -> formatDay(a.getPublishTime())));
 
         List<Map<String, Object>> trendData = new ArrayList<>();
         LocalDate start = LocalDate.parse(startDate, DATE_FORMATTER);
@@ -181,7 +192,7 @@ public class ContentDataServiceImpl implements ContentDataService {
         List<ApColumn> columns = apColumnMapper.selectList(wrapper);
 
         Map<String, List<ApColumn>> grouped = columns.stream()
-                .collect(Collectors.groupingBy(c -> dateFormat.format(c.getCreatedTime())));
+                .collect(Collectors.groupingBy(c -> formatDay(c.getCreatedTime())));
 
         List<Map<String, Object>> trendData = new ArrayList<>();
         LocalDate start = LocalDate.parse(startDate, DATE_FORMATTER);
@@ -270,7 +281,7 @@ public class ContentDataServiceImpl implements ContentDataService {
         List<ApPins> pins = apPinsMapper.selectList(wrapper);
 
         Map<String, List<ApPins>> grouped = pins.stream()
-                .collect(Collectors.groupingBy(p -> dateFormat.format(p.getPublishTime())));
+                .collect(Collectors.groupingBy(p -> formatDay(p.getPublishTime())));
 
         List<Map<String, Object>> trendData = new ArrayList<>();
         LocalDate start = LocalDate.parse(startDate, DATE_FORMATTER);
@@ -331,7 +342,7 @@ public class ContentDataServiceImpl implements ContentDataService {
                 .filter(a -> a.getPublishTime() != null
                         && !a.getPublishTime().before(startTime)
                         && !a.getPublishTime().after(endTime))
-                .collect(Collectors.toList());
+                .toList();
         return aggregateArticleMetrics(filtered);
     }
 
@@ -360,7 +371,7 @@ public class ContentDataServiceImpl implements ContentDataService {
                 .filter(c -> c.getCreatedTime() != null
                         && !c.getCreatedTime().before(startTime)
                         && !c.getCreatedTime().after(endTime))
-                .collect(Collectors.toList());
+                .toList();
         return aggregateColumnMetrics(filtered);
     }
 
@@ -379,7 +390,7 @@ public class ContentDataServiceImpl implements ContentDataService {
                 .filter(p -> p.getPublishTime() != null
                         && !p.getPublishTime().before(startTime)
                         && !p.getPublishTime().after(endTime))
-                .collect(Collectors.toList());
+                .toList();
         return aggregatePinMetrics(filtered);
     }
 

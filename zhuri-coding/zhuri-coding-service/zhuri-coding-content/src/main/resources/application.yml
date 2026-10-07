@@ -3,6 +3,13 @@ server:
 spring:
   application:
     name: zhuri-coding-content
+  # 上传大小上限：Boot 默认 max-file-size 仅 1MB，不显式配置的话
+  # CodingResumeService 声明的 10MB 校验根本到不了 controller（超过 1MB 直接被容器拒掉）。
+  # 取 10MB 与简历解析上限一致，同时覆盖文章导入的常规文件。
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
   # Redisson 仅用其 Client API（分布式限流/锁/延迟队列），不接管 Spring Data Redis 的 ConnectionFactory。
   # 排除它的自动配置：redisson-spring-boot-starter 3.37.0 的 RedissonConnection 未覆写 spring-data-redis
   # 3.5 新增的 pExpire 签名，运行时走 DefaultedRedisConnection 默认实现导致 pExpire 自递归
@@ -171,10 +178,11 @@ bailian:
 #   - qwen3.8-flash 输入 0.8 元/百万、输出 2.7 元/百万（开发者社区对比文，2026）
 # 注意：以上为"无阶梯/最低档"单价，实际存在阶梯计费、Batch 半价、上下文缓存折扣与限时活动，
 # 请以百炼控制台账单为准；未配价的模型会在成本报表里列入 unpricedModels（不静默当免费）。
-# 内容治理人工终审授权：终审（解除折叠 / 撤销 AIGC 标注）会直接改变治理结论，必须限定为运营账号。
-# 白名单为空 → 一律拒绝终审（fail-closed）；后续接入运营角色表时只需替换 AuditReviewerGuard 实现。
-audit:
-  reviewer-user-ids: ${AUDIT_REVIEWER_USER_IDS:}   # 逗号分隔的用户 id，例如 1001,1002
+# 内容治理人工终审授权：终审（解除折叠 / 撤销 AIGC 标注）会直接改变治理结论，因此限定为持
+# APPEAL_REVIEW 权限的运营账号（见 AuditReviewerGuard + ap_admin_account_role）。
+# 授权来源已从"配置白名单"改为运营角色表，故 audit.reviewer-user-ids 已删除 ——
+# 留着它会让人以为"改了配置就生效"，而实际改的是库里的角色绑定。
+# 授权来源不可用时一律拒绝终审（fail-closed）。
 
 ai:
   # 熔断器（AiCircuitBreaker）：LLM 与 embedding 双目标独立熔断，故障期快速失败避免拖满线程池；
@@ -201,10 +209,12 @@ ai:
       # 每日一题题库供给：出题与质检均为低成本批处理场景 → flash 快模型
       question_generate: qwenFlashChatModel
       question_audit: qwenFlashChatModel
-      # 模拟面试：提纲生成与逐轮追问走 flash（流式实时性 + 成本）；报告不在此映射，
-      # 走默认强模型（报告质量优先，可由评审调整）
+      # 模拟面试：提纲生成与逐轮追问走 flash（流式实时性 + 成本）；报告走专用强模型 Bean
+      # （qwen3.8-27b 关闭思考——主配置 max-completion-tokens 与思考共享预算，实测报告任务
+      #   思考吃满 2048 导致正文为空，详见 AiModelConfig#qwenReportChatModel）
       interview_plan: qwenFlashChatModel
       interview_turn: qwenFlashChatModel
+      interview_report: qwenReportChatModel
     pricing-prompt:
       qwen3.7-max: 0.012          # 当前主模型（DASH_SCOPE_MODEL 默认值）
       qwen3.8-27b: 0.003          # 视觉/长文场景
@@ -315,14 +325,30 @@ app:
   # 本地开发为空 → 输出相对路径便于调试；正式部署用环境变量 SEO_BASE_URL 覆盖，如 https://www.zhuri-coding.com
   seo:
     base-url: ${SEO_BASE_URL:}
-  # 模拟面试（Coding 延展第三层）可调参数
+  # Coding 延展（能力测评 / 模拟面试）可调参数
   coding:
     interview:
       question-count: 5            # 主题数（每主题 1 主问题 + ≤followup-max 次追问）
       followup-max: 1              # 每主题最大追问次数（服务端强制，不依赖模型自觉）
       duration-minutes: 45         # 总限时（分钟）
       daily-limit: 3               # 每日场次上限（0=不限；进行中与已完成计入，已过期不计）
-      report-timeout-seconds: 30   # 报告生成超时（超时按“结构化失败”降级，可重试）
+      report-timeout-seconds: 45   # 报告生成超时（秒；前端 finish 为 60s axios 超时，须留余量；超时按“结构化失败”降级，可重试）
+      report-batch-size: 3         # 报告分批评估每批主题数（1=逐主题单独评估；越大越省调用但单次 prompt 越长）
+      resume-max-chars: 8000       # 简历文本上限（字符）；超出按入参截断
+      resume-topic-ratio: 0.6      # 有简历时简历深挖题在大纲中的目标占比（其余为方向通用题）
+    # 能力测评（Coding 延展第二层）可调参数
+    # 说明：这些值原先只存在于代码 @Value 默认值，运维调参必须改代码或注环境变量，故显式入配置。
+    assessment:
+      question-count: 10           # 组卷目标题量
+      min-question-count: 5        # 允许开卷的最低题量（题库凑不满目标题量时按此下限降级）
+      duration-minutes: 15         # 总限时（分钟）
+      retake-cooldown-days: 90     # 重考冷却（天）
+      percentile-min-sample: 20    # 展示百分位所需的最小样本量（不足则不展示，避免小样本误导）
+    # 场次滞留收尾（面试 / 测评）：超时未结束的场次在用户不再访问时收不掉，靠本任务兜底
+    recovery:
+      interval-ms: 300000          # 扫描周期（毫秒，默认 5 分钟）
+      initial-delay-ms: 120000     # 启动后首次延迟（毫秒，默认 2 分钟）
+      batch: 200                   # 单批处理上限（一次最多把多少行置为已过期）
   # 发布预检「显式工作流」可调参数（增量2：失败自愈 + 分级降级）
   ai-precheck:
     # 单专家一次 LLM 调用超时上限（毫秒，含重试各次）
@@ -351,7 +377,11 @@ app:
     # 滞留补偿首次执行延迟（毫秒，默认 2 分钟，避开启动期）
     recovery-initial-delay-ms: ${AUDIT_RECOVERY_INITIAL_DELAY_MS:120000}
   internal-auth:
-    secret: ${INTERNAL_AUTH_SECRET:zhuri-coding-internal-dev-secret}
+    # 刻意不设默认值：未配置时下游按 fail-closed 拒绝信任任何身份头（需登录的接口返回"未登录"），
+    # 而不是退化为"任何人拿仓库里的公开默认值就能伪造 userId 冒充他人"。
+    # 本地开发启动前：export INTERNAL_AUTH_SECRET=zhuri-coding-internal-dev-secret
+    # 生产环境：使用随机密钥，切勿使用上述开发值。
+    secret: ${INTERNAL_AUTH_SECRET:}
   # 文章索引对账（ArticleIndexReconcileTask）：补「已发布但不在 ES 索引里」的文章。
   # 说明：发布事件的失败重试覆盖不了"同步返回成功但文档没落库""索引被清空"这两类，
   #      故定期真去问一次 ES 并补推 —— 这是「文章搜不到」的最后一道兜底。

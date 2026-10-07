@@ -151,7 +151,7 @@ public class ApCourseServiceImpl extends ServiceImpl<ApCourseMapper, ApCourse> i
 
         List<Long> courseIds = userCourses.stream()
                 .map(ApUserCourse::getCourseId)
-                .collect(Collectors.toList());
+                .toList();
 
         LambdaQueryWrapper<ApCourse> courseQuery = new LambdaQueryWrapper<>();
         courseQuery.in(ApCourse::getId, courseIds);

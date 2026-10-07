@@ -119,7 +119,12 @@ public class ContentAppealServiceImpl implements ContentAppealService {
         if (appeal.getStatus() != ApContentAppeal.STATUS_PENDING) {
             return ResponseResult.errorResult(500, "该申诉已终审");
         }
-        // 防自审：申诉人不能终审自己的申诉（生产需接入运营角色权限体系）
+        // 防自审：申诉人不能终审自己的申诉。
+        // ⚠️ 这条判断在当前模型下**不会命中**：reviewerId 是运营账号 ID、applicantId 是 C 端用户 ID，
+        // 两者来自不同的表、不同的 ID 空间，数值相等不代表同一个人。真正把"自己审自己"挡掉的是
+        // 结构本身 —— 提交申诉要求 C 端登录，终审要求运营会话，同一个账号不可能同时是两者。
+        // 保留这一行是因为它便宜（一次整数比较），且一旦将来重新允许"运营账号与 C 端账号关联"，
+        // 它就是第一道会响的警报；而不是把它当成当前的防护措施。
         if (reviewerId.equals(appeal.getApplicantId())) {
             return ResponseResult.errorResult(AppHttpCodeEnum.NO_OPERATOR_AUTH, "申诉人不能终审自己的申诉");
         }

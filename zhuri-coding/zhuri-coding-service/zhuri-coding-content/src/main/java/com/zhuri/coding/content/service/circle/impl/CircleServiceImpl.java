@@ -76,12 +76,14 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
     public List<CircleVO> hot() {
         LambdaQueryWrapper<ApCircleHotConfig> wrapper = new LambdaQueryWrapper<>();
         wrapper.orderByAsc(ApCircleHotConfig::getDisplayOrder);
-        wrapper.last("LIMIT 5");
+        // 上限与运营位配置接口共用同一个常量：那边"最多让配几个"、这里"最多取几个"，
+        // 分开写死就会出现"运营配了第 6 个、页面上永远看不见"
+        wrapper.last("LIMIT " + ApCircleHotConfig.MAX_DISPLAY_ORDER);
         List<ApCircleHotConfig> configs = apCircleHotConfigMapper.selectList(wrapper);
         if (configs.isEmpty()) {
             return new ArrayList<>();
         }
-        List<Long> circleIds = configs.stream().map(ApCircleHotConfig::getCircleId).collect(Collectors.toList());
+        List<Long> circleIds = configs.stream().map(ApCircleHotConfig::getCircleId).toList();
         List<ApCircle> circles = apCircleMapper.selectBatchIds(circleIds);
         // 保持 display_order 顺序
         Map<Long, ApCircle> circleMap = circles.stream().collect(Collectors.toMap(ApCircle::getId, c -> c));
@@ -157,7 +159,7 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
             List<ClubFeaturedPin> featuredPins = clubFeaturedPinMapper
                 .selectPage(new Page<>(page, size), fpWrapper).getRecords();
             if (!featuredPins.isEmpty()) {
-                List<Long> pinIds = featuredPins.stream().map(ClubFeaturedPin::getPinId).collect(Collectors.toList());
+                List<Long> pinIds = featuredPins.stream().map(ClubFeaturedPin::getPinId).toList();
                 List<ApPins> pins = apPinsMapper.selectBatchIds(pinIds);
                 Map<Long, ApPins> pinMap = pins.stream().collect(Collectors.toMap(ApPins::getId, p -> p));
                 for (ClubFeaturedPin fp : featuredPins) {
@@ -198,7 +200,7 @@ public class CircleServiceImpl extends ServiceImpl<ApCircleMapper, ApCircle> imp
         if (userCircles.isEmpty()) {
             return new ArrayList<>();
         }
-        List<Long> circleIds = userCircles.stream().map(ApUserCircle::getCircleId).collect(Collectors.toList());
+        List<Long> circleIds = userCircles.stream().map(ApUserCircle::getCircleId).toList();
         List<ApCircle> circles = apCircleMapper.selectBatchIds(circleIds);
         return circles.stream().map(c -> convertToVO(c, userId)).collect(Collectors.toList());
     }

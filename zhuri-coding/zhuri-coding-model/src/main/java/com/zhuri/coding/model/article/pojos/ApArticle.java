@@ -256,12 +256,26 @@ public class ApArticle implements Serializable {
      * 审核状态枚举
      * SUBMIT提交（审核中）,
      * FAIL失败（未通过）,
+     * TAKEN_DOWN平台下架,
      * PUBLISHED（已发布）
      */
     public enum Status {
         DRAFT((byte) 0),
         SUBMIT((byte) 1),
         FAIL((byte) 2),
+        /**
+         * 平台下架（运营处置结果，如举报核实）。
+         *
+         * <p><b>为什么与 {@link #FAIL} 分开</b>：两者都"不是已发布"，但语义与后续动作用途不同 ——
+         * FAIL 是投稿没过审（内容未上线过），TAKEN_DOWN 是已上线内容被平台撤下（内容曾公开可见，
+         * 可能已产生阅读、收藏、评论）。合并成一个状态就没法区分"从没上过线"与"上线后被撤"，
+         * 而后者需要清理索引/向量、通知作者、支持申诉。
+         *
+         * <p><b>为什么不用 {@code is_deleted}</b>：{@code is_deleted} 是"作者删除"的软删标记，
+         * 作者自己的作品列表会把它整条过滤掉 —— 那会让作者看不到自己被下架的文章，
+         * 连"为什么没了"都无从得知。TAKEN_DOWN 保留在作者列表里，附 {@code reason} 说明原因。
+         */
+        TAKEN_DOWN((byte) 3),
         PUBLISHED((byte) 9);
 
         byte code;
@@ -309,6 +323,13 @@ public class ApArticle implements Serializable {
      */
     public boolean isDeletedArticle() {
         return Boolean.TRUE.equals(this.isDeleted);
+    }
+
+    /**
+     * 是否已被平台下架
+     */
+    public boolean isTakenDown() {
+        return this.status != null && Status.TAKEN_DOWN.getCode() == this.status;
     }
 
     /**

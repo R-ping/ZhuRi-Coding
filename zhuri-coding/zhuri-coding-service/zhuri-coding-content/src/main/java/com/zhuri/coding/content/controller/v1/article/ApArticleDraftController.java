@@ -36,12 +36,15 @@ public class ApArticleDraftController {
         return apArticleDraftService.getDraftById(id);
     }
 
+    /**
+     * 我的草稿列表。只返回当前登录用户自己的草稿 —— 原先的 authorId 查询参数已移除，
+     * 它允许"不传参即查全站草稿"，属于可遍历他人未发布内容的越权入口。
+     */
     @GetMapping("/list")
     public ResponseResult listDrafts(
-            @RequestParam(required = false) Long authorId,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
-        return apArticleDraftService.listDrafts(authorId, page, size);
+        return apArticleDraftService.listDrafts(page, size);
     }
 
     @GetMapping("/manage/detail")

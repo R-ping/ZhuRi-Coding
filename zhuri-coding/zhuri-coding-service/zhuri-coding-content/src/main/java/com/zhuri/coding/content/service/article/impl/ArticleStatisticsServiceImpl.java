@@ -22,7 +22,6 @@ import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -122,7 +121,7 @@ public class ArticleStatisticsServiceImpl implements ArticleStatisticsService {
         if (!articles.isEmpty()) {
             List<Long> articleIds = articles.stream()
                     .map(ApArticle::getId)
-                    .collect(Collectors.toList());
+                    .toList();
             totalLikes += apBehaviorLikesMapper.selectCount(
                     new LambdaQueryWrapper<ApBehaviorLikes>()
                             .in(ApBehaviorLikes::getEntryId, articleIds)
@@ -138,7 +137,7 @@ public class ArticleStatisticsServiceImpl implements ArticleStatisticsService {
         if (!pins.isEmpty()) {
             List<Long> pinsIds = pins.stream()
                     .map(ApPins::getId)
-                    .collect(Collectors.toList());
+                    .toList();
             totalLikes += apBehaviorLikesMapper.selectCount(
                     new LambdaQueryWrapper<ApBehaviorLikes>()
                             .in(ApBehaviorLikes::getEntryId, pinsIds)

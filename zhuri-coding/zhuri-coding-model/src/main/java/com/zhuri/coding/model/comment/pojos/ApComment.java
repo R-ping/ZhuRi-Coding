@@ -44,6 +44,14 @@ public class ApComment implements Serializable {
     @TableField("is_hidden")
     private Integer isHidden;
 
+    /**
+     * 审核违规软删标记：1=红线违规删除（对<b>所有人</b>不可见，含作者本人 ——
+     * 与 {@code is_hidden} 折叠"仅本人可见折叠条"的语义正交）。
+     * 保留行是为了 AI 误判可被人工复核放行（复核 = 翻回 0），不再是物理删除后的不可逆。
+     */
+    @TableField("is_deleted")
+    private Integer isDeleted;
+
     /** 评论附带图片：URL 逗号分隔，独立字段（不嵌入 content），URL 已清洗去掉签名参数 */
     @TableField("comment_pics")
     private String commentPics;

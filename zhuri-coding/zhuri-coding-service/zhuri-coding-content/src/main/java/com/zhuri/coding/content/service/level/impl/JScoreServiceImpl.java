@@ -16,10 +16,11 @@ import com.zhuri.coding.model.level.pojos.ApUserDailyProgress;
 import com.zhuri.coding.model.user.pojos.UserScoreDetails;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import java.math.BigDecimal;
-import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -49,7 +50,18 @@ public class JScoreServiceImpl implements JScoreService {
 
     private static final String REDIS_KEY_PREFIX = "jscore:today:";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final SimpleDateFormat SDF = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter DATE_TIME_FMT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /**
+     * Date → yyyy-MM-dd HH:mm:ss，按 JVM 默认时区（与原先 SimpleDateFormat 的时区语义一致）。
+     *
+     * <p>原实现是 {@code static final SimpleDateFormat}：内部持有可变的 Calendar，并发 format 时
+     * 字段会互相覆盖，用户可能看到错误的时间乃至别的记录的时间。DateTimeFormatter 不可变、线程安全。
+     */
+    private static String formatDateTime(Date date) {
+        return DATE_TIME_FMT.format(date.toInstant().atZone(ZoneId.systemDefault()));
+    }
 
     /**
      * category 映射表
@@ -196,7 +208,7 @@ public class JScoreServiceImpl implements JScoreService {
             JScoreDetailItem item = new JScoreDetailItem();
             item.setId(String.valueOf(record.getId()));
             item.setCreatedAt(record.getCreatedAt() != null
-                ? SDF.format(record.getCreatedAt()) : "");
+                ? formatDateTime(record.getCreatedAt()) : "");
             item.setActionCode(record.getActionCode() != null ? record.getActionCode() : "");
             item.setActionDesc(record.getActionDesc() != null ? record.getActionDesc() : "");
             // 行为展示名：优先 ap_behavior_config.action_name（如"点赞一篇文章"），
@@ -211,7 +223,7 @@ public class JScoreServiceImpl implements JScoreService {
             // 最后一个记录的游标
             if (i == records.size() - 1) {
                 String createdAt = record.getCreatedAt() != null
-                    ? SDF.format(record.getCreatedAt()) : "";
+                    ? formatDateTime(record.getCreatedAt()) : "";
                 nextCursor = createdAt + "_" + record.getId();
             }
         }
