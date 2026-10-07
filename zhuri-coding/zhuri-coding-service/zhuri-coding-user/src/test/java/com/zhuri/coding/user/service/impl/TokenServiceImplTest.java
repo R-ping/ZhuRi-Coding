@@ -1,7 +1,10 @@
 package com.zhuri.coding.user.service.impl;
 
+import com.zhuri.coding.common.exception.BusinessException;
 import com.zhuri.coding.common.redis.CacheService;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import com.zhuri.coding.model.user.dtos.LoginResultVo;
+import com.zhuri.coding.user.service.UserBanChecker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -25,6 +28,9 @@ class TokenServiceImplTest {
 
     @Mock
     private CacheService cacheService;
+
+    @Mock
+    private UserBanChecker banChecker;
 
     @InjectMocks
     private TokenServiceImpl tokenService;
@@ -92,6 +98,24 @@ class TokenServiceImplTest {
             assertNull(result.getPhone());
             assertNotNull(result.getAccessToken());
             assertNotNull(result.getRefreshToken());
+        }
+
+        @Test
+        @DisplayName("账号被封禁：抛业务异常，且不签发任何 token（封禁的唯一生效点）")
+        void testGenerateRejectedWhenBanned() {
+            // Arrange：封禁校验抛异常（真实实现里带原因与解封时间）
+            doThrow(new BusinessException(AppHttpCodeEnum.USER_BANNED.getCode(),
+                    "账号已被封禁，解封时间 2026-10-20 10:00（约剩 7 天）。原因：恶意刷屏。"))
+                    .when(banChecker).assertNotBanned(TEST_USER_ID);
+
+            // Act + Assert
+            BusinessException e = assertThrows(BusinessException.class,
+                    () -> tokenService.generateDualToken(TEST_USER_ID, TEST_NICKNAME, TEST_PHONE, TEST_IMAGE));
+            assertEquals(AppHttpCodeEnum.USER_BANNED.getCode(), e.getCode());
+            assertTrue(e.getMessage().contains("恶意刷屏"), "报错必须带上封禁原因，这是被封账号唯一的告知渠道");
+
+            // 关键：不能"先签发再报错"—— 一旦写进 Redis，被封账号就拿到了可用的 refresh_token
+            verify(cacheService, never()).setEx(anyString(), anyString(), anyLong(), any());
         }
     }
 
@@ -163,6 +187,21 @@ class TokenServiceImplTest {
 
             // Assert
             assertNull(result);
+        }
+
+        @Test
+        @DisplayName("刷新被拒：账号封禁期间续期也要拦（refresh 内部走的是同一个签发口）")
+        void testRefreshRejectedWhenBanned() {
+            // Arrange
+            when(cacheService.getAndDelete("refresh_token:" + VALID_REFRESH_TOKEN))
+                    .thenReturn(USER_INFO_JSON);
+            doThrow(new BusinessException(AppHttpCodeEnum.USER_BANNED.getCode(), "账号已被封禁（永久）"))
+                    .when(banChecker).assertNotBanned(1001);
+
+            // Act + Assert：封禁校验在签发之前，异常直接穿透 refreshToken
+            assertThrows(BusinessException.class, () -> tokenService.refreshToken(VALID_REFRESH_TOKEN));
+            // 旧的 refresh_token 已被原子消费（这是刷新本身的语义，与封禁无关），但新的没有被写入
+            verify(cacheService, never()).setEx(anyString(), anyString(), anyLong(), any());
         }
     }
 
