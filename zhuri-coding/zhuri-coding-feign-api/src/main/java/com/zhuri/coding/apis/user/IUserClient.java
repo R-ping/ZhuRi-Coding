@@ -47,4 +47,22 @@ public interface IUserClient {
      */
     @GetMapping("/api/v1/user/feign/valid-ids")
     ResponseResult getValidUserIds(@RequestParam("userIds") List<Long> userIds);
+
+    /**
+     * 查询运营账号的运营角色编码列表（运营后台鉴权用）。
+     *
+     * <p>角色编码取值见 {@code com.zhuri.coding.model.admin.AdminRole}。
+     * 授权数据只存在于用户库，其他服务无法自行判断，必须回用户服务确认。</p>
+     *
+     * <p><b>⚠️ 入参是运营账号 ID（{@code ap_admin_account.id}），不是 C 端用户 ID。</b>
+     * 两者是两套互不相交的 ID 空间。塞一个 C 端 ID 进来不会报错，只会返回空列表 ——
+     * 在运营链路上表现为"这个人没有权限"，看似合理，所以传错时没有任何信号。</p>
+     *
+     * <p><b>返回语义</b>：data 为角色编码列表；无角色、账号不存在或已停用、编码已废弃时
+     * 均为**空列表**。调用方不应把"空列表"当成故障——它等价于"这个账号不是运营"。</p>
+     *
+     * @param accountId 运营账号 ID（{@code ap_admin_account.id}）
+     */
+    @GetMapping("/api/v1/user/feign/admin-roles")
+    ResponseResult getAdminRoles(@RequestParam("accountId") Long accountId);
 }

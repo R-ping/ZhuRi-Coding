@@ -70,6 +70,21 @@ public class ExceptionCatch {
     }
 
     /**
+     * 处理带动态文案的业务异常（如「账号已被封禁：原因…，解封时间…」）。
+     *
+     * <p>HTTP 固定 200：这是**业务结果**而不是服务故障。文案由抛出方决定，
+     * 所以这里不能像 {@link #exception(CustomException, HttpServletResponse)} 那样只回枚举里的常量。
+     * 日志按 info 记：这类异常是设计内的正常分支（用户被拦住了），写成 error 会淹没真正的故障。
+     */
+    @ExceptionHandler(BusinessException.class)
+    @ResponseBody
+    public ResponseResult handleBusinessException(BusinessException e, HttpServletResponse response) {
+        log.info("业务异常: code={}, message={}", e.getCode(), e.getMessage());
+        response.setStatus(HttpServletResponse.SC_OK);
+        return ResponseResult.errorResult(e.getCode(), e.getMessage());
+    }
+
+    /**
      * 处理可控异常  自定义异常
      * @param e
      * @return
@@ -91,7 +106,7 @@ public class ExceptionCatch {
      *   500-503: 参数/审核/服务器错误 → 400
      *   1000-1002: 数据错误 → 404
      *   2001-2007: 社交登录错误 → 400
-     *   3000-3001: 权限错误 → 403
+     *   3000-3010: 权限/账号封禁错误 → 403
      *   3501:   素材错误 → 400
      */
     private int mapHttpStatus(AppHttpCodeEnum appHttpCodeEnum) {
@@ -123,8 +138,8 @@ public class ExceptionCatch {
         if (code >= 2001 && code <= 2007) {
             return HttpServletResponse.SC_BAD_REQUEST; // 400
         }
-        // 权限错误 3000~3001
-        if (code >= 3000 && code <= 3001) {
+        // 权限错误 3000~3010（含账号封禁 USER_BANNED 3002）
+        if (code >= 3000 && code <= 3010) {
             return HttpServletResponse.SC_FORBIDDEN; // 403
         }
         // 素材错误 3501

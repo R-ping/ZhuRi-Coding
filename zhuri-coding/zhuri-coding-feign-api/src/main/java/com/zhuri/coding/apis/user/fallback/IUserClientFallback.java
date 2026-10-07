@@ -41,6 +41,16 @@ public class IUserClientFallback implements FallbackFactory<IUserClient> {
                 // 给已注销账号多写一条无人可见的站内信，代价远小于给所有正常用户漏发
                 return ResponseResult.okResult(userIds == null ? List.of() : userIds);
             }
+
+            @Override
+            public ResponseResult getAdminRoles(Long accountId) {
+                log.error("IUserClient.getAdminRoles fallback, accountId={}, error: {}", accountId, cause.getMessage());
+                // ⚠️ 与上一处刻意相反，这里必须 fail-closed：返回空列表 = "不是运营"，
+                // 于是所有运营接口对该账号一律 403。反过来（fail-open 给全权限）
+                // 会在用户服务故障时把整个运营后台向所有人敞开 —— 这是不可接受的降级。
+                // 代价只是"用户服务挂了期间运营也用不了后台"，恰好我们也确实用不了。
+                return ResponseResult.okResult(List.of());
+            }
         };
     }
 }

@@ -126,6 +126,41 @@ public class ApUser implements Serializable {
     @TableField("created_time")
     private Date createdTime;
 
+    // ==================== 运营封禁字段 ====================
+    //
+    // 为什么另开一组字段、不复用 status：
+    //   status=0 在系统里的语义是「注销/锁定」—— getValidUserIds 按它把账号从"批量投递"
+    //   名单里剔除。把封禁塞进 status，被封用户看起来就跟自己注销了一样，
+    //   运营既分不清是"自己注销的"还是"被平台封的"，也就无从解封。
+    //
+    // 为什么用"截止时间"而不是布尔位：
+    //   ban_until > now 就是判定，到期自动失效；永久封禁写入远期时间（见 UserBanServiceImpl），
+    //   于是永远不需要一个定时任务去把到期账号挨个解开 —— 少一个会漏跑的组件。
+
+    /**
+     * 封禁截止时间：{@code > now} 表示当前处于封禁态；null 表示未被运营封禁。
+     *
+     * <p>永久封禁写远期时间而不是留空，这样"是否封禁中"永远只是一次比较。
+     */
+    @TableField("ban_until")
+    private Date banUntil;
+
+    /**
+     * 封禁理由（对用户展示，上限 500 与审计表 reason 列等长）。
+     *
+     * <p>解封时会被清空 —— 它描述的是"当前这次封禁"，历史留在 {@code ap_admin_audit_log} 里。
+     */
+    @TableField("ban_reason")
+    private String banReason;
+
+    /** 本次封禁的操作时间（不是"最近更新时间"） */
+    @TableField("ban_time")
+    private Date banTime;
+
+    /** 执行封禁的运营账号ID */
+    @TableField("ban_operator_id")
+    private Integer banOperatorId;
+
     // ==================== 辅助方法 ====================
 
     /**
@@ -161,6 +196,21 @@ public class ApUser implements Serializable {
      */
     public boolean isVipUser() {
         return this.flag != null && this.flag == 2;
+    }
+
+    /**
+     * 在指定时刻是否处于封禁态。
+     *
+     * <p>判定只有这一份（运营侧的封禁名单 SQL 与登录侧的内存校验共用同一语义，
+     * 见 {@code UserBanServiceImpl}）—— 两处各写一遍迟早在"到期那一秒算不算封禁"上分叉。
+     *
+     * @param now 判定基准时刻；传 null 取当前时间
+     */
+    public boolean isBannedAt(Date now) {
+        if (this.banUntil == null) {
+            return false;
+        }
+        return this.banUntil.after(now == null ? new Date() : now);
     }
 
 }
