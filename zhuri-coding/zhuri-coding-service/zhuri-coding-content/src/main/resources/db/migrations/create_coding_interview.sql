@@ -16,7 +16,7 @@ CREATE TABLE `ap_coding_interview` (
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1进行中 2已完成 3已过期',
     `direction` VARCHAR(64) NOT NULL COMMENT '面试方向（技术栈/岗位，如 Java 后端）',
     `difficulty` TINYINT NOT NULL DEFAULT 2 COMMENT '难度：1入门 2进阶 3挑战',
-    `plan_snapshot` TEXT NOT NULL COMMENT '面试提纲（JSON数组：[{topic,mainQuestion,keyPoints[],tag}]，含关键考点，仅服务端可见）',
+    `plan_snapshot` TEXT NOT NULL COMMENT '面试提纲（JSON数组：[{topic,mainQuestion,keyPoints[],tag,source}]，source=resume|direction 标记是否简历深挖题；含关键考点，仅服务端可见）',
     `turns` TEXT DEFAULT NULL COMMENT '对话流水（JSON数组：[{role:interviewer|user, type:question|followup|answer, content, topicIndex, ts}]）',
     `current_index` INT NOT NULL DEFAULT 0 COMMENT '当前主题下标（从0起）',
     `followup_count` INT NOT NULL DEFAULT 0 COMMENT '当前主题已追问次数（服务端强制上限）',

@@ -94,6 +94,13 @@ public class CodingInterviewReportVO implements Serializable {
 
         /** 点评（含依据：引用回答事实或覆盖/遗漏清单） */
         private String comment;
+
+        /**
+         * 该主题未生成评估结果（分批评估时该批调用失败）。
+         * true 时 {@code structure}/{@code coverageScore}/{@code accuracy} 均为 null，
+         * 前端按「未评估」渲染，服务端也不把它计入综合等级。
+         */
+        private Boolean pending;
     }
 
     @Data

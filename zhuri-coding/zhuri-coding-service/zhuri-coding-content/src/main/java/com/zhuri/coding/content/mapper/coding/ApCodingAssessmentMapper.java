@@ -2,9 +2,11 @@ package com.zhuri.coding.content.mapper.coding;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.zhuri.coding.model.coding.pojos.ApCodingAssessment;
+import java.util.Date;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface ApCodingAssessmentMapper extends BaseMapper<ApCodingAssessment> {
@@ -44,4 +46,19 @@ public interface ApCodingAssessmentMapper extends BaseMapper<ApCodingAssessment>
      */
     @Select("SELECT COUNT(*) FROM ap_coding_assessment WHERE status = 2 AND score < #{score}")
     long countSubmittedBelow(@Param("score") int score);
+
+    /**
+     * 批量收尾超时未交卷的测评（{@link com.zhuri.coding.content.schedule.CodingSessionRecoveryTask} 用）。
+     *
+     * <p>条件与既有 {@code expireOngoing} 单行版一致（{@code status = 1} 才改），只是把判定
+     * 从"用户下次触达"搬到定时扫描，因此两条路径并发执行也不会互相覆盖。
+     * {@code deadline_time IS NULL} 也算过期，与服务内的超时判定口径对齐。</p>
+     *
+     * @param now   判定基准时间
+     * @param limit 单批上限
+     * @return 实际置为过期的行数
+     */
+    @Update("UPDATE ap_coding_assessment SET status = 3 "
+        + "WHERE status = 1 AND (deadline_time IS NULL OR deadline_time < #{now}) LIMIT #{limit}")
+    int expireStaleOngoing(@Param("now") Date now, @Param("limit") int limit);
 }

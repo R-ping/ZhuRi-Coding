@@ -107,6 +107,23 @@ export const startInterview = (data) => {
   return request.post('/api/v1/coding/interview/start', data, { timeout: 60000 })
 }
 
+/**
+ * 模拟面试：解析简历文件为文本（PDF / DOC / DOCX / TXT / MD）
+ *
+ * 服务端不保存简历：解析结果只回给前端，由前端回填到可编辑输入框后随开面请求提交。
+ * 返回 { code, data: { text, chars, truncated } }；扫描件/图片版会返回"没有提取到文字"。
+ */
+export const parseInterviewResume = (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request({
+    url: '/api/v1/coding/interview/resume/parse',
+    method: 'post',
+    data: formData,
+    timeout: 60000
+  })
+}
+
 /** 模拟面试：进行中的面试（无则返回空；已超时后端懒过期） */
 export const getCurrentInterview = () => {
   return request.get('/api/v1/coding/interview/current')

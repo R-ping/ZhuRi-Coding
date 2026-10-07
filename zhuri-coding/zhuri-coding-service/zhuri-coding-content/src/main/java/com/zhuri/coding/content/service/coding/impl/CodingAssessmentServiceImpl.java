@@ -254,8 +254,13 @@ public class CodingAssessmentServiceImpl implements CodingAssessmentService {
     public ResponseResult history(Integer userId, Integer page, Integer size) {
         int p = page == null || page < 1 ? 1 : page;
         int s = size == null || size < 1 || size > 50 ? 10 : size;
+        // 显式投影：paper_snapshot（含正确答案的全卷快照）与 answers 是本表最大的两列，
+        // 列表页只用得到标量列，不写 select(...) 会把这两列按页整批读出来。
         IPage<ApCodingAssessment> result = assessmentMapper.selectPage(new Page<>(p, s),
             new LambdaQueryWrapper<ApCodingAssessment>()
+                .select(ApCodingAssessment::getId, ApCodingAssessment::getScore,
+                    ApCodingAssessment::getCorrectCount, ApCodingAssessment::getTotalCount,
+                    ApCodingAssessment::getStatus, ApCodingAssessment::getSubmittedTime)
                 .eq(ApCodingAssessment::getUserId, userId)
                 .orderByDesc(ApCodingAssessment::getId));
         List<CodingAssessmentHistoryVO> list = result.getRecords().stream().map(r -> {
