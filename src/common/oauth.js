@@ -1,5 +1,5 @@
 function getFrontendRedirectUri() {
-  // 优先使用浏览器宿主环境传入的 OAuth 回调地址（vite 本地调试为 .env 的 OAUTH_REDIRECT_URI）
+  // 优先使用浏览器宿主环境传入的 OAuth 回调地址（window.__OAUTH_REDIRECT__），否则回退到公网地址
   var origin = window.__OAUTH_REDIRECT__ || 'https://195b7e5b.r40.cpolar.top'
   return origin + '/oauth/callback'
 }
