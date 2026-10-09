@@ -1,6 +1,5 @@
 package com.zhuri.coding.content.schedule;
 
-import com.zhuri.coding.content.mapper.coding.ApCodingAssessmentMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingInterviewMapper;
 import java.util.Date;
 import lombok.extern.slf4j.Slf4j;
@@ -39,9 +38,6 @@ public class CodingSessionRecoveryTask {
     @Autowired
     private ApCodingInterviewMapper interviewMapper;
 
-    @Autowired
-    private ApCodingAssessmentMapper assessmentMapper;
-
     /** 单批处理上限（一次更新的最大行数，避免长事务/大批锁）；默认值同时作为单测无容器时的兜底 */
     @Value("${app.coding.recovery.batch:200}")
     private int batchSize = 200;
@@ -49,12 +45,10 @@ public class CodingSessionRecoveryTask {
     @Scheduled(fixedDelayString = "${app.coding.recovery.interval-ms:300000}",
         initialDelayString = "${app.coding.recovery.initial-delay-ms:120000}")
     public void expireStaleSessions() {
-        Date now = new Date();
-        expireInterviews(now);
-        expireAssessments(now);
+        expireInterviews(new Date());
     }
 
-    /** 面试侧收尾；单侧异常不外抛、也不影响另一侧（下一轮扫描会重试同一批行） */
+    /** 面试侧收尾；异常不外抛（下一轮扫描会重试同一批行） */
     private void expireInterviews(Date now) {
         try {
             int rows = interviewMapper.expireStaleOngoing(now, batchSize);
@@ -63,18 +57,6 @@ public class CodingSessionRecoveryTask {
             }
         } catch (Exception e) {
             log.error("Coding 面试场次滞留收尾异常", e);
-        }
-    }
-
-    /** 测评侧收尾；同 {@link #expireInterviews(Date)}，两侧互不拖累 */
-    private void expireAssessments(Date now) {
-        try {
-            int rows = assessmentMapper.expireStaleOngoing(now, batchSize);
-            if (rows > 0) {
-                log.info("Coding 场次滞留收尾：测评 {} 份已超时未交卷，置为已过期", rows);
-            }
-        } catch (Exception e) {
-            log.error("Coding 测评场次滞留收尾异常", e);
         }
     }
 }

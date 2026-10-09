@@ -3,7 +3,6 @@ package com.zhuri.coding.content.service.coding.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhuri.coding.common.bailian.PromptSanitizer;
 import com.zhuri.coding.content.mapper.coding.ApCodingInterviewMapper;
-import com.zhuri.coding.content.mapper.coding.ApCodingQuestionMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingUserStatMapper;
 import com.zhuri.coding.content.service.ai.AiFeatures;
 import com.zhuri.coding.content.service.ai.AiLlmGateway;
@@ -14,7 +13,6 @@ import com.zhuri.coding.model.coding.dtos.CodingInterviewFinishDTO;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewStartDTO;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewTurnDTO;
 import com.zhuri.coding.model.coding.pojos.ApCodingInterview;
-import com.zhuri.coding.model.coding.pojos.ApCodingQuestion;
 import com.zhuri.coding.model.coding.pojos.ApCodingUserStat;
 import com.zhuri.coding.model.coding.vos.CodingInterviewFinishVO;
 import com.zhuri.coding.model.coding.vos.CodingInterviewHistoryVO;
@@ -73,11 +71,11 @@ class CodingInterviewServiceImplTest {
     /** 三主题提纲（≥ PLAN_MIN_TOPICS，可开面） */
     private static final String PLAN_JSON = "["
         + "{\"topic\":\"Java 基础\",\"mainQuestion\":\"谈谈 HashMap 的扩容机制\","
-        + "\"keyPoints\":[\"扩容条件\",\"rehash\",\"红黑树\"],\"tag\":\"Java\"},"
+        + "\"keyPoints\":[\"扩容条件\",\"rehash\",\"红黑树\"]},"
         + "{\"topic\":\"MySQL\",\"mainQuestion\":\"说说 InnoDB 索引结构\","
-        + "\"keyPoints\":[\"B+树\",\"聚簇索引\"],\"tag\":\"MySQL\"},"
+        + "\"keyPoints\":[\"B+树\",\"聚簇索引\"]},"
         + "{\"topic\":\"Redis\",\"mainQuestion\":\"谈谈缓存穿透与雪崩\","
-        + "\"keyPoints\":[\"穿透\",\"雪崩\",\"布隆过滤器\"],\"tag\":\"Redis\"}]";
+        + "\"keyPoints\":[\"穿透\",\"雪崩\",\"布隆过滤器\"]}]";
 
     /** 结构化报告：covered=2 / missing=1 → coverageScore=4；structure=4、accuracy=4 → overall=4 */
     private static final String REPORT_JSON = "{\"items\":[{\"topic\":\"Java 基础\",\"structure\":4,"
@@ -92,8 +90,6 @@ class CodingInterviewServiceImplTest {
 
     @Mock
     private ApCodingInterviewMapper interviewMapper;
-    @Mock
-    private ApCodingQuestionMapper questionMapper;
     @Mock
     private ApCodingUserStatMapper statMapper;
     @Mock
@@ -215,7 +211,7 @@ class CodingInterviewServiceImplTest {
         assertEquals(2, vo.getTurns().size());
         assertEquals(deadline, ongoing.getDeadlineTime());
         verify(interviewMapper, never()).insert(any(ApCodingInterview.class));
-        verifyNoInteractions(aiLlmGateway, quotaService, questionMapper, statMapper);
+        verifyNoInteractions(aiLlmGateway, quotaService, statMapper);
     }
 
     @Test
@@ -229,7 +225,7 @@ class CodingInterviewServiceImplTest {
         assertEquals(400, result.getCode().intValue());
         assertTrue(String.valueOf(result.getMessage()).contains("上限"));
         verify(interviewMapper, never()).insert(any(ApCodingInterview.class));
-        verifyNoInteractions(aiLlmGateway, quotaService, questionMapper, statMapper);
+        verifyNoInteractions(aiLlmGateway, quotaService, statMapper);
     }
 
     @Test
@@ -243,14 +239,13 @@ class CodingInterviewServiceImplTest {
 
         assertEquals(AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode(), result.getCode());
         verify(interviewMapper, never()).insert(any(ApCodingInterview.class));
-        verifyNoInteractions(aiLlmGateway, questionMapper, statMapper);
+        verifyNoInteractions(aiLlmGateway, statMapper);
     }
 
     @Test
     @DisplayName("开面 - 提纲生成不合格拒绝（不落库，宁缺勿假）")
     void testStartPlanInvalidRejected() {
         stubStartGate();
-        when(questionMapper.selectRandomBatch(any(), any(), anyInt())).thenReturn(Collections.emptyList());
         when(aiLlmGateway.generateOrNull(eq(AiFeatures.INTERVIEW_PLAN), anyString(), anyString(), any(), any()))
             .thenReturn("抱歉，我无法生成提纲");
 
@@ -265,9 +260,6 @@ class CodingInterviewServiceImplTest {
     @DisplayName("开面 - 成功落库：方向 trim、难度默认进阶、首题预置、deadline=45 分钟")
     void testStartCreatesSession() {
         stubStartGate();
-        ApCodingQuestion question = new ApCodingQuestion();
-        question.setTags("Java,Redis");
-        when(questionMapper.selectRandomBatch(any(), any(), anyInt())).thenReturn(List.of(question));
         ApCodingUserStat stat = new ApCodingUserStat();
         stat.setTagStats("{\"Java\":{\"total\":4,\"correct\":1},\"Redis\":{\"total\":2,\"correct\":2}}");
         when(statMapper.selectOne(any())).thenReturn(stat);
@@ -309,7 +301,7 @@ class CodingInterviewServiceImplTest {
             }
             sb.append("{\"topic\":\"主题").append(i + 1)
                 .append("\",\"mainQuestion\":\"问题").append(i + 1)
-                .append("\",\"keyPoints\":[\"考点\"],\"tag\":\"Java\",\"source\":\"")
+                .append("\",\"keyPoints\":[\"考点\"],\"source\":\"")
                 .append(i % 2 == 0 ? "resume" : "direction").append("\"}");
         }
         return sb.append(']').toString();
@@ -323,7 +315,6 @@ class CodingInterviewServiceImplTest {
 
     private void stubPlan(int planTopicCount) {
         stubStartGate();
-        when(questionMapper.selectRandomBatch(any(), any(), anyInt())).thenReturn(Collections.emptyList());
         when(aiLlmGateway.generateOrNull(eq(AiFeatures.INTERVIEW_PLAN), anyString(), anyString(), any(), any()))
             .thenReturn(planJson(planTopicCount));
     }
@@ -422,7 +413,7 @@ class CodingInterviewServiceImplTest {
 
         assertEquals("面试参数缺失，请刷新后重试", errorMessage);
         assertNull(doneVo);
-        verifyNoInteractions(interviewMapper, aiLlmGateway, questionMapper, statMapper);
+        verifyNoInteractions(interviewMapper, aiLlmGateway, statMapper);
     }
 
     @Test
@@ -877,10 +868,9 @@ class CodingInterviewServiceImplTest {
     @DisplayName("开面 - 注入近几场已考主题（跨场去重）")
     void testStartInjectsHistoryTopics() {
         stubStartGate();
-        when(questionMapper.selectRandomBatch(any(), any(), anyInt())).thenReturn(Collections.emptyList());
         when(interviewMapper.selectRecentPlanSnapshots(eq(USER_ID), anyInt())).thenReturn(Collections.singletonList(
             "[{\"topic\":\"Redis 持久化\",\"mainQuestion\":\"RDB 与 AOF 的区别\","
-                + "\"keyPoints\":[\"RDB\",\"AOF\"],\"tag\":\"Redis\",\"source\":\"direction\"}]"));
+                + "\"keyPoints\":[\"RDB\",\"AOF\"],\"source\":\"direction\"}]"));
         when(aiLlmGateway.generateOrNull(eq(AiFeatures.INTERVIEW_PLAN), anyString(), anyString(), any(), any()))
             .thenReturn(planJson(3));
         ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
