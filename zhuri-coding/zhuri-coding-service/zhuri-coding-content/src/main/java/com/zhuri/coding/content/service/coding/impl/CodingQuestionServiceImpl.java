@@ -1,82 +1,72 @@
 package com.zhuri.coding.content.service.coding.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhuri.coding.apis.reward.IRewardClient;
-import com.zhuri.coding.apis.user.IUserClient;
 import com.zhuri.coding.content.constants.LevelScoreActionCode;
-import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingAnswerRecordMapper;
-import com.zhuri.coding.content.mapper.coding.ApCodingQuestionMapper;
+import com.zhuri.coding.content.mapper.coding.ApCodingDailyPoolMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingUserStatMapper;
 import com.zhuri.coding.content.service.coding.CodingAnswerTxService;
-import com.zhuri.coding.content.service.coding.CodingJudge;
+import com.zhuri.coding.content.service.coding.CodingDailyEvaluator;
+import com.zhuri.coding.content.service.coding.CodingJson;
 import com.zhuri.coding.content.service.coding.CodingQuestionService;
 import com.zhuri.coding.content.service.level.LevelService;
-import com.zhuri.coding.model.article.pojos.ApArticle;
-import com.zhuri.coding.model.coding.dtos.CodingAnswerDTO;
+import com.zhuri.coding.model.coding.dtos.CodingDailyAnswerDTO;
 import com.zhuri.coding.model.coding.pojos.ApCodingAnswerRecord;
-import com.zhuri.coding.model.coding.pojos.ApCodingQuestion;
+import com.zhuri.coding.model.coding.pojos.ApCodingDailyPool;
 import com.zhuri.coding.model.coding.pojos.ApCodingUserStat;
-import com.zhuri.coding.model.coding.vos.CodingAnswerVO;
-import com.zhuri.coding.model.coding.vos.CodingQuestionVO;
-import com.zhuri.coding.model.coding.vos.CodingRankingVO;
+import com.zhuri.coding.model.coding.vos.CodingDailyAnswerVO;
+import com.zhuri.coding.model.coding.vos.CodingDailyQuestionVO;
 import com.zhuri.coding.model.coding.vos.CodingStatVO;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
+import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import java.math.BigDecimal;
 import java.sql.Date;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * 每日一题与刷题服务实现（Coding 延展第一层）
+ * 每日一题服务实现（Coding 延展第一层 · 简答）
  *
- * <p>三处既有体系接入点：</p>
- * <ul>
- *   <li>连续天数：答对当日一题 → reward 服务幂等打卡（continuous_days 唯一来源，与签到共用）；</li>
- *   <li>等级分：答对当日一题 → {@code LevelService.recordActionWithLimit(answer_question)}，
- *       日上限 1 次天然防刷；</li>
- *   <li>来源文章：题目 VO 回填来源文章标题，答错/解析给出阅读入口（双向导流）。</li>
- * </ul>
+ * <p><b>题型为什么是简答</b>：选择题只能判断"记不记得一个事实"，
+ * 而这一层要判断的是"能不能把一件事讲清楚"。换成简答之后，判分从"答案集合比对"
+ * 变成"对照关键考点判断讲到没讲到"，评分锚点因此成为这一层的生命线。</p>
+ *
+ * <p><b>题目为什么来自题目池而不是模型现生成</b>：见 {@link CodingDailyEvaluator}。
+ * 一句话 —— 让模型既出题又判分，等于自己出题自己批，锚点不可信。</p>
+ *
+ * <p><b>缓存为什么换了 key 前缀</b>：旧缓存 {@code coding:daily:} 存的是
+ * {@code ap_coding_question} 的 id，而新链路读的是 {@code ap_coding_daily_pool} 的 id。
+ * 沿用旧前缀会在 26h 内把两种 id 混起来，直接串题。故改用 {@code coding:daily2:}，
+ * 让旧缓存自然过期。</p>
  */
 @Slf4j
 @Service
 public class CodingQuestionServiceImpl implements CodingQuestionService {
 
-    /** 今日题缓存：题目一天一抽，缓存后不再查库（key 带日期，跨天自然失效） */
-    private static final String DAILY_KEY_PREFIX = "coding:daily:";
-    /** 当日一题提交防抖锁（防双击并发写入两条记录） */
+    /** 今日题缓存（key 带日期，跨天自然失效）；前缀带 2 是为了不与旧的选择题缓存串号 */
+    private static final String DAILY_KEY_PREFIX = "coding:daily2:";
+    /** 今日题提交防抖锁（防双击并发写入两条记录） */
     private static final String ANSWER_LOCK_PREFIX = "coding:answer:lock:";
     /** 今日题缓存 TTL：26h 覆盖全天（key 带日期，不会跨天串题） */
     private static final long DAILY_CACHE_TTL_HOURS = 26L;
-    /** 榜单条数 */
-    private static final int RANKING_LIMIT = 20;
-    /** 难度自适应所需的最少样本数（不足按入门起步） */
-    private static final int ADAPTIVE_MIN_SAMPLES = 3;
-    /** 正确率低于该值 → 入门 */
-    private static final double ADAPTIVE_EASY_MAX = 0.5;
-    /** 正确率低于该值 → 进阶，否则挑战 */
-    private static final double ADAPTIVE_MEDIUM_MAX = 0.8;
+    /** 兜底方向：用户没选过、也没显式传时用它 */
+    private static final String DEFAULT_DIRECTION = "Java 后端";
+    /** 方向长度上限（与模拟面试 direction 同口径） */
+    private static final int DIRECTION_MAX_LENGTH = 64;
 
     @Autowired
-    private ApCodingQuestionMapper questionMapper;
+    private ApCodingDailyPoolMapper poolMapper;
 
     @Autowired
     private ApCodingAnswerRecordMapper recordMapper;
@@ -88,7 +78,7 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
     private CodingAnswerTxService txService;
 
     @Autowired
-    private ApArticleMapper articleMapper;
+    private CodingDailyEvaluator evaluator;
 
     @Autowired
     private LevelService levelService;
@@ -97,243 +87,108 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
     private IRewardClient rewardClient;
 
     @Autowired
-    private IUserClient userClient;
-
-    @Autowired
     private StringRedisTemplate redisTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // ==================== 今日题 ====================
+
     @Override
-    public ResponseResult today(Integer userId, Integer difficulty) {
+    public ResponseResult today(Integer userId, String direction) {
         Date today = Date.valueOf(LocalDate.now());
 
-        // 1. 当天已答：回放完整作答结果（含答案与解析），不再抽题
+        // 1. 今天已答：回放完整结果（含等级与考点清单），不再抽题
         ApCodingAnswerRecord record = txService.findDailyRecord(userId, today);
         if (record != null) {
-            ApCodingQuestion answered = questionMapper.selectById(record.getQuestionId());
+            ApCodingDailyPool answered = poolMapper.selectById(record.getPoolId());
             if (answered != null) {
                 return ResponseResult.okResult(buildQuestionVO(answered, record));
             }
-            // 题目已不存在（理论不发生）：按未答继续抽题，保证不断供
+            // 题目被删（理论不发生）：按未答继续抽题，保证不断供
+            log.warn("[CodingDaily] 作答记录指向的题目已不存在, userId={}, poolId={}", userId, record.getPoolId());
         }
 
-        // 2. 命中缓存：同一用户同一天固定一题；显式切换难度时重抽（难度可自选）
+        // 2. 命中缓存：同一用户同一天固定一题；显式切换方向时重抽
+        String resolved = resolveDirection(userId, direction);
         String key = dailyKey(userId, today);
-        ApCodingQuestion question = loadCachedQuestion(key);
-        if (question != null && isValidDifficulty(difficulty)
-            && !difficulty.equals(question.getDifficulty())) {
-            question = null;
-        }
+        ApCodingDailyPool question = loadCachedQuestion(key, resolved);
 
-        // 3. 未命中：按自选难度/历史正确率自适应抽题并缓存
+        // 3. 未命中：按方向抽题并缓存
         if (question == null) {
-            Integer target = isValidDifficulty(difficulty) ? difficulty : adaptiveDifficulty(userId);
-            question = pickQuestion(userId, target);
+            question = pickQuestion(resolved);
             if (question == null) {
                 return ResponseResult.errorResult(400, "题库准备中，暂无可用题目，请稍后再来");
             }
             redisTemplate.opsForValue().set(key, String.valueOf(question.getId()),
                 DAILY_CACHE_TTL_HOURS, TimeUnit.HOURS);
+            try {
+                poolMapper.incrementUseCount(question.getId());
+            } catch (Exception e) {
+                // 轮转计数是优化项，失败不影响出题
+                log.warn("[CodingDaily] 轮转计数失败, poolId={}", question.getId(), e);
+            }
         }
         return ResponseResult.okResult(buildQuestionVO(question, null));
     }
 
     @Override
-    public ResponseResult answer(Integer userId, CodingAnswerDTO dto) {
-        if (dto == null || dto.getQuestionId() == null) {
+    public ResponseResult answer(Integer userId, CodingDailyAnswerDTO dto) {
+        if (dto == null || dto.getPoolId() == null) {
             return ResponseResult.errorResult(400, "题目ID不能为空");
         }
-        if (dto.getAnswers() == null || dto.getAnswers().isEmpty()) {
-            return ResponseResult.errorResult(400, "请选择答案后再提交");
+        String answerText = dto.getAnswerText() == null ? "" : dto.getAnswerText().trim();
+        if (answerText.isEmpty()) {
+            return ResponseResult.errorResult(400, "请先写下你的答案");
         }
-        ApCodingQuestion question = questionMapper.selectById(dto.getQuestionId());
+        if (answerText.length() > CodingDailyEvaluator.ANSWER_MAX_LENGTH) {
+            return ResponseResult.errorResult(400,
+                "答案过长（最多 " + CodingDailyEvaluator.ANSWER_MAX_LENGTH + " 字）");
+        }
+        ApCodingDailyPool question = poolMapper.selectById(dto.getPoolId());
         if (question == null || question.getStatus() == null
-            || question.getStatus() != ApCodingQuestion.STATUS_PUBLISHED) {
+            || question.getStatus() != ApCodingDailyPool.STATUS_ENABLED) {
             return ResponseResult.errorResult(400, "题目不存在或已下架");
         }
-        List<String> options = CodingJudge.parseStringList(question.getOptions());
-        // 用户答案去重排序（防重复下标），并校验下标范围与题型
-        Set<Integer> answerSet = new LinkedHashSet<>();
-        for (Integer a : dto.getAnswers()) {
-            if (a == null || a < 0 || a >= options.size()) {
-                return ResponseResult.errorResult(400, "答案超出选项范围");
-            }
-            answerSet.add(a);
-        }
-        if (question.getQuestionType() != null
-            && question.getQuestionType() == ApCodingQuestion.TYPE_SINGLE && answerSet.size() != 1) {
-            return ResponseResult.errorResult(400, "单选题只能选择一个选项");
-        }
-        List<Integer> userAnswers = new ArrayList<>(answerSet);
-        List<Integer> correctAnswers = CodingJudge.parseIntList(question.getAnswer());
-        boolean correct = CodingJudge.judge(correctAnswers, answerSet);
 
-        boolean isDaily = Boolean.TRUE.equals(dto.getIsDaily());
         Date today = Date.valueOf(LocalDate.now());
-        Integer elapsedSeconds = dto.getElapsedSeconds() != null && dto.getElapsedSeconds() >= 0
-            ? Math.min(dto.getElapsedSeconds(), 24 * 3600) : null;
+        if (txService.findDailyRecord(userId, today) != null) {
+            return ResponseResult.errorResult(400, "今日一题已作答，明天再来");
+        }
+
+        // 防抖锁：双击/并发下只放行一次写入。真正的唯一性由 uk_user_date 保证，这里只是拦重复。
+        String lockKey = ANSWER_LOCK_PREFIX + userId + ":" + today;
+        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", 10, TimeUnit.SECONDS);
+        if (!Boolean.TRUE.equals(locked)) {
+            return ResponseResult.errorResult(429, "操作过于频繁，请稍后重试");
+        }
+
+        // 评估放事务外：模型调用慢且可能失败，不该占着数据库事务
+        CodingDailyEvaluator.Result evaluation = evaluator.evaluate(question, answerText);
 
         ApCodingAnswerRecord record;
-        if (isDaily) {
-            // 当日题合法性：提交的题目必须与 Redis 缓存一致（防止绕开缓存挑简单题）；
-            // 缓存缺失（过期/重启）时仅靠 DB 防重兜底，不阻断提交
-            String expected = redisTemplate.opsForValue().get(dailyKey(userId, today));
-            if (expected != null && !expected.equals(String.valueOf(dto.getQuestionId()))) {
-                return ResponseResult.errorResult(400, "今日题目已更新，请刷新页面后重新作答");
-            }
-            if (txService.findDailyRecord(userId, today) != null) {
-                return ResponseResult.errorResult(400, "今日一题已作答，明天再来");
-            }
-            // 防抖锁：双击/并发下只放行一次写入
-            String lockKey = ANSWER_LOCK_PREFIX + userId + ":" + today;
-            Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", 10, TimeUnit.SECONDS);
-            if (!Boolean.TRUE.equals(locked)) {
-                return ResponseResult.errorResult(429, "操作过于频繁，请稍后重试");
-            }
+        try {
+            record = txService.saveAnswer(userId, question, answerText,
+                normalizeElapsed(dto.getElapsedSeconds()), evaluation);
+        } catch (IllegalStateException e) {
+            return ResponseResult.errorResult(400, "今日一题已作答，明天再来");
+        } finally {
+            redisTemplate.delete(lockKey);
+        }
+
+        // 完成即记逐日分：简答没有对错，所以不按对错给分（等级分链路自带日上限 1 次）
+        int scoreAwarded = recordLevelScore(userId, question.getId());
+        if (scoreAwarded > 0) {
+            ApCodingAnswerRecord scoreUpdate = new ApCodingAnswerRecord();
+            scoreUpdate.setId(record.getId());
+            scoreUpdate.setScoreAwarded(scoreAwarded);
             try {
-                record = txService.saveAnswer(userId, question,
-                    CodingJudge.writeJson(userAnswers), correct, elapsedSeconds, true);
-            } catch (IllegalStateException e) {
-                return ResponseResult.errorResult(400, "今日一题已作答，明天再来");
-            } finally {
-                redisTemplate.delete(lockKey);
-            }
-        } else {
-            record = txService.saveAnswer(userId, question,
-                    CodingJudge.writeJson(userAnswers), correct, elapsedSeconds, false);
-        }
-
-        // 当日一题答对：计入逐日等级 + 触发幂等打卡（两处均 fail-open，不影响判分结果返回）
-        int scoreAwarded = 0;
-        Integer continuousDays = null;
-        if (isDaily && correct) {
-            scoreAwarded = recordLevelScore(userId, question.getId());
-            if (scoreAwarded > 0) {
-                ApCodingAnswerRecord scoreUpdate = new ApCodingAnswerRecord();
-                scoreUpdate.setId(record.getId());
-                scoreUpdate.setScoreAwarded(scoreAwarded);
-                try {
-                    recordMapper.updateById(scoreUpdate);
-                } catch (Exception e) {
-                    log.warn("回填作答得分失败（不影响判分）, recordId={}", record.getId(), e);
-                }
-            }
-            continuousDays = completeCheckin(userId);
-        }
-
-        CodingAnswerVO vo = new CodingAnswerVO();
-        vo.setQuestionId(question.getId());
-        vo.setIsCorrect(correct);
-        vo.setCorrectAnswer(correctAnswers);
-        vo.setExplanation(question.getExplanation());
-        vo.setScoreAwarded(scoreAwarded);
-        vo.setContinuousDays(continuousDays);
-        fillSourceArticle(vo, question.getSourceArticleId());
-        vo.setAnswerCount(nvl(question.getAnswerCount()) + (isDaily ? 1 : 0));
-        vo.setCorrectCount(nvl(question.getCorrectCount()) + (isDaily && correct ? 1 : 0));
-        return ResponseResult.okResult(vo);
-    }
-
-    @Override
-    public ResponseResult ranking(String period, Integer currentUserId) {
-        LocalDate today = LocalDate.now();
-        String normalized = period;
-        LocalDate start;
-        if ("week".equalsIgnoreCase(period)) {
-            normalized = "week";
-            start = today.with(DayOfWeek.MONDAY);
-        } else if ("month".equalsIgnoreCase(period)) {
-            normalized = "month";
-            start = today.withDayOfMonth(1);
-        } else {
-            normalized = "day";
-            start = today;
-        }
-        List<Map<String, Object>> rows = recordMapper.selectRanking(Date.valueOf(start), RANKING_LIMIT);
-        Map<Long, Map<String, String>> userInfos = loadUserInfos(
-            rows == null ? List.of() : rows.stream()
-                .map(r -> toLong(r.get("userId")))
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList()));
-
-        List<CodingRankingVO> list = new ArrayList<>();
-        if (rows != null) {
-            int rank = 0;
-            for (Map<String, Object> row : rows) {
-                rank++;
-                Long uid = toLong(row.get("userId"));
-                Integer total = toInt(row.get("totalCount"));
-                Integer correctCount = toInt(row.get("correctCount"));
-                CodingRankingVO vo = new CodingRankingVO();
-                vo.setRank(rank);
-                vo.setUserId(uid == null ? null : uid.intValue());
-                Map<String, String> info = uid == null ? null : userInfos.get(uid);
-                vo.setNickname(info == null ? "" : info.getOrDefault("name", ""));
-                vo.setAvatar(info == null ? "" : info.getOrDefault("avatar", ""));
-                vo.setTotalCount(total == null ? 0 : total);
-                vo.setCorrectCount(correctCount == null ? 0 : correctCount);
-                vo.setAccuracy(total != null && total > 0 && correctCount != null
-                    ? (int) Math.round(correctCount * 100.0 / total) : 0);
-                vo.setAvgSeconds(toInt(row.get("avgSeconds")));
-                vo.setIsSelf(currentUserId != null && uid != null
-                    && uid.intValue() == currentUserId);
-                list.add(vo);
-            }
-        }
-        Map<String, Object> data = new HashMap<>();
-        data.put("period", normalized);
-        data.put("list", list);
-        return ResponseResult.okResult(data);
-    }
-
-    @Override
-    public ResponseResult questions(Integer difficulty, Long articleId, Integer page, Integer size, Integer userId) {
-        int pageNo = page == null || page < 1 ? 1 : page;
-        int pageSize = size == null || size < 1 || size > 50 ? 10 : size;
-
-        LambdaQueryWrapper<ApCodingQuestion> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ApCodingQuestion::getStatus, ApCodingQuestion.STATUS_PUBLISHED);
-        if (isValidDifficulty(difficulty)) {
-            wrapper.eq(ApCodingQuestion::getDifficulty, difficulty);
-        }
-        // 来源文章过滤：文章详情页"相关练习"反向入口（题目 ←→ 文章双向导流）
-        if (articleId != null) {
-            wrapper.eq(ApCodingQuestion::getSourceArticleId, articleId);
-        }
-        wrapper.orderByDesc(ApCodingQuestion::getId);
-        IPage<ApCodingQuestion> result = questionMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
-
-        // 登录用户标记"练过"（匿名浏览不查询）
-        Set<Long> answeredIds = new HashSet<>();
-        List<ApCodingQuestion> records = result.getRecords();
-        if (userId != null && records != null && !records.isEmpty()) {
-            List<Long> questionIds = records.stream()
-                .map(ApCodingQuestion::getId).filter(Objects::nonNull).toList();
-            if (!questionIds.isEmpty()) {
-                List<ApCodingAnswerRecord> answered = recordMapper.selectList(
-                    new LambdaQueryWrapper<ApCodingAnswerRecord>()
-                        .eq(ApCodingAnswerRecord::getUserId, userId)
-                        .in(ApCodingAnswerRecord::getQuestionId, questionIds));
-                answered.forEach(r -> answeredIds.add(r.getQuestionId()));
+                recordMapper.updateById(scoreUpdate);
+            } catch (Exception e) {
+                log.warn("回填作答得分失败（不影响作答结果）, recordId={}", record.getId(), e);
             }
         }
 
-        List<CodingQuestionVO> list = new ArrayList<>();
-        if (records != null) {
-            for (ApCodingQuestion q : records) {
-                CodingQuestionVO vo = buildQuestionVO(q, null);
-                vo.setAnswered(answeredIds.contains(q.getId()));
-                list.add(vo);
-            }
-        }
-        Map<String, Object> data = new HashMap<>();
-        data.put("list", list);
-        data.put("total", result.getTotal());
-        data.put("page", pageNo);
-        data.put("size", pageSize);
-        return ResponseResult.okResult(data);
+        return ResponseResult.okResult(buildAnswerVO(question.getId(), evaluation, scoreAwarded));
     }
 
     @Override
@@ -343,22 +198,18 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
 
         CodingStatVO vo = new CodingStatVO();
         vo.setTotalCount(stat == null ? 0 : nvl(stat.getTotalCount()));
-        vo.setCorrectCount(stat == null ? 0 : nvl(stat.getCorrectCount()));
-        vo.setPracticeCount(stat == null ? 0 : nvl(stat.getPracticeCount()));
-        vo.setPracticeCorrectCount(stat == null ? 0 : nvl(stat.getPracticeCorrectCount()));
-        vo.setAccuracy(percent(vo.getCorrectCount(), vo.getTotalCount()));
-        vo.setPracticeAccuracy(percent(vo.getPracticeCorrectCount(), vo.getPracticeCount()));
+        vo.setDirection(stat == null ? null : stat.getDirection());
         vo.setFirstAnswerDate(stat == null ? null : toDateString(stat.getFirstAnswerDate()));
         vo.setLastAnswerDate(stat == null ? null : toDateString(stat.getLastAnswerDate()));
         vo.setTagStats(parseTagStats(stat == null ? null : stat.getTagStats()));
+        vo.setAvgLevel(stat == null ? null : recordMapper.avgLevel(userId));
+        vo.setContinuousDays(currentContinuousDays(userId));
 
-        ApCodingAnswerRecord todayRecord = txService.findDailyRecord(
-            userId, Date.valueOf(LocalDate.now()));
+        ApCodingAnswerRecord todayRecord = txService.findDailyRecord(userId, Date.valueOf(LocalDate.now()));
         vo.setTodayAnswered(todayRecord != null);
         if (todayRecord != null) {
-            vo.setTodayCorrect(todayRecord.getIsCorrect() != null && todayRecord.getIsCorrect() == 1);
+            vo.setTodayLevel(todayRecord.getLevel());
         }
-        vo.setContinuousDays(currentContinuousDays(userId));
         return ResponseResult.okResult(vo);
     }
 
@@ -368,68 +219,74 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         return DAILY_KEY_PREFIX + userId + ":" + today;
     }
 
-    /** 读取缓存题目；缓存内容异常或题目已下架时返回 null（走重抽） */
-    private ApCodingQuestion loadCachedQuestion(String key) {
+    /**
+     * 解析抽题方向：显式传入 &gt; 用户上次设定 &gt; 默认方向。
+     * 显式传入时会被持久化（在作答落库时随统计 upsert 一起写入），下次自动沿用。
+     */
+    private String resolveDirection(Integer userId, String direction) {
+        if (direction != null && !direction.isBlank()) {
+            String trimmed = direction.trim();
+            return trimmed.length() > DIRECTION_MAX_LENGTH
+                ? trimmed.substring(0, DIRECTION_MAX_LENGTH) : trimmed;
+        }
+        ApCodingUserStat stat = statMapper.selectOne(new LambdaQueryWrapper<ApCodingUserStat>()
+            .eq(ApCodingUserStat::getUserId, userId));
+        if (stat != null && stat.getDirection() != null && !stat.getDirection().isBlank()) {
+            return stat.getDirection();
+        }
+        return DEFAULT_DIRECTION;
+    }
+
+    /**
+     * 读缓存题目。缓存值异常、题目已停用、或与当前方向不一致时返回 null（走重抽）。
+     *
+     * <p>方向校验是必要的：用户显式切了方向，不能因为缓存把他锁死在旧方向上。</p>
+     */
+    private ApCodingDailyPool loadCachedQuestion(String key, String direction) {
         String cachedId = redisTemplate.opsForValue().get(key);
         if (cachedId == null || cachedId.isBlank()) {
             return null;
         }
+        ApCodingDailyPool question;
         try {
-            ApCodingQuestion question = questionMapper.selectById(Long.valueOf(cachedId.trim()));
-            if (question != null && question.getStatus() != null
-                && question.getStatus() == ApCodingQuestion.STATUS_PUBLISHED) {
-                return question;
-            }
-            return null;
+            question = poolMapper.selectById(Long.valueOf(cachedId.trim()));
         } catch (NumberFormatException e) {
-            log.warn("今日题缓存值异常: key={}, value={}", key, cachedId);
+            log.warn("[CodingDaily] 缓存值异常: key={}, value={}", key, cachedId);
             return null;
         }
-    }
-
-    /** 抽题兜底链：指定难度未答 → 不限难度未答 → 指定难度任意 → 不限难度任意（题库小不断供） */
-    private ApCodingQuestion pickQuestion(Integer userId, Integer difficulty) {
-        ApCodingQuestion question = questionMapper.selectRandomUnanswered(userId, difficulty);
-        if (question == null) {
-            question = questionMapper.selectRandomUnanswered(userId, null);
+        if (question == null || question.getStatus() == null
+            || question.getStatus() != ApCodingDailyPool.STATUS_ENABLED) {
+            return null;
         }
-        if (question == null) {
-            question = questionMapper.selectRandomAny(difficulty);
-        }
-        if (question == null) {
-            question = questionMapper.selectRandomAny(null);
+        if (direction != null && !direction.equals(question.getDirection())) {
+            return null;
         }
         return question;
     }
 
-    /**
-     * 难度自适应：按历史正确率定档（样本不足按入门起步）。
-     * 口径：每日一题与自由练习合并计算——练习同样是能力信号。
-     */
-    private int adaptiveDifficulty(Integer userId) {
-        ApCodingUserStat stat = statMapper.selectOne(new LambdaQueryWrapper<ApCodingUserStat>()
-            .eq(ApCodingUserStat::getUserId, userId));
-        if (stat == null) {
-            return ApCodingQuestion.DIFFICULTY_EASY;
+    /** 抽题兜底链：方向命中 → 不限方向（用户填了个冷门方向时也不至于断供） */
+    private ApCodingDailyPool pickQuestion(String direction) {
+        ApCodingDailyPool question = poolMapper.selectOneByDirection(direction);
+        if (question == null) {
+            log.info("[CodingDaily] 方向无题，降级到不限方向抽题: direction={}", direction);
+            question = poolMapper.selectOneAny();
         }
-        int answered = nvl(stat.getTotalCount()) + nvl(stat.getPracticeCount());
-        int correct = nvl(stat.getCorrectCount()) + nvl(stat.getPracticeCorrectCount());
-        if (answered < ADAPTIVE_MIN_SAMPLES) {
-            return ApCodingQuestion.DIFFICULTY_EASY;
-        }
-        double rate = correct * 1.0 / answered;
-        if (rate < ADAPTIVE_EASY_MAX) {
-            return ApCodingQuestion.DIFFICULTY_EASY;
-        }
-        return rate < ADAPTIVE_MEDIUM_MAX
-            ? ApCodingQuestion.DIFFICULTY_MEDIUM : ApCodingQuestion.DIFFICULTY_HARD;
+        return question;
     }
 
-    /** 记账逐日等级分；失败/上限已满返回 0（判分结果不受影响） */
-    private int recordLevelScore(Integer userId, Long questionId) {
+    /** 作答用时归一化：负数丢弃，超过一天截断 */
+    private static Integer normalizeElapsed(Integer elapsedSeconds) {
+        if (elapsedSeconds == null || elapsedSeconds < 0) {
+            return null;
+        }
+        return Math.min(elapsedSeconds, 24 * 3600);
+    }
+
+    /** 记逐日等级分；失败或日上限已满返回 0（作答结果不受影响） */
+    private int recordLevelScore(Integer userId, Long poolId) {
         try {
             Map<String, Object> result = levelService.recordActionWithLimit(userId.longValue(),
-                LevelScoreActionCode.ANSWER_QUESTION, "每日一题答对，题目ID:" + questionId);
+                LevelScoreActionCode.ANSWER_QUESTION, "每日一题完成，题目ID:" + poolId);
             if (result != null && Boolean.TRUE.equals(result.get("success"))) {
                 Object score = result.get("score");
                 if (score instanceof BigDecimal bd) {
@@ -438,26 +295,12 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
                 return score == null ? 0 : toInt(score);
             }
         } catch (Exception e) {
-            log.warn("记录答题等级行为失败: userId={}, questionId={}", userId, questionId, e);
+            log.warn("记录答题等级行为失败: userId={}, poolId={}", userId, poolId, e);
         }
         return 0;
     }
 
-    /** 幂等打卡（reward 服务内部端点，fallback fail-open 返回 0）；返回最新连续天数 */
-    private Integer completeCheckin(Integer userId) {
-        try {
-            ResponseResult result = rewardClient.completeCheckin(userId.longValue());
-            if (result != null && result.getData() instanceof Map<?, ?> data
-                && data.get("continuousDays") != null) {
-                return toInt(data.get("continuousDays"));
-            }
-        } catch (Exception e) {
-            log.warn("答题触发打卡失败（判分不受影响）: userId={}", userId, e);
-        }
-        return 0;
-    }
-
-    /** 查询最新连续天数（签到体系，不可用时降级 0） */
+    /** 连续签到天数（签到体系唯一来源，不可用时降级 0） */
     private Integer currentContinuousDays(Integer userId) {
         try {
             ResponseResult result = rewardClient.getContinuousCheckinDays(userId.longValue());
@@ -471,88 +314,40 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         return 0;
     }
 
-    private CodingQuestionVO buildQuestionVO(ApCodingQuestion question, ApCodingAnswerRecord record) {
-        CodingQuestionVO vo = new CodingQuestionVO();
+    /** 题面组装。record 非空 = 今日已答回放，此时才带上等级与考点清单 */
+    private CodingDailyQuestionVO buildQuestionVO(ApCodingDailyPool question, ApCodingAnswerRecord record) {
+        CodingDailyQuestionVO vo = new CodingDailyQuestionVO();
         vo.setId(question.getId());
         vo.setStem(question.getStem());
-        vo.setQuestionType(question.getQuestionType());
-        vo.setOptions(CodingJudge.parseStringList(question.getOptions()));
+        vo.setDirection(question.getDirection());
         vo.setDifficulty(question.getDifficulty());
-        vo.setTags(CodingJudge.parseTags(question.getTags()));
-        vo.setSourceType(question.getSourceType());
-        vo.setAnswerCount(nvl(question.getAnswerCount()));
-        vo.setCorrectCount(nvl(question.getCorrectCount()));
+        vo.setTags(CodingJson.parseTags(question.getTags()));
         vo.setAnswered(record != null);
-        fillSourceArticle(vo, question.getSourceArticleId());
         if (record != null) {
-            vo.setUserAnswer(CodingJudge.parseIntList(record.getUserAnswer()));
-            vo.setIsCorrect(record.getIsCorrect() != null && record.getIsCorrect() == 1);
-            vo.setCorrectAnswer(CodingJudge.parseIntList(question.getAnswer()));
-            vo.setExplanation(question.getExplanation());
+            vo.setUserAnswer(record.getUserAnswer());
+            vo.setLevel(record.getLevel());
+            vo.setFeedback(record.getFeedback());
+            vo.setCovered(CodingJson.parseStringList(record.getCovered()));
+            vo.setMissing(CodingJson.parseStringList(record.getMissing()));
             vo.setElapsedSeconds(record.getElapsedSeconds());
             vo.setScoreAwarded(record.getScoreAwarded());
         }
         return vo;
     }
 
-    /** 来源文章只在"已发布"时回填（未发布/已删则不给跳转入口） */
-    private void fillSourceArticle(CodingQuestionVO vo, Long articleId) {
-        if (articleId == null) {
-            return;
-        }
-        try {
-            ApArticle article = articleMapper.selectById(articleId);
-            if (article != null && article.isPublished()) {
-                vo.setSourceArticleId(String.valueOf(articleId));
-                vo.setSourceArticleTitle(article.getTitle());
-            }
-        } catch (Exception e) {
-            log.warn("加载题目来源文章失败, articleId={}", articleId, e);
-        }
-    }
-
-    /** 作答结果 VO 的来源文章回填（CodingAnswerVO 与题目 VO 字段名一致，单独重载） */
-    private void fillSourceArticle(CodingAnswerVO vo, Long articleId) {
-        if (articleId == null) {
-            return;
-        }
-        try {
-            ApArticle article = articleMapper.selectById(articleId);
-            if (article != null && article.isPublished()) {
-                vo.setSourceArticleId(String.valueOf(articleId));
-                vo.setSourceArticleTitle(article.getTitle());
-            }
-        } catch (Exception e) {
-            log.warn("加载题目来源文章失败, articleId={}", articleId, e);
-        }
-    }
-
-    /** 批量取昵称头像（用户服务不可用时留空，不拖垮榜单） */
-    private Map<Long, Map<String, String>> loadUserInfos(List<Long> userIds) {
-        Map<Long, Map<String, String>> result = new HashMap<>();
-        if (userClient == null || userIds == null || userIds.isEmpty()) {
-            return result;
-        }
-        try {
-            ResponseResult res = userClient.getBasicInfoBatch(userIds);
-            if (res == null || res.getCode() == null || res.getCode() != 200
-                || !(res.getData() instanceof Map<?, ?> data)) {
-                return result;
-            }
-            for (Map.Entry<?, ?> entry : data.entrySet()) {
-                Long uid = toLong(entry.getKey());
-                if (uid == null || !(entry.getValue() instanceof Map<?, ?> info)) {
-                    continue;
-                }
-                Map<String, String> pair = new HashMap<>();
-                pair.put("name", info.get("nickname") == null ? "" : String.valueOf(info.get("nickname")));
-                pair.put("avatar", info.get("avatar") == null ? "" : String.valueOf(info.get("avatar")));
-                result.put(uid, pair);
-            }
-        } catch (Exception e) {
-            log.warn("批量解析榜单用户信息失败, size={}", userIds.size(), e);
-        }
-        return result;
+    private CodingDailyAnswerVO buildAnswerVO(Long poolId, CodingDailyEvaluator.Result evaluation, int scoreAwarded) {
+        CodingDailyAnswerVO vo = new CodingDailyAnswerVO();
+        vo.setPoolId(poolId);
+        vo.setPending(evaluation.pending);
+        vo.setLevel(evaluation.level);
+        vo.setStructure(evaluation.structure);
+        vo.setCoverageScore(evaluation.coverageScore);
+        vo.setAccuracy(evaluation.accuracy);
+        vo.setCovered(evaluation.covered);
+        vo.setMissing(evaluation.missing);
+        vo.setFeedback(evaluation.comment);
+        vo.setScoreAwarded(scoreAwarded);
+        return vo;
     }
 
     private Map<String, Object> parseTagStats(String json) {
@@ -567,17 +362,8 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
         }
     }
 
-    private static boolean isValidDifficulty(Integer difficulty) {
-        return difficulty != null && difficulty >= ApCodingQuestion.DIFFICULTY_EASY
-            && difficulty <= ApCodingQuestion.DIFFICULTY_HARD;
-    }
-
     private static int nvl(Integer value) {
         return value == null ? 0 : value;
-    }
-
-    private static int percent(int part, int total) {
-        return total <= 0 ? 0 : (int) Math.round(part * 100.0 / total);
     }
 
     private static String toDateString(java.util.Date date) {
@@ -595,25 +381,11 @@ public class CodingQuestionServiceImpl implements CodingQuestionService {
             return null;
         }
         if (value instanceof Number number) {
-            // 四舍五入：榜单平均用时来自 SQL AVG（BigDecimal），截断会少 1 秒
+            // 四舍五入：来自 SQL AVG 的是 BigDecimal，截断会少 1
             return (int) Math.round(number.doubleValue());
         }
         try {
             return (int) Math.round(Double.parseDouble(String.valueOf(value)));
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private static Long toLong(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        try {
-            return Long.valueOf(String.valueOf(value));
         } catch (NumberFormatException e) {
             return null;
         }

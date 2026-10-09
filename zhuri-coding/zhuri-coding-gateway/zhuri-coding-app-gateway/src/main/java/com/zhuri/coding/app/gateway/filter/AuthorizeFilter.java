@@ -300,11 +300,6 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             || path.startsWith("/search/api/v1/search")
             // 详情页 AI 摘要（只读展示，未登录也可浏览；生成有 IP 限频 + Redis 缓存 24h 兜底）
             || path.startsWith("/content/api/v1/ai/summary/")
-            // 每日一题公开只读接口（未登录也可看榜单与题库，利于浏览与 SEO）
-            // 注意：仅放行只读查询，今日题（/coding/today，含个性化难度与作答态）、
-            // 作答提交（/coding/answer）、我的统计与出题投稿等接口仍须登录
-            || path.startsWith("/content/api/v1/coding/ranking")
-            || path.startsWith("/content/api/v1/coding/questions")
             // 站点 SEO 基础文件（robots.txt / sitemap.xml）：爬虫无 token，公开放行
             || path.startsWith("/content/robots.txt")
             || path.startsWith("/content/sitemap.xml");

@@ -1,40 +1,38 @@
 package com.zhuri.coding.content.service.coding.impl;
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhuri.coding.apis.reward.IRewardClient;
-import com.zhuri.coding.apis.user.IUserClient;
 import com.zhuri.coding.content.constants.LevelScoreActionCode;
-import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingAnswerRecordMapper;
-import com.zhuri.coding.content.mapper.coding.ApCodingQuestionMapper;
+import com.zhuri.coding.content.mapper.coding.ApCodingDailyPoolMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingUserStatMapper;
 import com.zhuri.coding.content.service.coding.CodingAnswerTxService;
+import com.zhuri.coding.content.service.coding.CodingDailyEvaluator;
 import com.zhuri.coding.content.service.level.LevelService;
-import com.zhuri.coding.model.article.pojos.ApArticle;
-import com.zhuri.coding.model.coding.dtos.CodingAnswerDTO;
+import com.zhuri.coding.model.coding.dtos.CodingDailyAnswerDTO;
 import com.zhuri.coding.model.coding.pojos.ApCodingAnswerRecord;
-import com.zhuri.coding.model.coding.pojos.ApCodingQuestion;
+import com.zhuri.coding.model.coding.pojos.ApCodingDailyPool;
 import com.zhuri.coding.model.coding.pojos.ApCodingUserStat;
-import com.zhuri.coding.model.coding.vos.CodingAnswerVO;
-import com.zhuri.coding.model.coding.vos.CodingQuestionVO;
-import com.zhuri.coding.model.coding.vos.CodingRankingVO;
+import com.zhuri.coding.model.coding.vos.CodingDailyAnswerVO;
+import com.zhuri.coding.model.coding.vos.CodingDailyQuestionVO;
 import com.zhuri.coding.model.coding.vos.CodingStatVO;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -43,32 +41,35 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * CodingQuestionServiceImpl 单元测试（Coding 延展第一层 · 每日一题与刷题）
+ * CodingQuestionServiceImpl 单元测试（每日一题 · 简答）
  *
- * 覆盖：今日题（已答回放/缓存命中/难度自适应抽题/兜底链）、判分提交
- * （答对计分打卡、答错不加分、练习不计分、防换题、防重、参数校验）、
- * 榜单（名次/正确率/isSelf/用户服务降级）、题库列表、我的统计（含 Feign 降级）。
+ * 覆盖：抽题与缓存（方向校验 / 换向重抽 / 兜底）、作答（评估通过落库并记分、
+ * 评估降级照常落库、重复提交与并发锁）、统计回填与签到降级。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("每日一题做题服务单元测试")
+@MockitoSettings(strictness = Strictness.LENIENT)
+@DisplayName("CodingQuestionServiceImpl 每日一题（简答）")
 class CodingQuestionServiceImplTest {
 
     private static final Integer USER_ID = 1001;
+    private static final Date TODAY = Date.valueOf(LocalDate.now());
 
     @Mock
-    private ApCodingQuestionMapper questionMapper;
+    private ApCodingDailyPoolMapper poolMapper;
     @Mock
     private ApCodingAnswerRecordMapper recordMapper;
     @Mock
@@ -76,13 +77,11 @@ class CodingQuestionServiceImplTest {
     @Mock
     private CodingAnswerTxService txService;
     @Mock
-    private ApArticleMapper articleMapper;
+    private CodingDailyEvaluator evaluator;
     @Mock
     private LevelService levelService;
     @Mock
     private IRewardClient rewardClient;
-    @Mock
-    private IUserClient userClient;
     @Mock
     private StringRedisTemplate redisTemplate;
     @Mock
@@ -91,430 +90,293 @@ class CodingQuestionServiceImplTest {
     @InjectMocks
     private CodingQuestionServiceImpl service;
 
+    @BeforeEach
+    void setUp() {
+        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        // 防抖锁默认放行；需要模拟"操作过于频繁"的用例自行覆盖
+        lenient().when(valueOps.setIfAbsent(anyString(), anyString(), anyLong(), any(TimeUnit.class)))
+            .thenReturn(true);
+    }
+
     // ---------- 辅助 ----------
 
-    private Date today() {
-        return Date.valueOf(LocalDate.now());
+    private ApCodingDailyPool pool(Long id, String direction) {
+        ApCodingDailyPool p = new ApCodingDailyPool();
+        p.setId(id);
+        p.setDirection(direction);
+        p.setStem("讲讲你对 Java 内存模型的理解。");
+        p.setKeyPoints("[\"可见性\",\"有序性\",\"不保证原子性\"]");
+        p.setDifficulty(2);
+        p.setTags("Java,并发");
+        p.setStatus(ApCodingDailyPool.STATUS_ENABLED);
+        p.setUseCount(0);
+        return p;
     }
 
-    private String dailyKey() {
-        return "coding:daily:" + USER_ID + ":" + today();
+    private CodingDailyEvaluator.Result evaluated() {
+        CodingDailyEvaluator.Result r = new CodingDailyEvaluator.Result();
+        r.pending = false;
+        r.structure = 4;
+        r.coverageScore = 3;
+        r.accuracy = 4;
+        r.level = 4;
+        r.covered = List.of("可见性");
+        r.missing = List.of("有序性", "不保证原子性");
+        r.comment = "讲到了可见性，但没展开禁止重排。";
+        return r;
     }
 
-    private ApCodingQuestion question(Long id, int type, int difficulty, String answer) {
-        ApCodingQuestion q = new ApCodingQuestion();
-        q.setId(id);
-        q.setStem("以下关于 Redis 缓存穿透的描述，哪一项是正确的？");
-        q.setQuestionType(type);
-        q.setOptions("[\"A选项\",\"B选项\",\"C选项\",\"D选项\"]");
-        q.setAnswer(answer);
-        q.setExplanation("缓存穿透指查询不存在的数据，可用布隆过滤器兜底。");
-        q.setDifficulty(difficulty);
-        q.setTags("Redis,缓存");
-        q.setStatus(ApCodingQuestion.STATUS_PUBLISHED);
-        q.setSourceType(ApCodingQuestion.SOURCE_AI);
-        q.setSourceArticleId(5L);
-        q.setAnswerCount(10);
-        q.setCorrectCount(6);
-        return q;
+    private ApCodingAnswerRecord record(Long poolId, Integer level) {
+        ApCodingAnswerRecord r = new ApCodingAnswerRecord();
+        r.setId(900L);
+        r.setUserId(USER_ID);
+        r.setPoolId(poolId);
+        r.setAnswerDate(TODAY);
+        r.setUserAnswer("我的作答");
+        r.setLevel(level);
+        r.setFeedback("ok");
+        r.setCovered("[\"可见性\"]");
+        r.setMissing("[\"有序性\",\"不保证原子性\"]");
+        r.setElapsedSeconds(120);
+        return r;
     }
 
-    private ApCodingAnswerRecord dailyRecord(Long questionId, int isCorrect) {
-        ApCodingAnswerRecord record = new ApCodingAnswerRecord();
-        record.setId(100L);
-        record.setUserId(USER_ID);
-        record.setQuestionId(questionId);
-        record.setAnswerDate(today());
-        record.setUserAnswer("[0]");
-        record.setIsCorrect(isCorrect);
-        record.setIsDaily(1);
-        record.setElapsedSeconds(12);
-        record.setScoreAwarded(3);
-        return record;
+    private void givenCacheMiss() {
+        lenient().when(valueOps.get(contains("coding:daily2:"))).thenReturn(null);
     }
 
-    private ApCodingUserStat stat(int total, int correct, int practice, int practiceCorrect) {
+    private void givenStatExists(String direction) {
         ApCodingUserStat stat = new ApCodingUserStat();
         stat.setUserId(USER_ID);
-        stat.setTotalCount(total);
-        stat.setCorrectCount(correct);
-        stat.setPracticeCount(practice);
-        stat.setPracticeCorrectCount(practiceCorrect);
-        return stat;
+        stat.setDirection(direction);
+        stat.setTotalCount(3);
+        stat.setTagStats("{\"Java\":{\"total\":3,\"levelSum\":10}}");
+        lenient().when(statMapper.selectOne(any())).thenReturn(stat);
     }
 
     // ==================== 今日题 ====================
 
-    @Test
-    @DisplayName("today - 当天已答：回放完整结果（含答案/解析/来源文章）")
-    void testTodayReplayAnswered() {
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(dailyRecord(9L, 1));
-        when(questionMapper.selectById(9L)).thenReturn(question(9L, 1, 2, "[0]"));
-        ApArticle article = new ApArticle();
-        article.setId(5L);
-        article.setTitle("Redis 缓存实践");
-        article.setStatus((byte) 9);
-        when(articleMapper.selectById(5L)).thenReturn(article);
+    @Nested
+    @DisplayName("today 抽题")
+    class Today {
 
-        ResponseResult result = service.today(USER_ID, null);
+        @Test
+        @DisplayName("未答且缓存未命中：按方向抽题、写缓存、累加轮转计数")
+        void testPickAndCache() {
+            givenCacheMiss();
+            givenStatExists("Java 后端");
+            when(poolMapper.selectOneByDirection("Java 后端")).thenReturn(pool(5L, "Java 后端"));
 
-        assertEquals(200, result.getCode().intValue());
-        CodingQuestionVO vo = (CodingQuestionVO) result.getData();
-        assertTrue(vo.getAnswered());
-        assertTrue(vo.getIsCorrect());
-        assertEquals(List.of(0), vo.getCorrectAnswer());
-        assertEquals("缓存穿透指查询不存在的数据，可用布隆过滤器兜底。", vo.getExplanation());
-        assertEquals(3, vo.getScoreAwarded());
-        assertEquals("Redis 缓存实践", vo.getSourceArticleTitle());
+            ResponseResult result = service.today(USER_ID, null);
+
+            assertEquals(200, result.getCode().intValue());
+            CodingDailyQuestionVO vo = (CodingDailyQuestionVO) result.getData();
+            assertEquals(5L, vo.getId());
+            assertFalse(vo.getAnswered());
+            assertNull(vo.getLevel());
+            verify(valueOps).set(contains("coding:daily2:" + USER_ID + ":"), eq("5"),
+                anyLong(), any(TimeUnit.class));
+            verify(poolMapper).incrementUseCount(5L);
+        }
+
+        @Test
+        @DisplayName("已答：回放完整结果（含等级与考点清单），不再抽题")
+        void testReplayAnswered() {
+            when(txService.findDailyRecord(USER_ID, TODAY)).thenReturn(record(5L, 4));
+            when(poolMapper.selectById(5L)).thenReturn(pool(5L, "Java 后端"));
+
+            ResponseResult result = service.today(USER_ID, null);
+
+            CodingDailyQuestionVO vo = (CodingDailyQuestionVO) result.getData();
+            assertTrue(vo.getAnswered());
+            assertEquals(4, vo.getLevel());
+            assertEquals(List.of("可见性"), vo.getCovered());
+            assertEquals(List.of("有序性", "不保证原子性"), vo.getMissing());
+            assertEquals("我的作答", vo.getUserAnswer());
+            verify(poolMapper, never()).selectOneByDirection(any());
+        }
+
+        @Test
+        @DisplayName("缓存题与当前方向不一致：作废重抽（不能把人锁死在旧方向）")
+        void testDirectionMismatchRepick() {
+            lenient().when(valueOps.get(contains("coding:daily2:"))).thenReturn("5");
+            when(poolMapper.selectById(5L)).thenReturn(pool(5L, "Java 后端"));
+            when(poolMapper.selectOneByDirection("前端")).thenReturn(pool(6L, "前端"));
+
+            ResponseResult result = service.today(USER_ID, "前端");
+
+            CodingDailyQuestionVO vo = (CodingDailyQuestionVO) result.getData();
+            assertEquals(6L, vo.getId());
+        }
+
+        @Test
+        @DisplayName("方向无题：降级到不限方向兜底，仍不断供")
+        void testDirectionFallback() {
+            givenCacheMiss();
+            when(poolMapper.selectOneByDirection("小众方向")).thenReturn(null);
+            when(poolMapper.selectOneAny()).thenReturn(pool(7L, "Java 后端"));
+
+            ResponseResult result = service.today(USER_ID, "小众方向");
+
+            assertEquals(200, result.getCode().intValue());
+            assertEquals(7L, ((CodingDailyQuestionVO) result.getData()).getId());
+        }
+
+        @Test
+        @DisplayName("池子为空：返回题库准备中")
+        void testPoolEmpty() {
+            givenCacheMiss();
+            when(poolMapper.selectOneByDirection(anyString())).thenReturn(null);
+            when(poolMapper.selectOneAny()).thenReturn(null);
+
+            ResponseResult result = service.today(USER_ID, null);
+
+            assertEquals(400, result.getCode().intValue());
+            assertTrue(String.valueOf(result.getMessage()).contains("题库准备中"));
+        }
     }
 
-    @Test
-    @DisplayName("today - 缓存命中：直接返回缓存题且不查库抽题")
-    void testTodayCachedQuestion() {
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(null);
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.get(dailyKey())).thenReturn("7");
-        when(questionMapper.selectById(7L)).thenReturn(question(7L, 1, 2, "[1]"));
+    // ==================== 作答 ====================
 
-        ResponseResult result = service.today(USER_ID, null);
+    @Nested
+    @DisplayName("answer 作答")
+    class Answer {
 
-        assertEquals(7L, ((CodingQuestionVO) result.getData()).getId());
-        assertFalse(((CodingQuestionVO) result.getData()).getAnswered());
-        verify(questionMapper, never()).selectRandomUnanswered(any(), any());
+        private CodingDailyAnswerDTO dto() {
+            CodingDailyAnswerDTO dto = new CodingDailyAnswerDTO();
+            dto.setPoolId(5L);
+            dto.setAnswerText("JMM 定义了主内存与工作内存的抽象，volatile 保证可见性与有序性。");
+            dto.setElapsedSeconds(120);
+            return dto;
+        }
+
+        private void givenPool() {
+            lenient().when(poolMapper.selectById(5L)).thenReturn(pool(5L, "Java 后端"));
+        }
+
+        @Test
+        @DisplayName("入参校验：题目ID缺失 / 文本为空 / 超长")
+        void testValidation() {
+            givenPool();
+            CodingDailyAnswerDTO empty = dto();
+            empty.setAnswerText("   ");
+
+            assertEquals(400, service.answer(USER_ID, new CodingDailyAnswerDTO()).getCode());
+            assertEquals(400, service.answer(USER_ID, empty).getCode());
+
+            CodingDailyAnswerDTO tooLong = dto();
+            tooLong.setAnswerText("长".repeat(CodingDailyEvaluator.ANSWER_MAX_LENGTH + 1));
+            assertEquals(400, service.answer(USER_ID, tooLong).getCode());
+        }
+
+        @Test
+        @DisplayName("今日已答：拒绝且不评估不落库")
+        void testAlreadyAnswered() {
+            givenPool();
+            when(txService.findDailyRecord(USER_ID, TODAY)).thenReturn(record(5L, 4));
+
+            assertEquals(400, service.answer(USER_ID, dto()).getCode());
+            verifyNoInteractions(evaluator, levelService);
+        }
+
+        @Test
+        @DisplayName("评估通过：落库 + 回填得分 + 记逐日分")
+        void testEvaluateAndSave() {
+            givenPool();
+            when(txService.findDailyRecord(USER_ID, TODAY)).thenReturn(null);
+            when(evaluator.evaluate(any(ApCodingDailyPool.class), anyString())).thenReturn(evaluated());
+            when(txService.saveAnswer(eq(USER_ID), any(ApCodingDailyPool.class),
+                anyString(), any(), any(CodingDailyEvaluator.Result.class)))
+                .thenReturn(record(5L, 4));
+            when(levelService.recordActionWithLimit(eq(USER_ID.longValue()),
+                eq(LevelScoreActionCode.ANSWER_QUESTION), anyString()))
+                .thenReturn(Map.of("success", true, "score", new BigDecimal("3")));
+
+            CodingDailyAnswerVO vo = (CodingDailyAnswerVO) service.answer(USER_ID, dto()).getData();
+
+            assertEquals(4, vo.getLevel());
+            assertEquals(3, vo.getScoreAwarded());
+            assertEquals(3, vo.getCoverageScore());
+            verify(recordMapper).updateById(ArgumentMatchers.<ApCodingAnswerRecord>argThat(
+                r -> r.getId() == 900L && r.getScoreAwarded() == 3));
+        }
+
+        @Test
+        @DisplayName("评估降级：照常落库，等级为 null，但逐日分仍给")
+        void testEvaluatePending() {
+            givenPool();
+            when(txService.findDailyRecord(USER_ID, TODAY)).thenReturn(null);
+            CodingDailyEvaluator.Result pending = new CodingDailyEvaluator.Result();
+            pending.pending = true;
+            pending.comment = CodingDailyEvaluator.PENDING_COMMENT;
+            when(evaluator.evaluate(any(ApCodingDailyPool.class), anyString())).thenReturn(pending);
+            when(txService.saveAnswer(eq(USER_ID), any(ApCodingDailyPool.class),
+                anyString(), any(), any(CodingDailyEvaluator.Result.class)))
+                .thenReturn(record(5L, null));
+            when(levelService.recordActionWithLimit(eq(USER_ID.longValue()),
+                eq(LevelScoreActionCode.ANSWER_QUESTION), anyString()))
+                .thenReturn(Map.of("success", true, "score", new BigDecimal("3")));
+
+            CodingDailyAnswerVO vo = (CodingDailyAnswerVO) service.answer(USER_ID, dto()).getData();
+
+            assertTrue(vo.getPending());
+            assertNull(vo.getLevel());
+            assertEquals(3, vo.getScoreAwarded());
+        }
+
+        @Test
+        @DisplayName("并发落到唯一键：转成「今日一题已作答」")
+        void testDuplicateMappedToFriendlyError() {
+            givenPool();
+            when(txService.findDailyRecord(USER_ID, TODAY)).thenReturn(null);
+            when(txService.saveAnswer(any(), any(), anyString(), any(), any()))
+                .thenThrow(new IllegalStateException("今日一题已作答"));
+
+            assertEquals(400, service.answer(USER_ID, dto()).getCode());
+            verify(levelService, never()).recordActionWithLimit(anyLong(), anyString(), anyString());
+        }
     }
 
-    @Test
-    @DisplayName("today - 缓存未命中：按历史正确率自适应抽题并写缓存")
-    void testTodayAdaptivePicksHardAndCaches() {
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(null);
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.get(dailyKey())).thenReturn(null);
-        when(statMapper.selectOne(any())).thenReturn(stat(10, 9, 0, 0));
-        when(questionMapper.selectRandomUnanswered(USER_ID, 3)).thenReturn(question(7L, 1, 3, "[0]"));
+    // ==================== 统计 ====================
 
-        ResponseResult result = service.today(USER_ID, null);
+    @Nested
+    @DisplayName("myStat 统计")
+    class MyStat {
 
-        CodingQuestionVO vo = (CodingQuestionVO) result.getData();
-        assertEquals(3, vo.getDifficulty());
-        verify(valueOps).set(dailyKey(), "7", 26, TimeUnit.HOURS);
-    }
+        @Test
+        @DisplayName("领域分布 / 平均等级 / 今日等级 回填")
+        void testStat() {
+            givenStatExists("Java 后端");
+            when(recordMapper.avgLevel(USER_ID)).thenReturn(3.5);
+            when(txService.findDailyRecord(USER_ID, TODAY)).thenReturn(record(5L, 4));
+            when(rewardClient.getContinuousCheckinDays(USER_ID.longValue()))
+                .thenReturn(ResponseResult.okResult(Map.of("continuousDays", 6)));
 
-    @Test
-    @DisplayName("today - 难度题全答完：兜底链允许重复抽题不断供")
-    void testTodayPickFallbackChain() {
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(null);
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.get(dailyKey())).thenReturn(null);
-        when(questionMapper.selectRandomUnanswered(USER_ID, 1)).thenReturn(null);
-        when(questionMapper.selectRandomUnanswered(USER_ID, null)).thenReturn(null);
-        when(questionMapper.selectRandomAny(1)).thenReturn(question(7L, 1, 1, "[0]"));
+            CodingStatVO vo = (CodingStatVO) service.myStat(USER_ID).getData();
 
-        ResponseResult result = service.today(USER_ID, 1);
+            assertEquals(6, vo.getContinuousDays());
+            assertEquals(3, vo.getTotalCount());
+            assertEquals("Java 后端", vo.getDirection());
+            assertEquals(3.5, vo.getAvgLevel());
+            assertEquals(4, vo.getTodayLevel());
+            assertTrue(vo.getTodayAnswered());
+            assertTrue(((Map<?, ?>) vo.getTagStats()).containsKey("Java"));
+        }
 
-        assertEquals(7L, ((CodingQuestionVO) result.getData()).getId());
-    }
+        @Test
+        @DisplayName("签到服务不可用：连续天数降级 0，不影响其余字段")
+        void testStatRewardDown() {
+            when(statMapper.selectOne(any())).thenReturn(null);
+            when(recordMapper.avgLevel(USER_ID)).thenReturn(null);
+            when(rewardClient.getContinuousCheckinDays(USER_ID.longValue()))
+                .thenThrow(new RuntimeException("reward down"));
 
-    // ==================== 作答提交 ====================
+            CodingStatVO vo = (CodingStatVO) service.myStat(USER_ID).getData();
 
-    @Test
-    @DisplayName("answer - 当日题答对：计等级分 + 触发打卡 + 回填得分")
-    void testAnswerDailyCorrect() {
-        CodingAnswerDTO dto = new CodingAnswerDTO();
-        dto.setQuestionId(9L);
-        dto.setAnswers(List.of(0));
-        dto.setIsDaily(true);
-        dto.setElapsedSeconds(12);
-        ApCodingQuestion q = question(9L, ApCodingQuestion.TYPE_SINGLE, 1, "[0]");
-        when(questionMapper.selectById(9L)).thenReturn(q);
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.get(dailyKey())).thenReturn("9");
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(null);
-        when(valueOps.setIfAbsent(anyString(), eq("1"), eq(10L), eq(TimeUnit.SECONDS))).thenReturn(true);
-        ApCodingAnswerRecord rec = new ApCodingAnswerRecord();
-        rec.setId(100L);
-        when(txService.saveAnswer(eq(USER_ID), eq(q), anyString(), eq(true), eq(12), eq(true))).thenReturn(rec);
-        Map<String, Object> levelResult = new HashMap<>();
-        levelResult.put("success", true);
-        levelResult.put("score", new BigDecimal("3"));
-        when(levelService.recordActionWithLimit(eq(USER_ID.longValue()),
-            eq(LevelScoreActionCode.ANSWER_QUESTION), anyString())).thenReturn(levelResult);
-        when(rewardClient.completeCheckin(USER_ID.longValue()))
-            .thenReturn(ResponseResult.okResult(Map.of("continuousDays", 5)));
-
-        ResponseResult result = service.answer(USER_ID, dto);
-
-        assertEquals(200, result.getCode().intValue());
-        CodingAnswerVO vo = (CodingAnswerVO) result.getData();
-        assertTrue(vo.getIsCorrect());
-        assertEquals(3, vo.getScoreAwarded());
-        assertEquals(5, vo.getContinuousDays());
-        assertEquals(11, vo.getAnswerCount());
-        ArgumentCaptor<ApCodingAnswerRecord> captor = ArgumentCaptor.forClass(ApCodingAnswerRecord.class);
-        verify(recordMapper).updateById(captor.capture());
-        assertEquals(3, captor.getValue().getScoreAwarded().intValue());
-        verify(redisTemplate).delete(anyString());
-    }
-
-    @Test
-    @DisplayName("answer - 当日题答错：锁定但不计分不打卡")
-    void testAnswerDailyWrong() {
-        CodingAnswerDTO dto = new CodingAnswerDTO();
-        dto.setQuestionId(9L);
-        dto.setAnswers(List.of(1));
-        dto.setIsDaily(true);
-        ApCodingQuestion q = question(9L, ApCodingQuestion.TYPE_SINGLE, 1, "[0]");
-        when(questionMapper.selectById(9L)).thenReturn(q);
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.get(dailyKey())).thenReturn("9");
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(null);
-        when(valueOps.setIfAbsent(anyString(), eq("1"), eq(10L), eq(TimeUnit.SECONDS))).thenReturn(true);
-        when(txService.saveAnswer(eq(USER_ID), eq(q), anyString(), eq(false), isNull(), eq(true)))
-            .thenReturn(new ApCodingAnswerRecord());
-
-        ResponseResult result = service.answer(USER_ID, dto);
-
-        CodingAnswerVO vo = (CodingAnswerVO) result.getData();
-        assertFalse(vo.getIsCorrect());
-        assertEquals(0, vo.getScoreAwarded());
-        assertNull(vo.getContinuousDays());
-        verifyNoInteractions(levelService);
-        verifyNoInteractions(rewardClient);
-        verify(recordMapper, never()).updateById(any(ApCodingAnswerRecord.class));
-    }
-
-    @Test
-    @DisplayName("answer - 自由练习：只沉淀统计，不计分不打卡")
-    void testAnswerPracticeNoReward() {
-        CodingAnswerDTO dto = new CodingAnswerDTO();
-        dto.setQuestionId(9L);
-        dto.setAnswers(List.of(0));
-        dto.setIsDaily(false);
-        ApCodingQuestion q = question(9L, ApCodingQuestion.TYPE_SINGLE, 1, "[0]");
-        when(questionMapper.selectById(9L)).thenReturn(q);
-        when(txService.saveAnswer(eq(USER_ID), eq(q), anyString(), eq(true), isNull(), eq(false)))
-            .thenReturn(new ApCodingAnswerRecord());
-
-        ResponseResult result = service.answer(USER_ID, dto);
-
-        assertEquals(200, result.getCode().intValue());
-        assertTrue(((CodingAnswerVO) result.getData()).getIsCorrect());
-        verifyNoInteractions(levelService);
-        verifyNoInteractions(rewardClient);
-    }
-
-    @Test
-    @DisplayName("answer - 提交题目与缓存的今日题不一致：拒绝（防换题挑简单题）")
-    void testAnswerRejectsMismatchedDailyQuestion() {
-        CodingAnswerDTO dto = new CodingAnswerDTO();
-        dto.setQuestionId(9L);
-        dto.setAnswers(List.of(0));
-        dto.setIsDaily(true);
-        when(questionMapper.selectById(9L)).thenReturn(question(9L, 1, 1, "[0]"));
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.get(dailyKey())).thenReturn("5");
-
-        ResponseResult result = service.answer(USER_ID, dto);
-
-        assertEquals(400, result.getCode().intValue());
-        assertTrue(result.getMessage().contains("今日题目已更新"));
-        verify(txService, never()).saveAnswer(any(), any(), anyString(), anyBoolean(), any(), anyBoolean());
-    }
-
-    @Test
-    @DisplayName("answer - 今日已作答：直接拒绝")
-    void testAnswerRejectsAlreadyAnswered() {
-        CodingAnswerDTO dto = new CodingAnswerDTO();
-        dto.setQuestionId(9L);
-        dto.setAnswers(List.of(0));
-        dto.setIsDaily(true);
-        when(questionMapper.selectById(9L)).thenReturn(question(9L, 1, 1, "[0]"));
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.get(dailyKey())).thenReturn("9");
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(dailyRecord(9L, 1));
-
-        ResponseResult result = service.answer(USER_ID, dto);
-
-        assertEquals(400, result.getCode().intValue());
-        assertTrue(result.getMessage().contains("今日一题已作答"));
-    }
-
-    @Test
-    @DisplayName("answer - 答案下标超出选项范围：拒绝")
-    void testAnswerRejectsOutOfRange() {
-        CodingAnswerDTO dto = new CodingAnswerDTO();
-        dto.setQuestionId(9L);
-        dto.setAnswers(List.of(9));
-        when(questionMapper.selectById(9L)).thenReturn(question(9L, 1, 1, "[0]"));
-
-        ResponseResult result = service.answer(USER_ID, dto);
-
-        assertEquals(400, result.getCode().intValue());
-        assertTrue(result.getMessage().contains("超出选项范围"));
-    }
-
-    @Test
-    @DisplayName("answer - 单选题只能选一个选项：拒绝")
-    void testAnswerRejectsSingleChoiceMultiple() {
-        CodingAnswerDTO dto = new CodingAnswerDTO();
-        dto.setQuestionId(9L);
-        dto.setAnswers(List.of(0, 1));
-        when(questionMapper.selectById(9L)).thenReturn(question(9L, 1, 1, "[0]"));
-
-        ResponseResult result = service.answer(USER_ID, dto);
-
-        assertEquals(400, result.getCode().intValue());
-        assertTrue(result.getMessage().contains("单选题只能选择一个选项"));
-    }
-
-    // ==================== 榜单 ====================
-
-    @Test
-    @DisplayName("ranking - 组装名次/正确率/isSelf 并批量补昵称头像")
-    void testRankingAssemblesAndMarksSelf() {
-        List<Map<String, Object>> rows = new ArrayList<>();
-        Map<String, Object> row1 = new HashMap<>();
-        row1.put("userId", 200L);
-        row1.put("totalCount", 10L);
-        row1.put("correctCount", 8L);
-        row1.put("avgSeconds", new BigDecimal("12.5"));
-        rows.add(row1);
-        Map<String, Object> row2 = new HashMap<>();
-        row2.put("userId", 300L);
-        row2.put("totalCount", 5L);
-        row2.put("correctCount", 2L);
-        row2.put("avgSeconds", new BigDecimal("30.2"));
-        rows.add(row2);
-        when(recordMapper.selectRanking(any(), eq(20))).thenReturn(rows);
-        Map<String, Object> info = new HashMap<>();
-        info.put("nickname", "张三");
-        info.put("avatar", "a.png");
-        Map<String, Object> batch = new HashMap<>();
-        batch.put("200", info);
-        when(userClient.getBasicInfoBatch(anyList())).thenReturn(ResponseResult.okResult(batch));
-
-        ResponseResult result = service.ranking("week", 200);
-
-        assertEquals(200, result.getCode().intValue());
-        @SuppressWarnings("unchecked")
-        List<CodingRankingVO> list = (List<CodingRankingVO>) ((Map<String, Object>) result.getData()).get("list");
-        assertEquals(2, list.size());
-        assertEquals(1, list.get(0).getRank());
-        assertEquals("张三", list.get(0).getNickname());
-        assertEquals(80, list.get(0).getAccuracy());
-        assertEquals(13, list.get(0).getAvgSeconds());
-        assertTrue(list.get(0).getIsSelf());
-        assertEquals("", list.get(1).getNickname());
-        assertEquals(40, list.get(1).getAccuracy());
-        assertFalse(list.get(1).getIsSelf());
-    }
-
-    @Test
-    @DisplayName("ranking - 用户服务不可用：昵称头像留空不拖垮榜单")
-    void testRankingUserServiceDown() {
-        List<Map<String, Object>> rows = new ArrayList<>();
-        Map<String, Object> row = new HashMap<>();
-        row.put("userId", 300L);
-        row.put("totalCount", 5L);
-        row.put("correctCount", 2L);
-        row.put("avgSeconds", new BigDecimal("30.2"));
-        rows.add(row);
-        when(recordMapper.selectRanking(any(), eq(20))).thenReturn(rows);
-        when(userClient.getBasicInfoBatch(anyList())).thenThrow(new RuntimeException("user down"));
-
-        ResponseResult result = service.ranking("day", null);
-
-        @SuppressWarnings("unchecked")
-        List<CodingRankingVO> list = (List<CodingRankingVO>) ((Map<String, Object>) result.getData()).get("list");
-        assertEquals(1, list.size());
-        assertEquals("", list.get(0).getNickname());
-        assertFalse(list.get(0).getIsSelf());
-    }
-
-    // ==================== 题库列表 ====================
-
-    @Test
-    @DisplayName("questions - 登录用户标记已答，匿名不查询作答记录")
-    void testQuestionsMarksAnsweredForLoggedUser() {
-        Page<ApCodingQuestion> page = new Page<>(1, 10);
-        page.setRecords(List.of(question(9L, 1, 1, "[0]"), question(10L, 1, 2, "[0]")));
-        page.setTotal(2);
-        doReturn(page).when(questionMapper).selectPage(any(), any());
-        ApCodingAnswerRecord answered = new ApCodingAnswerRecord();
-        answered.setQuestionId(9L);
-        when(recordMapper.selectList(any())).thenReturn(List.of(answered));
-
-        ResponseResult result = service.questions(null, null, 1, 10, USER_ID);
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) result.getData();
-        @SuppressWarnings("unchecked")
-        List<CodingQuestionVO> list = (List<CodingQuestionVO>) data.get("list");
-        assertEquals(2, list.size());
-        assertTrue(list.get(0).getAnswered());
-        assertFalse(list.get(1).getAnswered());
-        assertNull(list.get(0).getCorrectAnswer());
-        verify(recordMapper).selectList(any());
-    }
-
-    @Test
-    @DisplayName("questions - 按来源文章过滤（文章详情页相关练习反向入口）")
-    void testQuestionsFilterByArticle() {
-        Page<ApCodingQuestion> page = new Page<>(1, 3);
-        page.setRecords(List.of(question(9L, 1, 1, "[0]")));
-        page.setTotal(1);
-        doReturn(page).when(questionMapper).selectPage(any(), any());
-
-        ResponseResult result = service.questions(null, 555L, 1, 3, null);
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) result.getData();
-        @SuppressWarnings("unchecked")
-        List<CodingQuestionVO> list = (List<CodingQuestionVO>) data.get("list");
-        assertEquals(1, list.size());
-        assertEquals(1L, data.get("total"));
-        assertFalse(list.get(0).getAnswered());
-        verify(recordMapper, never()).selectList(any());
-    }
-
-    // ==================== 我的统计 ====================
-
-    @Test
-    @DisplayName("myStat - 连续天数来自签到体系，今日作答态与领域分布正确回填")
-    void testMyStat() {
-        ApCodingUserStat stat = stat(10, 7, 4, 1);
-        stat.setTagStats("{\"Redis\":{\"total\":3,\"correct\":2}}");
-        stat.setFirstAnswerDate(today());
-        stat.setLastAnswerDate(today());
-        when(statMapper.selectOne(any())).thenReturn(stat);
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(dailyRecord(9L, 1));
-        when(rewardClient.getContinuousCheckinDays(USER_ID.longValue()))
-            .thenReturn(ResponseResult.okResult(Map.of("continuousDays", 6)));
-
-        ResponseResult result = service.myStat(USER_ID);
-
-        CodingStatVO vo = (CodingStatVO) result.getData();
-        assertEquals(6, vo.getContinuousDays());
-        assertTrue(vo.getTodayAnswered());
-        assertTrue(vo.getTodayCorrect());
-        assertEquals(70, vo.getAccuracy());
-        assertEquals(25, vo.getPracticeAccuracy());
-        assertEquals(today().toString(), vo.getFirstAnswerDate());
-        assertTrue(vo.getTagStats().containsKey("Redis"));
-    }
-
-    @Test
-    @DisplayName("myStat - 奖励服务不可用：连续天数降级为 0")
-    void testMyStatRewardServiceDown() {
-        when(statMapper.selectOne(any())).thenReturn(null);
-        when(txService.findDailyRecord(USER_ID, today())).thenReturn(null);
-        when(rewardClient.getContinuousCheckinDays(USER_ID.longValue()))
-            .thenThrow(new RuntimeException("reward down"));
-
-        ResponseResult result = service.myStat(USER_ID);
-
-        CodingStatVO vo = (CodingStatVO) result.getData();
-        assertEquals(0, vo.getContinuousDays());
-        assertFalse(vo.getTodayAnswered());
-        assertEquals(0, vo.getTotalCount());
+            assertEquals(0, vo.getContinuousDays());
+            assertEquals(0, vo.getTotalCount());
+            assertNull(vo.getAvgLevel());
+            assertFalse(vo.getTodayAnswered());
+        }
     }
 }
