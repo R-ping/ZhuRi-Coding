@@ -42,15 +42,6 @@ public class IRewardClientFallback implements IRewardClient {
     }
 
     @Override
-    public ResponseResult completeCheckin(Long userId) {
-        log.error("奖励服务不可用，每日一题打卡失败（答题结果不受影响），userId={}", userId);
-        // fail-open：打卡降级为连续天数为 0，不影响判分主流程
-        java.util.Map<String, Object> result = new java.util.HashMap<>();
-        result.put("continuousDays", 0);
-        return ResponseResult.okResult(result);
-    }
-
-    @Override
     public ResponseResult getVirtualAssetHold(Long userId, String itemCode) {
         log.error("奖励服务不可用，校验虚拟道具失败，userId={}, itemCode={}", userId, itemCode);
         // 降级：视为无持有，并给一个不打折的比例（1.0）以保接口不中断

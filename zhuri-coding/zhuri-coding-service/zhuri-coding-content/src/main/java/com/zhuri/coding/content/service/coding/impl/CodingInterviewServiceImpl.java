@@ -7,7 +7,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.zhuri.coding.common.bailian.PromptSanitizer;
 import com.zhuri.coding.content.mapper.coding.ApCodingInterviewMapper;
-import com.zhuri.coding.content.mapper.coding.ApCodingQuestionMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingUserStatMapper;
 import com.zhuri.coding.content.service.ai.AiFeatures;
 import com.zhuri.coding.content.service.ai.AiLlmGateway;
@@ -19,13 +18,12 @@ import com.zhuri.coding.content.service.coding.CodingInterviewJson.ReportData;
 import com.zhuri.coding.content.service.coding.CodingInterviewJson.ReportItemData;
 import com.zhuri.coding.content.service.coding.CodingInterviewJson.TurnRecord;
 import com.zhuri.coding.content.service.coding.CodingInterviewService;
-import com.zhuri.coding.content.service.coding.CodingJudge;
+import com.zhuri.coding.content.service.coding.CodingJson;
 import com.zhuri.coding.content.service.coding.CodingReportService;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewFinishDTO;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewStartDTO;
 import com.zhuri.coding.model.coding.dtos.CodingInterviewTurnDTO;
 import com.zhuri.coding.model.coding.pojos.ApCodingInterview;
-import com.zhuri.coding.model.coding.pojos.ApCodingQuestion;
 import com.zhuri.coding.model.coding.pojos.ApCodingUserStat;
 import com.zhuri.coding.model.coding.vos.CodingInterviewFinishVO;
 import com.zhuri.coding.model.coding.vos.CodingInterviewHistoryVO;
@@ -42,7 +40,6 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -64,8 +61,12 @@ import static com.zhuri.coding.content.service.coding.CodingInterviewJson.parseT
 /**
  * 模拟面试服务实现（Coding 延展第三层 · Stage A）
  *
- * <p><b>提纲生成（开面一次）</b>：方向 + 素材池标签（题库分布）+ 用户弱项 → LLM 输出
+ * <p><b>提纲生成（开面一次）</b>：方向 + 用户弱项 + 近几场已考主题 +（可选）简历 → LLM 输出
  * JSON 提纲（主题/主问题/keyPoints 关键考点）；校验不合格直接拒绝开面（宁缺勿假，不落库不扣费）。</p>
+ *
+ * <p><b>题目不从题库取</b>：问题全部由模型按方向与简历现生成。曾经还给提纲喂过一串「从题库聚合的
+ * 参考技术标签」，现已摘掉 —— 题库是投放给第一层（每日一题/测评）的东西，面试不需要它；
+ * 而且投稿标签由用户手填且非必填，聚合出来的串质量不可控，喂进去只会带偏模型。</p>
  *
  * <p><b>轮次编排（控制行协议）</b>：每轮要求模型首行输出 FOLLOWUP/NEXT——服务端缓冲首行
  * （5s 超时保护，超时按 FOLLOWUP 整段转发），FOLLOWUP 逐段转发、NEXT 检测到即中止模型流
@@ -116,10 +117,6 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
     private static final String CLOSING_TEXT = "好的，本次面试的问题已经聊完了，点击「结束面试」即可查看你的面试报告。";
     /** 弱项领域取前 N 个（与测评组卷同口径：tag_stats 正确率升序） */
     private static final int WEAK_TAG_LIMIT = 5;
-    /** 素材标签取前 N 个 */
-    private static final int MATERIAL_TAG_LIMIT = 10;
-    /** 素材池取样条数 */
-    private static final int MATERIAL_POOL_SIZE = 100;
     /** 主题数可选范围（入参越界由服务端夹取，前端只做展示约束） */
     private static final int MIN_QUESTION_COUNT = 3;
     private static final int MAX_QUESTION_COUNT = 10;
@@ -140,7 +137,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         "你是资深技术面试官，负责为一场模拟面试生成提纲。",
         "你必须只输出一个 JSON 数组，不能有任何解释文字、markdown 代码块或多余符号。",
         "数组元素格式：",
-        "{\"topic\":\"主题名\",\"mainQuestion\":\"主问题\",\"keyPoints\":[\"考点1\",\"考点2\",\"考点3\"],\"tag\":\"技术标签\",\"source\":\"resume\"}",
+        "{\"topic\":\"主题名\",\"mainQuestion\":\"主问题\",\"keyPoints\":[\"考点1\",\"考点2\",\"考点3\"],\"source\":\"resume\"}",
         "生成要求：",
         "1. 主题数量严格按用户消息中「主题数量」的要求；",
         "2. 每个主题 1 个开放式主问题（可展开回答 3-5 分钟，不要选择题、不要是非题）；",
@@ -197,9 +194,6 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
 
     @Autowired
     private ApCodingInterviewMapper interviewMapper;
-
-    @Autowired
-    private ApCodingQuestionMapper questionMapper;
 
     @Autowired
     private ApCodingUserStatMapper statMapper;
@@ -265,8 +259,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
             return ResponseResult.errorResult(AppHttpCodeEnum.AI_QUOTA_EXHAUSTED);
         }
 
-        // 4. 素材池标签 + 用户弱项 + 近几场已考主题（标签不足自然降级为纯方向生成，不阻断）
-        List<String> materialTags = materialTags(direction);
+        // 4. 用户弱项 + 近几场已考主题（取不到自然降级为纯方向生成，不阻断）
         List<String> weakTags = weakTags(userId);
         List<String> historyTopics = recentTopics(userId);
 
@@ -274,7 +267,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         //    简历只作用于本次生成，不落库；有简历时按 resume-topic-ratio 分配简历深挖题配额
         String system = resolvePrompt(PROMPT_KEY_PLAN, FALLBACK_PLAN_SYSTEM, userId);
         String userPrompt = buildPlanUserPrompt(direction, difficultyLabel(difficulty),
-            topicCount, resume, materialTags, weakTags, historyTopics);
+            topicCount, resume, weakTags, historyTopics);
         String raw = aiLlmGateway.generateOrNull(AiFeatures.INTERVIEW_PLAN, system, userPrompt, null, null);
         List<PlanTopic> plan = parsePlan(raw);
         int minTopics = Math.min(PLAN_MIN_TOPICS, Math.max(1, topicCount));
@@ -310,8 +303,8 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         record.setStatus(ApCodingInterview.STATUS_ONGOING);
         record.setDirection(direction);
         record.setDifficulty(difficulty);
-        record.setPlanSnapshot(CodingJudge.writeJson(plan));
-        record.setTurns(CodingJudge.writeJson(java.util.Collections.singletonList(
+        record.setPlanSnapshot(CodingJson.writeJson(plan));
+        record.setTurns(CodingJson.writeJson(java.util.Collections.singletonList(
             interviewerTurn("question", plan.get(0).mainQuestion, 0, now))));
         record.setCurrentIndex(0);
         record.setFollowupCount(0);
@@ -410,7 +403,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         turns.add(interviewerTurn("followup".equals(outcome.kind) ? "followup" : "question",
             outcome.text, outcome.topicIndex, now));
         ApCodingInterview update = new ApCodingInterview();
-        update.setTurns(CodingJudge.writeJson(turns));
+        update.setTurns(CodingJson.writeJson(turns));
         update.setTurnCount(nvl(record.getTurnCount()) + 1);
         update.setCurrentIndex(outcome.topicIndex);
         update.setFollowupCount("followup".equals(outcome.kind) ? nvl(record.getFollowupCount()) + 1 : 0);
@@ -515,7 +508,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         // 生成报告（超时保护；失败/解析失败存原文降级，重试可恢复）
         String raw = reportService.generateReport(record);
         ReportData report = reportService.parseReport(raw);
-        String stored = report == null ? raw : CodingJudge.writeJson(report);
+        String stored = report == null ? raw : CodingJson.writeJson(report);
         Integer overallScore = report == null ? null : reportService.computeOverallScore(report);
         Date finished = new Date();
 
@@ -629,14 +622,12 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
     }
 
     private String buildPlanUserPrompt(String direction, String difficultyLabel, int topicCount,
-                                       String resumeText, List<String> materialTags,
-                                       List<String> weakTags, List<String> historyTopics) {
+                                       String resumeText, List<String> weakTags,
+                                       List<String> historyTopics) {
         StringBuilder sb = new StringBuilder();
         sb.append("【面试方向】").append(promptSanitizer.sanitize(direction)).append('\n');
         sb.append("【难度】").append(difficultyLabel).append('\n');
         sb.append("【主题数量】").append(topicCount).append('\n');
-        sb.append("【参考技术标签】").append(materialTags.isEmpty()
-            ? "无（请按方向自行覆盖常见考点）" : promptSanitizer.sanitize(String.join("、", materialTags))).append('\n');
         sb.append("【候选人薄弱方向（可适当侧重考察）】").append(weakTags.isEmpty()
             ? "无" : promptSanitizer.sanitize(String.join("、", weakTags))).append('\n');
         // 跨场去重：同一用户连做多场时避免原题重问（近 N 场已完成面试的提纲主题）
@@ -746,32 +737,9 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
         }
     }
 
-    // ==================== 素材池 / 弱项 ====================
+    // ==================== 弱项 ====================
 
-    /** 素材标签：方向命中题优先聚合标签（Top N）；无命中则全库取样（标签不足自然降级） */
-    private List<String> materialTags(String direction) {
-        List<ApCodingQuestion> pool = questionMapper.selectRandomBatch(
-            null, java.util.Collections.singletonList(direction), MATERIAL_POOL_SIZE);
-        if (pool == null || pool.isEmpty()) {
-            pool = questionMapper.selectRandomBatch(null, null, MATERIAL_POOL_SIZE);
-        }
-        if (pool == null || pool.isEmpty()) {
-            return new ArrayList<>();
-        }
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        for (ApCodingQuestion q : pool) {
-            for (String tag : CodingJudge.parseTags(q.getTags())) {
-                counts.merge(tag, 1, Integer::sum);
-            }
-        }
-        return counts.entrySet().stream()
-            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-            .limit(MATERIAL_TAG_LIMIT)
-            .map(Map.Entry::getKey)
-            .collect(Collectors.toList());
-    }
-
-    /** 用户弱项领域（tag_stats 正确率升序前 5；无数据返回空=不限定） */
+    /** 用户弱项领域（tag_stats 平均等级升序前 5；无数据返回空=不限定） */
     private List<String> weakTags(Integer userId) {
         ApCodingUserStat stat = statMapper.selectOne(new LambdaQueryWrapper<ApCodingUserStat>()
             .eq(ApCodingUserStat::getUserId, userId));
@@ -785,22 +753,22 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
             log.warn("[CodingInterview] 解析答题领域分布失败（提纲忽略弱项）: userId={}", userId);
             return new ArrayList<>();
         }
-        List<Map.Entry<String, Double>> rates = new ArrayList<>();
+        List<Map.Entry<String, Double>> levels = new ArrayList<>();
         for (Map.Entry<String, Object> entry : raw.entrySet()) {
             if (!(entry.getValue() instanceof Map<?, ?> value)) {
                 continue;
             }
             Integer total = toInt(value.get("total"));
-            Integer correct = toInt(value.get("correct"));
-            if (total == null || total <= 0) {
+            Integer levelSum = toInt(value.get("levelSum"));
+            if (total == null || total <= 0 || levelSum == null) {
+                // 没有等级数据（全部未评估）：不参与弱项排序，避免被当成 0 分垫底
                 continue;
             }
-            rates.add(new AbstractMap.SimpleEntry<>(entry.getKey(),
-                (correct == null ? 0 : correct) * 1.0 / total));
+            levels.add(new AbstractMap.SimpleEntry<>(entry.getKey(), levelSum * 1.0 / total));
         }
-        rates.sort(Comparator.comparingDouble(Map.Entry::getValue));
+        levels.sort(Comparator.comparingDouble(Map.Entry::getValue));
         List<String> tags = new ArrayList<>();
-        for (Map.Entry<String, Double> entry : rates) {
+        for (Map.Entry<String, Double> entry : levels) {
             if (tags.size() >= WEAK_TAG_LIMIT) {
                 break;
             }

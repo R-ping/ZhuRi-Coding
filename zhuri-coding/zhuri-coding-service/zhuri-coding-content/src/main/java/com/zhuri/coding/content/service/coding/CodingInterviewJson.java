@@ -50,7 +50,6 @@ public final class CodingInterviewJson {
         public String topic;
         public String mainQuestion;
         public List<String> keyPoints;
-        public String tag;
         /** 主题来源：resume=简历深挖 / direction=方向通用（服务端归一后必为二者之一） */
         public String source;
     }
@@ -132,9 +131,6 @@ public final class CodingInterviewJson {
             t.topic = t.topic.trim();
             t.mainQuestion = t.mainQuestion.trim();
             t.keyPoints = keyPoints;
-            if (t.tag == null) {
-                t.tag = "";
-            }
             valid.add(t);
         }
         return valid;

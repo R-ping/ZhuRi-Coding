@@ -307,7 +307,7 @@ public class CodingReportService {
         data.suggestions = summary.suggestions;
         log.info("[CodingInterview] 报告生成完成: interviewId={}, 主题={}, 已评估={}, 失败批次={}",
             record.getId(), plan.size(), evaluated, failedRaws.size());
-        return CodingJudge.writeJson(data);
+        return CodingJson.writeJson(data);
     }
 
     /** 评估一批主题（段内不截断，只做防注入净化）；items 为 null 表示该批不可用 */
@@ -591,9 +591,9 @@ public class CodingReportService {
         if (item.coverage.missing == null) {
             item.coverage.missing = new ArrayList<>();
         }
-        item.structure = clampLevel(item.structure);
-        item.accuracy = clampLevel(item.accuracy);
-        item.coverageScore = coverageLevel(item.coverage.covered.size(), item.coverage.missing.size());
+        item.structure = CodingEvaluation.clampLevel(item.structure);
+        item.accuracy = CodingEvaluation.clampLevel(item.accuracy);
+        item.coverageScore = CodingEvaluation.coverageLevel(item.coverage.covered.size(), item.coverage.missing.size());
         if (item.topic == null) {
             item.topic = "";
         }
@@ -601,33 +601,6 @@ public class CodingReportService {
             item.comment = "";
         }
         item.pending = Boolean.FALSE;
-    }
-
-    /** 等级夹取 1-5；缺失按 3（基本合格）中性处理（模型未给等级时不虚高也不误伤） */
-    private static int clampLevel(Integer level) {
-        return level == null ? 3 : Math.max(1, Math.min(5, level));
-    }
-
-    /** 覆盖度等级：covered/(covered+missing) 比例映射 1-5（覆盖度先行，无考点信息从低） */
-    private static int coverageLevel(int covered, int missing) {
-        int total = covered + missing;
-        if (total <= 0) {
-            return 1;
-        }
-        double ratio = covered * 1.0 / total;
-        if (ratio >= 0.8) {
-            return 5;
-        }
-        if (ratio >= 0.6) {
-            return 4;
-        }
-        if (ratio >= 0.4) {
-            return 3;
-        }
-        if (ratio >= 0.2) {
-            return 2;
-        }
-        return 1;
     }
 
     // ==================== 内部结构 ====================

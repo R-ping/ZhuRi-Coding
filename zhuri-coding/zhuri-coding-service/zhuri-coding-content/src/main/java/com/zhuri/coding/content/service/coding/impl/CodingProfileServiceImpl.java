@@ -7,14 +7,12 @@ import com.zhuri.coding.apis.reward.IRewardClient;
 import com.zhuri.coding.apis.user.IUserClient;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingAnswerRecordMapper;
-import com.zhuri.coding.content.mapper.coding.ApCodingAssessmentMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingProfileSettingMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingUserStatMapper;
 import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
 import com.zhuri.coding.content.service.coding.CodingProfileService;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.coding.dtos.CodingProfileSettingDTO;
-import com.zhuri.coding.model.coding.pojos.ApCodingAssessment;
 import com.zhuri.coding.model.coding.pojos.ApCodingProfileSetting;
 import com.zhuri.coding.model.coding.pojos.ApCodingUserStat;
 import com.zhuri.coding.model.coding.vos.CodingAbilityProfileVO;
@@ -68,9 +66,6 @@ public class CodingProfileServiceImpl implements CodingProfileService {
     private ApCodingAnswerRecordMapper recordMapper;
 
     @Autowired
-    private ApCodingAssessmentMapper assessmentMapper;
-
-    @Autowired
     private ApCodingProfileSettingMapper settingMapper;
 
     @Autowired
@@ -114,7 +109,6 @@ public class CodingProfileServiceImpl implements CodingProfileService {
         buildDomainBlock(blocks.getDomain(), stat, self, setting);
         buildStreakBlock(blocks.getStreak(), stat, targetUserId, self, setting);
         buildOutputBlock(blocks.getOutput(), targetUserId, self, setting);
-        buildAssessmentBlock(blocks.getAssessment(), targetUserId, self, setting);
         // 解决问题块：依赖付费问答业务，未上线前恒不可用（结构预留）
         return ResponseResult.okResult(vo);
     }
@@ -210,26 +204,6 @@ public class CodingProfileServiceImpl implements CodingProfileService {
         block.setAvailable(articleCount > 0 || collectedCount > 0);
     }
 
-    private void buildAssessmentBlock(CodingAbilityProfileVO.AssessmentBlock block, Integer userId,
-                                      boolean self, ApCodingProfileSetting setting) {
-        boolean publicVisible = setting == null || setting.assessmentPublic();
-        block.setPublicVisible(publicVisible);
-        if (!self && !publicVisible) {
-            block.setAvailable(true);
-            return;
-        }
-        ApCodingAssessment latest = assessmentMapper.selectLatestSubmitted(userId);
-        if (latest == null) {
-            return; // available=false：前端显示"暂未测评"
-        }
-        block.setAvailable(true);
-        block.setScore(latest.getScore());
-        block.setCorrectCount(latest.getCorrectCount());
-        block.setTotalCount(latest.getTotalCount());
-        block.setPercentile(latest.getPercentile());
-        block.setSubmittedTime(toDateTimeString(latest.getSubmittedTime()));
-    }
-
     // ==================== 内部方法 ====================
 
     private ApCodingProfileSetting loadSetting(Integer userId) {
@@ -256,7 +230,7 @@ public class CodingProfileServiceImpl implements CodingProfileService {
         }
     }
 
-    /** 解析 tag_stats（{"Redis":{"total":3,"correct":2}}）→ 按答题量降序前 N */
+    /** 解析 tag_stats（{"Redis":{"total":3,"levelSum":11}}）→ 按作答量降序前 N */
     private List<CodingAbilityProfileVO.DomainItem> parseDomainItems(String json) {
         List<CodingAbilityProfileVO.DomainItem> items = new ArrayList<>();
         if (json == null || json.isBlank()) {
@@ -276,7 +250,11 @@ public class CodingProfileServiceImpl implements CodingProfileService {
             CodingAbilityProfileVO.DomainItem item = new CodingAbilityProfileVO.DomainItem();
             item.setTag(entry.getKey());
             item.setTotal(toInt(value.get("total")));
-            item.setCorrect(toInt(value.get("correct")));
+            Integer total = toInt(value.get("total"));
+            Integer levelSum = toInt(value.get("levelSum"));
+            // 平均等级：等级和 / 作答数；没有等级数据（未评估）时置 null，前端显示"—"
+            item.setAvgLevel(total != null && total > 0 && levelSum != null
+                ? Math.round(levelSum * 10.0 / total) / 10.0 : null);
             items.add(item);
         }
         items.sort(Comparator.comparingInt((CodingAbilityProfileVO.DomainItem item) ->
@@ -316,9 +294,6 @@ public class CodingProfileServiceImpl implements CodingProfileService {
         if (dto.getPublicSolve() != null) {
             setting.setPublicSolve(dto.getPublicSolve() ? 1 : 0);
         }
-        if (dto.getPublicAssessment() != null) {
-            setting.setPublicAssessment(dto.getPublicAssessment() ? 1 : 0);
-        }
     }
 
     private static CodingProfileSettingVO toSettingVO(ApCodingProfileSetting setting) {
@@ -328,7 +303,6 @@ public class CodingProfileServiceImpl implements CodingProfileService {
         vo.setPublicStreak(setting == null || setting.streakPublic());
         vo.setPublicOutput(setting == null || setting.outputPublic());
         vo.setPublicSolve(setting != null && isOn(setting.getPublicSolve()));
-        vo.setPublicAssessment(setting == null || setting.assessmentPublic());
         return vo;
     }
 

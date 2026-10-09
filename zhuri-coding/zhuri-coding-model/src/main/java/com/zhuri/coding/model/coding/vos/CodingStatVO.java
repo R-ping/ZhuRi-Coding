@@ -6,42 +6,34 @@ import java.io.Serializable;
 import java.util.Map;
 
 /**
- * 我的编码统计 VO（Coding 延展第一层）
+ * 我的编码统计（简答版）
  *
- * <p>连续天数来自签到体系（唯一来源，与签到共用一份记录）；
- * 其余为做题维度的聚合值（每日一题与自由练习分开统计）。</p>
+ * <p>连续签到天数来自签到体系（只读展示，签到是独立入口，答题不代打卡）。
+ * 「正确率」这个概念在简答口径下不存在，改为「平均等级」；
+ * 「每日一题」与「自由练习」的区分也消失了，只保留一个总数。</p>
  */
 @Data
 public class CodingStatVO implements Serializable {
 
-    /** 连续签到/答题天数（reward 服务签到体系，不可用时降级为 0） */
+    /** 连续签到天数（reward 服务签到体系，不可用时降级为 0） */
     private Integer continuousDays;
 
-    /** 今日一题是否已作答 */
+    /** 今天是否已作答 */
     private Boolean todayAnswered;
 
-    /** 今日一题是否答对（未答为 null） */
-    private Boolean todayCorrect;
+    /** 今天这次作答的等级；未作答或未评估为 null */
+    private Integer todayLevel;
 
-    /** 每日一题累计作答数 */
+    /** 累计作答数 */
     private Integer totalCount;
 
-    /** 每日一题累计答对数 */
-    private Integer correctCount;
+    /** 平均等级（保留一位小数；无数据为 null） */
+    private Double avgLevel;
 
-    /** 每日一题正确率（百分比整数，0-100） */
-    private Integer accuracy;
+    /** 当前练习方向 */
+    private String direction;
 
-    /** 自由练习累计作答数 */
-    private Integer practiceCount;
-
-    /** 自由练习累计答对数 */
-    private Integer practiceCorrectCount;
-
-    /** 自由练习正确率（百分比整数，0-100） */
-    private Integer practiceAccuracy;
-
-    /** 领域答题分布（原样返回 JSON 解析结果：{"Redis":{"total":3,"correct":2}}） */
+    /** 领域答题分布（原样透出：{"Redis":{"total":3,"levelSum":11}}） */
     private Map<String, Object> tagStats;
 
     /** 首次答题日期（yyyy-MM-dd，未答过为 null） */

@@ -2825,57 +2825,6 @@
         body.dark .ai-summary-card { background: #1c1e22; border-color: #2d333b; color: #e6e8eb; }
         body.dark .ai-summary-body.ai-summary-loading { color: #6b7280; }
         .ai-summary-note { margin-top: 6px; font-size: 12px; color: #8a919f; }
-        .coding-quiz-card {
-            margin-bottom: 20px;
-            border: 1px solid #e5e6eb;
-            border-left: 3px solid #00b42a;
-            border-radius: 8px;
-            padding: 12px 16px;
-            background: #f7fcf8;
-            font-size: 14px;
-            color: #252933;
-        }
-        .coding-quiz-head {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 13px;
-            font-weight: 500;
-            color: #00b42a;
-            margin-bottom: 8px;
-        }
-        .coding-quiz-sub { font-weight: 400; font-size: 12px; color: #8a919f; margin-left: 4px; }
-        .coding-quiz-list { list-style: none; margin: 0; padding: 0; }
-        .coding-quiz-item { border-top: 1px dashed #e5e6eb; }
-        .coding-quiz-item:first-child { border-top: none; }
-        .coding-quiz-link {
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-            padding: 8px 0;
-            color: #252933;
-            text-decoration: none;
-            line-height: 1.6;
-        }
-        .coding-quiz-link:hover { color: #1e80ff; }
-        .coding-quiz-diff {
-            flex-shrink: 0;
-            font-size: 12px;
-            border-radius: 4px;
-            padding: 1px 8px;
-            margin-top: 2px;
-            color: #1e80ff;
-            background: #e8f3ff;
-        }
-        .coding-quiz-diff.d2 { color: #d46b08; background: #fff3e6; }
-        .coding-quiz-diff.d3 { color: #cf1322; background: #ffedee; }
-        .coding-quiz-stem { flex: 1; word-break: break-word; }
-        .coding-quiz-foot { margin-top: 8px; }
-        .coding-quiz-more { font-size: 13px; color: #1e80ff; text-decoration: none; }
-        .coding-quiz-more:hover { text-decoration: underline; }
-        body.dark .coding-quiz-card { background: #1c1e22; border-color: #2d333b; color: #e6e8eb; }
-        body.dark .coding-quiz-link { color: #e6e8eb; }
-        body.dark .coding-quiz-item { border-top-color: #2d333b; }
         .aigc-badge {
             display: inline-block;
             vertical-align: middle;
@@ -3297,19 +3246,6 @@
                             <a href="/user/${(authorId!0)?c}" class="ea-link" target="_blank">查看主页</a>
                             <a href="/user/${(authorId!0)?c}?tab=article" class="ea-link" target="_blank">更多文章</a>
                         </div>
-                    </div>
-                </div>
-
-                <!-- 本文相关练习（Coding 延展第一层：题目与来源文章双向导流，列表由 JS 填充，无题时整卡隐藏） -->
-                <div class="coding-quiz-card" id="codingQuizCard" style="display:none;">
-                    <div class="coding-quiz-head">
-                        <svg class="coding-quiz-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>
-                        <span>试试相关练习</span>
-                        <span class="coding-quiz-sub">由本文知识点生成 · 自由练习不计分</span>
-                    </div>
-                    <ul class="coding-quiz-list" id="codingQuizList"></ul>
-                    <div class="coding-quiz-foot">
-                        <a class="coding-quiz-more" href="/coding">去每日一题，练更多 →</a>
                     </div>
                 </div>
 
