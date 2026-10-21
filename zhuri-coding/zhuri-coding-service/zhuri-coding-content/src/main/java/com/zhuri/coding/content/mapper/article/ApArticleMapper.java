@@ -15,12 +15,33 @@ import org.apache.ibatis.annotations.Update;
 public interface ApArticleMapper extends BaseMapper<ApArticle> {
 
     /**
-     * 幂等置文章为已发布（PUBLISHED=9）：仅当当前处于审核中(SUBMIT=1)才更新，防并发/重放重复置位。
+     * 幂等置文章为已发布（PUBLISHED=9）：仅当当前处于审核中(SUBMIT=1)**且未被作者删除**才更新，
+     * 防并发/重放重复置位。
      *
-     * @return 受影响行数：1=本次完成置位；0=状态非 SUBMIT（可能已是 PUBLISHED 或其他终态，由调用方查状态区分）
+     * <p>带 {@code is_deleted = 0} 的原因：作者在审核期间删了文章，到点发布不能把它再上线并写进索引 ——
+     * <b>删除优先于未完成的发布</b>，这条判断放在更新条件里，比"先查再判"更难被并发绕过。
+     *
+     * @return 受影响行数：1=本次完成置位；0=状态非 SUBMIT 或已删除（由调用方查行区分）
      */
-    @Update("UPDATE ap_article SET status = 9 WHERE id = #{articleId} AND status = 1")
+    @Update("UPDATE ap_article SET status = 9 WHERE id = #{articleId} AND status = 1 AND is_deleted = 0")
     int markPublishedIfPending(@Param("articleId") Long articleId);
+
+    /**
+     * 作者软删：只写 {@code is_deleted} 一列，且要求「是本人的文章」且「当前未删除」。
+     *
+     * <p><b>为什么不「查出来再 updateById」</b>：整对象回写是把读取那一刻的整行快照盖回去，
+     * 与审核链的状态条件更新并发时，会把对方刚置好的 {@code status} 打回旧值
+     * （作者点删除的同时审核通过，文章会被"复活"成审核中）。单字段条件更新只碰一列，
+     * 并发下最多是"谁先谁后"，不会互相覆盖。
+     *
+     * <p>刻意不写 {@code update_time}：那是「最后实质更新时间」，供详情页时效印章展示，
+     * 删除不是内容修订，写它会让已删文章在时效口径上看起来"刚更新过"。
+     *
+     * @return 1=本次删除成功；0=文章不存在 / 不属于该作者 / 已是删除态（幂等）
+     */
+    @Update("UPDATE ap_article SET is_deleted = 1 WHERE id = #{id} AND author_id = #{authorId} "
+        + "AND COALESCE(is_deleted, 0) = 0")
+    int softDeleteByAuthor(@Param("id") Long id, @Param("authorId") Long authorId);
 
     /**
      * 扫描「审核中滞留」的文章 id（服务崩溃 / 重启导致异步审核线程丢失、无人再推进的 SUBMIT 文章）。
@@ -52,6 +73,20 @@ public interface ApArticleMapper extends BaseMapper<ApArticle> {
     @Select("SELECT id FROM ap_article WHERE status = 9 AND is_deleted = 0 AND publish_time >= #{since} "
         + "ORDER BY publish_time DESC LIMIT #{limit}")
     List<Long> selectPublishedIdsSince(@Param("since") Date since, @Param("limit") int limit);
+
+    /**
+     * 在给定 id 中挑出「当前仍可见」的那些（供反向对账判定索引里哪些是幽灵文档）。
+     *
+     * <p>判据与所有读路径同一套：{@code status=9} 且未删除。库里查不到的 id
+     * （物理删除 / 从未存在）自然不在返回集合里，同样算幽灵。
+     *
+     * @param ids 索引侧报上来的 id 清单，调用方需保证非空
+     * @return 其中仍处于已发布且未删除状态的 id
+     */
+    @Select("<script>SELECT id FROM ap_article WHERE status = 9 AND is_deleted = 0 "
+        + "AND id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>"
+        + "</script>")
+    List<Long> selectVisibleIds(@Param("ids") List<Long> ids);
 
     /**
      * 加载文章列表

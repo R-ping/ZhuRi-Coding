@@ -78,6 +78,9 @@ public class GatewayRateLimitFilter implements GlobalFilter, Ordered {
 
         return redisTemplate.execute(rateLimitScript, List.of(key), Collections.singletonList(String.valueOf(60)))
                 .next() // Flux<Long> → Mono<Long>，与 GlobalFilter 返回类型对齐
+                // Lua 无返回值时 Flux 为空；补一个哨兵值让 flatMap 仍会放行，否则请求会"无响应"结束。
+                // 注意不能对 flatMap 之后的 Mono<Void> 用 switchIfEmpty —— Mono<Void> 恒为空，会二次执行链路。
+                .defaultIfEmpty(0L)
                 .flatMap(count -> {
                     if (count != null && count > limit) {
                         log.warn("网关限流触发: ip={}, path={}, sensitive={}, count={}, limit={}",

@@ -37,6 +37,13 @@
         LIMIT 1
     </select>
 
+    <!-- 幂等快路径：来源 + 业务主键唯一。唯一索引 uk_source 是最终兜底，这条查询只是省一次插入 -->
+    <select id="selectBySource" resultType="com.zhuri.coding.model.notification.pojos.ImMessage">
+        SELECT * FROM im_messages
+        WHERE source_type = #{sourceType} AND source_id = #{sourceId}
+        LIMIT 1
+    </select>
+
     <update id="markRead">
         UPDATE im_messages SET status = 1
         WHERE session_id = #{sessionId}

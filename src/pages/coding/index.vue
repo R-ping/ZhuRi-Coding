@@ -54,11 +54,20 @@
                                 <span class="stem-text">{{ todayQuestion.stem }}</span>
                             </div>
 
-                            <div class="form-row" v-if="!todayAnswered">
+                            <!-- 还没点「开始作答」：这道题只是抽出来的，随时可以换 -->
+                            <div class="action-row" v-if="!todayAnswered && !started">
+                                <button class="primary-btn" :disabled="starting" @click="startAnswer">
+                                    {{ starting ? '准备中...' : '开始作答' }}
+                                </button>
+                                <span class="switch-item" @click="refreshQuestion">换一题</span>
+                                <span class="hint">抽到不想做的可以换，点开始才记入今日记录</span>
+                            </div>
+
+                            <div class="form-row" v-if="!todayAnswered && started">
                                 <textarea v-model="answerText" class="form-textarea" rows="8"
                                           placeholder="用你自己的话讲清楚。考点会逐条对照，讲到了才算覆盖。"></textarea>
                             </div>
-                            <div class="action-row" v-if="!todayAnswered">
+                            <div class="action-row" v-if="!todayAnswered && started">
                                 <button class="primary-btn"
                                         :disabled="submitting || !answerText || !answerText.trim()"
                                         @click="submitAnswer">
@@ -139,6 +148,7 @@
     import { toast } from '@/utils/toast'
     import {
         getTodayQuestion,
+        startCodingAnswer,
         submitCodingAnswer,
         getCodingStat
     } from '@/apis/coding'
@@ -156,6 +166,9 @@
                 todayLoading: false,
                 todayQuestion: null,
                 todayAnswered: false,
+                // 是否已点「开始作答」——抽题不落库，落库从这一刻开始
+                started: false,
+                starting: false,
                 todayResult: null,
                 submitting: false,
                 answerText: '',
@@ -218,24 +231,54 @@
                 if (this.todayQuestion && this.todayQuestion.direction === next) {
                     return
                 }
-                // 换方向即重抽今日题（当天还没答过才有意义；答过会被服务端拒绝并回放结果）
+                // 换方向＝在新方向的池子里重抽一道，同样不落库：真正的落库点是「开始作答」
                 this.directionInput = next
-                this.loadToday(next)
+                this.loadToday(next, true)
             },
-            async loadToday(direction) {
+            /** 换一题：再抽一道，抽题不写任何记录，想换几次换几次 */
+            refreshQuestion() {
+                this.loadToday(this.directionInput || undefined, true)
+            },
+            /** 开始作答：这一刻才落一条「未作答」记录，中途退出就停在这个状态 */
+            async startAnswer() {
+                if (!this.isLoggedIn) {
+                    toast('登录后才能开始作答', 2)
+                    this.showLogin()
+                    return
+                }
+                const question = this.todayQuestion
+                if (!question || !question.id) {
+                    return
+                }
+                this.starting = true
+                try {
+                    const res = await startCodingAnswer(question.id)
+                    if (!res || res.code !== 200) {
+                        toast((res && res.message) || '开始作答失败，请稍后重试', 2)
+                        return
+                    }
+                    this.started = true
+                } catch (e) {
+                    toast('网络异常，请稍后重试', 2)
+                } finally {
+                    this.starting = false
+                }
+            },
+            async loadToday(direction, refresh) {
                 if (!this.isLoggedIn) {
                     this.todayQuestion = null
                     return
                 }
                 this.todayLoading = true
                 try {
-                    const res = await getTodayQuestion(direction || undefined)
+                    const res = await getTodayQuestion(direction || undefined, refresh)
                     if (res && res.code === 200 && res.data) {
                         const question = res.data
                         this.todayQuestion = question
                         this.directionInput = question.direction || this.directionInput
                         if (question.answered) {
                             this.todayAnswered = true
+                            this.started = false
                             this.todayResult = {
                                 level: question.level,
                                 feedback: question.feedback || '',
@@ -247,6 +290,8 @@
                             this.answerText = question.userAnswer || ''
                         } else {
                             this.todayAnswered = false
+                            // 服务端说「他已经在写这道了」，刷新后直接回到答题区
+                            this.started = !!question.started
                             this.todayResult = null
                             this.answerText = ''
                         }

@@ -38,10 +38,31 @@ public interface ArticleSearchService {
     List<Long> missingArticleIds(List<Long> candidateIds);
 
     /**
-     * 从索引中移除一篇文章（内容被平台下架时调用）。
+     * 反向对账取数：列出索引里发布时间不早于 {@code since} 的文章 id。
      *
-     * <p>与 {@link #syncArticle} 相反：把文档从 ES 删掉，使检索结果里不再出现它。
-     * 删除不存在的文档是幂等的（ES delete 对未命中 id 不会报错），因此重放安全。
+     * <p>正向对账问「库里的已发布文章哪些不在索引里」，反向对账问「索引里哪些文章库里
+     * 已经不是可见态」—— 后者的候选集只有 ES 自己知道，所以要由索引侧先报清单。
+     *
+     * <p>查询失败时抛出异常，理由同 {@link #missingArticleIds}。
+     */
+    List<Long> indexedArticleIds(java.util.Date since, int limit);
+
+    /**
+     * 从索引中移除一篇文章（内容被下架 / 被作者删除时调用）。
+     *
+     * <p>实现是两步：先给文档打 {@code isDeleted=true} 的可见性墓碑（检索侧据此过滤），
+     * 再按文档 _id 物理删除。因此墓碑成功后文档就已搜不到，删除只是收尾。
+     * 两步都幂等，重放安全。
      */
     ResponseResult removeArticleIndex(Long articleId);
+
+    /**
+     * 批量移除索引文档（反向对账清理幽灵文档时调用）。
+     *
+     * <p>与单篇移除同一套语义，只是把「打墓碑」和「删除」各自收敛成一次批量请求：
+     * 几十篇残留逐篇调用的往返开销，会把单线程的定时任务拖长，进而挤掉别的补偿任务。
+     *
+     * <p>失败必须抛出（理由同单篇移除）；幂等，重放安全。
+     */
+    ResponseResult removeArticleIndexBatch(List<Long> articleIds);
 }

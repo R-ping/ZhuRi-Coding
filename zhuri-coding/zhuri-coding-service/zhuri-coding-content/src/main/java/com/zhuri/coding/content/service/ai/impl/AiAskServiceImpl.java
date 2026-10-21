@@ -603,11 +603,13 @@ public class AiAskServiceImpl implements AiAskService {
                 scanned += ids.size();
                 lastId = ids.get(ids.size() - 1);
                 // 一次性查回这些 id 的发布状态（MySQL 侧；未查到 = 文章已删除）
-                // 判据与检索侧口径一致：仅「已发布 且 未判水文」的文章才允许保留向量
+                // 判据与检索侧口径一致：仅「已发布 且 未被作者删除 且 未判水文」的文章才允许保留向量
                 List<ApArticle> existing = apArticleMapper.selectList(
                     new LambdaQueryWrapper<ApArticle>()
                         .in(ApArticle::getId, ids)
                         .eq(ApArticle::getStatus, Status.PUBLISHED.getCode())
+                        // 未删除（NULL 视为未删除：这里判错会误删正常文章的向量，代价比留一条脏数据大）
+                        .and(w -> w.isNull(ApArticle::getIsDeleted).or().eq(ApArticle::getIsDeleted, false))
                         .and(w -> w.isNull(ApArticle::getIsAigc).or().ne(ApArticle::getIsAigc, 1)));
                 java.util.Set<Long> publishedIds = new java.util.HashSet<>();
                 for (ApArticle a : existing) {
@@ -615,9 +617,14 @@ public class AiAskServiceImpl implements AiAskService {
                 }
                 for (Long id : ids) {
                     if (!publishedIds.contains(id)) {
-                        embeddingService.deleteEmbedding(id);
-                        embeddingService.deleteChunks(id);
-                        removed++;
+                        // 逐条兜住：单篇删除失败（PG 抖动）不能让整轮清理中断，下一轮还会再扫到它
+                        try {
+                            embeddingService.deleteEmbedding(id);
+                            embeddingService.deleteChunks(id);
+                            removed++;
+                        } catch (Exception e) {
+                            log.warn("[AiAsk] 清理残留向量失败 articleId={}: {}", id, e.getMessage());
+                        }
                     }
                 }
                 if (ids.size() < batch) {

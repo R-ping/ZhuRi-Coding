@@ -32,6 +32,14 @@ public class CodingDailyQuestionVO implements Serializable {
     /** 今天是否已作答 */
     private Boolean answered;
 
+    /**
+     * 今天是否已经点过「开始作答」（落了一条未作答流水）。
+     *
+     * <p>抽题不落库，所以刷新时服务端无法用「有没有流水」反推界面该展示哪一屏：
+     * 是这个标志告诉前端「他已经开始写这道了，直接把答题区亮出来」。</p>
+     */
+    private Boolean started;
+
     // ---- 以下仅当日已答回放时填充 ----
 
     /** 我的作答 */

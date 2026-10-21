@@ -331,7 +331,6 @@ app:
       question-count: 5            # 主题数（每主题 1 主问题 + ≤followup-max 次追问）
       followup-max: 1              # 每主题最大追问次数（服务端强制，不依赖模型自觉）
       duration-minutes: 45         # 总限时（分钟）
-      daily-limit: 3               # 每日场次上限（0=不限；进行中与已完成计入，已过期不计）
       report-timeout-seconds: 45   # 报告生成超时（秒；前端 finish 为 60s axios 超时，须留余量；超时按“结构化失败”降级，可重试）
       report-batch-size: 3         # 报告分批评估每批主题数（1=逐主题单独评估；越大越省调用但单次 prompt 越长）
       resume-max-chars: 8000       # 简历文本上限（字符）；超出按入参截断
@@ -382,9 +381,10 @@ app:
     # 本地开发启动前：export INTERNAL_AUTH_SECRET=zhuri-coding-internal-dev-secret
     # 生产环境：使用随机密钥，切勿使用上述开发值。
     secret: ${INTERNAL_AUTH_SECRET:}
-  # 文章索引对账（ArticleIndexReconcileTask）：补「已发布但不在 ES 索引里」的文章。
-  # 说明：发布事件的失败重试覆盖不了"同步返回成功但文档没落库""索引被清空"这两类，
-  #      故定期真去问一次 ES 并补推 —— 这是「文章搜不到」的最后一道兜底。
+  # 文章索引对账（ArticleIndexReconcileTask）：双向比对，补「已发布但不在 ES 索引里」的文章，
+  # 清「索引里有但库里已不可见」的文档。
+  # 说明：发布事件的失败重试覆盖不了"同步返回成功但文档没落库""索引被清空"这两类；
+  #      下线事件重试耗尽进死信后，索引里会残留已删除 / 已下架的文档。两个方向都要定期真去问一次 ES。
   article:
     # 对账窗口（天）：只看这段时间内发布的文章
     index-reconcile-window-days: ${ARTICLE_RECONCILE_WINDOW_DAYS:3}
@@ -392,6 +392,8 @@ app:
     index-reconcile-scan-limit: ${ARTICLE_RECONCILE_SCAN_LIMIT:300}
     # 单轮补推上限（索引被整体清空时，避免一次性打垮下游）
     index-reconcile-repair-limit: ${ARTICLE_RECONCILE_REPAIR_LIMIT:100}
+    # 单轮清理上限（索引里残留大量幽灵文档时，避免一次性打垮下游）
+    index-reconcile-ghost-limit: ${ARTICLE_RECONCILE_GHOST_LIMIT:50}
     # 对账周期（毫秒，默认 1 小时）
     # 说明：用 fixedDelay 而非 cron —— Spring 不允许 cron 与 initialDelay 同时出现
     index-reconcile-interval-ms: ${ARTICLE_RECONCILE_INTERVAL_MS:3600000}

@@ -63,6 +63,10 @@ class AdminSessionKeysTest {
     void internalPathsAreRecognized() {
         assertTrue(AdminSessionKeys.isInternalPath("/user/internal/admin/verify"));
         assertTrue(AdminSessionKeys.isInternalPath("/content/internal/anything"));
+        // 各服务的 Feign 内部接口也必须拦在网关外：它们的身份完全由入参决定
+        assertTrue(AdminSessionKeys.isInternalPath("/notification/api/v1/notifications/feign/create"));
+        assertTrue(AdminSessionKeys.isInternalPath("/notification/api/v1/im/feign/follow-auto-reply"));
+        assertTrue(AdminSessionKeys.isInternalPath("/user/api/v1/user/feign/blocks/check"));
         assertFalse(AdminSessionKeys.isInternalPath("/user/api/v1/admin/me"));
         // 只是名字里带 internal 的普通路径不该被误伤（contains 的分寸）
         assertFalse(AdminSessionKeys.isInternalPath("/content/api/v1/articles/internal-audit"));

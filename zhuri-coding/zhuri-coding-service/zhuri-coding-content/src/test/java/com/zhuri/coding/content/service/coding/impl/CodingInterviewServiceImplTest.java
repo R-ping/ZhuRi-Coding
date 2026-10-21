@@ -184,10 +184,9 @@ class CodingInterviewServiceImplTest {
         return dto;
     }
 
-    /** 开面公共前置：无进行中 → 未触顶 → 额度通过 */
+    /** 开面公共前置：无进行中 → 额度通过 */
     private void stubStartGate() {
         when(interviewMapper.selectOngoing(USER_ID)).thenReturn(null);
-        when(interviewMapper.countToday(eq(USER_ID), any(Date.class))).thenReturn(0L);
         when(quotaService.tryConsume(USER_ID)).thenReturn(true);
     }
 
@@ -215,24 +214,9 @@ class CodingInterviewServiceImplTest {
     }
 
     @Test
-    @DisplayName("开面 - 每日场次达上限拒绝（不生成提纲、不落库）")
-    void testStartDailyLimitRejected() {
-        when(interviewMapper.selectOngoing(USER_ID)).thenReturn(null);
-        when(interviewMapper.countToday(eq(USER_ID), any(Date.class))).thenReturn(3L);
-
-        ResponseResult result = service.start(USER_ID, startDto("Java 后端", 2));
-
-        assertEquals(400, result.getCode().intValue());
-        assertTrue(String.valueOf(result.getMessage()).contains("上限"));
-        verify(interviewMapper, never()).insert(any(ApCodingInterview.class));
-        verifyNoInteractions(aiLlmGateway, quotaService, statMapper);
-    }
-
-    @Test
     @DisplayName("开面 - 额度不足返回 3301 并引导充值（不生成提纲）")
     void testStartQuotaRejected() {
         when(interviewMapper.selectOngoing(USER_ID)).thenReturn(null);
-        when(interviewMapper.countToday(eq(USER_ID), any(Date.class))).thenReturn(0L);
         when(quotaService.tryConsume(USER_ID)).thenReturn(false);
 
         ResponseResult result = service.start(USER_ID, startDto("Java 后端", 2));

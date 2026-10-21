@@ -24,6 +24,19 @@ public class ImMessage implements Serializable {
     private String clientId;
     private String content;
     private Integer msgType;         // 1-文本 2-图片
+    /**
+     * 发送方类型：1-真实用户 2-系统以该用户身份代发（关注自动私信）。
+     * 与 msgType 正交：msgType 说「内容是什么形态」，本字段说「这条消息谁产生的」。
+     */
+    private Integer senderType;
+    /**
+     * 来源枚举，普通私信为 null。当前仅 FOLLOW_AUTO_REPLY（关注自动私信）。
+     */
+    private String sourceType;
+    /**
+     * 来源业务主键，关注自动私信存关注关系 ID；与 sourceType 组成唯一索引，做投递幂等的数据库兜底。
+     */
+    private Long sourceId;
     private Integer status;          // 0-已发送 1-已读
     private Integer isDeletedForSender;
     private Integer isDeletedForReceiver;

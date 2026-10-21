@@ -131,12 +131,17 @@ public final class AdminSessionKeys {
     /**
      * 是否服务间内部路径，必须对公网一律拒绝。
      *
-     * <p>这些路径本意是"只在集群内被调用"（例如 user 服务的 {@code /internal/admin/verify}），
-     * 但它们仍然落在网关的路由前缀下 —— {@code /user/internal/admin/verify} 经
-     * {@code Path=/user/**} 的 {@code StripPrefix=1} 之后正好就是 {@code /internal/admin/verify}，
-     * 也就是**外部可达**。不显式拦一下，这个"内部"接口就只是名字叫内部而已。
+     * <p>这些路径本意是"只在集群内被调用"（例如 user 服务的 {@code /internal/admin/verify}、
+     * notification 服务的 {@code /api/v1/notifications/feign/create}），但它们仍然落在网关的
+     * 路由前缀下 —— {@code /user/internal/admin/verify} 经 {@code Path=/user/**} 的
+     * {@code StripPrefix=1} 之后正好就是 {@code /internal/admin/verify}，也就是**外部可达**。
+     * 不显式拦一下，这个"内部"接口就只是名字叫内部而已。
+     *
+     * <p>同时覆盖 {@code /feign/}：各服务的 Feign 内部接口沿用了这一命名（如
+     * {@code /notification/api/v1/im/feign/follow-auto-reply}），若只拦 {@code /internal/}，
+     * 这些接口会退化成"只要登录就能调、且身份完全由入参决定"，可伪造站内信/自动私信。
      */
     public static boolean isInternalPath(String path) {
-        return path.contains("/internal/");
+        return path.contains("/internal/") || path.contains("/feign/");
     }
 }

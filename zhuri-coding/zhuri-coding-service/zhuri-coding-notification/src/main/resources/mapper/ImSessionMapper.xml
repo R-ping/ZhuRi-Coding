@@ -33,12 +33,21 @@
           AND (last_message_at IS NULL OR last_message_at &lt;= #{lastMessageAt})
     </update>
 
-    <!-- 已读：只清零「当前用户这一侧」的未读，另一侧原样保留。 -->
+    <!-- 已读：只清零「当前用户这一侧」的未读，另一侧原样保留。
+
+         is_active 只在「读的人自己发过真实消息」时才置 1，不能无条件置 1：
+         自动私信也是别人发给他的消息，若读一下就解锁双方无限发送，
+         等于关注一次就绕过了陌生人限流。sender_type=1 排除系统代发。 -->
     <update id="resetUnread">
         UPDATE im_sessions
         SET user1_unread_count = CASE WHEN user1_id = #{userId} THEN 0 ELSE COALESCE(user1_unread_count, 0) END,
             user2_unread_count = CASE WHEN user2_id = #{userId} THEN 0 ELSE COALESCE(user2_unread_count, 0) END,
-            is_active = 1
+            is_active = CASE WHEN EXISTS (
+                SELECT 1 FROM im_messages m
+                WHERE m.session_id = #{sessionId}
+                  AND m.sender_id = #{userId}
+                  AND m.sender_type = 1
+            ) THEN 1 ELSE is_active END
         WHERE id = #{sessionId}
     </update>
 </mapper>

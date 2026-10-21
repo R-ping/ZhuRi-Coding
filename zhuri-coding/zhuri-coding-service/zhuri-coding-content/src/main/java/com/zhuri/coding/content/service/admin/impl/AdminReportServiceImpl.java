@@ -12,8 +12,8 @@ import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.interaction.ApArticleReportMapper;
 import com.zhuri.coding.content.service.admin.AdminReceiptDispatcher;
 import com.zhuri.coding.content.service.admin.AdminReportService;
-import com.zhuri.coding.content.service.admin.ArticleIndexRemover;
-import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.content.service.downlink.ArticleEmbeddingRemover;
+import com.zhuri.coding.content.service.downlink.ArticleIndexRemover;
 import com.zhuri.coding.model.admin.AdminPermission;
 import com.zhuri.coding.model.admin.pojos.ApAdminAuditLog;
 import com.zhuri.coding.model.admin.vos.ArticleReportVO;
@@ -70,9 +70,9 @@ public class AdminReportServiceImpl implements AdminReportService {
     @Autowired
     private AdminAuditRecorder auditRecorder;
 
-    /** 向量清理是本地 PG 操作，直接注入实现类（删除方法是该类自有、未在接口上暴露） */
+    /** 向量清理走与作者删除同一条可靠投递（事务内登记、提交后重放、失败重试） */
     @Autowired
-    private ArticleEmbeddingServiceImpl embeddingService;
+    private ArticleEmbeddingRemover articleEmbeddingRemover;
 
     @Override
     public ResponseResult page(Integer status, Integer page, Integer size) {
@@ -246,9 +246,9 @@ public class AdminReportServiceImpl implements AdminReportService {
 
         // 索引与向量的清理**不依赖 affected**：即使文章状态已不是在线态，
         // 也可能残留着上一次下架没清干净的文档/向量。这两步都幂等，条件为真时做、为假时做也无害。
+        // 两者都是「事务内登记、提交后送达、失败重试」的可靠投递，与作者删除共用同一套语义。
         articleIndexRemover.removeFromIndex(articleId);
-        embeddingService.deleteEmbedding(articleId);
-        embeddingService.deleteChunks(articleId);
+        articleEmbeddingRemover.remove(articleId);
         return affected > 0;
     }
 

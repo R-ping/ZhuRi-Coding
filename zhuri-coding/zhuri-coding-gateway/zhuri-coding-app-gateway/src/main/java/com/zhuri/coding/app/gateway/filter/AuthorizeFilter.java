@@ -134,9 +134,10 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
                         String nickName = (String) claimsBody.get("nickName");
                         String image = (String) claimsBody.get("image");
                         ServerHttpRequest serverHttpRequest = request.mutate().headers(httpHeaders -> {
-                            httpHeaders.add("userId", userId.toString());
-                            httpHeaders.add("nickName", encodeNickName(nickName));
-                            httpHeaders.add("image", image != null ? image : "");
+                            // 必须 set 覆盖：客户端可能自带同名头，add 会让下游 getHeader 取到伪造值
+                            httpHeaders.set("userId", userId.toString());
+                            httpHeaders.set("nickName", encodeNickName(nickName));
+                            httpHeaders.set("image", image != null ? image : "");
                             addInternalSign(httpHeaders, userId.toString(), nickName, image);
                         }).build();
                         exchange = exchange.mutate().request(serverHttpRequest).build();
@@ -171,9 +172,10 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             String image = (String) claimsBody.get("image");
             //存储header中
             ServerHttpRequest serverHttpRequest = request.mutate().headers(httpHeaders -> {
-                httpHeaders.add("userId", userId.toString());
-                httpHeaders.add("nickName", encodeNickName(nickName));
-                httpHeaders.add("image", image != null ? image : "");
+                // 与公开路径分支同理：覆盖而不是追加，避免客户端同名头先被下游读到
+                httpHeaders.set("userId", userId.toString());
+                httpHeaders.set("nickName", encodeNickName(nickName));
+                httpHeaders.set("image", image != null ? image : "");
                 addInternalSign(httpHeaders, userId.toString(), nickName, image);
             }).build();
             //重置请求
@@ -207,6 +209,8 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
     private void addInternalSign(org.springframework.http.HttpHeaders httpHeaders,
                                  String userId, String nickName, String image) {
         if (StringUtils.isBlank(internalAuthSecret)) {
+            // 密钥缺失时下游 fail-closed；同时清掉客户端可能伪造的签名头，避免它被原样透传
+            httpHeaders.remove(INTERNAL_SIGN_HEADER);
             return;
         }
         String payload = INTERNAL_SIGN_PREFIX + "|" + userId + "|" + (nickName != null ? nickName : "")
@@ -215,8 +219,10 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(internalAuthSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             String sign = HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
-            httpHeaders.add(INTERNAL_SIGN_HEADER, sign);
+            httpHeaders.set(INTERNAL_SIGN_HEADER, sign);
         } catch (Exception e) {
+            // 签名算不出来时不能留着客户端自带的签名头，否则等于把伪造值原样透传
+            httpHeaders.remove(INTERNAL_SIGN_HEADER);
             log.error("内部身份签名计算失败, 跳过签名头", e);
         }
     }
@@ -346,9 +352,9 @@ public class AuthorizeFilter implements Ordered, GlobalFilter {
 
                     String nickName = rawNickName(session);
                     ServerHttpRequest mutated = request.mutate().headers(headers -> {
-                        headers.add("userId", String.valueOf(accountId));
-                        headers.add("nickName", encodeNickName(nickName));
-                        headers.add("image", "");
+                        headers.set("userId", String.valueOf(accountId));
+                        headers.set("nickName", encodeNickName(nickName));
+                        headers.set("image", "");
                         // ⚠️ 签名用【原始】昵称，下发用【URL 编码后】的 —— 下游解码后再验签，
                         //    两边必须一致，否则中文昵称会让所有运营请求被判定为身份不可信
                         addInternalSign(headers, String.valueOf(accountId), nickName, "");

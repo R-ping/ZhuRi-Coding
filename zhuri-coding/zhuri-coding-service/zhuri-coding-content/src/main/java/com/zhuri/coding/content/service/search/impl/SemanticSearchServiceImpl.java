@@ -68,10 +68,11 @@ public class SemanticSearchServiceImpl implements SemanticSearchService {
                 simMap.put(articleId, similarity);
             }
         }
-        // 过滤：仅已发布、非 AIGC 水文；按相似度降序取 topK
+        // 过滤：仅已发布、非 AIGC 水文、未被作者删除；按相似度降序取 topK
         List<ApArticle> articles = apArticleMapper.selectBatchIds(simMap.keySet()).stream()
             .filter(a -> a.getStatus() != null && a.getStatus() == Status.PUBLISHED.getCode())
             .filter(a -> a.getIsAigc() == null || a.getIsAigc() != 1)
+            .filter(a -> !a.isDeletedArticle())
             .sorted((a1, a2) -> Double.compare(
                 simMap.getOrDefault(a2.getId(), 0d), simMap.getOrDefault(a1.getId(), 0d)))
             .limit(topK)

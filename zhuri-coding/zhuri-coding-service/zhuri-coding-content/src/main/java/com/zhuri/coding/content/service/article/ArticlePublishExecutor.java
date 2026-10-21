@@ -52,13 +52,19 @@ public class ArticlePublishExecutor {
      * @return 业务结果；ES 同步异常时向外抛出
      */
     public Outcome publish(Long articleId) {
-        // ① 置 DB 发布态：条件更新 SUBMIT→PUBLISHED，天然防重复上线
+        // ① 置 DB 发布态：条件更新 SUBMIT→PUBLISHED（且未删除），天然防重复上线
         if (apArticleMapper.markPublishedIfPending(articleId) == 0) {
-            Byte status = resolveArticleStatus(articleId);
-            if (status == null) {
+            ApArticle current = apArticleMapper.selectById(articleId);
+            if (current == null || current.getStatus() == null) {
                 log.error("文章不存在，articleId={}", articleId);
                 return Outcome.ARTICLE_MISSING;
             }
+            if (current.isDeletedArticle()) {
+                // 作者在审核期间删了文章：删除优先于未完成的发布 —— 到点不再上线，也不写索引
+                log.info("文章已被作者删除，放弃发布, articleId={}", articleId);
+                return Outcome.ARTICLE_NOT_PUBLISHABLE;
+            }
+            byte status = current.getStatus();
             if (status == ApArticle.Status.SUBMIT.getCode()) {
                 // 仍处待审态：通常是延迟任务的锚点事务尚未提交这类暂时性竞态
                 return Outcome.STILL_PENDING;
@@ -115,9 +121,4 @@ public class ArticlePublishExecutor {
         searchClient.syncArticle(vo);
     }
 
-    /** 查文章当前状态；文章不存在或状态为空时返回 null */
-    private Byte resolveArticleStatus(Long articleId) {
-        ApArticle article = apArticleMapper.selectById(articleId);
-        return article == null || article.getStatus() == null ? null : article.getStatus().byteValue();
-    }
 }

@@ -158,7 +158,9 @@
                                     >
                                         <img :src="msg.isSelf ? (userAvatar || defaultAvatar) : (selectedContact.avatar || defaultAvatar)" class="msg-avatar" alt="avatar">
                                         <div class="msg-content">
-                                            <div class="msg-text">{{ msg.content }}</div>
+                                            <div class="msg-text">
+                                                <span v-if="msg.isAutoReply" class="msg-auto-tag">自动回复</span>{{ msg.content }}
+                                            </div>
                                             <div class="msg-time">{{ formatTime(msg.time) }}</div>
                                         </div>
                                     </div>
@@ -533,6 +535,7 @@ export default {
                             content: m.content,
                             time: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
                             isSelf: m.is_self,
+                            isAutoReply: !!m.is_auto_reply,
                             status: m.status
                         }
                     })
@@ -1064,6 +1067,19 @@ export default {
 .msg-time {
     font-size: 12px;
     color: #8a919f;
+}
+
+/* 自动回复标识：与真人消息区分，避免误以为对方正在实时聊天 */
+.msg-auto-tag {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: #eaf2ff;
+    color: #1e80ff;
+    font-size: 12px;
+    line-height: 18px;
+    vertical-align: 1px;
 }
 
 .chat-warning {
