@@ -278,6 +278,8 @@ class ApCommentServiceImplTest {
         // 验证父评论回复数+1
         assertEquals(3, testComment.getReplyCount().intValue());
         verify(apCommentMapper).updateById(testComment);
+        // 回复同样计入文章评论数（计数由评论链路统一维护，总线不再重复递增）
+        verify(apArticleMapper).updateCommentCount(TEST_ARTICLE_ID, 1);
     }
 
     // ==================== diggComment ====================

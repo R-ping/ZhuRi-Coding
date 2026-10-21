@@ -94,6 +94,14 @@ class AiAskServiceImplTest {
         // （复用同一批 mock 依赖，promptRegistry 传 null 走代码兜底），否则链字段为 null 导致 NPE
         ReflectionTestUtils.setField(service, "retrievalChain", new AskRetrievalChain(
             embeddingService, hybridRecallService, llmGateway, null, apArticleMapper, contentMapper));
+        // 向量新鲜度判定已抽到 ArticleEmbeddingRefresher（修订生效的实时刷新与巡检共用），
+        // 这里同样注入真实实例，让回填用例仍然打在真实比对逻辑上
+        com.zhuri.coding.content.service.article.ArticleEmbeddingRefresher refresher =
+            new com.zhuri.coding.content.service.article.ArticleEmbeddingRefresher();
+        ReflectionTestUtils.setField(refresher, "apArticleMapper", apArticleMapper);
+        ReflectionTestUtils.setField(refresher, "apArticleContentMapper", contentMapper);
+        ReflectionTestUtils.setField(refresher, "embeddingService", embeddingService);
+        ReflectionTestUtils.setField(service, "embeddingRefresher", refresher);
     }
 
     /** 按 system 提示词路由 gateway 非流式调用：改写 / 生成 两条路径稳定响应 */
