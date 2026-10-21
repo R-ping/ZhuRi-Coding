@@ -53,7 +53,12 @@
                 and JSON_CONTAINS(aa.tags, JSON_QUOTE(#{dto.tagName}))
             </if>
         </where>
-        ORDER BY aa.publish_time DESC, (COALESCE(aa.views, 0) + COALESCE(aa.likes, 0) * 2 + COALESCE(aa.comment, 0) * 3) DESC, aa.id DESC
+        <!-- 首页是「时间线」，只按发布时间倒序、同一时刻用 id 兜底：
+             这样整条排序能被 (status, channel_id, publish_time, id) / (status, publish_time, id)
+             完全覆盖，不再因为第二个排序键是表达式而回表 + filesort。
+             热度不参与时间线排序（它属于推荐流，见 selectRecommendCandidates 按 score 排）——
+             早先的 `views + likes*2 + comment*3` 只影响「同一秒内多条」的次序，却让索引整体失效。 -->
+        ORDER BY aa.publish_time DESC, aa.id DESC
         limit #{dto.size}
     </select>
 

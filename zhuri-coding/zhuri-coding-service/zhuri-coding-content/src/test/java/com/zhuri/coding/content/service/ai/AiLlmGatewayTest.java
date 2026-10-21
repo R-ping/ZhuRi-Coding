@@ -104,10 +104,20 @@ class AiLlmGatewayTest {
         String out = gateway.generateOrNull(AiFeatures.ASK, "system prompt", "user question", null, null);
 
         assertEquals("社区知识库中的答案", out);
-        ArgumentCaptor<ChatResponse> captor = ArgumentCaptor.forClass(ChatResponse.class);
-        verify(tokenMeter).record(org.mockito.ArgumentMatchers.eq(AiFeatures.ASK), captor.capture());
-        assertEquals(150, captor.getValue().getMetadata().getUsage().getPromptTokens());
-        assertEquals(60, captor.getValue().getMetadata().getUsage().getCompletionTokens());
+        // 真实 usage 优先：按 (feature, model, prompt, completion, estimated=false) 落账
+        verify(tokenMeter).record(AiFeatures.ASK, "qwen-plus", 150, 60, false);
+    }
+
+    @Test
+    @DisplayName("成功但 usage 缺失 → 与结算同口径按字符估算，并标记 estimated")
+    void testSuccessWithoutUsageEstimates() {
+        when(chatModel.call(any(Prompt.class)))
+                .thenReturn(textResponse("社区知识库中的答案", 0, 0, "qwen-plus"));
+
+        gateway.generateOrNull(AiFeatures.ASK, "system prompt", "user question", null, null);
+
+        // 字符估算：prompt(13+13)/2=13，completion(9)/2=4
+        verify(tokenMeter).record(AiFeatures.ASK, "qwen-plus", 13, 4, true);
     }
 
     @Test

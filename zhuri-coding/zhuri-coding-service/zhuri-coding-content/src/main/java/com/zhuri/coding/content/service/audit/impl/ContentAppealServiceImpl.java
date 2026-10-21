@@ -18,6 +18,7 @@ import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -90,7 +91,14 @@ public class ContentAppealServiceImpl implements ContentAppealService {
         appeal.setStatus(ApContentAppeal.STATUS_PENDING);
         appeal.setCreateTime(new Date());
         appeal.setUpdateTime(new Date());
-        appealMapper.insert(appeal);
+        try {
+            appealMapper.insert(appeal);
+        } catch (DuplicateKeyException e) {
+            // 预查（上面 selectCount）挡不住并发：两个请求同时通过预查后都走到 insert，
+            // 唯一索引 uk_active_uniq 只放行一条，后到的落到这里，与"已有处理中申诉"同一提示
+            log.info("并发重复申诉被唯一索引拦下, type={}, contentId={}", appealType, contentId);
+            return ResponseResult.errorResult(500, "已有处理中的申诉，请耐心等待");
+        }
 
         // AI 预审（异步，不阻塞提交）
         Long appealId = appeal.getId();
