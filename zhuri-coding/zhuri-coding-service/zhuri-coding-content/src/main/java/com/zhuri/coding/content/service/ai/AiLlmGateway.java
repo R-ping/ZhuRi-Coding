@@ -147,7 +147,7 @@ public class AiLlmGateway {
                     memory, conversationId);
             ChatResponse response = spec.call().chatResponse();
             circuitSuccess();
-            tokenMeter.record(feature, response);
+            recordUsage(feature, response, systemPrompt, user);
             settleQuota(response, systemPrompt, user);
             return response != null && response.getResult() != null && response.getResult().getOutput() != null
                     ? response.getResult().getOutput().getText() : null;
@@ -491,7 +491,45 @@ public class AiLlmGateway {
         }
     }
 
-    /** 配额结算（按已知 token 数，流式路径复用） */
+    /**
+     * 同步调用的用量计量：真实 usage 优先；缺失时<b>与结算（{@link #settleQuota}）同一口径</b>按字符估算，
+     * 并标记 {@code estimated}。
+     *
+     * <p><b>为什么必须与结算同口径</b>：早先这里直接 {@code record(feature, response)}，usage 缺失时只记 0
+     * 并累加 {@code missingUsageCalls}；而结算那边是按字符估算扣费的 —— 同一次调用出现「账上扣了、
+     * 报表是 0」两套数，成本归因直接失真。现在两边共用 {@link #estimateTokens(int)}，差异只在标记上：
+     * 报表能区分真数据与估数据。
+     */
+    private void recordUsage(String feature, ChatResponse response, String systemPrompt, String user) {
+        String model = response != null && response.getMetadata() != null
+                && response.getMetadata().getModel() != null
+                ? response.getMetadata().getModel() : "unknown";
+        int prompt = 0;
+        int completion = 0;
+        if (response != null && response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+            prompt = orZero(response.getMetadata().getUsage().getPromptTokens());
+            completion = orZero(response.getMetadata().getUsage().getCompletionTokens());
+        }
+        if (prompt + completion > 0) {
+            tokenMeter.record(feature, model, prompt, completion, false);
+            return;
+        }
+        String answer = response != null && response.getResult() != null
+                && response.getResult().getOutput() != null
+                ? response.getResult().getOutput().getText() : null;
+        int promptChars = (systemPrompt == null ? 0 : systemPrompt.length())
+                + (user == null ? 0 : user.length());
+        tokenMeter.record(feature, model, estimateTokens(promptChars),
+                estimateTokens(answer == null ? 0 : answer.length()), true);
+    }
+
+    private static int orZero(Integer v) {
+        return v == null ? 0 : v;
+    }
+
+    /**
+     * 配额结算（按已知 token 数，流式路径复用）
+     */
     private void settleQuotaByTokens(long tokens) {
         if (quotaService == null || tokens <= 0) {
             return;

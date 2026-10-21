@@ -10,6 +10,7 @@ import com.zhuri.coding.reward.mapper.*;
 import com.zhuri.coding.reward.service.WelfareService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -35,6 +37,8 @@ public class WelfareServiceImpl implements WelfareService {
     private WelfareStockLogMapper stockLogMapper;
     @Autowired
     private UserAssetsMapper userAssetsMapper;
+    @Autowired
+    private WelfareExchangeTxService exchangeTxService;
     @Autowired
     private StringRedisTemplate redisTemplate;
 
@@ -108,153 +112,74 @@ public class WelfareServiceImpl implements WelfareService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public ResponseResult exchange(Long userId, Map<String, Object> body) {
-        String goodsId = (String) body.get("goodsId");
-        if (goodsId == null) {
-            return ResponseResult.errorResult(400, "缺少商品ID");
+        if (userId == null || body == null) {
+            return ResponseResult.errorResult(400, "缺少用户或参数");
         }
+        String idempotencyKey = normalizeIdemKey(body.get("requestId"));
 
-        // 1. 校验商品
-        WelfareGoods goods = goodsMapper.selectById(goodsId);
-        if (goods == null || goods.getStatus() == null || goods.getStatus() != 1) {
-            return ResponseResult.errorResult(400, "商品不存在或已下架");
-        }
-
-        // 2. 校验库存
-        if (goods.getStock() != null && goods.getStock() <= 0) {
-            return ResponseResult.errorResult(400, "库存不足，已抢光");
-        }
-
-        // 3. 校验限时规则
-        if (goods.getTimeLimitStart() != null && goods.getTimeLimitEnd() != null) {
-            DayOfWeek dow = LocalDate.now().getDayOfWeek();
-            boolean isWeekend = dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY;
-            LocalTime now = LocalTime.now();
-            LocalTime start = LocalTime.parse(goods.getTimeLimitStart());
-            LocalTime end = LocalTime.parse(goods.getTimeLimitEnd());
-            if (!(isWeekend && !now.isBefore(start) && !now.isAfter(end))) {
-                return ResponseResult.errorResult(400, "当前不在兑换时间窗口内");
+        if (idempotencyKey != null) {
+            // 幂等命中：同一用户同一 requestId 直接回放原单，不再扣库存与矿石
+            WelfareExchangeOrder existing = findByIdemKey(userId, idempotencyKey);
+            if (existing != null) {
+                log.info("兑换幂等命中，回放原单: userId={}, key={}", userId, idempotencyKey);
+                return exchangeTxService.replayResult(userId, existing);
             }
-        }
-
-        // 4. 校验用户矿石余额
-        UserAssets assets = userAssetsMapper.selectById(userId);
-        int oreBalance = (assets != null) ? assets.getOreBalance() : 0;
-        if (oreBalance < goods.getOrePrice()) {
-            return ResponseResult.errorResult(400, "矿石不足，当前余额：" + oreBalance);
-        }
-
-        // 5. 校验实物地址
-        boolean isVirtual = goods.getIsVirtual() != null && goods.getIsVirtual();
-        String receiverName = null;
-        String phone = null;
-        String address = null;
-        if (!isVirtual) {
-            receiverName = (String) body.get("receiverName");
-            phone = (String) body.get("phone");
-            address = (String) body.get("address");
-            if (receiverName == null || phone == null || address == null) {
-                return ResponseResult.errorResult(400, "实物商品请填写收货地址");
+        } else {
+            // 没带幂等号时用 3 秒短锁挡连点：它只防重复提交，不承担库存一致性，
+            // 所以 Redis 故障时放行（fail-open），正确性仍由 DB 条件更新与矿石条件扣减保证
+            Boolean acquired = tryOnceLock("welfare:exchange:once:" + userId + ":" + body.get("goodsId"));
+            if (Boolean.FALSE.equals(acquired)) {
+                return ResponseResult.errorResult(400, "操作过于频繁，请稍后再试");
             }
-        }
-        String remark = (String) body.get("remark");
-
-        // 6. Redis预扣库存
-        String stockKey = "welfare:stock:" + goodsId;
-        Long remainStock = redisTemplate.opsForValue().decrement(stockKey);
-        if (remainStock != null && remainStock < 0) {
-            redisTemplate.opsForValue().increment(stockKey); // 回滚
-            return ResponseResult.errorResult(400, "库存不足，已抢光");
         }
 
         try {
-            // 7. 数据库乐观锁扣库存
-            int updated = goodsMapper.updateStock(goodsId);
-            if (updated <= 0) {
-                redisTemplate.opsForValue().increment(stockKey);
-                return ResponseResult.errorResult(400, "库存不足，已抢光");
+            return exchangeTxService.exchangeInTx(userId, body, idempotencyKey);
+        } catch (DuplicateKeyException e) {
+            // 并发同 key：唯一索引 uk_user_idem 只放一条，另一条在插入订单时冲突、整个事务已回滚；
+            // 事务外回查并回放原单，用户侧表现为"两次请求返回同一张单"，不会重复扣
+            WelfareExchangeOrder existing = findByIdemKey(userId, idempotencyKey);
+            if (existing != null) {
+                log.info("兑换并发幂等，回放已落地订单: userId={}, key={}", userId, idempotencyKey);
+                return exchangeTxService.replayResult(userId, existing);
             }
-
-            // ★ 8. 原子扣矿石（条件扣减，余额不足返回0，杜绝并发超扣/负余额）
-            int oreUpdated = userAssetsMapper.deductOreBalance(userId, goods.getOrePrice());
-            if (oreUpdated != 1) {
-                // 并发下余额被先扣光：抛异常触发事务回滚（DB updateStock 回滚），catch 中再回滚 Redis 预扣，
-                // 保证 库存(DB/Redis) 与 矿石余额 三者回滚一致。
-                throw new IllegalStateException("矿石余额不足，无法兑换，当前余额：" + oreBalance);
-            }
-            // 扣减后的剩余余额（供返回给前端展示）
-            oreBalance = oreBalance - goods.getOrePrice();
-            // 内存中 assets 对象仅用于返回展示，不再回写（避免与原子扣减产生竞态）
-            if (assets != null) {
-                assets.setOreBalance(oreBalance);
-            }
-
-            // 9. 生成订单
-            WelfareExchangeOrder order = new WelfareExchangeOrder();
-            String exchangeId = "EX" + IdUtil.fastSimpleUUID().substring(0, 16).toUpperCase();
-            order.setExchangeId(exchangeId);
-            order.setUserId(userId);
-            order.setGoodsId(goodsId);
-            order.setGoodsName(goods.getName());
-            order.setIsVirtual(isVirtual);
-            order.setOreCost(goods.getOrePrice());
-            order.setReceiverName(receiverName);
-            order.setPhone(phone);
-            order.setAddress(address);
-            order.setRemark(remark);
-            order.setStatus(isVirtual ? 2 : 1); // 虚拟直接完成，实物待处理
-
-            // 虚拟商品生成兑换码
-            if (isVirtual && goods.getVirtualCodeTemplate() != null) {
-                String code = goods.getVirtualCodeTemplate()
-                        .replace("{timestamp}", String.valueOf(System.currentTimeMillis()))
-                        // SecureRandom：兑换码可预测会带来薅羊毛风险，不能用普通 Random
-                        .replace("{rand}", String.valueOf(SECURE_RANDOM.nextInt(999999)));
-                order.setVirtualCode(code);
-                // 设置过期时间为30天后
-                Calendar cal = Calendar.getInstance();
-                cal.add(Calendar.DAY_OF_MONTH, 30);
-                order.setAddressExpireAt(cal.getTime());
-            } else if (!isVirtual) {
-                Calendar cal = Calendar.getInstance();
-                cal.add(Calendar.DAY_OF_MONTH, 30);
-                order.setAddressExpireAt(cal.getTime());
-            }
-
-            order.setCreatedAt(new Date());
-            order.setUpdatedAt(new Date());
-            exchangeOrderMapper.insert(order);
-
-            // 10. 记录库存扣减日志
-            WelfareStockLog stockLog = new WelfareStockLog();
-            stockLog.setGoodsId(goodsId);
-            stockLog.setChangeAmount(-1);
-            stockLog.setExchangeId(exchangeId);
-            stockLog.setCreatedAt(new Date());
-            stockLogMapper.insert(stockLog);
-
-            // ★ 注：exchanged_count 已在 updateStock 的 SQL（stock=stock-1, exchanged_count=exchanged_count+1）中原子完成，
-            // 此处不再 setExchangedCount(+1) 后 updateById，避免"非原子丢失更新 + 与 updateStock 重复累加"问题。
-
-            // 12. 构建返回
-            Map<String, Object> data = new HashMap<>();
-            data.put("exchangeId", exchangeId);
-            data.put("goodsName", goods.getName());
-            data.put("isVirtual", isVirtual);
-            data.put("oreCost", goods.getOrePrice());
-            data.put("remainingOre", oreBalance);
-            data.put("orderStatus", isVirtual ? "completed" : "pending_shipping");
-            data.put("virtualCode", isVirtual ? order.getVirtualCode() : null);
-            data.put("expireAt", order.getAddressExpireAt() != null ? DateUtil.formatDateTime(order.getAddressExpireAt()) : null);
-
-            return ResponseResult.okResult(data);
-
-        } catch (Exception e) {
-            // 回滚Redis预扣
-            redisTemplate.opsForValue().increment(stockKey);
-            log.error("兑换失败: {}", e.getMessage(), e);
             throw e;
+        }
+    }
+
+    /** 幂等号规范化：去空白、限长 64（唯一索引列宽），空串视为未携带 */
+    private static String normalizeIdemKey(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        String key = String.valueOf(raw).trim();
+        if (key.isEmpty()) {
+            return null;
+        }
+        return key.length() > 64 ? key.substring(0, 64) : key;
+    }
+
+    private WelfareExchangeOrder findByIdemKey(Long userId, String key) {
+        if (key == null) {
+            return null;
+        }
+        return exchangeOrderMapper.selectOne(new LambdaQueryWrapper<WelfareExchangeOrder>()
+                .eq(WelfareExchangeOrder::getUserId, userId)
+                .eq(WelfareExchangeOrder::getIdempotencyKey, key)
+                .last("LIMIT 1"));
+    }
+
+    /** 短窗口互斥锁；Redis 异常时放行（幂等短锁是体验优化，不是正确性闸） */
+    private Boolean tryOnceLock(String key) {
+        if (redisTemplate == null) {
+            return Boolean.TRUE;
+        }
+        try {
+            return redisTemplate.opsForValue().setIfAbsent(key, "1", Duration.ofSeconds(3));
+        } catch (Exception e) {
+            log.warn("兑换短锁不可用，放行本次请求: {}", e.getMessage());
+            return Boolean.TRUE;
         }
     }
 

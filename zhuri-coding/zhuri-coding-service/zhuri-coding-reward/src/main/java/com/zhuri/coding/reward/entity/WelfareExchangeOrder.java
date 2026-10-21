@@ -24,6 +24,8 @@ public class WelfareExchangeOrder {
     private String virtualCode;
     private Integer status;
     private String expressNo;
+    /** 客户端幂等号：同一用户同一 key 只成一单（唯一索引 uk_user_idem），未携带时为 null */
+    private String idempotencyKey;
     private Date addressExpireAt;
     private Date createdAt;
     private Date updatedAt;

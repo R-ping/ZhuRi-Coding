@@ -54,6 +54,7 @@ class ArticleRevisionServiceImplTest {
     @Mock private ArticleAutoScanService articleAutoScanService;
     @Mock private ArticlePublishExecutor articlePublishExecutor;
     @Mock private ArticleUpdateNotifyService articleUpdateNotifyService;
+    @Mock private com.zhuri.coding.content.service.article.ArticleEmbeddingRefresher articleEmbeddingRefresher;
 
     @InjectMocks
     private ArticleRevisionServiceImpl revisionService;
@@ -254,6 +255,8 @@ class ArticleRevisionServiceImplTest {
         assertEquals("适配 Spring Boot 3.5", patch.getValue().getUpdateNote());
         // 提醒事件登记：携带本次更新时间，后续合法再更新不会被幂等键误判为重复
         verify(articleUpdateNotifyService).notifyCollectors(eq(ARTICLE_ID), anyLong());
+        // 正文已变，同一事务里登记向量重算事件（提交后重放，不占请求线程）
+        verify(articleEmbeddingRefresher).refreshAfterChange(ARTICLE_ID);
     }
 
     @Test
@@ -266,5 +269,7 @@ class ArticleRevisionServiceImplTest {
         revisionService.applyRevision(ARTICLE_ID);
 
         verify(articleUpdateNotifyService, never()).notifyCollectors(anyLong(), anyLong());
+        // 错别字也是正文变化：向量同样要重算，只是不通知收藏者
+        verify(articleEmbeddingRefresher).refreshAfterChange(ARTICLE_ID);
     }
 }
