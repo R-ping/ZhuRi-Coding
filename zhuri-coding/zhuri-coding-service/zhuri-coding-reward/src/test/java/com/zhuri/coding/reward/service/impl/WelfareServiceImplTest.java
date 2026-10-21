@@ -16,8 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.Collections;
 import java.util.Date;
@@ -39,8 +37,8 @@ import static org.mockito.Mockito.when;
  *
  * 核心诉求：
  * 1. 兑换商品的库存/余额/下架/限时多道防线，防止资损或超卖；
- * 2. Redis 预扣负库存与数据库乐观锁失败时的回滚(increment)；
- * 3. 原子扣矿失败(并发被先扣光)时抛异常并回滚 Redis 预扣，保证三资源一致；
+ * 2. 库存以数据库条件更新为唯一权威闸：扣减失败即拒单，不产生订单与流水；
+ * 3. 原子扣矿失败(并发被先扣光)时抛异常，库存扣减随事务一起回滚；
  * 4. 虚拟商品即时发货、实物需收货地址的差异校验。
  */
 class WelfareServiceImplTest {
@@ -53,10 +51,6 @@ class WelfareServiceImplTest {
     private WelfareStockLogMapper stockLogMapper;
     @Mock
     private UserAssetsMapper userAssetsMapper;
-    @Mock
-    private StringRedisTemplate redisTemplate;
-    @Mock
-    private ValueOperations<String, String> valueOperations;
 
     @InjectMocks
     private WelfareServiceImpl welfareService;
@@ -66,7 +60,6 @@ class WelfareServiceImplTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 
     private WelfareGoods virtualGoods() {
@@ -165,51 +158,34 @@ class WelfareServiceImplTest {
     // ==================== exchange - Redis/DB 库存防线 ====================
 
     @Test
-    @DisplayName("exchange - Redis预扣库存为负返回400并回滚")
-    void testExchangeRedisNegativeStock() {
-        when(goodsMapper.selectById("g1")).thenReturn(virtualGoods());
-        when(userAssetsMapper.selectById(userId)).thenReturn(assets());
-        when(valueOperations.decrement(anyString())).thenReturn(-1L);
-
-        ResponseResult result = welfareService.exchange(userId, body("g1"));
-
-        assertEquals(400, result.getCode());
-        verify(valueOperations).increment(anyString());
-    }
-
-    @Test
-    @DisplayName("exchange - 数据库乐观锁扣库存失败返回400并回滚Redis")
+    @DisplayName("exchange - 数据库条件扣减失败（库存已卖完）返回400，不产生订单")
     void testExchangeDbUpdateFail() {
         when(goodsMapper.selectById("g1")).thenReturn(virtualGoods());
         when(userAssetsMapper.selectById(userId)).thenReturn(assets());
-        when(valueOperations.decrement(anyString())).thenReturn(50L);
         when(goodsMapper.updateStock(anyString())).thenReturn(0);
 
         ResponseResult result = welfareService.exchange(userId, body("g1"));
 
         assertEquals(400, result.getCode());
-        verify(valueOperations).increment(anyString());
+        verify(userAssetsMapper, never()).deductOreBalance(any(), org.mockito.ArgumentMatchers.anyInt());
         verify(exchangeOrderMapper, never()).insert(any(WelfareExchangeOrder.class));
     }
 
-    // ==================== exchange - 原子扣矿 & Redis 回滚 ====================
+    // ==================== exchange - 原子扣矿失败 ====================
 
     @Test
-    @DisplayName("exchange - 原子扣矿失败(并发下被先扣光)抛异常并回滚Redis预扣")
-    void testExchangeAtomicOreDeductFailRollsBackRedis() {
+    @DisplayName("exchange - 原子扣矿失败(并发下被先扣光)抛异常，库存扣减随事务回滚")
+    void testExchangeAtomicOreDeductFail() {
         // 预检查余额充足（1000>=100），仅原子扣减阶段失败，模拟并发下被其它请求先扣光
         when(goodsMapper.selectById("g1")).thenReturn(virtualGoods());
         when(userAssetsMapper.selectById(userId)).thenReturn(assets());
-        when(valueOperations.decrement(anyString())).thenReturn(50L);   // Redis 预扣成功
-        when(goodsMapper.updateStock(anyString())).thenReturn(1);       // DB 库存扣减成功
+        when(goodsMapper.updateStock(anyString())).thenReturn(1);       // 库存条件扣减成功
         when(userAssetsMapper.deductOreBalance(userId, 100)).thenReturn(0); // 原子扣矿失败
 
-        // 原子扣矿返回0 -> 抛 IllegalStateException 触发事务回滚
+        // 原子扣矿返回0 -> 抛 IllegalStateException 触发事务回滚（库存那一扣一起回滚）
         assertThrows(IllegalStateException.class,
                 () -> welfareService.exchange(userId, body("g1")));
 
-        // catch 中必须回滚 Redis 预扣，保证 DB/Redis 库存与矿石余额三者回滚一致
-        verify(valueOperations).increment(anyString());
         // 扣矿失败时不允许产生订单明细与库存流水
         verify(exchangeOrderMapper, never()).insert(any(WelfareExchangeOrder.class));
         verify(stockLogMapper, never()).insert(any(WelfareStockLog.class));
@@ -222,7 +198,6 @@ class WelfareServiceImplTest {
     void testExchangeVirtualSuccess() {
         when(goodsMapper.selectById("g1")).thenReturn(virtualGoods());
         when(userAssetsMapper.selectById(userId)).thenReturn(assets());
-        when(valueOperations.decrement(anyString())).thenReturn(50L);
         when(goodsMapper.updateStock(anyString())).thenReturn(1);
         when(userAssetsMapper.deductOreBalance(userId, 100)).thenReturn(1);
 

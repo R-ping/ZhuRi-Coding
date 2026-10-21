@@ -2,7 +2,6 @@ package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.ai.AiAskService;
 import com.zhuri.coding.content.service.ai.AiFeatures;
@@ -13,14 +12,12 @@ import com.zhuri.coding.content.service.ai.memory.AiConversationMemoryService;
 import com.zhuri.coding.content.service.ai.memory.UserMemoryService;
 import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
 import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
+import com.zhuri.coding.content.service.article.ArticleEmbeddingRefresher;
 import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
-import com.zhuri.coding.content.utils.MarkdownUtils;
-import com.zhuri.coding.content.utils.TextChunker;
 import com.zhuri.coding.model.article.dtos.AiAnswerVo;
 import com.zhuri.coding.model.article.dtos.AiSourceVo;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticle.Status;
-import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import com.zhuri.coding.model.user.pojos.ApUser;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -125,8 +122,9 @@ public class AiAskServiceImpl implements AiAskService {
     @Autowired
     private ApArticleMapper apArticleMapper;
 
+    /** 向量新鲜度判定：与修订生效后的实时刷新共用同一套指纹比对逻辑 */
     @Autowired
-    private ApArticleContentMapper contentMapper;
+    private ArticleEmbeddingRefresher embeddingRefresher;
 
     /** 流式 Layer 3 输出护栏兜底（汇聚完整文本后判定）；非流式由 gateway 内 advisor 横切 */
     @Autowired
@@ -423,10 +421,10 @@ public class AiAskServiceImpl implements AiAskService {
                 for (ApArticle a : articles) {
                     scanned++;
                     lastId = a.getId();
-                    RefreshResult r = refreshIfStale(a);
-                    filled += r.articleWritten;
-                    refreshed += r.articleRefreshed;
-                    chunked += r.chunkWritten;
+                    ArticleEmbeddingRefresher.Outcome r = refreshSafely(a);
+                    filled += r.articleWritten ? 1 : 0;
+                    refreshed += r.articleRefreshed ? 1 : 0;
+                    chunked += r.chunksWritten ? 1 : 0;
                 }
                 if (articles.size() < batch) {
                     break;
@@ -470,8 +468,7 @@ public class AiAskServiceImpl implements AiAskService {
             }
             int refreshed = 0;
             for (ApArticle a : batch) {
-                RefreshResult r = refreshIfStale(a);
-                if (r.articleRefreshed > 0 || r.articleWritten > 0 || r.chunkWritten > 0) {
+                if (refreshSafely(a).changed()) {
                     refreshed++;
                 }
             }
@@ -503,83 +500,19 @@ public class AiAskServiceImpl implements AiAskService {
         }
     }
 
-    /** 单篇刷新结果（文章级写入/刷新、分块写入，用于汇总日志） */
-    private static final class RefreshResult {
-        int articleWritten;
-        int articleRefreshed;
-        int chunkWritten;
-    }
-
     /**
-     * 单篇文章的向量新鲜度处理（全量回填与增量任务共用同一口径）。
+     * 单篇刷新 + 兜住异常（巡检用）。
      *
-     * <p>判定：正文指纹与向量记录不一致（或缺失）→ 重算；一致 → 跳过。
+     * <p>巡检的语义是"这一篇没刷成功不能拖垮整批"，所以异常在这里吞掉只留 warn；
+     * 修订生效的实时链路走的是另一条入口（本地消息表事件），失败要抛出交给重试。
      */
-    private RefreshResult refreshIfStale(ApArticle article) {
-        RefreshResult r = new RefreshResult();
-        Long articleId = article.getId();
+    private ArticleEmbeddingRefresher.Outcome refreshSafely(ApArticle article) {
         try {
-            ApArticleContent c = contentMapper.selectOne(
-                new LambdaQueryWrapper<ApArticleContent>()
-                    .eq(ApArticleContent::getArticleId, articleId)
-                    .last("LIMIT 1"));
-            if (c == null || c.getContent() == null || c.getContent().isBlank()) {
-                return r; // 无正文（数据异常）→ 不动，避免误删已有向量
-            }
-            String currentHash = ArticleEmbeddingServiceImpl.contentHash(c.getContent());
-            if (currentHash == null) {
-                return r;
-            }
-
-            ArticleEmbeddingServiceImpl.EmbeddingMeta vecMeta = embeddingService.getEmbeddingMeta(articleId);
-            ArticleEmbeddingServiceImpl.EmbeddingMeta chunkMeta = embeddingService.getChunksMeta(articleId);
-
-            // D 兜底（2026-09-18）：已判水文的文章不应留在向量库。
-            // 覆盖审核链仍可能漏掉的两类历史脏数据：① L1 在 45~69 未打标先入库、事后 L2/L3 升标；
-            // ② 打标与入库的历史竞态残留。判据直接读 is_aigc，与检索侧过滤口径一致。
-            if (article.getIsAigc() != null && article.getIsAigc() == 1) {
-                if (vecMeta != null || chunkMeta != null) {
-                    embeddingService.deleteEmbedding(articleId);
-                    embeddingService.deleteChunks(articleId);
-                    log.info("[AiAsk] 清理已判水文的残留向量, articleId={}", articleId);
-                }
-                return r;
-            }
-
-            boolean vecMissing = vecMeta == null;
-            boolean chunksMissing = chunkMeta == null;
-            boolean vecStale = vecMissing
-                || ArticleEmbeddingServiceImpl.isStale(vecMeta.contentHash, currentHash);
-            boolean chunksStale = chunksMissing
-                || ArticleEmbeddingServiceImpl.isStale(chunkMeta.contentHash, currentHash);
-            if (!vecStale && !chunksStale) {
-                return r; // 版本一致，跳过（不做无谓 embedding 调用）
-            }
-
-            if (vecStale) {
-                double[] emb = embeddingService.generateEmbedding(truncate(c.getContent(), 2000));
-                if (emb != null) {
-                    embeddingService.saveEmbedding(articleId, emb, currentHash, article.getPublishTime());
-                    if (vecMissing) {
-                        r.articleWritten = 1;
-                    } else {
-                        r.articleRefreshed = 1;
-                        log.info("[AiAsk] 内容已变更，重算文章向量: articleId={}, hash={}",
-                                articleId, currentHash.substring(0, 8));
-                    }
-                }
-            }
-            if (chunksStale) {
-                embeddingService.saveChunks(articleId, TextChunker.split(
-                    MarkdownUtils.normalizeContent(c.getContent()),
-                    TextChunker.DEFAULT_TARGET, TextChunker.DEFAULT_OVERLAP,
-                    embeddingService.getChunkMaxPerArticle()), currentHash, article.getPublishTime());
-                r.chunkWritten = 1;
-            }
+            return embeddingRefresher.refreshIfStale(article);
         } catch (Exception e) {
-            log.warn("[AiAsk] 刷新向量失败 articleId={}", articleId, e);
+            log.warn("[AiAsk] 刷新向量失败 articleId={}", article == null ? null : article.getId(), e);
+            return new ArticleEmbeddingRefresher.Outcome();
         }
-        return r;
     }
 
     /**

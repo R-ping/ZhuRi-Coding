@@ -105,10 +105,14 @@ class ArticleScoreProcessorTest {
     }
 
     @Test
-    @DisplayName("postProcess - 评论文章原子递增 comment")
+    @DisplayName("postProcess - 评论文章只重算热度分，不再递增 comment（计数由评论链路负责）")
     void postProcessCommentArticle() {
         processor.postProcess(context(BehaviorType.COMMENT_ARTICLE, 1, 100L), result(BehaviorType.COMMENT_ARTICLE));
-        verify(apArticleMapper).updateInteractionAndScore(100L, "comment", 1);
+        verify(apArticleMapper).recalculateScore(100L);
+        verify(apArticleMapper, never()).updateInteractionAndScore(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyInt());
     }
 
     @Test

@@ -547,6 +547,10 @@ public class ApCommentServiceImpl extends ServiceImpl<ApCommentMapper, ApComment
         parentComment.setReplyCount((parentComment.getReplyCount() != null ? parentComment.getReplyCount() : 0) + 1);
         updateById(parentComment);
 
+        // 回复同样计入文章的评论数：计数统一由评论链路维护（行为总线对评论只重算热度分，不再递增），
+        // 这样一级评论、回复、作者自评三种情况都是且仅是一次 +1
+        apArticleMapper.updateCommentCount(parentComment.getArticleId(), 1);
+
         // 嵌套回复（回复“回复”时）同步累加根一级评论的回复数，确保其 replyCount 包含所有后代回复，供“查看全部回复”分页统计准确
         if (rootId != null && !rootId.equals(commentId)) {
             ApComment rootComment = getById(rootId);

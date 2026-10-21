@@ -10,7 +10,6 @@ import com.zhuri.coding.reward.mapper.*;
 import com.zhuri.coding.reward.service.WelfareService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,8 +34,6 @@ public class WelfareServiceImpl implements WelfareService {
     private WelfareStockLogMapper stockLogMapper;
     @Autowired
     private UserAssetsMapper userAssetsMapper;
-    @Autowired
-    private StringRedisTemplate redisTemplate;
 
     @Override
     public ResponseResult getGoodsList(Integer type, Integer page, Integer size) {
@@ -160,27 +157,25 @@ public class WelfareServiceImpl implements WelfareService {
         }
         String remark = (String) body.get("remark");
 
-        // 6. Redis预扣库存
-        String stockKey = "welfare:stock:" + goodsId;
-        Long remainStock = redisTemplate.opsForValue().decrement(stockKey);
-        if (remainStock != null && remainStock < 0) {
-            redisTemplate.opsForValue().increment(stockKey); // 回滚
-            return ResponseResult.errorResult(400, "库存不足，已抢光");
-        }
-
         try {
-            // 7. 数据库乐观锁扣库存
+            // 6. 数据库条件扣库存（唯一权威闸）
+            //
+            // 这里刻意不再做 Redis 预扣：库存是强一致数据，预扣必须同时解决三件事——
+            // ① key 预热（缺失时 DECR 直接得到 -1，商品一个都兑不出去）；
+            // ② 补货后同步（DB 补了库存，Redis 仍是 0，会永久拒单）；
+            // ③ 事务回滚补偿（DB 失败要把预扣还回去）。
+            // 收益只是省一次主键更新，而兑换本身是低频操作，不值得引入这三套机制。
+            // updateStock 是 `stock = stock - 1 WHERE stock > 0` 的条件更新，并发下天然防超卖。
             int updated = goodsMapper.updateStock(goodsId);
             if (updated <= 0) {
-                redisTemplate.opsForValue().increment(stockKey);
                 return ResponseResult.errorResult(400, "库存不足，已抢光");
             }
 
-            // ★ 8. 原子扣矿石（条件扣减，余额不足返回0，杜绝并发超扣/负余额）
+            // ★ 7. 原子扣矿石（条件扣减，余额不足返回0，杜绝并发超扣/负余额）
             int oreUpdated = userAssetsMapper.deductOreBalance(userId, goods.getOrePrice());
             if (oreUpdated != 1) {
-                // 并发下余额被先扣光：抛异常触发事务回滚（DB updateStock 回滚），catch 中再回滚 Redis 预扣，
-                // 保证 库存(DB/Redis) 与 矿石余额 三者回滚一致。
+                // 并发下余额被先扣光：抛异常触发事务回滚，把上一步扣掉的库存一起还原，
+                // 保证「库存 + 矿石余额」在同一事务里要么都变、要么都不变。
                 throw new IllegalStateException("矿石余额不足，无法兑换，当前余额：" + oreBalance);
             }
             // 扣减后的剩余余额（供返回给前端展示）
@@ -251,8 +246,7 @@ public class WelfareServiceImpl implements WelfareService {
             return ResponseResult.okResult(data);
 
         } catch (Exception e) {
-            // 回滚Redis预扣
-            redisTemplate.opsForValue().increment(stockKey);
+            // 库存与矿石都在同一个 DB 事务里，回滚交给 @Transactional，无需再手工补偿
             log.error("兑换失败: {}", e.getMessage(), e);
             throw e;
         }

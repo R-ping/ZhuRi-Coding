@@ -6,6 +6,7 @@ import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleDraftMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.ArticleAutoScanService;
+import com.zhuri.coding.content.service.article.ArticleEmbeddingRefresher;
 import com.zhuri.coding.content.service.article.ArticlePublishExecutor;
 import com.zhuri.coding.content.service.article.ArticleRevisionService;
 import com.zhuri.coding.content.service.article.ArticleUpdateNotifyService;
@@ -45,6 +46,7 @@ public class ArticleRevisionServiceImpl implements ArticleRevisionService {
     private final ArticleAutoScanService articleAutoScanService;
     private final ArticlePublishExecutor articlePublishExecutor;
     private final ArticleUpdateNotifyService articleUpdateNotifyService;
+    private final ArticleEmbeddingRefresher articleEmbeddingRefresher;
 
     /** 实质更新阈值：新旧正文差异率（4-gram Jaccard）达到该值即视为实质更新 */
     @Value("${app.article.revision.significant-threshold:0.15}")
@@ -266,6 +268,12 @@ public class ArticleRevisionServiceImpl implements ArticleRevisionService {
 
         // ⑥ 同步 ES：事务提交后执行，避免 search 端反向拉取到未提交的旧正文
         syncToEsAfterCommit(articleId);
+
+        // ⑦ 重算向量：编辑生效即刷新，不等巡检。同样走本地消息表（事务内登记、提交后重放），
+        //     embedding 调用不占用户请求线程；正文没提交成功就不会白算。
+        //     指纹比对保证重复投递是幂等的，失败重试到死信后由 10 分钟一轮的指纹巡检兜住。
+        articleEmbeddingRefresher.refreshAfterChange(articleId);
+
         log.info("修订已生效, articleId={}, draftId={}, significant={}", articleId, draft.getId(), significant);
     }
 
