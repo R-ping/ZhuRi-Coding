@@ -75,6 +75,19 @@ class ArticlePublishExecutorTest {
     }
 
     @Test
+    @DisplayName("作者在审核期间删了文章 → NOT_PUBLISHABLE（不上线、不写索引）")
+    void deletedDuringReviewIsNotPublishable() {
+        // 删除优先于未完成的发布：置位条件更新带 is_deleted=0，所以这里是 0 行
+        when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);
+        ApArticle deleted = article(ApArticle.Status.SUBMIT);
+        deleted.setIsDeleted(true);
+        when(apArticleMapper.selectById(1L)).thenReturn(deleted);
+
+        assertEquals(ArticlePublishExecutor.Outcome.ARTICLE_NOT_PUBLISHABLE, executor.publish(1L));
+        verify(searchClient, never()).syncArticle(any(SearchArticleVo.class));
+    }
+
+    @Test
     @DisplayName("文章不存在 → ARTICLE_MISSING（不碰 ES）")
     void articleMissing() {
         when(apArticleMapper.markPublishedIfPending(1L)).thenReturn(0);

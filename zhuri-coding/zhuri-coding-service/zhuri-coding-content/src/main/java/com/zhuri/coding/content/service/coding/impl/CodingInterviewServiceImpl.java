@@ -32,7 +32,6 @@ import com.zhuri.coding.model.coding.vos.CodingInterviewSessionVO;
 import com.zhuri.coding.model.coding.vos.CodingInterviewTurnVO;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -178,10 +177,6 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
     @Value("${app.coding.interview.duration-minutes:45}")
     private int durationMinutes = 45;
 
-    /** 每日场次上限（0=不限；进行中与已完成计入，已过期不计） */
-    @Value("${app.coding.interview.daily-limit:3}")
-    private int dailyLimit = 3;
-
     /** 简历文本上限（字符）；超出按入参截断，与解析接口的 resume-max-chars 保持一致 */
     @Value("${app.coding.interview.resume-max-chars:8000}")
     private int resumeMaxChars = 8000;
@@ -245,25 +240,16 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
             expireOngoing(ongoing.getId());
         }
 
-        // 2. 每日场次上限（0=不限；已过期不计，避免被超时锁死）
-        if (dailyLimit > 0) {
-            long today = interviewMapper.countToday(userId, startOfDay());
-            if (today >= dailyLimit) {
-                return ResponseResult.errorResult(400,
-                    "今日模拟面试已达上限（" + dailyLimit + " 场），明天再来吧");
-            }
-        }
-
-        // 3. 额度预检（免费 token 优先 → 钱包兜底；不足不放行，避免白跑一次提纲 LLM）
+        // 2. 额度预检（免费 token 优先 → 钱包兜底；不足不放行，避免白跑一次提纲 LLM）
         if (quotaService != null && !quotaService.tryConsume(userId)) {
             return ResponseResult.errorResult(AppHttpCodeEnum.AI_QUOTA_EXHAUSTED);
         }
 
-        // 4. 用户弱项 + 近几场已考主题（取不到自然降级为纯方向生成，不阻断）
+        // 3. 用户弱项 + 近几场已考主题（取不到自然降级为纯方向生成，不阻断）
         List<String> weakTags = weakTags(userId);
         List<String> historyTopics = recentTopics(userId);
 
-        // 5. 提纲生成（同步 LLM；失败/不合格拒绝开面——不落库、不产生脏数据）
+        // 4. 提纲生成（同步 LLM；失败/不合格拒绝开面——不落库、不产生脏数据）
         //    简历只作用于本次生成，不落库；有简历时按 resume-topic-ratio 分配简历深挖题配额
         String system = resolvePrompt(PROMPT_KEY_PLAN, FALLBACK_PLAN_SYSTEM, userId);
         String userPrompt = buildPlanUserPrompt(direction, difficultyLabel(difficulty),
@@ -280,13 +266,13 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
             plan = new ArrayList<>(plan.subList(0, topicCount));
         }
 
-        // 5.1 无简历时来源一律归为方向题：prompt 已说明"没给简历全部取 direction"，
+        // 4.1 无简历时来源一律归为方向题：prompt 已说明"没给简历全部取 direction"，
         //     但模型仍可能凭空标 resume——不修的话前端会显示"简历深挖"而用户根本没传简历
         if (resume == null) {
             plan.forEach(t -> t.source = SOURCE_DIRECTION);
         }
 
-        // 5.2 简历题配额留痕：模型没按配额分配时只告警不阻断——题目本身仍可用，
+        // 4.2 简历题配额留痕：模型没按配额分配时只告警不阻断——题目本身仍可用，
         //     且事后无法可靠重贴来源（改标而已，不如留痕观察 prompt 效果）
         if (resume != null) {
             long actual = plan.stream().filter(t -> SOURCE_RESUME.equals(t.source)).count();
@@ -297,7 +283,7 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
             }
         }
 
-        // 6. 落库：turns 预置首题（提纲含 keyPoints，仅服务端可见，不下发）
+        // 5. 落库：turns 预置首题（提纲含 keyPoints，仅服务端可见，不下发）
         ApCodingInterview record = new ApCodingInterview();
         record.setUserId(userId);
         record.setStatus(ApCodingInterview.STATUS_ONGOING);
@@ -953,10 +939,6 @@ public class CodingInterviewServiceImpl implements CodingInterviewService {
 
     private static boolean isStatus(ApCodingInterview record, int status) {
         return record.getStatus() != null && record.getStatus() == status;
-    }
-
-    private static Date startOfDay() {
-        return Date.from(LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant());
     }
 
     private static String formatDateTime(Date date) {

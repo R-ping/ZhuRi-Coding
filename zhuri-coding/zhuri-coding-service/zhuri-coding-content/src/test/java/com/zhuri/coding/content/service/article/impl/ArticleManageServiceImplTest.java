@@ -8,6 +8,8 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
+import com.zhuri.coding.content.service.downlink.ArticleEmbeddingRemover;
+import com.zhuri.coding.content.service.downlink.ArticleIndexRemover;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
@@ -42,14 +44,16 @@ import static org.mockito.Mockito.when;
  * 覆盖：
  * - list：未登录拦截、按 authorId/状态/标题过滤、null-safe 映射；
  * - statistics：未登录拦截、four 状态统计(published/reviewing/rejected)；
- * - deleteArticle：未登录、id 为空、文章不存在、越权、本人软删成功；
- * - getArticleById：未登录、id 为空、文章不存在、正常含内容组装字段；
+ * - deleteArticle：未登录、id 为空、条件更新 0 行、本人删除成功并登记索引/向量下线事件；
+ * - getArticleById：未登录、id 为空、文章不存在、已删除文章不可见、正常含内容组装字段；
  * - getStatusCode：published/reviewing/rejected/默认 null。
  */
 class ArticleManageServiceImplTest {
 
     @Mock private ApArticleMapper apArticleMapper;
     @Mock private ApArticleContentMapper apArticleContentMapper;
+    @Mock private ArticleIndexRemover articleIndexRemover;
+    @Mock private ArticleEmbeddingRemover articleEmbeddingRemover;
 
     @InjectMocks
     private ArticleManageServiceImpl manageService;
@@ -140,25 +144,29 @@ class ArticleManageServiceImplTest {
     // ==================== deleteArticle ====================
 
     @Test
-    @DisplayName("deleteArticle - 未登录/空id/不存在/越权")
+    @DisplayName("deleteArticle - 未登录/空id/条件更新 0 行（不存在、越权、已删除）")
     void testDeleteGuards() {
         assertEquals(AppHttpCodeEnum.NEED_LOGIN.getCode(), manageService.deleteArticle(1L).getCode());
         AppThreadLocalUtil.setUser(user(1));
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), manageService.deleteArticle(null).getCode());
-        when(apArticleMapper.selectById(1L)).thenReturn(null);
+        // 归属校验与删除在同一条 UPDATE 里：不存在 / 不是本人 / 已删除 都是 0 行，对外统一按不存在回应
+        when(apArticleMapper.softDeleteByAuthor(1L, 1L)).thenReturn(0);
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), manageService.deleteArticle(1L).getCode());
-        when(apArticleMapper.selectById(1L)).thenReturn(article(1L, 99L, (byte) 2));
-        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), manageService.deleteArticle(1L).getCode());
+        // 没删掉就不能清索引/向量：否则只删副产物，文章本体还在
+        verify(articleIndexRemover, never()).removeFromIndex(any());
+        verify(articleEmbeddingRemover, never()).remove(any());
     }
 
     @Test
-    @DisplayName("deleteArticle - 本人软删成功")
+    @DisplayName("deleteArticle - 本人删除成功：只改 is_deleted，索引与向量各登记一条下线事件")
     void testDeleteOk() {
         AppThreadLocalUtil.setUser(user(1));
-        ApArticle a = article(1L, 1L, (byte) 2);
-        when(apArticleMapper.selectById(1L)).thenReturn(a);
+        when(apArticleMapper.softDeleteByAuthor(1L, 1L)).thenReturn(1);
         assertEquals(200, manageService.deleteArticle(1L).getCode());
-        verify(apArticleMapper).updateById((ApArticle) any(ApArticle.class));
+        // 不再整对象回写：并发下不会把审核链刚置好的 status 覆盖回旧值
+        verify(apArticleMapper, never()).updateById((ApArticle) any(ApArticle.class));
+        verify(articleIndexRemover).removeFromIndex(1L);
+        verify(articleEmbeddingRemover).remove(1L);
     }
 
     // ==================== getArticleById ====================
@@ -170,6 +178,17 @@ class ArticleManageServiceImplTest {
         AppThreadLocalUtil.setUser(user(1));
         assertEquals(AppHttpCodeEnum.PARAM_INVALID.getCode(), manageService.getArticleById(null).getCode());
         when(apArticleMapper.selectById(1L)).thenReturn(null);
+        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), manageService.getArticleById(1L).getCode());
+    }
+
+    @Test
+    @DisplayName("getArticleById - 已删除文章对作者本人也不可见")
+    void testGetDeleted() {
+        AppThreadLocalUtil.setUser(user(1));
+        ApArticle deleted = article(1L, 1L, (byte) 9);
+        deleted.setIsDeleted(true);
+        when(apArticleMapper.selectById(1L)).thenReturn(deleted);
+        // 读得出来就能"保存一次"把它复活，所以删除后编辑页必须当它不存在
         assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(), manageService.getArticleById(1L).getCode());
     }
 

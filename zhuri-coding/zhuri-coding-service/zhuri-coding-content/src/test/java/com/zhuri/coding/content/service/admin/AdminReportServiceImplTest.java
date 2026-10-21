@@ -24,7 +24,8 @@ import com.zhuri.coding.common.admin.AdminIdentity;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.interaction.ApArticleReportMapper;
 import com.zhuri.coding.content.service.admin.impl.AdminReportServiceImpl;
-import com.zhuri.coding.content.service.article.impl.ArticleEmbeddingServiceImpl;
+import com.zhuri.coding.content.service.downlink.ArticleEmbeddingRemover;
+import com.zhuri.coding.content.service.downlink.ArticleIndexRemover;
 import com.zhuri.coding.model.admin.pojos.ApAdminAuditLog;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.behavior.pojos.ApArticleReport;
@@ -78,7 +79,7 @@ class AdminReportServiceImplTest {
     @Mock
     private AdminAuditRecorder auditRecorder;
     @Mock
-    private ArticleEmbeddingServiceImpl embeddingService;
+    private ArticleEmbeddingRemover articleEmbeddingRemover;
 
     @InjectMocks
     private AdminReportServiceImpl service;
@@ -198,7 +199,7 @@ class AdminReportServiceImplTest {
         assertEquals(200, result.getCode().intValue());
         verify(articleMapper, never()).update(any(), any());
         verify(articleIndexRemover, never()).removeFromIndex(any());
-        verify(embeddingService, never()).deleteEmbedding(any());
+        verify(articleEmbeddingRemover, never()).remove(any());
         verify(receiptDispatcher).deliverReportReceipt(REPORT_ID);
         verify(receiptDispatcher, never()).notifyAuthorOfHandling(any(), any(), any(), any());
 
@@ -250,8 +251,7 @@ class AdminReportServiceImplTest {
         assertTrue(sql.contains("status"), "要把文章置为下架态");
         assertTrue(sql.contains("IN"), "WHERE 必须带状态白名单——无条件更新会把草稿也标成'已下架'");
         verify(articleIndexRemover).removeFromIndex(ARTICLE_ID);
-        verify(embeddingService).deleteEmbedding(ARTICLE_ID);
-        verify(embeddingService).deleteChunks(ARTICLE_ID);
+        verify(articleEmbeddingRemover).remove(ARTICLE_ID);
         verify(receiptDispatcher).deliverReportReceipt(REPORT_ID);
         verify(receiptDispatcher).notifyAuthorOfHandling(
             eq(ARTICLE_ID), eq(AUTHOR_ID), eq(ApArticleReport.RESULT_TAKE_DOWN), eq("内容违规"));
@@ -273,7 +273,7 @@ class AdminReportServiceImplTest {
         Map<String, Object> data = (Map<String, Object>) result.getData();
         assertFalse((Boolean) data.get("takenDown"), "状态没变要如实回报（便于前端提示「内容已不在线」）");
         verify(articleIndexRemover).removeFromIndex(ARTICLE_ID);
-        verify(embeddingService).deleteEmbedding(ARTICLE_ID);
+        verify(articleEmbeddingRemover).remove(ARTICLE_ID);
     }
 
     @Test

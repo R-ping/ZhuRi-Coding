@@ -9,8 +9,13 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -171,27 +176,35 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
         }
     }
 
-    /** 删除文章级向量（文章下架/删除后清理残留，避免被检索到过期内容） */
+    /**
+     * 删除文章级向量（内容下线后清理残留，避免被检索到过期内容）。
+     *
+     * <p><b>失败必须抛</b>：调用方（下线投递器）靠异常判定"这次没删掉、需要重试"。
+     * 吞掉异常等于把一次失败的删除记成成功，向量会永久留在库里，而它没有任何对账兜底。
+     * 只做「尽力而为」的周期任务（回填、残留清理）在自己的循环里逐条兜住，不影响其它文章。
+     */
     public void deleteEmbedding(Long articleId) {
         if (articleId == null || pgVectorJdbcTemplate == null) {
             return;
         }
         try {
             pgVectorJdbcTemplate.update("DELETE FROM ap_article_embedding WHERE article_id = ?", articleId);
-        } catch (Exception e) {
-            log.warn("删除文章向量失败 articleId={}: {}", articleId, e.getMessage());
+        } catch (RuntimeException e) {
+            log.error("删除文章向量失败 articleId={}", articleId, e);
+            throw e;
         }
     }
 
-    /** 删除文章分块向量 */
+    /** 删除文章分块向量。失败语义同 {@link #deleteEmbedding}：抛给调用方决定重试。 */
     public void deleteChunks(Long articleId) {
         if (articleId == null || pgVectorJdbcTemplate == null) {
             return;
         }
         try {
             pgVectorJdbcTemplate.update("DELETE FROM ap_article_chunk WHERE article_id = ?", articleId);
-        } catch (Exception e) {
-            log.warn("删除分块向量失败 articleId={}: {}", articleId, e.getMessage());
+        } catch (RuntimeException e) {
+            log.error("删除分块向量失败 articleId={}", articleId, e);
+            throw e;
         }
     }
 
@@ -230,19 +243,7 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
                             ApArticleEmbedding emb = new ApArticleEmbedding();
                             emb.setId(rs.getLong("id"));
                             emb.setArticleId(rs.getLong("article_id"));
-                            // Parse pgvector text representation to double[]
-                            String vectorStr = rs.getString("embedding");
-                            if (vectorStr != null) {
-                                vectorStr = vectorStr.replaceAll("[\\[\\]\\s]", "");
-                                if (!vectorStr.isEmpty()) {
-                                    String[] parts = vectorStr.split(",");
-                                    double[] vec = new double[parts.length];
-                                    for (int i = 0; i < parts.length; i++) {
-                                        vec[i] = Double.parseDouble(parts[i]);
-                                    }
-                                    emb.setEmbedding(vec);
-                                }
-                            }
+                            emb.setEmbedding(parseVector(rs.getString("embedding")));
                             emb.setCreatedTime(rs.getTimestamp("created_time"));
                             return emb;
                         }
@@ -251,6 +252,61 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
             );
         } catch (Exception e) {
             log.error("Failed to get embedding for articleId={}: {}", articleId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 批量读取文章级向量（articleId → 向量）。
+     *
+     * <p>RAG 混合召回里"BM25 独有命中"最多几十条，逐条调用 {@link #getEmbedding} 就是几十次 SQL；
+     * 这里用一条 {@code IN} 查询取回。缺失的文章不会出现在结果里，调用方按 0 相似度处理。
+     */
+    public Map<Long, double[]> getEmbeddings(Collection<Long> articleIds) {
+        Map<Long, double[]> result = new HashMap<>();
+        if (pgVectorJdbcTemplate == null || articleIds == null || articleIds.isEmpty()) {
+            return result;
+        }
+        List<Long> ids = articleIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return result;
+        }
+        String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+        try {
+            pgVectorJdbcTemplate.query(
+                "SELECT article_id, embedding::text FROM ap_article_embedding WHERE article_id IN (" + placeholders + ")",
+                (ResultSet rs) -> {
+                    while (rs.next()) {
+                        double[] vector = parseVector(rs.getString("embedding"));
+                        if (vector != null) {
+                            result.put(rs.getLong("article_id"), vector);
+                        }
+                    }
+                },
+                ids.toArray());
+        } catch (Exception e) {
+            log.warn("批量读取文章向量失败, count={}: {}", ids.size(), e.getMessage());
+        }
+        return result;
+    }
+
+    /** 解析 pgvector 的文本表示（{@code [0.1,0.2,...]}）；空值/格式异常返回 null */
+    private static double[] parseVector(String vectorStr) {
+        if (vectorStr == null) {
+            return null;
+        }
+        String normalized = vectorStr.replaceAll("[\\[\\]\\s]", "");
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        try {
+            String[] parts = normalized.split(",");
+            double[] vec = new double[parts.length];
+            for (int i = 0; i < parts.length; i++) {
+                vec[i] = Double.parseDouble(parts[i]);
+            }
+            return vec;
+        } catch (NumberFormatException e) {
             return null;
         }
     }

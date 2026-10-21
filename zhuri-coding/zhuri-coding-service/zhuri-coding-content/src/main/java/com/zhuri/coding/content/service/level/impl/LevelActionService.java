@@ -22,6 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -39,6 +41,15 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Service
 public class LevelActionService {
+
+    /**
+     * 业务日时区：显式钉在 Asia/Shanghai，与 CheckinTxService / 每日一题 同口径。
+     *
+     * <p>日上限、日进度、按日汇总三处都按它切天。用裸 {@code LocalDate.now()} 或
+     * {@code new java.sql.Date(System.currentTimeMillis())} 取的是 JVM 默认时区，
+     * 容器跑在 UTC 时会与签到差 8 小时，同一"天"被切成两半。</p>
+     */
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     /** 分组类型 → 掘友分明细分类编号（1基础 2活跃 3学习 4影响力 5专项/创作） */
     private static final Map<String, Integer> GROUP_CATEGORY_MAP = new HashMap<>();
@@ -193,7 +204,7 @@ public class LevelActionService {
         ApUserLevel userLevel = levelQueryService.getUserLevel(userId);
         userLevel = lockUserLevel(userId, userLevel);
 
-        String today = new java.sql.Date(System.currentTimeMillis()).toString();
+        String today = LocalDate.now(ZONE).toString();
 
         // 单行为每日次数上限（以 ap_behavior_config.daily_limit 为准，-1/缺失表示不限）
         Integer dailyLimit = resolveDailyLimit(actionType);
@@ -329,7 +340,7 @@ public class LevelActionService {
         userScoreDetailsMapper.insert(detail);
 
         // 汇总：当日不存在则插入，存在则累加（原子 ON DUPLICATE KEY UPDATE）
-        java.sql.Date statDate = new java.sql.Date(System.currentTimeMillis());
+        java.sql.Date statDate = java.sql.Date.valueOf(LocalDate.now(ZONE));
         BigDecimal basic = BigDecimal.ZERO, active = BigDecimal.ZERO, learn = BigDecimal.ZERO,
             effect = BigDecimal.ZERO, spec = BigDecimal.ZERO;
         switch (category) {
@@ -361,7 +372,7 @@ public class LevelActionService {
                 return;
             }
 
-            java.sql.Date today = new java.sql.Date(System.currentTimeMillis());
+            java.sql.Date today = java.sql.Date.valueOf(LocalDate.now(ZONE));
             LambdaQueryWrapper<ApUserDailyProgress> progressQuery = new LambdaQueryWrapper<>();
             progressQuery.eq(ApUserDailyProgress::getUserId, userId);
             progressQuery.eq(ApUserDailyProgress::getStatDate, today);
@@ -396,7 +407,7 @@ public class LevelActionService {
             if (actionCode == null) {
                 return;
             }
-            java.sql.Date today = new java.sql.Date(System.currentTimeMillis());
+            java.sql.Date today = java.sql.Date.valueOf(LocalDate.now(ZONE));
             LambdaQueryWrapper<ApUserDailyProgress> progressQuery = new LambdaQueryWrapper<>();
             progressQuery.eq(ApUserDailyProgress::getUserId, userId);
             progressQuery.eq(ApUserDailyProgress::getStatDate, today);

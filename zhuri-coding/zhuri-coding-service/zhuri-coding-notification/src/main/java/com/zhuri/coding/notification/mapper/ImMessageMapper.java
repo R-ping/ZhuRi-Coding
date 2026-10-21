@@ -33,4 +33,13 @@ public interface ImMessageMapper extends BaseMapper<ImMessage> {
      * @return 命中返回该消息，未命中返回 null
      */
     ImMessage selectByClientId(@Param("sessionId") Long sessionId, @Param("clientId") String clientId);
+
+    /**
+     * 按来源查消息，用于自动私信投递前的幂等快路径。
+     *
+     * @param sourceType 来源枚举，如 {@code FOLLOW_AUTO_REPLY}
+     * @param sourceId   来源业务主键（关注关系 ID）
+     * @return 命中返回消息，未命中返回 null
+     */
+    ImMessage selectBySource(@Param("sourceType") String sourceType, @Param("sourceId") Long sourceId);
 }

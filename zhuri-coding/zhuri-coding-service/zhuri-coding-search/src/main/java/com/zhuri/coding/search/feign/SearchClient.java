@@ -3,6 +3,7 @@ package com.zhuri.coding.search.feign;
 import com.zhuri.coding.apis.search.ISearchClient;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
+import com.zhuri.coding.model.search.dtos.IndexedArticleQueryDto;
 import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import com.zhuri.coding.search.service.ArticleSearchService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Date;
 import java.util.List;
 
 @RestController
@@ -42,11 +44,30 @@ public class SearchClient implements ISearchClient {
     }
 
     /**
-     * 索引移除（内部接口）：内容被平台下架时，把文档从 ES 删掉，使其不再出现在检索结果里。
+     * 反向对账取数（内部接口）：返回索引里窗口内的文章 id，供 content 侧清理幽灵文档。
+     */
+    @PostMapping("/api/v1/search/article/indexed")
+    public ResponseResult indexedArticleIds(@RequestBody IndexedArticleQueryDto dto){
+        int limit = dto == null || dto.getLimit() == null || dto.getLimit() <= 0 ? 300 : dto.getLimit();
+        Date since = dto == null || dto.getSinceMillis() == null
+                ? null : new Date(dto.getSinceMillis());
+        return ResponseResult.okResult(articleSearchService.indexedArticleIds(since, limit));
+    }
+
+    /**
+     * 索引移除（内部接口）：内容被下架 / 被作者删除时，先打可见性墓碑再删掉文档。
      */
     @PostMapping("/api/v1/search/article/remove")
     public ResponseResult removeArticleIndex(@RequestBody Long articleId){
         return articleSearchService.removeArticleIndex(articleId);
+    }
+
+    /**
+     * 批量索引移除（内部接口）：反向对账清理幽灵文档，一次批量下线。
+     */
+    @PostMapping("/api/v1/search/article/remove-batch")
+    public ResponseResult removeArticleIndexBatch(@RequestBody List<Long> articleIds){
+        return articleSearchService.removeArticleIndexBatch(articleIds);
     }
 
 }

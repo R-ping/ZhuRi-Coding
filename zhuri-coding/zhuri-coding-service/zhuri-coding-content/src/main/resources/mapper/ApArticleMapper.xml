@@ -36,6 +36,10 @@
         <where>
             and aac.is_delete != 1
             and aac.is_down != 1
+            <!-- 列表只是「能读到」的一个入口，可见性判据必须与详情/搜索同一套：
+                 未达已发布态（草稿/审核中/未通过/下架）与作者软删都不出现在公开列表 -->
+            and aa.status = 9
+            and aa.is_deleted = 0
             <if test="type != null and type == 1">
                 and aa.publish_time <![CDATA[<]]> #{dto.minBehotTime}
             </if>
@@ -64,6 +68,7 @@
             and aac.is_down != 1
             and aac.is_recommend = 1
             and aa.status = 9
+            and aa.is_deleted = 0
             <!-- 时间窗口（F3 更新回流）：publish_time 在窗口内（新发布）或 update_time 在窗口内（近期被实质更新）。
                  update_time 为 NULL 时 MySQL 中 NULL >= 时间 自动为 false，OR 表达式安全无损 -->
             <if test="windowDays != null and windowDays > 0">
@@ -100,6 +105,7 @@
             and aac.is_down != 1
             and aac.is_recommend = 1
             and aa.status = 9
+            and aa.is_deleted = 0
             <!-- 时间窗口（F3 更新回流）：publish_time 或 update_time 在窗口内；update_time 为 NULL 时 OR 安全为 false -->
             <if test="windowDays != null and windowDays > 0">
                 and (aa.publish_time &gt;= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
@@ -133,6 +139,7 @@
             and aac.is_delete != 1
             and aac.is_down != 1
             and aa.status = 9
+            and aa.is_deleted = 0
             <if test="channelId != null">
                 and aa.channel_id = #{channelId}
             </if>
@@ -160,6 +167,7 @@
             and aac.is_delete != 1
             and aac.is_down != 1
             and aa.status = 9
+            and aa.is_deleted = 0
             <if test="channelId != null">
                 and aa.channel_id = #{channelId}
             </if>
@@ -255,6 +263,7 @@
             and aac.is_down != 1
             and aac.is_recommend = 1
             and aa.status = 9
+            and aa.is_deleted = 0
             and aa.id != #{excludeId}
             <if test="cursor != null and cursor > 0">
                 and aa.id &lt; #{cursor}
@@ -270,6 +279,7 @@
         FROM ap_article a,
              JSON_TABLE(a.tags, '$[*]' COLUMNS (tag VARCHAR(64) PATH '$')) jt
         WHERE a.status = 9
+          AND a.is_deleted = 0
           AND a.channel_id = #{categoryId}
           <if test="keyword != null and keyword != ''">
             AND jt.tag LIKE CONCAT('%', #{keyword}, '%')

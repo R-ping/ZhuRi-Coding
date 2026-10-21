@@ -123,9 +123,18 @@ public class AskRetrievalChain {
             if (candidates == null || candidates.isEmpty()) {
                 return null;
             }
+            // 缺相似度的候选（BM25 独有命中）一次性批量取向量，避免逐条查库的 N+1
+            List<Long> missing = new ArrayList<>();
             for (Long id : candidates) {
                 if (!simMap.containsKey(id)) {
-                    simMap.put(id, localCosine(queryEmb, id));
+                    missing.add(id);
+                }
+            }
+            if (!missing.isEmpty()) {
+                Map<Long, double[]> embeddings = embeddingService.getEmbeddings(missing);
+                for (Long id : missing) {
+                    double[] vector = embeddings == null ? null : embeddings.get(id);
+                    simMap.put(id, cosine(queryEmb, vector));
                 }
             }
             return new RecallStage(candidates, simMap);
@@ -135,7 +144,7 @@ public class AskRetrievalChain {
         }
     }
 
-    /** 阶段 3：过滤仅已发布 + 非 AIGC，并按 RRF 融合顺序排序 */
+    /** 阶段 3：过滤仅已发布 + 非 AIGC + 未删除，并按 RRF 融合顺序排序 */
     private List<ApArticle> filterPublished(ChainCtx ctx, RecallStage recall) {
         Map<Long, Integer> fusedOrder = new HashMap<>();
         for (int i = 0; i < recall.candidates().size(); i++) {
@@ -144,7 +153,9 @@ public class AskRetrievalChain {
         try {
             return apArticleMapper.selectBatchIds(recall.candidates()).stream()
                 .filter(a -> a.getStatus() != null && a.getStatus() == Status.PUBLISHED.getCode()
-                    && (a.getIsAigc() == null || a.getIsAigc() != 1))
+                    && (a.getIsAigc() == null || a.getIsAigc() != 1)
+                    // 作者删除只改 is_deleted、status 仍是已发布，漏这一条就会把已删文章当引用源
+                    && !a.isDeletedArticle())
                 .sorted(Comparator.comparingInt(a -> fusedOrder.getOrDefault(a.getId(), Integer.MAX_VALUE)))
                 .collect(Collectors.toList());
         } catch (Exception e) {
@@ -258,29 +269,23 @@ public class AskRetrievalChain {
     }
 
     /** BM25 独有命中相似度补全：用已存文章向量本地算余弦（零模型调用） */
-    private double localCosine(double[] queryEmb, Long articleId) {
-        try {
-            com.zhuri.coding.model.article.pojos.ApArticleEmbedding emb = embeddingService.getEmbedding(articleId);
-            if (emb == null || emb.getEmbedding() == null || queryEmb == null) {
-                return 0d;
-            }
-            double[] v = emb.getEmbedding();
-            int n = Math.min(queryEmb.length, v.length);
-            double dot = 0;
-            double na = 0;
-            double nb = 0;
-            for (int i = 0; i < n; i++) {
-                dot += queryEmb[i] * v[i];
-                na += queryEmb[i] * queryEmb[i];
-                nb += v[i] * v[i];
-            }
-            if (na <= 0 || nb <= 0) {
-                return 0d;
-            }
-            return dot / (Math.sqrt(na) * Math.sqrt(nb));
-        } catch (Exception e) {
+    private double cosine(double[] queryEmb, double[] articleEmb) {
+        if (queryEmb == null || articleEmb == null || articleEmb.length == 0) {
             return 0d;
         }
+        int n = Math.min(queryEmb.length, articleEmb.length);
+        double dot = 0;
+        double na = 0;
+        double nb = 0;
+        for (int i = 0; i < n; i++) {
+            dot += queryEmb[i] * articleEmb[i];
+            na += queryEmb[i] * queryEmb[i];
+            nb += articleEmb[i] * articleEmb[i];
+        }
+        if (na <= 0 || nb <= 0) {
+            return 0d;
+        }
+        return dot / (Math.sqrt(na) * Math.sqrt(nb));
     }
 
     /** Prompt 注册表解析（带 null 兜底） */

@@ -6,6 +6,7 @@ import com.zhuri.coding.content.constants.LevelScoreActionCode;
 import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
 import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
 import com.zhuri.coding.content.service.level.LevelService;
+import com.zhuri.coding.content.service.follow.FollowAutoReplyNotifier;
 import com.zhuri.coding.model.behavior.BehaviorContext;
 import com.zhuri.coding.model.behavior.BehaviorResult;
 import com.zhuri.coding.model.behavior.BehaviorType;
@@ -34,6 +35,13 @@ public class FollowBehaviorHandler implements BehaviorHandler {
 
     @Autowired(required = false)
     private LevelService levelService;
+
+    /**
+     * 关注成功后的自动私信投递入口。
+     * <p>必须经注入的代理调用：同类内 this 调用不走 AOP，本地消息表就登记不上。
+     */
+    @Autowired(required = false)
+    private FollowAutoReplyNotifier autoReplyNotifier;
 
     @Override
     public BehaviorType getType() {
@@ -96,6 +104,12 @@ public class FollowBehaviorHandler implements BehaviorHandler {
         behaviorRecordMapper.insert(record);
 
         log.info("用户{}关注了用户{}", userId, targetUserId);
+
+        // 只有「真实新增关注」才登记自动私信：重复关注在上面的幂等分支已返回，走不到这里。
+        // 这里只登记事件，真正发送发生在事务提交后，关注结果不依赖私信服务是否可用。
+        if (autoReplyNotifier != null) {
+            autoReplyNotifier.notifyFollowed(follow.getId(), userId, targetUserId);
+        }
 
         return BehaviorResult.success(BehaviorType.FOLLOW_USER, "关注成功")
             .withNewRecord(true)

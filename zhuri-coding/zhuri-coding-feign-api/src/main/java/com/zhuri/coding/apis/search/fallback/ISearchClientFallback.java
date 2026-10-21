@@ -3,6 +3,7 @@ package com.zhuri.coding.apis.search.fallback;
 import com.zhuri.coding.apis.search.ISearchClient;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.search.dtos.Bm25RecallDto;
+import com.zhuri.coding.model.search.dtos.IndexedArticleQueryDto;
 import com.zhuri.coding.model.search.vos.SearchArticleVo;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,5 +51,22 @@ public class ISearchClientFallback implements ISearchClient {
     public ResponseResult removeArticleIndex(Long articleId) {
         log.error("远程移除ES索引异常, articleId={}", articleId);
         throw new RuntimeException("移除ES索引异常, articleId=" + articleId);
+    }
+
+    /**
+     * 反向对账取数**不做降级**：返回空清单等于告诉巡检"索引里没有多余文档"，
+     * 幽灵文档会一直留在检索结果里。抛异常让调用方跳过本轮并留下 WARN。
+     */
+    @Override
+    public ResponseResult indexedArticleIds(IndexedArticleQueryDto dto) {
+        log.warn("[IndexReconcile] search 服务不可用，跳过本轮反向对账");
+        throw new RuntimeException("search 服务不可用，反向对账跳过本轮");
+    }
+
+    /** 批量下线**不做降级**：返回成功会让巡检把这一批算作已清理，下轮不会再发现 */
+    @Override
+    public ResponseResult removeArticleIndexBatch(List<Long> articleIds) {
+        log.error("远程批量移除ES索引异常, count={}", articleIds == null ? 0 : articleIds.size());
+        throw new RuntimeException("批量移除ES索引异常");
     }
 }

@@ -2,6 +2,7 @@ package com.zhuri.coding.content.behavior.service.impl;
 
 import com.zhuri.coding.content.mapper.follow.ApFollowMapper;
 import com.zhuri.coding.content.mapper.user.UserBehaviorRecordMapper;
+import com.zhuri.coding.content.service.follow.FollowAutoReplyNotifier;
 import com.zhuri.coding.model.behavior.BehaviorContext;
 import com.zhuri.coding.model.behavior.BehaviorResult;
 import com.zhuri.coding.model.behavior.BehaviorType;
@@ -38,6 +39,8 @@ class FollowBehaviorHandlerTest {
     private ApFollowMapper apFollowMapper;
     @Mock
     private UserBehaviorRecordMapper behaviorRecordMapper;
+    @Mock
+    private FollowAutoReplyNotifier autoReplyNotifier;
 
     @InjectMocks
     private FollowBehaviorHandler handler;
@@ -102,12 +105,19 @@ class FollowBehaviorHandlerTest {
         assertTrue((Boolean) r.getDataValue("followed"));
         assertEquals(5L, (Long) r.getDataValue("followId"));
         verify(apFollowMapper, never()).insert(any(ApFollow.class));
+        // 重复关注不触发自动私信
+        verify(autoReplyNotifier, never()).notifyFollowed(any(), any(), any());
     }
 
     @Test
     @DisplayName("execute - 正常关注返回成功且写入正确字段")
     void testExecuteSuccess() {
         when(apFollowMapper.selectOne(any())).thenReturn(null);
+        // 模拟自增主键回填：自动私信以关注关系 ID 作为幂等键
+        when(apFollowMapper.insert(any(ApFollow.class))).thenAnswer(inv -> {
+            inv.getArgument(0, ApFollow.class).setId(77L);
+            return 1;
+        });
 
         BehaviorResult r = handler.execute(followContext());
 
@@ -129,6 +139,8 @@ class FollowBehaviorHandlerTest {
         assertEquals(3, rec.getTargetType());
         assertEquals(2002, rec.getTargetUserId());
         assertEquals(1, rec.getStatus());
+        // 真实新增关注才登记自动私信，幂等键为关注关系 ID
+        verify(autoReplyNotifier).notifyFollowed(77L, 1001, 2002);
     }
 
     @Test

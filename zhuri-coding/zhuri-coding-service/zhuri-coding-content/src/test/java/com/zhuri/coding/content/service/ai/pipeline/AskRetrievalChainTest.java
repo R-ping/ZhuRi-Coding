@@ -190,8 +190,23 @@ class AskRetrievalChainTest {
         assertTrue(r.sources().isEmpty());
     }
 
-    private ApArticleContent contentOf(Long articleId) {
-        ApArticleContent c = new ApArticleContent();
+    @Test
+    @DisplayName("作者删除的文章不能当引用源：status 仍是已发布，只有 is_deleted 能拦住")
+    void filterDropsAuthorDeleted() {
+        List<Long> ids = List.of(9L);
+        stubRecall(ids, Map.of(9L, 0.9));
+        ApArticle deleted = article(9L, "作者已删除");
+        deleted.setIsDeleted(true);
+        when(apArticleMapper.selectBatchIds(ids)).thenReturn(List.of(deleted));
+
+        AskRetrievalChain.ChainResult r = chain.run(ctx(false));
+
+        assertNotNull(r);
+        assertEquals(0, r.hits());
+        assertTrue(r.sources().isEmpty());
+    }
+
+    private ApArticleContent contentOf(Long articleId) {        ApArticleContent c = new ApArticleContent();
         c.setArticleId(articleId);
         c.setContent("【正文" + articleId + "】此处为正文内容，用于组装参考资料。");
         return c;

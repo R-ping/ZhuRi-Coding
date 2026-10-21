@@ -47,4 +47,19 @@ public interface INotificationClient {
      */
     @PostMapping("/api/v1/notifications/feign/activity")
     ResponseResult sendActivityNotification(@RequestBody Map<String, Object> params);
+
+    /**
+     * 关注成功后投递一条自动私信。
+     *
+     * <p>投递由关注服务在关注事务提交后经本地消息表重放调用；{@code followId} 同时是对方侧的
+     * 幂等键，重复调用不会产生第二条消息。返回非 200 时调用方应抛异常交给重试。
+     *
+     * @param followId   关注关系 ID（幂等键）
+     * @param followerId 触发方（粉丝）
+     * @param followeeId 配置方（被关注者，消息以他的身份发出）
+     */
+    @PostMapping("/api/v1/im/feign/follow-auto-reply")
+    ResponseResult sendFollowAutoReply(@RequestParam("followId") Long followId,
+                                       @RequestParam("followerId") Long followerId,
+                                       @RequestParam("followeeId") Long followeeId);
 }

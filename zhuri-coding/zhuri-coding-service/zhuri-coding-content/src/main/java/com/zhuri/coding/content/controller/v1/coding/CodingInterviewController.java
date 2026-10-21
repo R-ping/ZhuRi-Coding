@@ -70,7 +70,7 @@ public class CodingInterviewController {
     }
 
     /**
-     * 开面：进行中未超时直接续答；否则每日场次校验 → 额度预检 → 提纲生成 → 落库
+     * 开面：进行中未超时直接续答；否则额度预检 → 提纲生成 → 落库
      * POST /api/v1/coding/interview/start
      * {"direction": "Java 后端", "difficulty": 2, "questionCount": 5, "resumeText": "..."}
      */

@@ -51,6 +51,14 @@ public class IUserClientFallback implements FallbackFactory<IUserClient> {
                 // 代价只是"用户服务挂了期间运营也用不了后台"，恰好我们也确实用不了。
                 return ResponseResult.okResult(List.of());
             }
+
+            @Override
+            public ResponseResult isBlocked(Long userId, Long targetId) {
+                log.error("IUserClient.isBlocked fallback, userId={}, targetId={}, error: {}",
+                        userId, targetId, cause.getMessage());
+                // fail-open：查不到就不拦。自动私信是附加价值，不能因用户服务抖动而整体失效
+                return ResponseResult.okResult(java.util.Map.of("blocked", false));
+            }
         };
     }
 }

@@ -23,22 +23,11 @@ public interface ApCodingInterviewMapper extends BaseMapper<ApCodingInterview> {
     ApCodingInterview selectOngoing(@Param("userId") Integer userId);
 
     /**
-     * 今日已开面试场次（进行中 + 已完成；已过期不计，避免被超时锁死）。
-     *
-     * @param userId   用户ID
-     * @param dayStart 今日 00:00:00
-     */
-    @Select("SELECT COUNT(*) FROM ap_coding_interview WHERE user_id = #{userId} "
-        + "AND status IN (1, 2) AND started_time >= #{dayStart}")
-    long countToday(@Param("userId") Integer userId,
-                    @Param("dayStart") java.util.Date dayStart);
-
-    /**
      * 近 N 场已完成面试的提纲快照（新场次提纲去重用）。
      *
      * <p>排序用 {@code started_time} 而不是 {@code id}：现有 {@code idx_user_started(user_id, started_time)}
      * 能同时满足"该用户的过滤"与"倒序取前 N 条"，不必为这个低频查询新增索引或忍受 filesort。
-     * 每用户受每日场次上限约束，命中行数本就极少。</p>
+     * 每用户已完成的场次有限，命中行数本就极少。</p>
      *
      * @param userId 用户ID
      * @param limit  取最近几场

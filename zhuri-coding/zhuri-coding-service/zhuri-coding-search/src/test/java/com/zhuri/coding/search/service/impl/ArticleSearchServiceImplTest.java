@@ -1,5 +1,7 @@
 package com.zhuri.coding.search.service.impl;
 
+import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import com.zhuri.coding.apis.article.IArticleClient;
 import com.zhuri.coding.apis.article.ISemanticSearchClient;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
@@ -13,6 +15,7 @@ import com.zhuri.coding.search.entity.SearchArticle;
 import com.zhuri.coding.search.service.ApAssociateWordsService;
 import com.zhuri.coding.search.service.ApUserSearchService;
 import com.zhuri.coding.utils.thread.AppThreadLocalUtil;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -25,6 +28,10 @@ import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.elasticsearch.core.document.Document;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
+import org.springframework.data.elasticsearch.core.query.DeleteQuery;
+import org.springframework.data.elasticsearch.core.query.UpdateQuery;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -74,6 +81,16 @@ class ArticleSearchServiceImplTest {
 
     @InjectMocks
     private ArticleSearchServiceImpl articleSearchService;
+
+    /**
+     * 索引名来自 {@code @Value}，纯单测没有 Spring 容器，需要手动注入。
+     * 打墓碑走的是按索引名的部分更新（{@code UpdateQuery} + {@link IndexCoordinates}），
+     * 名字为空会在构造坐标时抛异常，导致墓碑被跳过。
+     */
+    @BeforeEach
+    void injectIndexName() throws Exception {
+        setField(articleSearchService, "articleIndexName", "app_info_article");
+    }
 
     // ==================== 检索 ====================
 
@@ -156,6 +173,16 @@ class ArticleSearchServiceImplTest {
             assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
             assertEquals(0, ((List<?>) r.getData()).size());
         }
+
+        @Test
+        @DisplayName("检索查询带可见性过滤：排除墓碑与非发布态")
+        void searchFiltersInvisibleDocs() {
+            stubSearchReturns();
+
+            articleSearchService.search(dto("Java", 1, 10));
+
+            assertVisibilityFiltered(capturedQuery());
+        }
     }
 
     // ==================== 同步 ====================
@@ -230,6 +257,22 @@ class ArticleSearchServiceImplTest {
 
             assertEquals(AppHttpCodeEnum.SERVER_ERROR.getCode(), r.getCode());
             verify(elasticsearchOperations, never()).save(any(SearchArticle.class));
+        }
+
+        @Test
+        @DisplayName("写入可见态：status=9 且墓碑清零（下架后重新上线不能让旧标记残留）")
+        void writesVisibleState() {
+            SearchArticleVo vo = new SearchArticleVo();
+            vo.setId(101L);
+            vo.setTitle("重新上线");
+            when(articleClient.getContent(101L)).thenReturn(null);
+
+            articleSearchService.syncArticle(vo);
+
+            ArgumentCaptor<SearchArticle> captor = ArgumentCaptor.forClass(SearchArticle.class);
+            verify(elasticsearchOperations).save(captor.capture());
+            assertEquals(Integer.valueOf(9), captor.getValue().getStatus());
+            assertEquals(Boolean.FALSE, captor.getValue().getIsDeleted());
         }
     }
 
@@ -318,6 +361,18 @@ class ArticleSearchServiceImplTest {
             assertEquals(AppHttpCodeEnum.SERVER_ERROR.getCode(), r.getCode());
         }
 
+        @Test
+        @DisplayName("召回同样按可见性过滤：RAG 不能引用已下线内容")
+        void filtersInvisibleDocs() {
+            stubSearchReturns();
+            Bm25RecallDto dto = new Bm25RecallDto();
+            dto.setQuery("Java");
+
+            articleSearchService.bm25Recall(dto);
+
+            assertVisibilityFiltered(capturedQuery());
+        }
+
         /** 取出实际下发到 ES 的分页条数（topK 落在 pageable 上） */
         private int capturedPageSize() {
             ArgumentCaptor<NativeQuery> captor = ArgumentCaptor.forClass(NativeQuery.class);
@@ -371,6 +426,20 @@ class ArticleSearchServiceImplTest {
             assertEquals("对账查询 ES 失败", ex.getMessage());
         }
 
+        @Test
+        @DisplayName("文档还在但被标记删除 → 算缺失（正向对账会整文档覆盖写、墓碑清零）")
+        void countsTombstonedDocsAsMissing() {
+            // ES 侧已按可见性过滤：墓碑文档查不出来，返回空命中
+            stubSearchReturns();
+
+            List<Long> missing = articleSearchService.missingArticleIds(List.of(5L));
+
+            assertEquals(List.of(5L), missing);
+            var bool = capturedQuery().getQuery().bool();
+            assertEquals(1, bool.filter().size(), "候选集仍按文档 _id 过滤");
+            assertEquals(2, bool.mustNot().size(), "可见性过滤同样生效");
+        }
+
         private SearchHit<SearchArticle> indexedHit(String documentId) {
             SearchHit<SearchArticle> hit = mock(SearchHit.class);
             when(hit.getId()).thenReturn(documentId);
@@ -378,10 +447,52 @@ class ArticleSearchServiceImplTest {
         }
     }
 
+    // ==================== 反向对账取数 ====================
+
+    @Nested
+    @DisplayName("indexedArticleIds - 反向对账取数")
+    class IndexedArticleIds {
+
+        @Test
+        @DisplayName("时间窗为空 / 上限非法 → 返空，不查 ES")
+        void skipsInvalidParams() {
+            assertTrue(articleSearchService.indexedArticleIds(null, 10).isEmpty());
+            assertTrue(articleSearchService.indexedArticleIds(new Date(), 0).isEmpty());
+
+            verify(elasticsearchOperations, never()).search(any(NativeQuery.class), eq(SearchArticle.class));
+        }
+
+        @Test
+        @DisplayName("按发布时间窗口取回 id，非数字文档 id 跳过")
+        void returnsIdsWithinWindow() {
+            long since = 1_700_000_000_000L;
+            stubSearchReturns(documentHit("11"), documentHit("not-a-number"), documentHit("12"));
+
+            List<Long> ids = articleSearchService.indexedArticleIds(new Date(since), 100);
+
+            assertEquals(List.of(11L, 12L), ids);
+            var range = capturedQuery().getQuery().bool().filter().get(0).range();
+            assertEquals("publishTime", range.date().field());
+            assertEquals(String.valueOf(since), range.date().gte());
+        }
+
+        @Test
+        @DisplayName("ES 异常必须抛出，不能返回空清单假装索引干净")
+        void throwsOnEsFailure() {
+            when(elasticsearchOperations.search(any(NativeQuery.class), eq(SearchArticle.class)))
+                    .thenThrow(new RuntimeException("es down"));
+
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> articleSearchService.indexedArticleIds(new Date(), 10));
+
+            assertTrue(ex.getMessage().contains("索引内文章"));
+        }
+    }
+
     // ==================== 下架时移除索引 ====================
 
     @Nested
-    @DisplayName("removeArticleIndex - 下架移除索引文档")
+    @DisplayName("removeArticleIndex - 下线移除索引文档")
     class RemoveArticleIndex {
 
         @Test
@@ -403,6 +514,37 @@ class ArticleSearchServiceImplTest {
         }
 
         @Test
+        @DisplayName("先打可见性墓碑、再物理删除")
+        void marksTombstoneBeforeDeleting() {
+            ResponseResult r = articleSearchService.removeArticleIndex(98L);
+
+            assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
+            ArgumentCaptor<UpdateQuery> updateCaptor = ArgumentCaptor.forClass(UpdateQuery.class);
+            org.mockito.InOrder inOrder = inOrder(elasticsearchOperations);
+            inOrder.verify(elasticsearchOperations)
+                    .update(updateCaptor.capture(), any(IndexCoordinates.class));
+            inOrder.verify(elasticsearchOperations).delete("98", SearchArticle.class);
+
+            UpdateQuery update = updateCaptor.getValue();
+            assertEquals("98", update.getId(), "部分更新必须打在同一文档上");
+            Document patch = update.getDocument();
+            assertEquals(Boolean.TRUE, patch.get("isDeleted"), "墓碑字段名要与查询侧一致");
+            assertEquals(1, patch.keySet().size(), "只动一个字段，避免覆盖其它内容");
+        }
+
+        @Test
+        @DisplayName("墓碑写失败不阻塞物理删除")
+        void tombstoneFailureStillDeletes() {
+            when(elasticsearchOperations.update(any(UpdateQuery.class), any(IndexCoordinates.class)))
+                    .thenThrow(new RuntimeException("mapping conflict"));
+
+            ResponseResult r = articleSearchService.removeArticleIndex(97L);
+
+            assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
+            verify(elasticsearchOperations).delete("97", SearchArticle.class);
+        }
+
+        @Test
         @DisplayName("ES 异常必须抛出，调用方靠它判断下架是否真的生效")
         void throwsOnEsFailure() {
             when(elasticsearchOperations.delete(anyString(), eq(SearchArticle.class)))
@@ -412,6 +554,63 @@ class ArticleSearchServiceImplTest {
                     () -> articleSearchService.removeArticleIndex(99L));
 
             assertTrue(ex.getMessage().contains("99"));
+        }
+    }
+
+    // ==================== 批量下线（反向对账清理） ====================
+
+    @Nested
+    @DisplayName("removeArticleIndexBatch - 批量下线")
+    class RemoveArticleIndexBatch {
+
+        @Test
+        @DisplayName("空清单直接成功，不碰 ES")
+        void emptyListSkipsEs() {
+            assertEquals(AppHttpCodeEnum.SUCCESS.getCode(),
+                    articleSearchService.removeArticleIndexBatch(null).getCode());
+            assertEquals(AppHttpCodeEnum.SUCCESS.getCode(),
+                    articleSearchService.removeArticleIndexBatch(List.of()).getCode());
+
+            verify(elasticsearchOperations, never()).bulkUpdate(anyList(), eq(SearchArticle.class));
+            verify(elasticsearchOperations, never()).delete(any(DeleteQuery.class), eq(SearchArticle.class));
+        }
+
+        @Test
+        @DisplayName("一次批量打墓碑、一次 delete-by-query")
+        void marksAndDeletesInTwoCalls() {
+            ResponseResult r = articleSearchService.removeArticleIndexBatch(List.of(1L, 2L));
+
+            assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<UpdateQuery>> captor = ArgumentCaptor.forClass(List.class);
+            verify(elasticsearchOperations).bulkUpdate(captor.capture(), eq(SearchArticle.class));
+            assertEquals(2, captor.getValue().size());
+            assertEquals(Boolean.TRUE, captor.getValue().get(0).getDocument().get("isDeleted"));
+            verify(elasticsearchOperations).delete(any(DeleteQuery.class), eq(SearchArticle.class));
+        }
+
+        @Test
+        @DisplayName("墓碑批量写失败不阻塞物理删除")
+        void tombstoneFailureStillDeletes() {
+            doThrow(new RuntimeException("mapping conflict"))
+                    .when(elasticsearchOperations).bulkUpdate(anyList(), eq(SearchArticle.class));
+
+            ResponseResult r = articleSearchService.removeArticleIndexBatch(List.of(3L));
+
+            assertEquals(AppHttpCodeEnum.SUCCESS.getCode(), r.getCode());
+            verify(elasticsearchOperations).delete(any(DeleteQuery.class), eq(SearchArticle.class));
+        }
+
+        @Test
+        @DisplayName("删除失败必须抛出，否则巡检会把这一批算成已清理")
+        void throwsOnEsFailure() {
+            when(elasticsearchOperations.delete(any(DeleteQuery.class), eq(SearchArticle.class)))
+                    .thenThrow(new RuntimeException("es down"));
+
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> articleSearchService.removeArticleIndexBatch(List.of(1L)));
+
+            assertTrue(ex.getMessage().contains("批量移除索引文档失败"));
         }
     }
 
@@ -620,6 +819,38 @@ class ArticleSearchServiceImplTest {
         when(hit.getContent()).thenReturn(article);
         when(hit.getScore()).thenReturn(score);
         return hit;
+    }
+
+    /** 只 stub 文档 _id 的 hit（用于只关心 id 的对账场景） */
+    private SearchHit<SearchArticle> documentHit(String documentId) {
+        SearchHit<SearchArticle> hit = mock(SearchHit.class);
+        when(hit.getId()).thenReturn(documentId);
+        return hit;
+    }
+
+    /** 取出实际下发到 ES 的查询 */
+    private NativeQuery capturedQuery() {
+        ArgumentCaptor<NativeQuery> captor = ArgumentCaptor.forClass(NativeQuery.class);
+        verify(elasticsearchOperations).search(captor.capture(), eq(SearchArticle.class));
+        return captor.getValue();
+    }
+
+    /**
+     * 断言查询带了两条可见性排除。
+     *
+     * <p>用 must_not 而不是正向 {@code status=9}：存量文档缺字段时才不会整批消失，
+     * 所以这里要钉住的正是"排除式"这个方向，而不只是"有没有过滤"。
+     */
+    private void assertVisibilityFiltered(NativeQuery query) {
+        BoolQuery bool = query.getQuery().bool();
+        assertNotNull(bool, "检索查询应为 bool 查询");
+
+        var mustNot = bool.mustNot();
+        assertEquals(2, mustNot.size(), "应有两条排除：可见性墓碑 + 非发布态");
+        assertEquals("isDeleted", mustNot.get(0).term().field());
+        assertTrue(mustNot.get(0).term().value().booleanValue());
+        assertEquals("status", mustNot.get(1).terms().field());
+        assertEquals(4, mustNot.get(1).terms().terms().value().size(), "草稿/审核中/审核失败/平台下架");
     }
 
     /**
