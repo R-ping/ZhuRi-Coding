@@ -28,5 +28,4 @@ public class CodingProfileSettingVO implements Serializable {
     private Boolean publicSolve;
 
     /** 测评成绩是否公开（默认 true） */
-    private Boolean publicAssessment;
 }

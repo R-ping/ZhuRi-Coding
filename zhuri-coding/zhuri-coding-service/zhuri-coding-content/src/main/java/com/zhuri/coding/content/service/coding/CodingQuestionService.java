@@ -1,46 +1,40 @@
 package com.zhuri.coding.content.service.coding;
 
-import com.zhuri.coding.model.coding.dtos.CodingAnswerDTO;
+import com.zhuri.coding.model.coding.dtos.CodingDailyAnswerDTO;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
 
 /**
- * 每日一题与刷题服务（Coding 延展第一层）
+ * 每日一题服务（Coding 延展第一层 · 简答）
  *
- * <p>判题只支持单选/多选（判题三步走第一步）；当日一题一天一次、答后锁定，
- * 答对计分（逐力值等级）并触发签到打卡（连续天数与签到共用一份记录）。</p>
+ * <p><b>题目来自人工维护的题目池</b>（{@code ap_coding_daily_pool}），不由模型现生成：
+ * 简答题没有唯一答案，评估必须有可信的评分锚点（关键考点），
+ * 让模型既出题又判分等于"自己出题自己批"。</p>
+ *
+ * <p>一天一次、答后锁定；完成即记逐日分（没有对错，所以不按对错给分）。
+ * 签到是独立入口，答题不代打卡。</p>
  */
 public interface CodingQuestionService {
 
     /**
-     * 今日题目：当天已答则回放完整作答结果；未答则取缓存题目（难度可按历史正确率自适应或自选）。
+     * 今日题目：当天已答则回放完整结果（含等级与考点清单）；未答则按方向抽题。
      *
-     * @param userId 登录用户ID
-     * @param difficulty 自选难度（可为 null，null 走自适应）
-     */
-    ResponseResult today(Integer userId, Integer difficulty);
-
-    /**
-     * 提交作答：判分 → 落库（记录/题目计数/用户统计）→ 当日一题答对时计等级分并打卡。
-     */
-    ResponseResult answer(Integer userId, CodingAnswerDTO dto);
-
-    /**
-     * 榜单（day/week/month）：只统计当日一题，按答对题数 → 正确率 → 平均用时排序。
+     * <p>抽题方向：显式传入优先，其次取用户上次设定的方向，都没有则用默认方向。
+     * 难度不由用户选 —— 池子里每道题自带难度，避免多一个无意义的交互。</p>
      *
-     * @param currentUserId 当前登录用户（可为 null，用于标记 isSelf）
+     * @param userId    登录用户ID
+     * @param direction 自选方向（可为 null）
      */
-    ResponseResult ranking(String period, Integer currentUserId);
+    ResponseResult today(Integer userId, String direction);
 
     /**
-     * 题库列表（练习）：分页返回上架题目，不含答案；登录用户标记已答。
+     * 提交作答：评估 → 落库（流水 + 统计）→ 记逐日分。
      *
-     * @param articleId 按来源文章过滤（可为 null；文章详情页"相关练习"反向入口用）
-     * @param userId 当前登录用户（可为 null，匿名浏览）
+     * <p>评估降级（模型不可用）时等级为空，但作答照常落库 —— 用户写的东西不该丢。</p>
      */
-    ResponseResult questions(Integer difficulty, Long articleId, Integer page, Integer size, Integer userId);
+    ResponseResult answer(Integer userId, CodingDailyAnswerDTO dto);
 
     /**
-     * 我的编码统计：连续天数（签到体系）+ 作答总数/正确率/领域分布 + 今日作答态。
+     * 我的编码统计：连续签到天数 + 累计作答/平均等级/领域分布 + 今日状态 + 当前方向。
      */
     ResponseResult myStat(Integer userId);
 }

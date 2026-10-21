@@ -4,7 +4,7 @@
         <div class="ability-header">
             <div class="header-left">
                 <h1 class="page-title">能力档案</h1>
-                <span class="page-sub">把答题沉淀、内容输出与测评成绩，整理成可展示的能力证明</span>
+                <span class="page-sub">把答题沉淀、内容输出，整理成可展示的能力证明</span>
             </div>
             <div class="header-right">
                 <button class="ghost-btn" @click="copyShareLink">复制分享链接</button>
@@ -61,7 +61,7 @@
                                         <div class="domain-bar">
                                             <div class="domain-bar-inner" :style="{ width: domainRate(item) + '%' }"></div>
                                         </div>
-                                        <span class="domain-num">{{ item.correct || 0 }}/{{ item.total || 0 }}</span>
+                                        <span class="domain-num">{{ item.avgLevel ? item.avgLevel.toFixed(1) + ' 分' : '—' }}</span>
                                     </div>
                                 </div>
                                 <div v-else class="block-empty">暂无答题数据，去每日一题积累第一条记录</div>
@@ -80,7 +80,7 @@
                                     <div class="streak-nums">
                                         <div class="streak-cell">
                                             <span class="streak-value">{{ blocks.streak.continuousDays || 0 }}</span>
-                                            <span class="streak-label">连续答题天数</span>
+                                            <span class="streak-label">连续签到天数</span>
                                         </div>
                                         <div class="streak-cell">
                                             <span class="streak-value">{{ blocks.streak.activeMonths || 0 }}</span>
@@ -116,39 +116,6 @@
                                     </div>
                                 </div>
                                 <div v-else class="block-empty">暂无内容输出</div>
-                            </template>
-                            <div v-else class="block-empty">该板块未公开</div>
-                        </div>
-
-                        <!-- 测评成绩 -->
-                        <div class="card block-card">
-                            <div class="block-head">
-                                <span class="block-title">测评成绩</span>
-                                <span class="block-badge" v-if="isPrivate(blocks.assessment)">未公开</span>
-                            </div>
-                            <template v-if="!isPrivate(blocks.assessment)">
-                                <div v-if="blocks.assessment && blocks.assessment.available" class="assessment-body">
-                                    <div class="assessment-score">
-                                        <span class="score-value">{{ blocks.assessment.score || 0 }}</span>
-                                        <span class="score-unit">分</span>
-                                    </div>
-                                    <div class="assessment-meta">
-                                        答对 {{ blocks.assessment.correctCount || 0 }}/{{ blocks.assessment.totalCount || 0 }} 题
-                                        <template v-if="blocks.assessment.percentile > 0">
-                                            · 超过 {{ blocks.assessment.percentile }}% 的参与者
-                                        </template>
-                                    </div>
-                                    <div class="assessment-time" v-if="blocks.assessment.submittedTime">
-                                        {{ blocks.assessment.submittedTime }}
-                                    </div>
-                                    <div class="assessment-actions" v-if="isSelf">
-                                        <button class="mini-btn" @click="goAssessment">再测一次</button>
-                                    </div>
-                                </div>
-                                <div v-else class="block-empty block-empty-action">
-                                    <span>{{ isSelf ? '还没测评过：15 分钟拿到你的能力快照' : '暂未测评' }}</span>
-                                    <button v-if="isSelf" class="mini-btn" @click="goAssessment">开始测评</button>
-                                </div>
                             </template>
                             <div v-else class="block-empty">该板块未公开</div>
                         </div>
@@ -220,7 +187,6 @@
                     publicDomain: true,
                     publicStreak: true,
                     publicOutput: true,
-                    publicAssessment: true
                 }
             }
         },
@@ -253,10 +219,9 @@
             },
             subSwitches() {
                 return [
-                    { key: 'publicDomain', name: '技术领域分布', desc: '答题沉淀的技术领域与正确情况' },
+                    { key: 'publicDomain', name: '技术领域分布', desc: '答题沉淀的技术领域与平均等级（1-5 分）' },
                     { key: 'publicStreak', name: '持续度', desc: '连续答题天数与活跃月份（会暴露活跃时间，请谨慎公开）' },
                     { key: 'publicOutput', name: '输出能力', desc: '已发布文章数与被收藏数' },
-                    { key: 'publicAssessment', name: '测评成绩', desc: '最近一次能力测评的分数与百分位' }
                 ]
             }
         },
@@ -269,11 +234,12 @@
                 return block && block.public === false
             },
             domainRate(item) {
-                const total = (item && item.total) || 0
-                if (!total) {
+                // 口径已从正确率换成平均等级（1-5），进度条按 avgLevel/5 占比
+                const level = item && item.avgLevel
+                if (!level) {
                     return 0
                 }
-                return Math.round(((item.correct || 0) * 100) / total)
+                return Math.round((level * 100) / 5)
             },
             showLogin() {
                 this.$store.dispatch('showLogin')
@@ -282,9 +248,6 @@
                 this.$router.push('/coding').catch(() => {})
             },
             // 测评入口（第二层 Stage B）：开卷介绍 → 限时作答 → 成绩单
-            goAssessment() {
-                this.$router.push('/coding/assessment').catch(() => {})
-            },
             async loadProfile() {
                 this.loadError = ''
                 // /coding/ability：本人视角，需登录
@@ -337,7 +300,6 @@
                             publicDomain: res.data.publicDomain !== false,
                             publicStreak: res.data.publicStreak !== false,
                             publicOutput: res.data.publicOutput !== false,
-                            publicAssessment: res.data.publicAssessment !== false
                         }
                     }
                 } catch (e) {
@@ -356,7 +318,6 @@
                         publicDomain: this.settingForm.publicDomain,
                         publicStreak: this.settingForm.publicStreak,
                         publicOutput: this.settingForm.publicOutput,
-                        publicAssessment: this.settingForm.publicAssessment
                     })
                     if (res && res.code === 200) {
                         this.settingSaved = true

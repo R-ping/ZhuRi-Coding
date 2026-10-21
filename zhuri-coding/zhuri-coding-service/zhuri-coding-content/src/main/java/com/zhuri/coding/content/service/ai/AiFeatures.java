@@ -45,7 +45,12 @@ public final class AiFeatures {
     public static final String PINS_COMMENT_AUDIT = "pins_comment_audit";
     /** 会话记忆摘要压缩（长会话 token 膨胀治理，异步低频） */
     public static final String MEMORY_COMPRESS = "memory_compress";
-    /** 每日一题·题库供给：从文章反向生成题目（低成本批处理场景） */
+    /**
+     * 每日一题·题库供给：从文章反向生成题目。
+     *
+     * <p><b>已下线</b>：不再有调用方产生这条用量。常量保留是为了让历史 token 计量数据
+     * 还能解释（成本归因按 feature 维度落库，删掉键值会让旧数据变成孤儿）。</p>
+     */
     public static final String QUESTION_GENERATE = "question_generate";
     /** 每日一题·题库质检：作者投稿的一次性 AI 质检（题干清晰/答案唯一/选项互斥） */
     public static final String QUESTION_AUDIT = "question_audit";
@@ -55,6 +60,8 @@ public final class AiFeatures {
     public static final String INTERVIEW_TURN = "interview_turn";
     /** 模拟面试·报告生成（逐题三维等级 + 覆盖清单 + 总评建议；质量优先走默认强模型） */
     public static final String INTERVIEW_REPORT = "interview_report";
+    /** 每日一题·单题评估（简答：对照关键考点判 covered/missing + 结构与准确性等级） */
+    public static final String DAILY_EVAL = "daily_eval";
     /** 其他/未归类（计量兜底，出现即说明有新调用点未归类） */
     public static final String OTHER = "other";
 }

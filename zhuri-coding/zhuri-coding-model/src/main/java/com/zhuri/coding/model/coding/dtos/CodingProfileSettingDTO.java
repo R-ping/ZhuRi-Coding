@@ -28,5 +28,4 @@ public class CodingProfileSettingDTO implements Serializable {
     private Boolean publicSolve;
 
     /** 测评成绩是否公开 */
-    private Boolean publicAssessment;
 }

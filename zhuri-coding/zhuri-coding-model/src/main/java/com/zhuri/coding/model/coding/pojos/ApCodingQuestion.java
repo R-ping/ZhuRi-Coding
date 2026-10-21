@@ -40,7 +40,11 @@ public class ApCodingQuestion implements Serializable {
 
     /** 来源：平台自建 */
     public static final int SOURCE_PLATFORM = 0;
-    /** 来源：文章 AI 生成 */
+    /**
+     * 来源：文章 AI 生成。
+     *
+     * <p><b>已下线</b>：不再产生新数据。常量保留是为了让历史行（source_type = 1）还能被解释。</p>
+     */
     public static final int SOURCE_AI = 1;
     /** 来源：作者投稿 */
     public static final int SOURCE_AUTHOR = 2;
@@ -84,7 +88,12 @@ public class ApCodingQuestion implements Serializable {
     @TableField("source_type")
     private Integer sourceType;
 
-    /** 来源文章ID */
+    /**
+     * 来源文章ID。
+     *
+     * <p><b>已停用</b>：不再写入也不再生效。列和字段都留着 —— 历史数据（AI 生成的题）靠它可回溯，
+     * 题目表只有百级数据，留着比删列安全。</p>
+     */
     @TableField("source_article_id")
     private Long sourceArticleId;
 

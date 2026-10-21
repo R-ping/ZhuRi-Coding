@@ -10,12 +10,15 @@ import java.io.Serializable;
 import java.util.Date;
 
 /**
- * 用户编码统计（Coding 延展第一层）
+ * 用户编码统计（Coding 延展第一层 · 简答）
  *
- * <p><b>连续答题天数不存本表</b>：签到体系（reward 服务 user_checkin_state.continuous_days）
- * 是连续记录的唯一致源，答题正确视为当日完成并触发打卡，口径与签到完全一致；
- * 本表只沉淀做题维度（总题数、正确率、领域分布）——与既有的每日进度/等级数据分开存储，
- * 前者是可变的聚合值，后者是流水。</p>
+ * <p><b>连续答题天数不存本表</b>：签到体系（reward 服务 {@code user_checkin_state.continuous_days}）
+ * 是连续记录的唯一致源；本表只沉淀做题维度（总题数、领域分布、练习方向）——
+ * 前者是可变的聚合值，后者是流水，分开存。</p>
+ *
+ * <p>{@code tag_stats} 口径（简答版）：{@code {"Redis":{"total":3,"levelSum":11}}} ——
+ * 累计等级而非正确率。字段名与 JSON 形状保留，是为了让能力档案的领域分布块
+ * 与面试提纲的「薄弱方向」输入继续读同一列，只是排序口径从"正确率升序"换成"平均等级升序"。</p>
  */
 @Data
 @TableName("ap_coding_user_stat")
@@ -28,23 +31,15 @@ public class ApCodingUserStat implements Serializable {
     @TableField("user_id")
     private Integer userId;
 
-    /** 每日一题累计作答数 */
+    /** 用户选择的练习方向（每日一题按此抽题） */
+    @TableField("direction")
+    private String direction;
+
+    /** 累计作答数 */
     @TableField("total_count")
     private Integer totalCount;
 
-    /** 每日一题累计答对数 */
-    @TableField("correct_count")
-    private Integer correctCount;
-
-    /** 自由练习累计作答数 */
-    @TableField("practice_count")
-    private Integer practiceCount;
-
-    /** 自由练习累计答对数 */
-    @TableField("practice_correct_count")
-    private Integer practiceCorrectCount;
-
-    /** 领域答题分布（JSON：{"Redis":{"total":3,"correct":2}}） */
+    /** 领域答题分布（JSON：{"Redis":{"total":3,"levelSum":11}}） */
     @TableField("tag_stats")
     private String tagStats;
 

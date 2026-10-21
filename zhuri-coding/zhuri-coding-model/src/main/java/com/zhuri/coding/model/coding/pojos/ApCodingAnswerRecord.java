@@ -10,10 +10,14 @@ import java.io.Serializable;
 import java.util.Date;
 
 /**
- * 每日一题作答记录（Coding 延展第一层）
+ * 每日一题作答记录（Coding 延展第一层 · 简答）
  *
- * <p>{@code is_daily=1} 表示"当日一题"（计入榜单与等级分，一天一次）；
- * {@code is_daily=0} 表示自由练习（只沉淀统计，不计分不打卡）。</p>
+ * <p>一天一条，靠 {@code uk_user_date} 保证并发下也只落一条。
+ * 「自由练习」这个概念已经消失，所以不再需要区分当日题与练习，
+ * 也不再用「生成列 + 条件唯一键」那套手法。</p>
+ *
+ * <p>{@code level} 为综合等级（1-5），由服务端按结构 / 覆盖度 / 准确性三维均值算出；
+ * 评估降级时它可以为 NULL（表示"这次没评出来"），读取方不要把 NULL 当 0 分。</p>
  */
 @Data
 @TableName("ap_coding_answer_record")
@@ -26,29 +30,37 @@ public class ApCodingAnswerRecord implements Serializable {
     @TableField("user_id")
     private Integer userId;
 
-    /** 题目ID */
-    @TableField("question_id")
-    private Long questionId;
+    /** 题目池ID */
+    @TableField("pool_id")
+    private Long poolId;
 
-    /** 作答日期（按天限次与榜单统计维度） */
+    /** 作答日期（按天限次） */
     @TableField("answer_date")
     private Date answerDate;
 
-    /** 用户答案（JSON数组） */
+    /** 用户作答文本 */
     @TableField("user_answer")
     private String userAnswer;
 
-    /** 是否答对 1是 0否 */
-    @TableField("is_correct")
-    private Integer isCorrect;
+    /** 综合等级 1-5；未评估为 NULL */
+    @TableField("level")
+    private Integer level;
+
+    /** 点评 */
+    @TableField("feedback")
+    private String feedback;
+
+    /** 已覆盖考点（JSON 数组） */
+    @TableField("covered")
+    private String covered;
+
+    /** 未覆盖考点（JSON 数组） */
+    @TableField("missing")
+    private String missing;
 
     /** 作答用时（秒） */
     @TableField("elapsed_seconds")
     private Integer elapsedSeconds;
-
-    /** 是否当日一题 1是 0自由练习 */
-    @TableField("is_daily")
-    private Integer isDaily;
 
     /** 本次获得的逐日分 */
     @TableField("score_awarded")

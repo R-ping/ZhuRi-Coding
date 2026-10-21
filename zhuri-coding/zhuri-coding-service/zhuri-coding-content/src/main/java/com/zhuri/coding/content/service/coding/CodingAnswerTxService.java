@@ -4,15 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingAnswerRecordMapper;
-import com.zhuri.coding.content.mapper.coding.ApCodingQuestionMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingUserStatMapper;
 import com.zhuri.coding.model.coding.pojos.ApCodingAnswerRecord;
-import com.zhuri.coding.model.coding.pojos.ApCodingQuestion;
+import com.zhuri.coding.model.coding.pojos.ApCodingDailyPool;
 import com.zhuri.coding.model.coding.pojos.ApCodingUserStat;
 import java.time.LocalDate;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,104 +20,97 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 作答落库事务服务（Coding 延展第一层）
+ * 每日一题作答落库事务（Coding 延展第一层 · 简答）
  *
- * <p>把"作答记录 + 题目计数 + 用户统计"三处写入收进同一事务，
- * 与 {@code CheckinTxService} 同构：主流程（判分编排、等级与签到跨服务调用）
- * 放事务外，失败只降级不拖垮落库结果。</p>
+ * <p>把「作答流水 + 用户统计」两处写入收进同一事务，与 {@code CheckinTxService} 同构：
+ * 主流程（LLM 评估、等级分跨服务调用）放事务外，失败只降级不拖垮落库结果。</p>
+ *
+ * <p>与旧版相比少了两件事：不再有「当日一题 / 自由练习」的分叉，
+ * 也不再有「题目热度计数」—— 那两样都是选择题时代的产物。</p>
  */
 @Slf4j
 @Service
 public class CodingAnswerTxService {
 
-    @Autowired
-    private ApCodingAnswerRecordMapper recordMapper;
+    /** 领域分布里单题最多取前 N 个标签，避免标签噪声把分布拉散 */
+    private static final int MAX_TAGS_PER_QUESTION = 3;
 
     @Autowired
-    private ApCodingQuestionMapper questionMapper;
+    private ApCodingAnswerRecordMapper recordMapper;
 
     @Autowired
     private ApCodingUserStatMapper statMapper;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    /**
-     * 当日一题是否已作答（同一事务内防重，兼作"今日题回放"的判定依据）。
-     */
+    /** 当天是否已作答（也是"今日题回放"的判定依据） */
     public ApCodingAnswerRecord findDailyRecord(Integer userId, Date answerDate) {
         return recordMapper.selectOne(new LambdaQueryWrapper<ApCodingAnswerRecord>()
             .eq(ApCodingAnswerRecord::getUserId, userId)
             .eq(ApCodingAnswerRecord::getAnswerDate, answerDate)
-            .eq(ApCodingAnswerRecord::getIsDaily, 1)
             .last("LIMIT 1"));
     }
 
     /**
-     * 落库一次作答：记录流水 → 题目计数累加（仅当日一题）→ 用户统计 upsert。
+     * 落库一次作答。
      *
-     * <p>当日一题的重复提交有两道防线：事务内预查询（快路径）+ 唯一键 {@code uk_user_daily}
-     * （并发兜底）。两者抛出的是同一个 {@link IllegalStateException}，调用方不必区分。</p>
+     * <p>重复提交有两道防线：事务内预查询（快路径）+ 唯一键 {@code uk_user_date}（并发兜底）。
+     * 两者抛出的是同一个 {@link IllegalStateException}，调用方不必区分。</p>
      *
-     * @param userAnswersJson 用户答案 JSON（落库前已在服务层校验下标范围）
-     * @throws IllegalStateException 当日一题重复提交（事务回滚，由调用方转成友好错误）
+     * @param evaluation 评估结果；{@code pending=true} 时等级为空，流水照常落库
+     * @throws IllegalStateException 今日已作答（事务回滚，由调用方转成友好错误）
      */
     @Transactional(rollbackFor = Exception.class)
-    public ApCodingAnswerRecord saveAnswer(Integer userId, ApCodingQuestion question,
-                                           String userAnswersJson, boolean correct,
-                                           Integer elapsedSeconds, boolean isDaily) {
+    public ApCodingAnswerRecord saveAnswer(Integer userId, ApCodingDailyPool question, String answerText,
+                                           Integer elapsedSeconds, CodingDailyEvaluator.Result evaluation) {
         Date today = java.sql.Date.valueOf(LocalDate.now());
-        if (isDaily && findDailyRecord(userId, today) != null) {
+        if (findDailyRecord(userId, today) != null) {
             throw new IllegalStateException("今日一题已作答");
         }
 
         ApCodingAnswerRecord record = new ApCodingAnswerRecord();
         record.setUserId(userId);
-        record.setQuestionId(question.getId());
+        record.setPoolId(question.getId());
         record.setAnswerDate(today);
-        record.setUserAnswer(userAnswersJson);
-        record.setIsCorrect(correct ? 1 : 0);
+        record.setUserAnswer(answerText);
+        record.setLevel(evaluation.pending ? null : evaluation.level);
+        record.setFeedback(evaluation.comment);
+        record.setCovered(CodingJson.writeJson(evaluation.covered));
+        record.setMissing(CodingJson.writeJson(evaluation.missing));
         record.setElapsedSeconds(elapsedSeconds);
-        record.setIsDaily(isDaily ? 1 : 0);
         record.setScoreAwarded(0);
         record.setCreatedTime(new Date());
         try {
             recordMapper.insert(record);
         } catch (DuplicateKeyException e) {
-            // 兜底第二道：上方 findDailyRecord 是"锁 + 预查询"，锁过期（10s）或事务拉长时
-            // 两个并发请求可能都通过预检查。这时由 uk_user_daily（见
-            // db/migrations/add_coding_daily_answer_unique.sql）拦下后到的那条，
-            // 转成与预检查完全一致的异常语义，调用方无需区分是哪道拦下的。
-            // 注意：MySQL/InnoDB 下唯一键冲突不会使整个事务进入失败态，这里捕获后再抛出，
-            // 事务仍会因 IllegalStateException 正常回滚（rollbackFor = Exception.class）。
+            // 兜底第二道：预查询是"锁 + 查询"，锁过期或事务拉长时两个并发都可能通过预检查，
+            // 这时由 uk_user_date 拦下后到的那条。转成与预检查一致的语义，调用方无需区分。
             throw new IllegalStateException("今日一题已作答");
         }
 
-        // 题目热度计数只服务"当日一题"（练习不参与，避免热度被重复刷）
-        if (isDaily) {
-            questionMapper.incrementAnswerStats(question.getId(), correct ? 1 : 0);
-        }
-
-        upsertUserStat(userId, question, correct, isDaily, today);
+        upsertUserStat(userId, question, today, evaluation);
         return record;
     }
 
-    /** 用户统计 upsert：读改写合并 tag_stats；唯一键 uk_user 兜底并发首插 */
-    private void upsertUserStat(Integer userId, ApCodingQuestion question, boolean correct,
-                                boolean isDaily, Date today) {
+    /**
+     * 用户统计 upsert：读改写合并 {@code tag_stats}；唯一键 {@code uk_user} 兜底并发首插。
+     *
+     * <p>{@code tag_stats} 累计的是「等级和」而非答对数：{@code {"Redis":{"total":3,"levelSum":11}}}。
+     * 未评估（pending）的作答计入 total 但不计入 levelSum —— 没评出来不该污染平均等级。</p>
+     */
+    private void upsertUserStat(Integer userId, ApCodingDailyPool question, Date today,
+                                CodingDailyEvaluator.Result evaluation) {
         ApCodingUserStat stat = statMapper.selectOne(new LambdaQueryWrapper<ApCodingUserStat>()
             .eq(ApCodingUserStat::getUserId, userId));
         if (stat == null) {
             stat = new ApCodingUserStat();
             stat.setUserId(userId);
             stat.setTotalCount(0);
-            stat.setCorrectCount(0);
-            stat.setPracticeCount(0);
-            stat.setPracticeCorrectCount(0);
             stat.setFirstAnswerDate(today);
             stat.setLastAnswerDate(today);
             stat.setCreatedTime(new Date());
             stat.setUpdatedTime(new Date());
-            applyCounts(stat, question, correct, isDaily);
+            applyCounts(stat, question, evaluation);
             try {
                 statMapper.insert(stat);
                 return;
@@ -132,36 +124,34 @@ public class CodingAnswerTxService {
                 }
             }
         }
-        // 注意：读改写分支可能与并发请求相互覆盖，统计属可容忍最终一致的聚合值；
-        // tag_stats 需要基于既有 JSON 合并，无法用单条原子 SQL 表达（见 Mapper 注释）
+        // 注意：读改写分支可能与并发请求相互覆盖。统计属可容忍最终一致的聚合值，
+        // 且 tag_stats 需要基于既有 JSON 合并，无法用单条原子 SQL 表达（见 Mapper 注释）
         stat.setLastAnswerDate(today);
-        applyCounts(stat, question, correct, isDaily);
+        applyCounts(stat, question, evaluation);
         stat.setUpdatedTime(new Date());
         statMapper.updateById(stat);
     }
 
     /** 累加计数与领域分布（不负责 first/last 日期赋值与落库） */
-    private void applyCounts(ApCodingUserStat stat, ApCodingQuestion question,
-                             boolean correct, boolean isDaily) {
-        if (isDaily) {
-            stat.setTotalCount(nvl(stat.getTotalCount()) + 1);
-            if (correct) {
-                stat.setCorrectCount(nvl(stat.getCorrectCount()) + 1);
-            }
-        } else {
-            stat.setPracticeCount(nvl(stat.getPracticeCount()) + 1);
-            if (correct) {
-                stat.setPracticeCorrectCount(nvl(stat.getPracticeCorrectCount()) + 1);
-            }
+    private void applyCounts(ApCodingUserStat stat, ApCodingDailyPool question,
+                             CodingDailyEvaluator.Result evaluation) {
+        stat.setTotalCount(nvl(stat.getTotalCount()) + 1);
+        // 方向随作答一起落库：抽的是哪个方向的题，就是用户当前的方向偏好。
+        // 这样下一次抽题不必再让用户选（today 的 resolveDirection 会读到它）。
+        if (question.getDirection() != null && !question.getDirection().isBlank()) {
+            stat.setDirection(question.getDirection());
         }
-        stat.setTagStats(mergeTagStats(stat.getTagStats(), question.getTags(), correct));
+        stat.setTagStats(mergeTagStats(stat.getTagStats(), question.getTags(),
+            evaluation.pending ? null : evaluation.level));
     }
 
     /**
-     * 合并领域答题分布：{"Redis":{"total":3,"correct":2}}。
-     * 单题最多取前 3 个标签，避免标签噪声把分布拉散。
+     * 合并领域答题分布：{@code {"Redis":{"total":3,"levelSum":11}}}。
+     *
+     * <p>单题最多取前 3 个标签，避免标签噪声把分布拉散。
+     * {@code level} 为 null（未评估）时只加 total。</p>
      */
-    private String mergeTagStats(String existingJson, String tags, boolean correct) {
+    private String mergeTagStats(String existingJson, String tags, Integer level) {
         if (tags == null || tags.isBlank()) {
             return existingJson;
         }
@@ -183,12 +173,12 @@ public class CodingAnswerTxService {
             if (tag.isEmpty() || tag.length() > 30) {
                 continue;
             }
-            Map<String, Integer> item = stats.computeIfAbsent(tag, k -> new HashMap<>());
+            Map<String, Integer> item = stats.computeIfAbsent(tag, k -> new LinkedHashMap<>());
             item.put("total", nvl(item.get("total")) + 1);
-            if (correct) {
-                item.put("correct", nvl(item.get("correct")) + 1);
+            if (level != null) {
+                item.put("levelSum", nvl(item.get("levelSum")) + level);
             }
-            if (++used >= 3) {
+            if (++used >= MAX_TAGS_PER_QUESTION) {
                 break;
             }
         }
@@ -198,6 +188,14 @@ public class CodingAnswerTxService {
             log.warn("写回领域分布 JSON 失败", e);
             return existingJson;
         }
+    }
+
+    /** 最近若干次作答（统计/档案用，按作答日期倒序） */
+    public List<ApCodingAnswerRecord> listRecent(Integer userId, int limit) {
+        return recordMapper.selectList(new LambdaQueryWrapper<ApCodingAnswerRecord>()
+            .eq(ApCodingAnswerRecord::getUserId, userId)
+            .orderByDesc(ApCodingAnswerRecord::getAnswerDate)
+            .last("LIMIT " + Math.max(1, Math.min(limit, 100))));
     }
 
     private static int nvl(Integer value) {

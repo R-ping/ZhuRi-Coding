@@ -39,13 +39,6 @@ public interface IRewardClient {
     ResponseResult getContinuousCheckinDays(@PathVariable("userId") Long userId);
 
     /**
-     * 幂等完成今日打卡（每日一题答对后调用，让连续记录与签到体系共用一份）。
-     * 已签到/短时限流不视为错误；返回 data 含 continuousDays（最新连续天数）。
-     */
-    @PostMapping("/api/v1/reward/user/{userId}/checkin/complete")
-    ResponseResult completeCheckin(@PathVariable("userId") Long userId);
-
-    /**
      * 校验用户是否持有指定虚拟道具（5折券等），并返回折扣比例（课程下单前调用）
      */
     @GetMapping("/api/v1/reward/user/{userId}/virtual-asset/hold")

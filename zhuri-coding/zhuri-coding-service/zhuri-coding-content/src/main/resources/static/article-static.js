@@ -2701,48 +2701,7 @@
         aiAskSend();
     }
 
-    // ---- 本文相关练习：读完文章 → 做题（Coding 延展第一层，题目 ←→ 文章双向导流） ----
-    function quizDifficultyLabel(difficulty) {
-        if (difficulty === 3) return '挑战';
-        if (difficulty === 2) return '进阶';
-        return '入门';
-    }
-    function loadArticleQuizzes() {
-        if (!articleId || articleId === '0') return;
-        var card = document.getElementById('codingQuizCard');
-        var listEl = document.getElementById('codingQuizList');
-        if (!card || !listEl) return;
-        // articleId 为雪花ID字符串，直接透传（不经过 Number 转换）
-        apiGet('/content/api/v1/coding/questions?articleId=' + encodeURIComponent(articleId) + '&size=3').then(function(res) {
-            var list = res && res.code === 200 && res.data ? res.data.list : null;
-            if (!list || !list.length) { card.style.display = 'none'; return; }
-            listEl.innerHTML = '';
-            for (var i = 0; i < list.length; i++) {
-                (function(item) {
-                    var li = document.createElement('li');
-                    li.className = 'coding-quiz-item';
-                    var a = document.createElement('a');
-                    a.className = 'coding-quiz-link';
-                    a.href = '/coding?articleId=' + encodeURIComponent(articleId) +
-                        '&questionId=' + encodeURIComponent(String(item.id));
-                    var diff = document.createElement('span');
-                    diff.className = 'coding-quiz-diff d' + (item.difficulty || 1);
-                    diff.textContent = quizDifficultyLabel(item.difficulty);
-                    var stem = document.createElement('span');
-                    stem.className = 'coding-quiz-stem';
-                    stem.textContent = item.stem || '';
-                    a.appendChild(diff);
-                    a.appendChild(stem);
-                    li.appendChild(a);
-                    listEl.appendChild(li);
-                })(list[i]);
-            }
-            card.style.display = 'block';
-        }).catch(function() { card.style.display = 'none'; });
-    }
-
-    // 页面就绪后加载摘要 + 读完想问 + 本文相关练习
+    // 页面就绪后加载摘要 + 读完想问
     loadAiSummary();
     loadRelatedQuestions();
-    loadArticleQuizzes();
 })();

@@ -51,7 +51,6 @@ public class CodingAbilityProfileVO implements Serializable {
         private StreakBlock streak = new StreakBlock();
         private OutputBlock output = new OutputBlock();
         private SolveBlock solve = new SolveBlock();
-        private AssessmentBlock assessment = new AssessmentBlock();
     }
 
     /** 技术领域分布（答题领域统计，按答题量降序前 8） */
@@ -77,11 +76,11 @@ public class CodingAbilityProfileVO implements Serializable {
         /** 领域（题目标签） */
         private String tag;
 
-        /** 答题总数 */
+        /** 作答总数 */
         private Integer total;
 
-        /** 答对总数 */
-        private Integer correct;
+        /** 平均等级（1-5，保留一位小数） */
+        private Double avgLevel;
     }
 
     /** 持续度（签到连续天数 + 活跃月份数） */
@@ -95,7 +94,7 @@ public class CodingAbilityProfileVO implements Serializable {
         @JsonProperty("public")
         private Boolean publicVisible = false;
 
-        /** 连续答题天数（签到体系唯一来源，不可用时降级 0） */
+        /** 连续签到天数（reward 签到体系唯一来源，与答题解耦；不可用时降级 0） */
         private Integer continuousDays;
 
         /** 活跃月份数（有作答记录的自然月数） */
@@ -133,32 +132,5 @@ public class CodingAbilityProfileVO implements Serializable {
         private static final long serialVersionUID = 1L;
 
         private Boolean available = false;
-    }
-
-    /** 测评成绩（最近一次已提交） */
-    @Data
-    public static class AssessmentBlock implements Serializable {
-
-        private static final long serialVersionUID = 1L;
-
-        private Boolean available = false;
-
-        @JsonProperty("public")
-        private Boolean publicVisible = false;
-
-        /** 得分（0-100） */
-        private Integer score;
-
-        /** 答对题数 */
-        private Integer correctCount;
-
-        /** 总题数 */
-        private Integer totalCount;
-
-        /** 百分位（样本 < 20 时为 0，前端仅展示 >0 的值） */
-        private Integer percentile;
-
-        /** 交卷时间（yyyy-MM-dd HH:mm:ss） */
-        private String submittedTime;
     }
 }

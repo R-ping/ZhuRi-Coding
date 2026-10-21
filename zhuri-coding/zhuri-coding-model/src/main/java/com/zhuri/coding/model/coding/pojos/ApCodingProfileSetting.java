@@ -49,10 +49,6 @@ public class ApCodingProfileSetting implements Serializable {
     @TableField("public_solve")
     private Integer publicSolve;
 
-    /** 测评成绩是否公开 */
-    @TableField("public_assessment")
-    private Integer publicAssessment;
-
     @TableField("created_time")
     private Date createdTime;
 
@@ -74,8 +70,8 @@ public class ApCodingProfileSetting implements Serializable {
         return publicOutput == null || publicOutput == 1;
     }
 
-    /** 分项开关判真：未设置时默认公开 */
-    public boolean assessmentPublic() {
-        return publicAssessment == null || publicAssessment == 1;
+    /** 分项开关判真：未设置时默认关闭（预留，付费问答未上线） */
+    public boolean solvePublic() {
+        return publicSolve != null && publicSolve == 1;
     }
 }

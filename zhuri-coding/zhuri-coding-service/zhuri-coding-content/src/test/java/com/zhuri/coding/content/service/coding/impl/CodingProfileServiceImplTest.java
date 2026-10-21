@@ -4,12 +4,10 @@ import com.zhuri.coding.apis.reward.IRewardClient;
 import com.zhuri.coding.apis.user.IUserClient;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingAnswerRecordMapper;
-import com.zhuri.coding.content.mapper.coding.ApCodingAssessmentMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingProfileSettingMapper;
 import com.zhuri.coding.content.mapper.coding.ApCodingUserStatMapper;
 import com.zhuri.coding.content.mapper.interaction.ApCollectionMapper;
 import com.zhuri.coding.model.coding.dtos.CodingProfileSettingDTO;
-import com.zhuri.coding.model.coding.pojos.ApCodingAssessment;
 import com.zhuri.coding.model.coding.pojos.ApCodingProfileSetting;
 import com.zhuri.coding.model.coding.pojos.ApCodingUserStat;
 import com.zhuri.coding.model.coding.vos.CodingAbilityProfileVO;
@@ -44,7 +42,7 @@ import static org.mockito.Mockito.when;
 /**
  * CodingProfileServiceImpl 单元测试（Coding 延展第二层 · Stage A 能力档案）
  *
- * 覆盖：本人全量档案（五块数据与排序）、访客整体未公开（不泄露数据）、
+ * 覆盖：本人全量档案（四块数据与排序）、访客整体未公开（不泄露数据）、
  * 访客分项裁剪（未公开块占位/已公开块正常）、无记录默认值降级（含 reward 不可用）、
  * 隐私开关读取/保存（新建/更新/并发唯一键兜底）。
  */
@@ -58,8 +56,6 @@ class CodingProfileServiceImplTest {
     private ApCodingUserStatMapper statMapper;
     @Mock
     private ApCodingAnswerRecordMapper recordMapper;
-    @Mock
-    private ApCodingAssessmentMapper assessmentMapper;
     @Mock
     private ApCodingProfileSettingMapper settingMapper;
     @Mock
@@ -76,7 +72,7 @@ class CodingProfileServiceImplTest {
 
     // ---------- 辅助 ----------
 
-    private ApCodingProfileSetting setting(int isPublic, int domain, int streak, int output, int assessment) {
+    private ApCodingProfileSetting setting(int isPublic, int domain, int streak, int output) {
         ApCodingProfileSetting s = new ApCodingProfileSetting();
         s.setId(1L);
         s.setUserId(USER_ID);
@@ -85,7 +81,6 @@ class CodingProfileServiceImplTest {
         s.setPublicStreak(streak);
         s.setPublicOutput(output);
         s.setPublicSolve(0);
-        s.setPublicAssessment(assessment);
         return s;
     }
 
@@ -122,23 +117,14 @@ class CodingProfileServiceImplTest {
     @Test
     @DisplayName("本人视角 - 五块全量返回，领域按答题量降序")
     void testSelfFullProfile() {
-        when(settingMapper.selectOne(any())).thenReturn(setting(1, 1, 1, 1, 1));
+        when(settingMapper.selectOne(any())).thenReturn(setting(1, 1, 1, 1));
         stubUserBrief();
         when(statMapper.selectOne(any())).thenReturn(stat(
-            "{\"Redis\":{\"total\":2,\"correct\":1},\"MySQL\":{\"total\":5,\"correct\":4}}"));
+            "{\"Redis\":{\"total\":2,\"levelSum\":1},\"MySQL\":{\"total\":5,\"levelSum\":4}}"));
         stubContinuousDays(5);
         when(recordMapper.countActiveMonths(USER_ID)).thenReturn(2);
         when(articleMapper.selectCount(any())).thenReturn(3L);
         when(collectionMapper.countCollectedByArticleAuthor(USER_ID)).thenReturn(4);
-        ApCodingAssessment latest = new ApCodingAssessment();
-        latest.setScore(80);
-        latest.setCorrectCount(8);
-        latest.setTotalCount(10);
-        latest.setPercentile(85);
-        latest.setSubmittedTime(java.util.Date.from(
-            java.time.LocalDateTime.of(2026, 10, 1, 20, 0)
-                .atZone(java.time.ZoneId.systemDefault()).toInstant()));
-        when(assessmentMapper.selectLatestSubmitted(USER_ID)).thenReturn(latest);
 
         ResponseResult result = service.profile(USER_ID, USER_ID);
 
@@ -163,10 +149,6 @@ class CodingProfileServiceImplTest {
         assertEquals(3, blocks.getOutput().getArticleCount());
         assertEquals(4, blocks.getOutput().getCollectedCount());
         assertTrue(blocks.getOutput().getAvailable());
-        // 测评
-        assertEquals(80, blocks.getAssessment().getScore());
-        assertEquals(85, blocks.getAssessment().getPercentile());
-        assertTrue(blocks.getAssessment().getAvailable());
         // 解决问题：依赖付费问答，恒不可用
         assertFalse(blocks.getSolve().getAvailable());
     }
@@ -174,14 +156,13 @@ class CodingProfileServiceImplTest {
     @Test
     @DisplayName("本人视角 - 分项关闭仅影响回显标记，数据仍全量可见")
     void testSelfBlockSwitchOffStillVisibleToSelf() {
-        when(settingMapper.selectOne(any())).thenReturn(setting(1, 1, 0, 1, 1));
+        when(settingMapper.selectOne(any())).thenReturn(setting(1, 1, 0, 1));
         stubUserBrief();
-        when(statMapper.selectOne(any())).thenReturn(stat("{\"Redis\":{\"total\":2,\"correct\":1}}"));
+        when(statMapper.selectOne(any())).thenReturn(stat("{\"Redis\":{\"total\":2,\"levelSum\":1}}"));
         stubContinuousDays(5);
         when(recordMapper.countActiveMonths(USER_ID)).thenReturn(1);
         when(articleMapper.selectCount(any())).thenReturn(0L);
         when(collectionMapper.countCollectedByArticleAuthor(USER_ID)).thenReturn(0);
-        when(assessmentMapper.selectLatestSubmitted(USER_ID)).thenReturn(null);
 
         CodingAbilityProfileVO vo = profileOf(service.profile(USER_ID, USER_ID));
 
@@ -199,7 +180,6 @@ class CodingProfileServiceImplTest {
         when(recordMapper.countActiveMonths(USER_ID)).thenReturn(0);
         when(articleMapper.selectCount(any())).thenReturn(0L);
         when(collectionMapper.countCollectedByArticleAuthor(USER_ID)).thenReturn(0);
-        when(assessmentMapper.selectLatestSubmitted(USER_ID)).thenReturn(null);
 
         CodingAbilityProfileVO vo = profileOf(service.profile(USER_ID, USER_ID));
 
@@ -207,13 +187,11 @@ class CodingProfileServiceImplTest {
         assertTrue(vo.getBlocks().getDomain().getPublicVisible());
         assertTrue(vo.getBlocks().getStreak().getPublicVisible());
         assertTrue(vo.getBlocks().getOutput().getPublicVisible());
-        assertTrue(vo.getBlocks().getAssessment().getPublicVisible());
         // 无数据：各块 available=false；reward 不可用降级 0
         assertFalse(vo.getBlocks().getDomain().getAvailable());
         assertFalse(vo.getBlocks().getStreak().getAvailable());
         assertEquals(0, vo.getBlocks().getStreak().getContinuousDays());
         assertFalse(vo.getBlocks().getOutput().getAvailable());
-        assertFalse(vo.getBlocks().getAssessment().getAvailable());
     }
 
     @Test
@@ -223,7 +201,7 @@ class CodingProfileServiceImplTest {
         stubUserBrief();
         StringBuilder json = new StringBuilder("{");
         for (int i = 1; i <= 9; i++) {
-            json.append("\"T").append(i).append("\":{\"total\":").append(i).append(",\"correct\":1}");
+            json.append("\"T").append(i).append("\":{\"total\":").append(i).append(",\"levelSum\":1}");
             if (i < 9) {
                 json.append(",");
             }
@@ -234,7 +212,6 @@ class CodingProfileServiceImplTest {
         when(recordMapper.countActiveMonths(USER_ID)).thenReturn(1);
         when(articleMapper.selectCount(any())).thenReturn(0L);
         when(collectionMapper.countCollectedByArticleAuthor(USER_ID)).thenReturn(0);
-        when(assessmentMapper.selectLatestSubmitted(USER_ID)).thenReturn(null);
 
         CodingAbilityProfileVO vo = profileOf(service.profile(USER_ID, USER_ID));
 
@@ -247,7 +224,7 @@ class CodingProfileServiceImplTest {
     @Test
     @DisplayName("访客视角 - 整体未公开只返回空态，不读任何业务数据")
     void testVisitorWholePrivate() {
-        when(settingMapper.selectOne(any())).thenReturn(setting(0, 1, 1, 1, 1));
+        when(settingMapper.selectOne(any())).thenReturn(setting(0, 1, 1, 1));
         stubUserBrief();
 
         CodingAbilityProfileVO vo = profileOf(service.profile(USER_ID, null));
@@ -257,20 +234,18 @@ class CodingProfileServiceImplTest {
         assertFalse(vo.getBlocks().getDomain().getAvailable());
         assertFalse(vo.getBlocks().getStreak().getAvailable());
         assertFalse(vo.getBlocks().getOutput().getAvailable());
-        assertFalse(vo.getBlocks().getAssessment().getAvailable());
-        verifyNoInteractions(statMapper, recordMapper, assessmentMapper, articleMapper,
+        verifyNoInteractions(statMapper, recordMapper, articleMapper,
             collectionMapper, rewardClient);
     }
 
     @Test
     @DisplayName("访客视角 - 已公开按分项裁剪：关闭块占位、开启块正常")
     void testVisitorPartialCut() {
-        when(settingMapper.selectOne(any())).thenReturn(setting(1, 1, 0, 1, 1));
+        when(settingMapper.selectOne(any())).thenReturn(setting(1, 1, 0, 1));
         stubUserBrief();
-        when(statMapper.selectOne(any())).thenReturn(stat("{\"Redis\":{\"total\":2,\"correct\":1}}"));
+        when(statMapper.selectOne(any())).thenReturn(stat("{\"Redis\":{\"total\":2,\"levelSum\":1}}"));
         when(articleMapper.selectCount(any())).thenReturn(2L);
         when(collectionMapper.countCollectedByArticleAuthor(USER_ID)).thenReturn(1);
-        when(assessmentMapper.selectLatestSubmitted(USER_ID)).thenReturn(null);
 
         CodingAbilityProfileVO vo = profileOf(service.profile(USER_ID, 9999));
 
@@ -284,20 +259,18 @@ class CodingProfileServiceImplTest {
         assertTrue(vo.getBlocks().getDomain().getAvailable());
         assertEquals("Redis", vo.getBlocks().getDomain().getItems().get(0).getTag());
         assertEquals(2, vo.getBlocks().getOutput().getArticleCount());
-        assertFalse(vo.getBlocks().getAssessment().getAvailable());
     }
 
     @Test
     @DisplayName("访客视角 - 本人查看自己未公开档案仍返回全量（viewer=self）")
     void testSelfSeesPrivateProfile() {
-        when(settingMapper.selectOne(any())).thenReturn(setting(0, 1, 1, 1, 1));
+        when(settingMapper.selectOne(any())).thenReturn(setting(0, 1, 1, 1));
         stubUserBrief();
         when(statMapper.selectOne(any())).thenReturn(null);
         stubContinuousDays(3);
         when(recordMapper.countActiveMonths(USER_ID)).thenReturn(1);
         when(articleMapper.selectCount(any())).thenReturn(1L);
         when(collectionMapper.countCollectedByArticleAuthor(USER_ID)).thenReturn(0);
-        when(assessmentMapper.selectLatestSubmitted(USER_ID)).thenReturn(null);
 
         CodingAbilityProfileVO vo = profileOf(service.profile(USER_ID, USER_ID));
 
@@ -331,20 +304,18 @@ class CodingProfileServiceImplTest {
         assertTrue(vo.getPublicStreak());
         assertTrue(vo.getPublicOutput());
         assertFalse(vo.getPublicSolve());
-        assertTrue(vo.getPublicAssessment());
     }
 
     @Test
     @DisplayName("读取开关 - 有记录按存储值回显")
     void testGetSettingExisting() {
-        when(settingMapper.selectOne(any())).thenReturn(setting(1, 0, 1, 1, 0));
+        when(settingMapper.selectOne(any())).thenReturn(setting(1, 0, 1, 1));
 
         CodingProfileSettingVO vo = (CodingProfileSettingVO) service.getSetting(USER_ID).getData();
 
         assertTrue(vo.getIsPublic());
         assertFalse(vo.getPublicDomain());
         assertTrue(vo.getPublicStreak());
-        assertFalse(vo.getPublicAssessment());
     }
 
     @Test
@@ -374,7 +345,7 @@ class CodingProfileServiceImplTest {
     @Test
     @DisplayName("保存开关 - 已有记录仅更新传入字段")
     void testUpdateSettingUpdate() {
-        ApCodingProfileSetting existing = setting(0, 1, 1, 1, 1);
+        ApCodingProfileSetting existing = setting(0, 1, 1, 1);
         when(settingMapper.selectOne(any())).thenReturn(existing);
         CodingProfileSettingDTO dto = new CodingProfileSettingDTO();
         dto.setPublicDomain(false);
@@ -392,7 +363,7 @@ class CodingProfileServiceImplTest {
     @Test
     @DisplayName("保存开关 - 并发首次保存触发唯一键后回读更新")
     void testUpdateSettingDuplicateFallback() {
-        ApCodingProfileSetting existing = setting(0, 1, 1, 1, 1);
+        ApCodingProfileSetting existing = setting(0, 1, 1, 1);
         when(settingMapper.selectOne(any())).thenReturn(null, existing);
         when(settingMapper.insert(any(ApCodingProfileSetting.class)))
             .thenThrow(new DuplicateKeyException("dup"));
