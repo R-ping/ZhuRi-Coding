@@ -17,7 +17,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -43,6 +45,10 @@ public class ImServiceImpl implements ImService {
 
     @Autowired(required = false)
     private IFollowClient followClient;
+
+    /** 只包住「写消息 + 更新会话」的短事务；单测上下文未装配时为 null，直接执行 */
+    @Autowired(required = false)
+    private PlatformTransactionManager transactionManager;
 
     @Override
     public ResponseResult listSessions(Long userId) {
@@ -242,6 +248,10 @@ public class ImServiceImpl implements ImService {
             item.put("content", m.getContent());
             item.put("msg_type", m.getMsgType());
             item.put("status", m.getStatus());
+            // 自动私信与真人消息在同一个会话里混排，必须让前端能区分展示；
+            // 不新增 msg_type 枚举值是因为「内容形态」和「消息来源」是两个正交维度
+            item.put("is_auto_reply", AutoReplyServiceImpl.SOURCE_TYPE.equals(m.getSourceType()));
+            item.put("source_type", m.getSourceType());
             item.put("is_self", m.getSenderId().equals(userId));
             item.put("created_at", m.getCreatedAt() != null ? m.getCreatedAt().toString() : null);
             list.add(item);
@@ -258,7 +268,6 @@ public class ImServiceImpl implements ImService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public ResponseResult sendMessage(Long senderId, ImMessageDto dto) {
         Long receiverId = dto.getReceiverId();
         if (receiverId == null || receiverId.equals(senderId)) {
@@ -269,6 +278,10 @@ public class ImServiceImpl implements ImService {
         }
         if (dto.getContent().trim().length() > 2000) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "消息内容过长（最多2000字）");
+        }
+        // 拉黑关系必须先查：任一方拉黑即不可投递。放在建会话之前，避免为不可达的会话白写一行
+        if (isBlockedRelation(senderId, receiverId)) {
+            return ResponseResult.errorResult(403, "你与对方存在拉黑关系，无法发送消息");
         }
 
         String sessionKey = buildSessionKey(senderId, receiverId);
@@ -307,8 +320,16 @@ public class ImServiceImpl implements ImService {
         message.setIsDeletedForSender(0);
         message.setIsDeletedForReceiver(0);
         message.setCreatedAt(now);
+        // 未读递增与会话预览都在 SQL 层完成：Java 侧「读出来 +1 再写回」在两个事务并发时
+        // 会各自读到旧值、各自写回 +1，最终只涨 1（丢失更新）。方向由 SQL 按 receiverId 判定。
+        String preview = content.length() > 50 ? content.substring(0, 50) + "..." : content;
         try {
-            imMessageMapper.insert(message);
+            // 事务只包「写消息 + 更新会话」两条 SQL：前面的拉黑/权限查询是只读+远程调用，
+            // 放进事务里会白占数据库连接。
+            runInTransaction(() -> {
+                imMessageMapper.insert(message);
+                imSessionMapper.applyIncomingMessage(session.getId(), receiverId, preview, now);
+            });
         } catch (DuplicateKeyException e) {
             // 并发下同一个 clientId 被另一个请求抢先落库，回读它按幂等返回（不递增未读）
             ImMessage existing = imMessageMapper.selectByClientId(session.getId(), clientId);
@@ -317,11 +338,6 @@ public class ImServiceImpl implements ImService {
             }
             throw e;
         }
-
-        // 未读递增与会话预览都在 SQL 层完成：Java 侧「读出来 +1 再写回」在两个事务并发时
-        // 会各自读到旧值、各自写回 +1，最终只涨 1（丢失更新）。方向由 SQL 按 receiverId 判定。
-        String preview = content.length() > 50 ? content.substring(0, 50) + "..." : content;
-        imSessionMapper.applyIncomingMessage(session.getId(), receiverId, preview, now);
 
         return ResponseResult.okResult(messageResult(message.getId(), message.getCreatedAt()));
     }
@@ -382,6 +398,36 @@ public class ImServiceImpl implements ImService {
             return null;
         }
         return session.getUser1Id().equals(userId) ? session.getUser2Id() : session.getUser1Id();
+    }
+
+    /**
+     * 双向拉黑判定：任一方向命中都不可投递。
+     * 服务不可用按"未拉黑"降级（与 {@code IUserClient#isBlocked} 的约定一致）：
+     * 用户服务抖动不应让整片私信不可用，代价只是可能漏拦一次。
+     */
+    private boolean isBlockedRelation(Long userId, Long targetId) {
+        if (userClient == null || userId == null || targetId == null) {
+            return false;
+        }
+        try {
+            ResponseResult res = userClient.isBlocked(userId, targetId);
+            if (res != null && res.getCode() == 200 && res.getData() instanceof Map<?, ?> data) {
+                Object v = data.get("blocked");
+                return v != null && Boolean.parseBoolean(String.valueOf(v));
+            }
+        } catch (Exception e) {
+            log.warn("查询拉黑关系失败, userId={}, targetId={}", userId, targetId, e);
+        }
+        return false;
+    }
+
+    /** 短事务执行：未装配事务管理器（单测）时直接执行，保持原有语义 */
+    private void runInTransaction(Runnable action) {
+        if (transactionManager == null) {
+            action.run();
+            return;
+        }
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> action.run());
     }
 
     /**

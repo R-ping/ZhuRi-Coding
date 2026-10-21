@@ -65,4 +65,16 @@ public interface IUserClient {
      */
     @GetMapping("/api/v1/user/feign/admin-roles")
     ResponseResult getAdminRoles(@RequestParam("accountId") Long accountId);
+
+    /**
+     * 双向拉黑判定：两人之间任一方向存在拉黑即返回 true。
+     *
+     * <p>私信投递前要确认双方是否互相不可见。拉黑数据只在用户库，调用方无法自行判断。
+     * 服务不可用时降级为 false（fail-open）：把「查不到」当成「没拉黑」，
+     * 代价只是可能给拉黑关系多建一次会话；反过来会让用户服务抖一下就整片漏发。
+     *
+     * @return data 为 {@code {blocked: boolean}}
+     */
+    @GetMapping("/api/v1/user/feign/blocks/check")
+    ResponseResult isBlocked(@RequestParam("userId") Long userId, @RequestParam("targetId") Long targetId);
 }

@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -46,16 +47,36 @@ public class BlockServiceImpl implements BlockService {
             return ResponseResult.errorResult(503, "无效的屏蔽类型");
         }
 
-        Page<UserBlockRelation> pageParam = new Page<>(page, size);
+        // 分页参数限幅：size 不设上限时一次请求就能把整张关系表拉出来
+        int safePage = page == null || page < 1 ? 1 : Math.min(page, 100);
+        int safeSize = size == null || size <= 0 ? 10 : Math.min(size, 50);
+        Page<UserBlockRelation> pageParam = new Page<>(safePage, safeSize);
         LambdaQueryWrapper<UserBlockRelation> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserBlockRelation::getUserId, userId);
         wrapper.eq(UserBlockRelation::getTargetType, type);
         wrapper.orderByDesc(UserBlockRelation::getCreateTime);
 
         IPage<UserBlockRelation> result = userBlockRelationMapper.selectPage(pageParam, wrapper);
+        List<UserBlockRelation> records = result.getRecords();
+
+        // 名称/头像一次性批量取回，避免"每条记录一次 selectById"的 N+1
+        Map<Integer, ApUser> userMap = Collections.emptyMap();
+        Map<Integer, SysTag> tagMap = Collections.emptyMap();
+        if (!records.isEmpty()) {
+            Set<Integer> targetIds = records.stream()
+                .map(b -> b.getTargetId().intValue())
+                .collect(Collectors.toSet());
+            if (type == 1) {
+                userMap = apUserMapper.selectBatchIds(targetIds).stream()
+                    .collect(Collectors.toMap(ApUser::getId, u -> u));
+            } else if (type == 2) {
+                tagMap = sysTagMapper.selectBatchIds(targetIds).stream()
+                    .collect(Collectors.toMap(SysTag::getId, t -> t));
+            }
+        }
 
         List<BlockVO> voList = new ArrayList<>();
-        for (UserBlockRelation block : result.getRecords()) {
+        for (UserBlockRelation block : records) {
             BlockVO vo = new BlockVO();
             vo.setId(block.getId());
             vo.setTargetType(block.getTargetType());
@@ -63,15 +84,13 @@ public class BlockServiceImpl implements BlockService {
             vo.setCreateTime(block.getCreateTime());
 
             if (type == 1) {
-                // 作者：查询 ap_user 获取昵称和头像
-                ApUser author = apUserMapper.selectById(block.getTargetId().intValue());
+                ApUser author = userMap.get(block.getTargetId().intValue());
                 if (author != null) {
                     vo.setTargetName(author.getNickname());
                     vo.setTargetAvatar(author.getImage());
                 }
             } else if (type == 2) {
-                // 标签：查询 sys_tags 获取标签名
-                SysTag tag = sysTagMapper.selectById(block.getTargetId().intValue());
+                SysTag tag = tagMap.get(block.getTargetId().intValue());
                 if (tag != null) {
                     vo.setTargetName(tag.getTagName());
                 }
@@ -81,8 +100,8 @@ public class BlockServiceImpl implements BlockService {
 
         Map<String, Object> resultMap = new HashMap<>();
         resultMap.put("total", result.getTotal());
-        resultMap.put("page", page);
-        resultMap.put("size", size);
+        resultMap.put("page", safePage);
+        resultMap.put("size", safeSize);
         resultMap.put("list", voList);
         return ResponseResult.okResult(resultMap);
     }
@@ -144,5 +163,23 @@ public class BlockServiceImpl implements BlockService {
 
         userBlockRelationMapper.deleteById(id);
         return ResponseResult.okResult();
+    }
+
+    @Override
+    public boolean isBlockedBothWays(Long userId, Long targetId) {
+        if (userId == null || targetId == null) {
+            return false;
+        }
+        // target_type = 1 表示被屏蔽对象是用户；两个方向任一命中即算互相不可见
+        LambdaQueryWrapper<UserBlockRelation> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserBlockRelation::getTargetType, 1)
+            .and(q -> q
+                .nested(n -> n.eq(UserBlockRelation::getUserId, userId)
+                    .eq(UserBlockRelation::getTargetId, targetId))
+                .or()
+                .nested(n -> n.eq(UserBlockRelation::getUserId, targetId)
+                    .eq(UserBlockRelation::getTargetId, userId)));
+        Long count = userBlockRelationMapper.selectCount(wrapper);
+        return count != null && count > 0;
     }
 }

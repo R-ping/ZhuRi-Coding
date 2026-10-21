@@ -20,7 +20,7 @@ import com.zhuri.coding.model.common.dtos.ResponseResult;
 public interface CodingInterviewService {
 
     /**
-     * 开面：进行中未超时直接续答（deadline 不变）；否则每日场次校验 → 额度预检 →
+     * 开面：进行中未超时直接续答（deadline 不变）；否则额度预检 →
      * 提纲生成（同步 LLM，不合格拒绝且不落库）→ 落库，返回首题与截止时间。
      */
     ResponseResult start(Integer userId, CodingInterviewStartDTO dto);

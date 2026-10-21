@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>路径：/api/v1/coding（经网关 /content 前缀转发）。</p>
  *
- * <p>登录口径：三个接口都需要登录（以 ThreadLocal 用户为准，不接受外部传 userId）——
+ * <p>登录口径：四个接口都需要登录（以 ThreadLocal 用户为准，不接受外部传 userId）——
  * 今日题带个性化方向、作答是写操作、统计只属于本人。</p>
  */
 @Slf4j
@@ -32,16 +32,33 @@ public class CodingDailyController {
     private CodingQuestionService questionService;
 
     /**
-     * 今日题目：当天已答回放完整结果（含等级与考点清单），未答按方向抽题
-     * GET /api/v1/coding/today?direction=Java%20后端
+     * 今日题目：当天已答回放完整结果（含等级与考点清单），否则按方向抽一道题
+     * GET /api/v1/coding/today?direction=Java%20后端&refresh=false
+     *
+     * <p>抽题不落库：refresh=true 就是换一道，可以一直换到想做的那道为止。</p>
      */
     @GetMapping("/today")
-    public ResponseResult today(@RequestParam(value = "direction", required = false) String direction) {
+    public ResponseResult today(@RequestParam(value = "direction", required = false) String direction,
+                                @RequestParam(value = "refresh", required = false) Boolean refresh) {
         ApUser user = AppThreadLocalUtil.getUser();
         if (user == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
         }
-        return questionService.today(user.getId(), direction);
+        return questionService.today(user.getId(), direction, refresh);
+    }
+
+    /**
+     * 开始作答：落一条「未作答」流水，中途退出就停在这个状态（历史里可见）
+     * POST /api/v1/coding/start
+     * {"poolId": 1}
+     */
+    @PostMapping("/start")
+    public ResponseResult start(@RequestBody(required = false) CodingDailyAnswerDTO dto) {
+        ApUser user = AppThreadLocalUtil.getUser();
+        if (user == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.NEED_LOGIN);
+        }
+        return questionService.startAnswer(user.getId(), dto == null ? null : dto.getPoolId());
     }
 
     /**

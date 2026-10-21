@@ -98,6 +98,12 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         if (article == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
         }
+        // 可见性守卫：详情是公开接口，看得见什么必须与列表/搜索同一套判据。
+        // 未达已发布态（草稿、审核中、未通过、平台下架）与作者软删的文章，一律按「不存在」回应，
+        // 否则直接拿 id 访问就能绕过列表过滤读到未上线或已下线的内容。
+        if (article.isDeletedArticle() || !article.isPublished()) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在或已下线");
+        }
 
         ApUser currentUser = AppThreadLocalUtil.getUser();
         Long userId = currentUser != null ? currentUser.getId().longValue() : null;
@@ -238,6 +244,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         LambdaQueryWrapper<ApArticle> prevWrapper = new LambdaQueryWrapper<>();
         prevWrapper.eq(ApArticle::getColumnId, article.getColumnId())
                 .eq(ApArticle::getStatus, ApArticle.Status.PUBLISHED.getCode())
+                .eq(ApArticle::getIsDeleted, false)
                 .lt(ApArticle::getPublishTime, article.getPublishTime())
                 .orderByDesc(ApArticle::getPublishTime)
                 .last("LIMIT 1");
@@ -251,6 +258,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         LambdaQueryWrapper<ApArticle> nextWrapper = new LambdaQueryWrapper<>();
         nextWrapper.eq(ApArticle::getColumnId, article.getColumnId())
                 .eq(ApArticle::getStatus, ApArticle.Status.PUBLISHED.getCode())
+                .eq(ApArticle::getIsDeleted, false)
                 .gt(ApArticle::getPublishTime, article.getPublishTime())
                 .orderByAsc(ApArticle::getPublishTime)
                 .last("LIMIT 1");
@@ -408,6 +416,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
         List<String> tags = currentArticle.getTags();
         LambdaQueryWrapper<ApArticle> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApArticle::getStatus, ApArticle.Status.PUBLISHED.getCode())
+                .eq(ApArticle::getIsDeleted, false)
                 .ne(ApArticle::getId, id);
 
         // 使用 JSON_OVERLAPS 查询相同标签
@@ -495,6 +504,7 @@ public class ArticleDetailServiceImpl implements ArticleDetailService {
             }
             return apArticleMapper.selectBatchIds(sim.keySet()).stream()
                 .filter(a -> a.getStatus() != null && a.getStatus() == ApArticle.Status.PUBLISHED.getCode())
+                .filter(a -> !a.isDeletedArticle())
                 .filter(a -> a.getIsAigc() == null || a.getIsAigc() != 1)
                 .sorted((a1, a2) -> Double.compare(
                     sim.getOrDefault(a2.getId(), 0d), sim.getOrDefault(a1.getId(), 0d)))

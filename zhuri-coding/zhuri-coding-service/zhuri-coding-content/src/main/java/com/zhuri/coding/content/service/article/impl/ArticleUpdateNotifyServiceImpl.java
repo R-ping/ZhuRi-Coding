@@ -89,7 +89,8 @@ public class ArticleUpdateNotifyServiceImpl implements ArticleUpdateNotifyServic
         }
         ApArticle article = apArticleMapper.selectById(articleId);
         if (article == null || article.getStatus() == null
-                || article.getStatus().byteValue() != ApArticle.Status.PUBLISHED.getCode()) {
+                || article.getStatus().byteValue() != ApArticle.Status.PUBLISHED.getCode()
+                || article.isDeletedArticle()) {
             // 永久失败：文章已删除/未发布，重试多少次都不会变，直接判死
             throw new OutboxDispatcher.DeadSignal("更新提醒目标文章不可用, articleId=" + articleId);
         }

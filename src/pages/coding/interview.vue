@@ -530,7 +530,7 @@
                     }
                 } catch (e) {
                     const msg = (e && e.message) || '开面失败，请稍后重试'
-                    // 额度不足（3301）：横幅引导充值；其余（每日场次上限等）内联展示
+                    // 额度不足（3301）：横幅引导充值；其余错误内联展示
                     if (e && e.code === 3301) {
                         this.showQuotaBlocked(msg)
                     } else {

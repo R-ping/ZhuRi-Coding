@@ -36,6 +36,14 @@ public class INotificationClientFallback implements FallbackFactory<INotificatio
                 log.error("NotificationClient.sendActivityNotification fallback, error: {}", cause.getMessage());
                 return ResponseResult.errorResult(500, "通知服务不可用");
             }
+
+            @Override
+            public ResponseResult sendFollowAutoReply(Long followId, Long followerId, Long followeeId) {
+                log.error("NotificationClient.sendFollowAutoReply fallback, followId={}, follower={}, followee={}, error: {}",
+                        followId, followerId, followeeId, cause.getMessage());
+                // 返回错误码而不是 ok：调用方（本地消息表重放）据此重试，避免静默丢消息
+                return ResponseResult.errorResult(500, "私信服务不可用");
+            }
         };
     }
 }

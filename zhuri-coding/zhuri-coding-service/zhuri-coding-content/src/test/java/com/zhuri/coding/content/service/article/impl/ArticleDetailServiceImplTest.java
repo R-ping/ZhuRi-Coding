@@ -206,6 +206,28 @@ class ArticleDetailServiceImplTest {
     }
 
     @Test
+    @DisplayName("文章详情 - 平台下架、作者删除、审核中一律按不存在返回")
+    void testGetArticleDetailInvisible() {
+        // 公开接口只认「已发布且未删除」：判据漏一条，直接拿 id 就能读到未上线或已下线的内容
+        testArticle.setStatus(ApArticle.Status.TAKEN_DOWN.getCode());
+        when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle);
+        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(),
+                articleDetailService.getArticleDetail(TEST_ARTICLE_ID).getCode());
+
+        // 作者删除只改 is_deleted，status 仍是已发布 —— 这一条最容易被漏掉
+        testArticle.setStatus(ApArticle.Status.PUBLISHED.getCode());
+        testArticle.setIsDeleted(true);
+        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(),
+                articleDetailService.getArticleDetail(TEST_ARTICLE_ID).getCode());
+
+        // 审核中（还没上线）同样不可见
+        testArticle.setIsDeleted(false);
+        testArticle.setStatus(ApArticle.Status.SUBMIT.getCode());
+        assertEquals(AppHttpCodeEnum.DATA_NOT_EXIST.getCode(),
+                articleDetailService.getArticleDetail(TEST_ARTICLE_ID).getCode());
+    }
+
+    @Test
     @DisplayName("文章详情 - 成功返回完整文章详情")
     void testGetArticleDetailSuccess() {
         when(apArticleMapper.selectById(TEST_ARTICLE_ID)).thenReturn(testArticle);

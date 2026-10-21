@@ -6,9 +6,24 @@ import store from '@/stores/store'
  * 今日题/作答/统计均需登录；题库列表与投稿已随选择题形态一并移除。
  */
 
-/** 今日题目（direction 可选，缺省用用户上次的方向，再缺省用默认方向） */
-export const getTodayQuestion = (direction) => {
-  return request.get('/api/v1/coding/today', { params: direction ? { direction } : {} })
+/**
+ * 今日题目（direction 可选，缺省用用户上次的方向，再缺省用默认方向）
+ * refresh=true 表示「换一题」：重新抽一道，抽题不落库，想换几次换几次。
+ */
+export const getTodayQuestion = (direction, refresh) => {
+  const params = {}
+  if (direction) params.direction = direction
+  if (refresh) params.refresh = true
+  return request.get('/api/v1/coding/today', { params })
+}
+
+/**
+ * 开始作答：落一条「未作答」流水。
+ * 落库发生在这里而不是抽题时 —— 抽到的题可能不想做，点开始才算数；
+ * 中途退出或关掉页面，这条记录就停在未作答。
+ */
+export const startCodingAnswer = (poolId) => {
+  return request.post('/api/v1/coding/start', { poolId })
 }
 
 /**
@@ -70,7 +85,7 @@ export const updateAbilitySetting = (data) => {
  * 轮次为 SSE 流式（fetch + reader 手动解析，与 ai.js 的 precheckArticleStream 同一写法）。
  */
 
-/** 模拟面试：开面（有进行中直接续答；每日场次有上限；额度不足被拒） */
+/** 模拟面试：开面（有进行中直接续答；额度不足被拒） */
 export const startInterview = (data) => {
   return request.post('/api/v1/coding/interview/start', data, { timeout: 60000 })
 }

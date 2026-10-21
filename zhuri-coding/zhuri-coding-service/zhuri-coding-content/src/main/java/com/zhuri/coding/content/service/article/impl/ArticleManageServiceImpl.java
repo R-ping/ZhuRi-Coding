@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.article.ArticleManageService;
+import com.zhuri.coding.content.service.downlink.ArticleEmbeddingRemover;
+import com.zhuri.coding.content.service.downlink.ArticleIndexRemover;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticleContent;
 import com.zhuri.coding.model.common.dtos.ResponseResult;
@@ -28,6 +30,14 @@ public class ArticleManageServiceImpl extends ServiceImpl<ApArticleMapper, ApArt
 
     @Autowired
     private ApArticleContentMapper apArticleContentMapper;
+
+    /** 检索索引清理（事务内登记、提交后送达、失败重试） */
+    @Autowired
+    private ArticleIndexRemover articleIndexRemover;
+
+    /** 向量清理（同上；索引与向量分属两个外部系统，各走一条投递） */
+    @Autowired
+    private ArticleEmbeddingRemover articleEmbeddingRemover;
 
     @Override
     public ResponseResult list(Long authorId, Integer page, Integer size, String status, String title) {
@@ -94,15 +104,17 @@ public class ArticleManageServiceImpl extends ServiceImpl<ApArticleMapper, ApArt
         if (id == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "id 不能为空");
         }
-        ApArticle article = getById(id);
-        if (article == null) {
+        // 归属校验与删除合成一条条件更新：只写 is_deleted 一列，
+        // 既不把整行旧快照盖回去（与审核链的状态更新并发时不会互相覆盖），也不必先查再判。
+        int affected = baseMapper.softDeleteByAuthor(id, user.getId().longValue());
+        if (affected == 0) {
+            // 不存在、不是本人、已删除三种情况对外同一句：不泄漏别人的文章是否存在
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
         }
-        if (!article.getAuthorId().equals(user.getId().longValue())) {
-            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
-        }
-        article.setIsDeleted(true);
-        updateById(article);
+        // 删除只改了 MySQL 的一列，索引与向量还在外部系统里。两处各走一条可靠投递：
+        // 事务提交后才真正执行，失败重试；对从未发布过的文章是无害空操作（删不存在的东西不报错）。
+        articleIndexRemover.removeFromIndex(id);
+        articleEmbeddingRemover.remove(id);
         return ResponseResult.okResult();
     }
 
@@ -116,7 +128,8 @@ public class ArticleManageServiceImpl extends ServiceImpl<ApArticleMapper, ApArt
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "id 不能为空");
         }
         ApArticle article = getById(id);
-        if (article == null) {
+        // 已删除的文章对作者本人也不可见：否则编辑页能把它读出来、再保存一次就"复活"了
+        if (article == null || article.isDeletedArticle()) {
             return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
         }
         // 查询文章内容

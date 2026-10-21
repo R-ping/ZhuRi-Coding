@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>为什么需要</b>：面试与测评的"超时即废"目前只有<b>懒过期</b>——判定写在
  * {@code start / current / submit / finish} 里，只有用户下一次触达才会把 {@code status=1} 改成已过期。
- * 用户中途关掉页面再也不回来时，这一行就永远停在"进行中"：每日场次上限、后台统计与运营看板
+ * 用户中途关掉页面再也不回来时，这一行就永远停在"进行中"：后台统计与运营看板
  * 都会被这类僵尸场次污染。审核链路有 {@code ArticleAuditRecoveryTask} 做滞留补偿，这里补齐 Coding 侧同一环。</p>
  *
  * <p><b>与审核滞留补偿的差别</b>：那边需要"提交超过 N 分钟仍未推进"这样一个额外阈值来压并发窗口；

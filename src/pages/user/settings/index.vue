@@ -346,6 +346,33 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="settings-card">
+                        <div class="card-header">
+                            <span>关注自动回复</span>
+                            <label class="ar-switch" :class="{ disabled: autoReplySaving }">
+                                <input type="checkbox" :checked="autoReply.enabled"
+                                       :disabled="autoReplySaving" @change="toggleAutoReply">
+                                <span class="ar-slider"></span>
+                            </label>
+                        </div>
+                        <div class="card-body">
+                            <p class="ar-hint">开启后，新粉丝首次关注你时会收到这条私信；重复关注与短期内取消再关注不会重复发送。</p>
+                            <textarea class="ar-input" v-model="autoReply.content" maxlength="100" rows="3"
+                                      placeholder="谢谢关注"></textarea>
+                            <div class="ar-footer">
+                                <span class="ar-count">{{ (autoReply.content || '').length }}/100</span>
+                                <span v-if="autoReply.auditStatus === 2" class="ar-status error">
+                                    未通过：{{ autoReply.auditReason }}，当前仍发送「{{ autoReply.effectiveContent }}」
+                                </span>
+                                <span v-else-if="autoReply.auditStatus === 0" class="ar-status">审核中，当前仍发送「{{ autoReply.effectiveContent }}」</span>
+                                <span v-else class="ar-status ok">生效中：{{ autoReply.effectiveContent }}</span>
+                                <button class="edit-btn primary" :disabled="autoReplySaving" @click="saveAutoReply">
+                                    {{ autoReplySaving ? '保存中…' : '保存' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div v-if="activeSection === 'block'" class="section-content">
@@ -491,6 +518,7 @@ import HomeBar from '@/components/bars/home_bar'
 import Utils from '@/utils/env'
 const defaultAvatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="50" fill="%23ddd"/%3E%3C/svg%3E'
 import { getUserProfile, updateUserProfile, uploadAvatar as uploadAvatarApi, getBindings, updatePassword, deleteAccount, updatePrivacyMessage, getBlocks, removeBlock, getTagsDiscover, getFollowedTags, followTag, unfollowTag } from '@/apis/user'
+import { getAutoReplySetting, saveAutoReplySetting } from '@/apis/im'
 import { toast } from '@/utils/toast'
 
 export default {
@@ -522,6 +550,15 @@ export default {
                 codeAssistant: true
             },
             privacyScope: 0,
+            autoReply: {
+                enabled: true,
+                content: '谢谢关注',
+                auditStatus: 1,
+                auditReason: null,
+                effectiveContent: '谢谢关注',
+                canSend: true
+            },
+            autoReplySaving: false,
             blockTab: 'author',
             blockList: [],
             blockLoading: false,
@@ -811,6 +848,74 @@ export default {
                 toast('设置失败', 2)
             }
         },
+        applyAutoReply(data) {
+            if (!data) return
+            this.autoReply = {
+                enabled: !!data.enabled,
+                content: data.content || data.default_content || '谢谢关注',
+                auditStatus: data.audit_status,
+                auditReason: data.audit_reason,
+                effectiveContent: data.effective_content || data.default_content || '',
+                canSend: !!data.can_send
+            }
+        },
+        async loadAutoReply() {
+            try {
+                const res = await getAutoReplySetting()
+                if (res && res.code === 200) {
+                    this.applyAutoReply(res.data)
+                }
+            } catch (e) {
+                toast('自动回复设置加载失败', 2)
+            }
+        },
+        async toggleAutoReply(e) {
+            const enabled = e.target.checked
+            this.autoReplySaving = true
+            try {
+                const res = await saveAutoReplySetting({ enabled: enabled })
+                if (res && res.code === 200) {
+                    this.applyAutoReply(res.data)
+                    toast(enabled ? '已开启关注自动回复' : '已关闭关注自动回复', 2)
+                } else {
+                    e.target.checked = !enabled
+                    toast((res && res.message) || '设置失败', 2)
+                }
+            } catch (err) {
+                // 还原开关状态：不能让界面显示的值和服务端不一致
+                e.target.checked = !enabled
+                this.autoReply.enabled = !enabled
+                toast('设置失败', 2)
+            } finally {
+                this.autoReplySaving = false
+            }
+        },
+        async saveAutoReply() {
+            if (this.autoReplySaving) return
+            const content = (this.autoReply.content || '').trim()
+            if (!content) {
+                toast('文案不能为空', 2)
+                return
+            }
+            this.autoReplySaving = true
+            try {
+                const res = await saveAutoReplySetting({ content: content })
+                if (res && res.code === 200) {
+                    this.applyAutoReply(res.data)
+                    if (res.data && res.data.audit_status === 2) {
+                        toast('内容未通过审核，已沿用上一版文案', 2)
+                    } else {
+                        toast('已保存', 2)
+                    }
+                } else {
+                    toast((res && res.message) || '保存失败', 2)
+                }
+            } catch (err) {
+                toast((err && err.message) || '保存失败', 2)
+            } finally {
+                this.autoReplySaving = false
+            }
+        },
         async confirmDeleteAccount() {
             this.deleteAccountConfirming = true
             try {
@@ -880,6 +985,8 @@ export default {
                 this.loadBlockList()
             } else if (newVal === 'tags') {
                 this.loadFollowedTags()
+            } else if (newVal === 'notification') {
+                this.loadAutoReply()
             }
         }
     },
@@ -1244,6 +1351,107 @@ export default {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* 关注自动回复 */
+.ar-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+
+    input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    &.disabled {
+        opacity: .6;
+        cursor: not-allowed;
+    }
+}
+
+.ar-slider {
+    position: absolute;
+    inset: 0;
+    background: #d9dde3;
+    border-radius: 12px;
+    transition: background .2s;
+
+    &::before {
+        content: '';
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        left: 2px;
+        top: 2px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform .2s;
+    }
+}
+
+.ar-switch input:checked + .ar-slider {
+    background: #1e80ff;
+}
+
+.ar-switch input:checked + .ar-slider::before {
+    transform: translateX(20px);
+}
+
+.ar-hint {
+    font-size: 12px;
+    color: #8a919f;
+    margin: 0 0 12px;
+    line-height: 1.6;
+}
+
+.ar-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #e4e6eb;
+    border-radius: 6px;
+    font-size: 14px;
+    color: #252933;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+
+    &:focus {
+        border-color: #1e80ff;
+    }
+}
+
+.ar-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.ar-count {
+    font-size: 12px;
+    color: #8a919f;
+}
+
+.ar-status {
+    flex: 1;
+    font-size: 12px;
+    color: #8a919f;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &.ok {
+        color: #52c41a;
+    }
+
+    &.error {
+        color: #f56c6c;
+    }
 }
 
 .general-hint {

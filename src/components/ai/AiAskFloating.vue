@@ -125,7 +125,15 @@
                 quotaLoaded: false,
                 freeTokens: { dailyLimit: 0, usedToday: 0, remainToday: 0 },
                 walletTokens: 0,
-                quotaExhausted: false
+                quotaExhausted: false,
+                // 当前 SSE 流的取消句柄：关闭面板/卸载时中断，避免服务端继续生成并计费
+                streamAbort: null
+            }
+        },
+        beforeDestroy() {
+            if (this.streamAbort) {
+                this.streamAbort.abort()
+                this.streamAbort = null
             }
         },
         methods: {
@@ -178,6 +186,11 @@
                 this.restoreConversation()
             },
             closePanel() {
+                // 关闭即中断在途流式请求：用户已经看不到回答，继续生成只会白耗 token
+                if (this.streamAbort) {
+                    this.streamAbort.abort()
+                    this.streamAbort = null
+                }
                 this.panelVisible = false
                 this.activeMsg = -1
                 this.activeSource = -1
@@ -276,11 +289,20 @@
                 const last = this.messages[this.messages.length - 1]
                 last.streaming = true
                 const token = this.$store.state.accessToken
-                fetch('/content/api/v1/ai/ask/stream', {
+                // 同一时刻只保留一条流：新提问先中断上一条，避免两路回答写进同一条消息
+                if (this.streamAbort) {
+                    this.streamAbort.abort()
+                    this.streamAbort = null
+                }
+                const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+                this.streamAbort = controller
+                const options = {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'accToken': token || '' },
                     body: JSON.stringify({ question: q, topK: 5, history: this.buildHistory() })
-                }).then(resp => {
+                }
+                if (controller) options.signal = controller.signal
+                fetch('/content/api/v1/ai/ask/stream', options).then(resp => {
                     if (!resp.ok || !resp.body) {
                         throw new Error('HTTP ' + resp.status)
                     }
@@ -288,10 +310,8 @@
                     const decoder = new TextDecoder('utf-8')
                     let buffer = ''
                     let eventName = ''
-                    const pump = () => reader.read().then(({ done, value }) => {
-                        if (done) { this.finishStream(last); return }
-                        buffer += decoder.decode(value, { stream: true })
-                        // 按行解析 SSE
+                    // 按行解析 SSE；buffer 保留最后一个不完整行
+                    const consumeBuffer = () => {
                         const lines = buffer.split('\n')
                         buffer = lines.pop()
                         for (const line of lines) {
@@ -320,12 +340,42 @@
                                 eventName = ''
                             }
                         }
+                    }
+                    const pump = () => reader.read().then(({ done, value }) => {
+                        if (done) {
+                            // 收尾：最后一帧可能没有换行符，残留 buffer 必须补处理，否则尾字会丢
+                            buffer += decoder.decode()
+                            if (buffer.trim()) {
+                                buffer += '\n'
+                                consumeBuffer()
+                            }
+                            this.finishStream(last)
+                            return
+                        }
+                        buffer += decoder.decode(value, { stream: true })
+                        consumeBuffer()
                         return pump()
-                    }).catch(err => { last.error = '流式响应中断，请重试'; this.loading = false })
+                    }).catch(err => {
+                        if (err && err.name === 'AbortError') {
+                            // 用户主动关闭/切换：不算失败，保留已生成内容
+                            this.finishStream(last)
+                            return
+                        }
+                        last.error = '流式响应中断，请重试'
+                        this.loading = false
+                    })
                     return pump()
                 }).catch(err => {
+                    if (err && err.name === 'AbortError') {
+                        last.loading = false
+                        last.streaming = false
+                        this.loading = false
+                        return
+                    }
                     last.error = 'AI 服务暂不可用（' + (err.message || '网络错误') + '）'
                     this.loading = false
+                }).finally(() => {
+                    if (this.streamAbort === controller) this.streamAbort = null
                 })
             },
             finishStream(last) {
