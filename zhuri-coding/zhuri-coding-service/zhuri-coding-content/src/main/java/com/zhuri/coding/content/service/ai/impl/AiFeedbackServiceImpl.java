@@ -101,6 +101,12 @@ public class AiFeedbackServiceImpl implements AiFeedbackService {
         if (AiFeedback.FEATURE_AIASK_ARTICLE.equals(feature)) {
             return com.zhuri.coding.content.service.ai.AiFeatures.ASK_ARTICLE;
         }
+        if (com.zhuri.coding.content.service.ai.AiFeatures.ASK_GLOBAL_FAST.equals(feature)) {
+            return com.zhuri.coding.content.service.ai.AiFeatures.ASK_GLOBAL_FAST;
+        }
+        if (com.zhuri.coding.content.service.ai.AiFeatures.ASK_GLOBAL_DEEP.equals(feature)) {
+            return com.zhuri.coding.content.service.ai.AiFeatures.ASK_GLOBAL_DEEP;
+        }
         return com.zhuri.coding.content.service.ai.AiFeatures.OTHER;
     }
 

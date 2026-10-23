@@ -1,5 +1,7 @@
 package com.zhuri.coding.content.service.ai;
 
+import com.zhuri.coding.content.service.ai.qa.AiAskCommand;
+import com.zhuri.coding.content.service.ai.qa.AiStreamSink;
 import com.zhuri.coding.model.article.dtos.AiAnswerVo;
 
 /**
@@ -28,4 +30,13 @@ public interface AiAskService {
     AiAnswerVo streamFastAsk(String question, Integer topK,
                              java.util.List<java.util.Map<String, String>> history,
                              java.util.function.Consumer<String> onDelta, Integer userId);
+
+    /**
+     * 统一全站问答：fast/deep 都流式输出，阶段事件通过 sink 回传。
+     *
+     * @param command 归一化后的范围/模式/锚点/会话
+     * @param sink    阶段与文本增量回调
+     * @return 完整回答；参数不合法/检索或生成失败返回 null
+     */
+    AiAnswerVo streamAsk(AiAskCommand command, AiStreamSink sink);
 }

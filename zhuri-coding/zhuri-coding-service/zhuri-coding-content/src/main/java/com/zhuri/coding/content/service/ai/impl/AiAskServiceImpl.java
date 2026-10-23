@@ -6,6 +6,13 @@ import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.ai.AiAskService;
 import com.zhuri.coding.content.service.ai.AiFeatures;
 import com.zhuri.coding.content.service.ai.AiSemanticCacheService;
+import com.zhuri.coding.content.service.ai.qa.AiAskCommand;
+import com.zhuri.coding.content.service.ai.qa.AiCacheScope;
+import com.zhuri.coding.content.service.ai.qa.AiMode;
+import com.zhuri.coding.content.service.ai.qa.AiStage;
+import com.zhuri.coding.content.service.ai.qa.AiStageStatus;
+import com.zhuri.coding.content.service.ai.qa.AiStreamSink;
+import com.zhuri.coding.content.service.ai.pipeline.AskRetrievalChain;
 import com.zhuri.coding.content.service.ai.AnswerFaithfulnessService;
 import com.zhuri.coding.content.service.ai.HybridRecallService;
 import com.zhuri.coding.content.service.ai.memory.AiConversationMemoryService;
@@ -104,6 +111,14 @@ public class AiAskServiceImpl implements AiAskService {
     /** 忠实度校验模式：off 关闭 / async 异步只记录（默认，不影响响应延迟）/ sync 同步并把简报塞进响应 */
     @Value("${ai.faithfulness.mode:async}")
     private String faithfulnessMode;
+
+    /** 锚点是否占保留槽位（仅在锚点命中召回时生效） */
+    @Value("${ai.ask.anchor.reserved-slot:true}")
+    private boolean anchorReservedSlot = true;
+
+    /** 全局问答每篇注入的命中子块数 */
+    @Value("${ai.ask.global.chunks-per-article:2}")
+    private int chunksPerArticle = 2;
 
     /** 异步校验复用 SSE 线程池（与 AIGC 预审/复核同一套） */
     @Autowired
@@ -337,6 +352,160 @@ public class AiAskServiceImpl implements AiAskService {
         log.info("[AiAsk-stream] question={}, sources={}, latency={}ms", truncate(q, 40), r.sources.size(), vo.getLatencyMs());
         // 消费漏斗：生成成功（vo 返回给用户）
         funnelMeter.incr(AiFeatures.ASK_STREAM, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        return vo;
+    }
+
+    @Override
+    public AiAnswerVo streamAsk(AiAskCommand command, AiStreamSink sink) {
+        long start = System.currentTimeMillis();
+        if (command == null) {
+            return null;
+        }
+        String q = command.question() == null ? "" : command.question().trim();
+        if (q.isEmpty() || q.length() > MAX_QUESTION_LEN) {
+            return null;
+        }
+        int k = command.topK() == null ? DEFAULT_TOP_K
+            : Math.max(1, Math.min(command.topK(), MAX_TOP_K));
+        Integer uid = command.userId();
+        boolean deep = command.mode() == AiMode.DEEP;
+        String mode = deep ? "deep" : "fast";
+        String feature = deep ? AiFeatures.ASK_GLOBAL_DEEP : AiFeatures.ASK_GLOBAL_FAST;
+        String scopeKey = AiCacheScope.global(mode, command.anchorArticleId());
+
+        // 缓存：范围 + 模式 + 锚点三者共同决定命中
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt sysPrompt =
+            prompt("ai_ask_system", SYSTEM_PROMPT, uid);
+        // 深度链路的改写/精排 prompt 也参与版本签名：任一版本变化都应让缓存失效
+        int rewriteVersion = -1;
+        int rerankVersion = -1;
+        java.util.Map<String, Integer> stampParts = new LinkedHashMap<>();
+        stampParts.put("ai_ask_system", sysPrompt.version);
+        if (deep) {
+            rewriteVersion = prompt("ai_ask_rewrite", REWRITE_PROMPT, null).version;
+            rerankVersion = prompt("ai_ask_rerank", RERANK_PROMPT, null).version;
+            stampParts.put("ai_ask_rewrite", rewriteVersion);
+            stampParts.put("ai_ask_rerank", rerankVersion);
+        }
+        String promptStamp = com.zhuri.coding.content.service.ai.PromptStamp.of(stampParts);
+        AiAnswerVo cached = semanticCacheService.lookup(q, uid, promptStamp, scopeKey);
+        if (cached != null) {
+            cached.setPromptVersions(java.util.Map.of("ai_ask_system", sysPrompt.version));
+            cached.setScope("global");
+            cached.setMode(mode);
+            cached.setBasis("global");
+            funnelMeter.incr(feature, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_CACHE_HIT);
+            replayDelta(cached.getAnswer(), sink::delta);
+            if (uid != null) {
+                try {
+                    conversationMemoryService.appendTurn(uid, q, cached.getAnswer());
+                } catch (Exception e) {
+                    log.debug("[AiAsk-unified] 命中路径会话记忆写入失败, userId={}", uid, e);
+                }
+            }
+            cached.setLatencyMs(System.currentTimeMillis() - start);
+            return cached;
+        }
+
+        String searchQuery = q;
+        if (deep) {
+            sink.stage(AiStage.REWRITE, AiStageStatus.RUNNING);
+            String rewritten = queryRewrite(q);
+            if (rewritten != null && !rewritten.isBlank()) {
+                searchQuery = rewritten;
+                log.info("[AiAsk-unified] query rewrite: {} -> {}", truncate(q, 30), truncate(searchQuery, 40));
+            }
+            sink.stage(AiStage.REWRITE, AiStageStatus.DONE);
+        }
+
+        AskRetrievalChain.RetrievalListener listener = new AskRetrievalChain.RetrievalListener() {
+            @Override
+            public void onRecallStart() {
+                sink.stage(AiStage.RECALL, AiStageStatus.RUNNING);
+            }
+
+            @Override
+            public void onRecallDone(int candidates) {
+                sink.stage(AiStage.RECALL, AiStageStatus.DONE);
+            }
+
+            @Override
+            public void onRerankStart(int candidates) {
+                sink.stage(AiStage.RERANK, AiStageStatus.RUNNING);
+            }
+
+            @Override
+            public void onRerankDone(int selected) {
+                sink.stage(AiStage.RERANK, AiStageStatus.DONE);
+            }
+        };
+        Retrieval r = retrieveAndAssemble(searchQuery, q, k, deep,
+            command.anchorArticleId(), true, Math.max(1, chunksPerArticle), listener);
+        if (r == null) {
+            return null;
+        }
+        funnelMeter.incr(feature, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_RECALL_DONE);
+        if (r.hits == 0) {
+            AiAnswerVo empty = emptyAnswer(start);
+            empty.setScope("global");
+            empty.setMode(mode);
+            empty.setBasis("global");
+            return empty;
+        }
+
+        String userPrompt = buildUser(r.docsText, q, r.queryEmbedding, uid);
+        sink.stage(AiStage.GENERATE, AiStageStatus.RUNNING);
+        StringBuilder acc = new StringBuilder();
+        boolean cancelled = false;
+        try {
+            genStream(feature, sysPrompt.content, userPrompt, command.history(), uid, delta -> {
+                if (acc.length() == 0) {
+                    aiMetricsCollector.record("aiask_stream_ttft", System.currentTimeMillis() - start);
+                }
+                acc.append(delta);
+                sink.delta(delta);
+            });
+        } catch (java.util.concurrent.CancellationException e) {
+            cancelled = true;
+        } catch (Exception e) {
+            log.error("[AiAsk-unified] 生成失败, question={}", truncate(q, 40), e);
+        }
+        if (cancelled) {
+            aiMetricsCollector.incr("aiask_stream_cancelled");
+            return null;
+        }
+        if (acc.length() == 0) {
+            log.warn("[AiAsk-unified] 未获得流式输出, question={}", truncate(q, 40));
+            return null;
+        }
+        try {
+            promptSafetyAdvisor.guardStreamed(acc.toString());
+        } catch (SafetyGuardException e) {
+            log.warn("[AiAsk-unified] 输出护栏命中，丢弃回答: {}", e.getMessage());
+            return null;
+        }
+
+        AiAnswerVo vo = new AiAnswerVo();
+        vo.setAnswer(acc.toString().trim());
+        vo.setSources(r.sources);
+        vo.setScope("global");
+        vo.setMode(mode);
+        vo.setBasis("global");
+        vo.setLatencyMs(System.currentTimeMillis() - start);
+        java.util.Map<String, Integer> pv = new LinkedHashMap<>();
+        pv.put("ai_ask_system", sysPrompt.version);
+        if (deep) {
+            pv.put("ai_ask_rewrite", rewriteVersion);
+            pv.put("ai_ask_rerank", rerankVersion);
+        }
+        vo.setPromptVersions(pv);
+        persistMemory(uid, q, vo.getAnswer(), r);
+        semanticCacheService.store(q, uid, vo.getAnswer(), r.sources, promptStamp, scopeKey);
+        checkFaithfulness(vo, r);
+        sink.stage(AiStage.GENERATE, AiStageStatus.DONE);
+        funnelMeter.incr(feature, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_GENERATED);
+        log.info("[AiAsk-unified] question={}, scope=global, mode={}, sources={}, latency={}ms",
+            truncate(q, 40), mode, r.sources.size(), vo.getLatencyMs());
         return vo;
     }
 
@@ -627,9 +796,25 @@ public class AiAskServiceImpl implements AiAskService {
      * @return null=向量化失败（调用方降级）；hits==0 表示无命中（调用方返回空答案）
      */
     private Retrieval retrieveAndAssemble(String searchQuery, String userQuestion, int topK, boolean doRerank) {
-        com.zhuri.coding.content.service.ai.pipeline.AskRetrievalChain.ChainResult cr =
-            retrievalChain.run(new com.zhuri.coding.content.service.ai.pipeline.AskRetrievalChain.ChainCtx(
-                searchQuery, userQuestion, topK, doRerank, RECALL_TOPK, RERANK_MIN_CANDIDATES, CONTEXT_CHARS, RERANK_PROMPT));
+        return retrieveAndAssemble(searchQuery, userQuestion, topK, doRerank,
+            null, false, 2, null);
+    }
+
+    /**
+     * 带锚点与子块上下文的检索入口（统一问答使用）。
+     *
+     * @param anchorArticleId 锚点文章；只在召回命中时占优先槽位，不强制注入
+     * @param useChunkContext 是否用命中子块组装上下文；旧链路关闭以保持原行为
+     * @param chunksPerArticle 每篇注入的命中子块数
+     * @param listener 阶段回调（可空）
+     */
+    private Retrieval retrieveAndAssemble(String searchQuery, String userQuestion, int topK, boolean doRerank,
+                                          Long anchorArticleId, boolean useChunkContext,
+                                          int chunksPerArticle, AskRetrievalChain.RetrievalListener listener) {
+        AskRetrievalChain.ChainResult cr = retrievalChain.run(new AskRetrievalChain.ChainCtx(
+            searchQuery, userQuestion, topK, doRerank, RECALL_TOPK, RERANK_MIN_CANDIDATES,
+            CONTEXT_CHARS, RERANK_PROMPT, anchorArticleId, anchorReservedSlot, useChunkContext,
+            chunksPerArticle, listener));
         if (cr == null) {
             return null;
         }

@@ -43,7 +43,7 @@
                                     <span class="typing">正在检索社区文章并生成回答…</span>
                                 </template>
                                 <template v-else-if="m.streaming && !m.answer">
-                                    <span class="typing">AI 正在思考…</span>
+                                    <span class="typing">{{ m.stage || 'AI 正在思考…' }}</span>
                                 </template>
                                 <template v-else-if="m.error">
                                     <span class="a-error">{{ m.error }}</span>
@@ -81,7 +81,7 @@
             <span class="mode-label">回答模式</span>
             <span class="mode-chip" :class="{ 'on': fastMode }" @click="fastMode = true">快速</span>
             <span class="mode-chip" :class="{ 'on': !fastMode }" @click="fastMode = false">深度</span>
-            <span class="mode-hint">{{ fastMode ? '约 5s' : '更精准 · 约 15s' }}</span>
+            <span class="mode-hint">{{ fastMode ? '快速检索' : '更完整的检索与复核' }}</span>
         </div>
         <!-- 额度用尽引导 -->
         <div class="ai-quota-banner" v-if="quotaExhausted">
@@ -107,7 +107,7 @@
 </template>
 
 <script>
-    import { askAi, getAiQuotaStatus, getAiConversation, clearAiConversation } from '@/apis/ai'
+    import { getAiQuotaStatus, getAiConversation, clearAiConversation } from '@/apis/ai'
     import { toast } from '@/utils/toast'
 
     export default {
@@ -234,49 +234,21 @@
             send() {
                 const q = (this.question || '').trim()
                 if (!q || this.loading) return
-                this.messages.push({ q: q, loading: true, answer: '', sources: [], streaming: false })
+                this.messages.push({
+                    q: q, loading: true, answer: '', sources: [],
+                    streaming: false, stage: '',
+                    scope: 'global', mode: this.fastMode ? 'fast' : 'deep'
+                })
                 this.question = ''
                 this.loading = true
                 this.scrollBottom()
-                if (this.fastMode) {
-                    this.streamAsk(q)
-                    return
-                }
-                askAi(q, 5, false, this.buildHistory()).then(res => {
-                    const last = this.messages[this.messages.length - 1]
-                    last.loading = false
-                    if (res && res.code === 200 && res.data) {
-                        last.answer = res.data.answer || ''
-                        last.sources = res.data.sources || []
-                        if (!last.sources.length) {
-                            last.answer = last.answer || '知识库暂未检索到相关内容。'
-                        }
-                        // 回答成功：刷新额度条（本次已消耗 1 次）
-                        this.loadQuota()
-                    } else {
-                        last.error = (res && res.message) || 'AI 服务暂不可用，请稍后再试'
-                    }
-                    this.loading = false
-                    this.$nextTick(this.scrollBottom)
-                }).catch(err => {
-                    const last = this.messages[this.messages.length - 1]
-                    last.loading = false
-                    // 3301 额度用尽：显示引导横幅（错误文案来自后端，不带编码展示）
-                    if (err && err.code === 3301) {
-                        last.error = (err.message && String(err.message).replace(/^\[\d+\]\s*/, '')) || '今日额度已用尽，请充值后继续'
-                        this.loadQuota()
-                    } else {
-                        last.error = 'AI 服务暂不可用，请稍后再试'
-                        toast('提问失败，请稍后重试', 2)
-                    }
-                    this.loading = false
-                    this.$nextTick(this.scrollBottom)
-                })
+                this.streamAsk(q)
             },
             /** 组装最近对话上下文（<=6 轮，每条截断） */
             buildHistory() {
                 const hist = []
-                const msgs = this.messages.filter(m => !m.loading && !m.streaming && m.answer !== undefined)
+                const msgs = this.messages.filter(m => !m.loading && !m.streaming
+                    && m.answer !== undefined && m.scope !== 'article')
                 for (let i = Math.max(0, msgs.length - 6); i < msgs.length; i++) {
                     const m = msgs[i]
                     if (m.q) hist.push({ role: 'user', content: String(m.q).slice(0, 200) })
@@ -299,7 +271,13 @@
                 const options = {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'accToken': token || '' },
-                    body: JSON.stringify({ question: q, topK: 5, history: this.buildHistory() })
+                    body: JSON.stringify({
+                        question: q,
+                        scope: 'global',
+                        mode: this.fastMode ? 'fast' : 'deep',
+                        topK: 5,
+                        history: this.buildHistory()
+                    })
                 }
                 if (controller) options.signal = controller.signal
                 fetch('/content/api/v1/ai/ask/stream', options).then(resp => {
@@ -320,13 +298,24 @@
                             if (t.startsWith('data:')) {
                                 const data = t.slice(5).trim()
                                 if (eventName === 'delta') {
+                                    last.stage = ''
                                     last.answer = (last.answer || '') + data
                                     this.scrollBottom()
+                                } else if (eventName === 'stage') {
+                                    try {
+                                        const st = JSON.parse(data)
+                                        last.stage = st.status === 'running'
+                                            ? (this.stageLabel(st.stage) + '…') : ''
+                                    } catch (e) { /* ignore */ }
                                 } else if (eventName === 'done') {
                                     try {
                                         const vo = JSON.parse(data)
+                                        last.answer = vo.answer || last.answer
                                         last.sources = vo.sources || []
                                         last.latency = vo.latencyMs
+                                        last.scope = vo.scope || 'global'
+                                        last.mode = vo.mode || last.mode
+                                        last.stage = ''
                                     } catch (e) { /* ignore */ }
                                 } else if (eventName === 'error') {
                                     // 流式额度用尽：后端发 "[3301] 文案"，识别后仅展示文案并触发引导
@@ -377,6 +366,17 @@
                 }).finally(() => {
                     if (this.streamAbort === controller) this.streamAbort = null
                 })
+            },
+            stageLabel(stage) {
+                const map = {
+                    rewrite: '理解问题',
+                    recall: '检索资料',
+                    rerank: '筛选排序',
+                    generate: '生成回答',
+                    read_article: '读取全文',
+                    locate: '定位段落'
+                }
+                return map[stage] || '处理中'
             },
             finishStream(last) {
                 last.streaming = false
