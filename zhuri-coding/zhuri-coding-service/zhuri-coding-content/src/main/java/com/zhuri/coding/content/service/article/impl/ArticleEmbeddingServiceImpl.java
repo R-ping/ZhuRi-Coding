@@ -505,6 +505,56 @@ public class ArticleEmbeddingServiceImpl implements ArticleEmbeddingService {
     }
 
     /**
+     * 取最终入选文章的命中子块（small-to-big 的“子块”侧）。
+     *
+     * <p>检索阶段只保留了 articleId + 最大相似度，子块正文在组装阶段会丢失；
+     * 本方法按查询向量对每篇文章取 top N 个子块，供 prompt 使用。
+     *
+     * @param articleIds      最终入选文章
+     * @param queryEmbedding  查询向量
+     * @param perArticle      每篇最多取几个子块
+     * @return articleId → 命中子块（按相似度降序）；无分块/异常返回空 Map
+     */
+    public Map<Long, List<ChunkHit>> findTopChunks(Collection<Long> articleIds,
+                                                   double[] queryEmbedding, int perArticle) {
+        Map<Long, List<ChunkHit>> out = new HashMap<>();
+        if (articleIds == null || articleIds.isEmpty()
+                || queryEmbedding == null || queryEmbedding.length == 0
+                || pgVectorJdbcTemplate == null || perArticle <= 0) {
+            return out;
+        }
+        String placeholders = String.join(",", Collections.nCopies(articleIds.size(), "?"));
+        String vec = PgVectorUtil.toLiteral(queryEmbedding);
+        String sql = "SELECT article_id, chunk_index, content, similarity FROM ("
+            + "SELECT article_id, chunk_index, content, "
+            + "1 - (embedding <=> CAST(? AS vector)) AS similarity, "
+            + "ROW_NUMBER() OVER (PARTITION BY article_id ORDER BY embedding <=> CAST(? AS vector)) AS rn "
+            + "FROM ap_article_chunk WHERE article_id IN (" + placeholders + ")) t "
+            + "WHERE rn <= ? ORDER BY article_id, rn";
+        List<Object> args = new ArrayList<>();
+        args.add(vec);
+        args.add(vec);
+        args.addAll(articleIds);
+        args.add(perArticle);
+        try {
+            List<ChunkHit> rows = pgVectorJdbcTemplate.query(sql,
+                (rs, rowNum) -> new ChunkHit(rs.getLong("article_id"), rs.getInt("chunk_index"),
+                    rs.getString("content"), rs.getDouble("similarity")),
+                args.toArray());
+            for (ChunkHit hit : rows) {
+                out.computeIfAbsent(hit.articleId(), k -> new ArrayList<>()).add(hit);
+            }
+        } catch (Exception e) {
+            log.warn("读取命中子块失败，组装阶段回退正文截断: {}", e.getMessage());
+        }
+        return out;
+    }
+
+    /** 命中子块（articleId, chunkIndex, content, similarity）。 */
+    public record ChunkHit(Long articleId, int chunkIndex, String content, Double similarity) {
+    }
+
+    /**
      * 统一召回入口（RAG 与离线评测共用同一口径，否则用评测集跑 recall@k 没有意义）：
      * 分块优先（小颗粒命中、大颗粒供上下文），无分块数据/异常时回退文章级向量。
      */

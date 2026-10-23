@@ -1,7 +1,12 @@
 package com.zhuri.coding.content.controller.v1.ai;
 
 import com.zhuri.coding.common.annotation.RateLimit;
+import com.zhuri.coding.content.controller.v1.ai.support.AiSseStreamWriter;
 import com.zhuri.coding.content.service.ai.AiAskService;
+import com.zhuri.coding.content.service.ai.qa.AiAskCommand;
+import com.zhuri.coding.content.service.ai.qa.AiMode;
+import com.zhuri.coding.content.service.ai.qa.AiQaOrchestrator;
+import com.zhuri.coding.content.service.ai.qa.AiScope;
 import com.zhuri.coding.content.service.ai.PublishAssistantService;
 import com.zhuri.coding.model.article.dtos.AiAnswerVo;
 import com.zhuri.coding.model.article.dtos.AiAskDto;
@@ -32,6 +37,17 @@ public class AiAskController {
 
     @Autowired
     private AiAskService aiAskService;
+
+    @Autowired
+    private AiQaOrchestrator orchestrator;
+
+    /** 深度流式开关：关闭时 deep 请求降级 fast，保留快速链路可用 */
+    @org.springframework.beans.factory.annotation.Value("${ai.ask.deep-stream.enabled:true}")
+    private boolean deepStreamEnabled;
+
+    /** SSE 超时（毫秒） */
+    @org.springframework.beans.factory.annotation.Value("${ai.sse.timeout-ms:120000}")
+    private long sseTimeoutMs;
 
     @Autowired
     private com.zhuri.coding.content.service.ai.impl.AiAskServiceImpl aiAskServiceImpl;
@@ -245,10 +261,8 @@ public class AiAskController {
     }
 
     /**
-     * 手动触发存量文章向量回填（运维/初始化用，幂等；限频防连点）
-     */
-    /**
-     * fast 流式问答（SSE）：逐字输出回答，结束时返回来源。登录 + 限频同 ask。
+     * 统一流式问答（SSE）：scope=global|article，mode=fast|deep，事件 stage/delta/done/error。
+     * 登录 + 限频与旧入口一致；旧客户端不传 scope/mode 时按 global + fast 兼容。
      */
     @PostMapping(value = "/ask/stream", produces = "text/event-stream;charset=UTF-8")
     @RateLimit(dimension = RateLimit.Dimension.USER, count = 5, interval = 1, timeUnit = RateLimit.TimeUnit.MINUTES)
@@ -256,100 +270,65 @@ public class AiAskController {
     public org.springframework.web.servlet.mvc.method.annotation.SseEmitter askStream(@RequestBody AiAskDto dto) {
         aiMetricsCollector.incr("aiask_ask_stream");
         org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter =
-            new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(120_000L);
+            new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(sseTimeoutMs);
+        AiSseStreamWriter out = new AiSseStreamWriter(emitter);
         if (AppThreadLocalUtil.getUser() == null) {
             emitter.completeWithError(new RuntimeException("NEED_LOGIN"));
             return emitter;
         }
-        if (dto == null || dto.getQuestion() == null || dto.getQuestion().trim().isEmpty()) {
-            emitter.completeWithError(new RuntimeException("问题不能为空"));
+        Integer uid = AppThreadLocalUtil.getUser().getId();
+        AiAskCommand command;
+        try {
+            command = AiAskCommand.from(dto, uid);
+            // 深度流式开关关闭：降级快速，避免整条问答不可用
+            if (!deepStreamEnabled && command.mode() == AiMode.DEEP) {
+                command = command.withMode(AiMode.FAST);
+            }
+        } catch (IllegalArgumentException e) {
+            out.error(e.getMessage());
+            out.complete();
             return emitter;
         }
         // AI 每日免费配额 → 钱包额度包（免费优先；超限发 error 事件友好提示，再正常收尾）
-        Integer uid = AppThreadLocalUtil.getUser().getId();
         if (uid == null || !aiQuotaService.tryConsume(uid)) {
-            try {
-                emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
-                    .name("error")
-                    .data("[" + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode() + "] "
-                        + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getErrorMessage(),
-                        org.springframework.http.MediaType.TEXT_PLAIN));
-            } catch (Exception sendFail) {
-                // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
-                log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
-            }
-            emitter.complete();
+            out.error("[" + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getCode() + "] "
+                + AppHttpCodeEnum.AI_QUOTA_EXHAUSTED.getErrorMessage());
+            out.complete();
             return emitter;
         }
-        // 消费漏斗：入口打点（配额通过 = 真正开始消耗；SSE 也不记 precheck）
-        funnelMeter.incr(com.zhuri.coding.content.service.ai.AiFeatures.ASK_STREAM,
-                com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_STARTED);
-        // 异步执行：立即返回 emitter，流式事件在工作线程逐步发送
-        String question = dto.getQuestion();
-        Integer topK = dto.getTopK();
-        // SSE 异步线程内 ThreadLocal 不可见，userId 须在此显式捕获传入，供会话/语义记忆持久化
-        Integer uidForAsync = uid;
-        // P2-3 流式取消：客户端断开（onError/onTimeout/send 失败）置位，下一个 delta 触发
-        // CancellationException 沿 onDelta 一路中断 gateway 流迭代——已生成的 token 不再白烧
-        java.util.concurrent.atomic.AtomicBoolean cancelled =
-            new java.util.concurrent.atomic.AtomicBoolean(false);
-        emitter.onCompletion(() -> cancelled.set(true));
-        emitter.onTimeout(() -> cancelled.set(true));
-        emitter.onError(t -> cancelled.set(true));
+        if ("scope_switch".equals(command.source())) {
+            aiMetricsCollector.incr("aiask_scope_switch");
+        }
+        String feature = command.scope() == AiScope.ARTICLE
+            ? com.zhuri.coding.content.service.ai.AiFeatures.ASK_ARTICLE
+            : (command.mode() == AiMode.DEEP
+                ? com.zhuri.coding.content.service.ai.AiFeatures.ASK_GLOBAL_DEEP
+                : com.zhuri.coding.content.service.ai.AiFeatures.ASK_GLOBAL_FAST);
+        funnelMeter.incr(feature, com.zhuri.coding.content.service.ai.AiFunnelMeter.STAGE_STARTED);
+        final AiAskCommand finalCommand = command;
+
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
-                com.zhuri.coding.model.article.dtos.AiAnswerVo vo = aiAskService.streamFastAsk(question, topK, dto.getHistory(),
-                    delta -> {
-                        if (cancelled.get()) {
-                            throw new java.util.concurrent.CancellationException("client aborted");
-                        }
-                        try {
-                            emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
-                                .name("delta").data(delta, org.springframework.http.MediaType.TEXT_PLAIN));
-                        } catch (Exception e) {
-                            // 客户端断开：置位 + 抛取消异常中断生成（省 token）
-                            cancelled.set(true);
-                            throw new java.util.concurrent.CancellationException("sse send failed");
-                        }
-                    }, uidForAsync);
-                try {
-                    if (vo == null) {
-                        emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
-                            .name("error").data("AI 服务暂不可用，请稍后再试",
-                                org.springframework.http.MediaType.TEXT_PLAIN));
-                    } else {
-                        emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
-                            .name("done").data(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(vo),
-                                org.springframework.http.MediaType.APPLICATION_JSON));
-                    }
-                } catch (Exception e) {
-                    log.warn("AI 流式收尾发送失败", e);
+                AiAnswerVo vo = orchestrator.stream(finalCommand, out);
+                if (vo == null) {
+                    out.error("AI 服务暂不可用，请稍后再试");
+                } else {
+                    out.done(vo);
                 }
             } catch (com.zhuri.coding.content.service.ai.AiLlmGateway.QuotaExhaustedException qe) {
-                // 额度到线被动中断，与「服务故障」必须区分提示：这不是故障，用户可充值或次日再试；
-                // 已下发的增量文本保留（前端已收到前几轮内容），此处只补一个明确的收尾原因
                 log.warn("AI 流式问答额度耗尽中断: {}", qe.getMessage());
-                try {
-                    emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
-                        .name("error")
-                        .data("本次 AI 额度已用完，回答已中断；已生成内容仍然可用，可购买额度包或次日再试",
-                            org.springframework.http.MediaType.TEXT_PLAIN));
-                } catch (Exception sendFail) {
-                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
-                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
-                }
+                out.error("本次 AI 额度已用完，回答已中断；已生成内容仍然可用，可购买额度包或次日再试");
+            } catch (IllegalArgumentException e) {
+                log.warn("AI 流式问答参数/文章异常: {}", e.getMessage());
+                out.error(e.getMessage());
+            } catch (java.util.concurrent.CancellationException e) {
+                // 客户端断开：不发送错误事件
+                log.info("AI 流式问答被客户端取消");
             } catch (Exception e) {
                 log.error("AI 流式问答异常", e);
-                try {
-                    emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
-                        .name("error").data("AI 服务暂不可用，请稍后再试",
-                            org.springframework.http.MediaType.TEXT_PLAIN));
-                } catch (Exception sendFail) {
-                    // 客户端已断开时事件无法再送达：保留吞异常语义，但留痕，便于排查“前端一直转圈/无响应”
-                    log.debug("SSE 事件发送失败（客户端可能已断开）", sendFail);
-                }
+                out.error("AI 服务暂不可用，请稍后再试");
             } finally {
-                emitter.complete();
+                out.complete();
             }
         }, aiSseExecutor);
         return emitter;

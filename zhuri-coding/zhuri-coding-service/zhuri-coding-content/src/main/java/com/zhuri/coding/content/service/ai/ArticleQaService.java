@@ -1,5 +1,8 @@
 package com.zhuri.coding.content.service.ai;
 
+import com.zhuri.coding.content.service.ai.qa.AiAskCommand;
+import com.zhuri.coding.content.service.ai.qa.AiStreamSink;
+import com.zhuri.coding.model.article.dtos.AiAnswerVo;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -33,6 +36,13 @@ public interface ArticleQaService {
     String streamAskArticle(Long articleId, String question,
                             List<Map<String, String>> history,
                             Consumer<String> onDelta);
+
+    /**
+     * 统一单篇问答：范围固定 article、模式固定 fast，阶段事件通过 sink 回传。
+     *
+     * @throws IllegalArgumentException 文章不存在/未发布/无正文
+     */
+    AiAnswerVo streamAskArticle(AiAskCommand command, AiStreamSink sink);
 
     /**
      * 生成"读完想问"相关问题列表（LLM 基于本文产出 3~5 个读者追问，Redis 缓存 24h）。

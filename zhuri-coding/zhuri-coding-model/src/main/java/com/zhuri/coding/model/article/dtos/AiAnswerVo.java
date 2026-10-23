@@ -16,6 +16,15 @@ public class AiAnswerVo {
     /** 召回并作为依据的来源文章（按相似度降序） */
     private List<AiSourceVo> sources;
 
+    /** 本次实际范围：global / article */
+    private String scope;
+
+    /** 本次实际模式：fast / deep */
+    private String mode;
+
+    /** 答案取数边界：global / article */
+    private String basis;
+
     /** 总耗时 ms（向量+生成） */
     private long latencyMs;
 

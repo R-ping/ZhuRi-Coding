@@ -1,6 +1,7 @@
 package com.zhuri.coding.content.service.ai.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -73,6 +74,11 @@ class AskRetrievalChainTest {
 
     private AskRetrievalChain.ChainCtx ctx(boolean doRerank) {
         return new AskRetrievalChain.ChainCtx("查询词", "用户问题", 3, doRerank, 15, 4, 200, "rerank兜底prompt");
+    }
+
+    private AskRetrievalChain.ChainCtx ctx(Long anchorArticleId, boolean useChunkContext) {
+        return new AskRetrievalChain.ChainCtx("查询词", "用户问题", 3, false, 15, 4, 200,
+            "rerank兜底prompt", anchorArticleId, true, useChunkContext, 2, null);
     }
 
     private void stubRecall(List<Long> ids, Map<Long, Double> sims) {
@@ -204,6 +210,58 @@ class AskRetrievalChainTest {
         assertNotNull(r);
         assertEquals(0, r.hits());
         assertTrue(r.sources().isEmpty());
+    }
+
+    @Test
+    @DisplayName("锚点命中召回：移到首位并标记 anchor")
+    void anchorRecalledMovesFirst() {
+        List<Long> ids = List.of(1L, 2L, 3L);
+        stubRecall(ids, Map.of(1L, 0.9, 2L, 0.85, 3L, 0.8));
+        when(apArticleMapper.selectBatchIds(ids)).thenReturn(List.of(
+            article(1L, "标题1"), article(2L, "标题2"), article(3L, "标题3")));
+        when(contentMapper.selectList(any())).thenReturn(List.of(
+            contentOf(1L), contentOf(2L), contentOf(3L)));
+
+        AskRetrievalChain.ChainResult r = chain.run(ctx(2L, false));
+
+        assertNotNull(r);
+        assertEquals(2L, r.sources().get(0).getArticleId());
+        assertTrue(r.sources().get(0).getAnchor());
+        assertEquals(1L, r.sources().get(1).getArticleId());
+    }
+
+    @Test
+    @DisplayName("锚点未被召回：不强制注入，按普通全局问答返回")
+    void anchorNotRecalledNotInjected() {
+        List<Long> ids = List.of(1L, 2L);
+        stubRecall(ids, Map.of(1L, 0.9, 2L, 0.8));
+        when(apArticleMapper.selectBatchIds(ids)).thenReturn(List.of(
+            article(1L, "标题1"), article(2L, "标题2")));
+        when(contentMapper.selectList(any())).thenReturn(List.of(contentOf(1L), contentOf(2L)));
+
+        AskRetrievalChain.ChainResult r = chain.run(ctx(99L, false));
+
+        assertNotNull(r);
+        assertEquals(2, r.sources().size());
+        assertFalse(r.sources().stream().anyMatch(s -> Boolean.TRUE.equals(s.getAnchor())));
+    }
+
+    @Test
+    @DisplayName("子块上下文：命中块进入 prompt，而不是文章开头截断")
+    void chunkContextUsesMatchedChunk() {
+        List<Long> ids = List.of(1L);
+        stubRecall(ids, Map.of(1L, 0.9));
+        when(apArticleMapper.selectBatchIds(ids)).thenReturn(List.of(article(1L, "标题1")));
+        when(contentMapper.selectList(any())).thenReturn(List.of(contentOf(1L)));
+        when(embeddingService.findTopChunks(any(), any(double[].class), anyInt()))
+            .thenReturn(Map.of(1L, List.of(
+                new ArticleEmbeddingServiceImpl.ChunkHit(1L, 3, "命中块正文-后半段", 0.88))));
+
+        AskRetrievalChain.ChainResult r = chain.run(ctx(null, true));
+
+        assertNotNull(r);
+        assertTrue(r.docsText().contains("命中块正文-后半段"));
+        assertFalse(r.docsText().contains("【正文1】"), "有子块时不应回退到整篇开头截断");
     }
 
     private ApArticleContent contentOf(Long articleId) {        ApArticleContent c = new ApArticleContent();

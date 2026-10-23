@@ -24,7 +24,16 @@ public interface AiSemanticCacheService {
      * @param userId      当前用户（null 直接不查）
      * @param promptStamp 当前生效的 prompt 版本签名（{@link PromptStamp#of}）；空表示不校验版本
      */
-    AiAnswerVo lookup(String question, Integer userId, String promptStamp);
+    default AiAnswerVo lookup(String question, Integer userId, String promptStamp) {
+        return lookup(question, userId, promptStamp, com.zhuri.coding.content.service.ai.qa.AiCacheScope.LEGACY);
+    }
+
+    /**
+     * 查缓存：按范围/模式/锚点隔离。
+     *
+     * @param scopeKey 作用域键（如 global:fast:anchor:none），由 {@code AiCacheScope} 生成
+     */
+    AiAnswerVo lookup(String question, Integer userId, String promptStamp, String scopeKey);
 
     /**
      * 落缓存：仅缓存成功且来源非空的答案；按用户条数上限淘汰最旧。
@@ -32,7 +41,14 @@ public interface AiSemanticCacheService {
      * @param question    用户原始问题（与 lookup 使用同一向量口径）
      * @param sources     本次回答引用的来源（用于后续存活校验）
      * @param promptStamp 生成本答案所用的 prompt 版本签名；空表示不做版本绑定
+     * @param scopeKey    作用域键；不同模式/锚点不得互相命中
      */
+    default void store(String question, Integer userId, String answer, List<AiSourceVo> sources,
+                       String promptStamp) {
+        store(question, userId, answer, sources, promptStamp,
+            com.zhuri.coding.content.service.ai.qa.AiCacheScope.LEGACY);
+    }
+
     void store(String question, Integer userId, String answer, List<AiSourceVo> sources,
-               String promptStamp);
+               String promptStamp, String scopeKey);
 }

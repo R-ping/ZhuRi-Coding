@@ -2899,6 +2899,68 @@
             cursor: pointer;
             padding: 0 4px;
         }
+        .ai-ask-scope-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px 16px;
+            border-bottom: 1px solid #f0f2f5;
+        }
+        body.dark .ai-ask-scope-bar { border-bottom-color: #2d333b; }
+        .ai-scope-group, .ai-mode-group {
+            display: flex;
+            align-items: center;
+            background: #f2f4f7;
+            border-radius: 8px;
+            padding: 2px;
+        }
+        .ai-scope-btn, .ai-mode-btn {
+            border: none;
+            background: transparent;
+            color: #8a919f;
+            font-size: 12px;
+            line-height: 1.6;
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .ai-scope-btn.active, .ai-mode-btn.active {
+            background: #fff;
+            color: #1e80ff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+        }
+        body.dark .ai-scope-group, body.dark .ai-mode-group { background: #26292e; }
+        body.dark .ai-scope-btn.active, body.dark .ai-mode-btn.active {
+            background: #1c1e22;
+            color: #5b9bff;
+        }
+        .ai-msg-scope { font-size: 11px; color: #8a919f; margin-bottom: 2px; }
+        .ai-msg-basis {
+            display: inline-block;
+            margin-top: 6px;
+            color: #1e80ff;
+            font-size: 12px;
+            text-decoration: none;
+        }
+        .ai-msg-sources {
+            margin-top: 8px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+        }
+        .ai-msg-source {
+            display: block;
+            margin-top: 4px;
+            color: #1e80ff;
+            font-size: 12px;
+            line-height: 1.5;
+            text-decoration: none;
+            word-break: break-word;
+        }
+        .ai-msg-ref { color: #1e80ff; text-decoration: none; font-weight: 500; }
+        body.dark .ai-msg-ref { color: #5b9bff; }
+        body.dark .ai-msg-sources { border-top-color: #2d333b; }
+        body.dark .ai-msg-source, body.dark .ai-msg-basis { color: #5b9bff; }
         .ai-ask-body {
             flex: 1;
             overflow-y: auto;
@@ -3703,6 +3765,17 @@
         <div class="ai-ask-header">
             <span>问这篇文章</span>
             <button class="ai-ask-close" id="aiAskClose" type="button">×</button>
+        </div>
+        <!-- 范围常驻；切到全站后才显示深度模式 -->
+        <div class="ai-ask-scope-bar" id="aiAskScopeBar">
+            <div class="ai-scope-group" role="group" aria-label="回答范围">
+                <button type="button" class="ai-scope-btn active" data-scope="article">本文</button>
+                <button type="button" class="ai-scope-btn" data-scope="global">全站</button>
+            </div>
+            <div class="ai-mode-group" id="aiAskModeGroup" style="display:none;" role="group" aria-label="回答模式">
+                <button type="button" class="ai-mode-btn active" data-mode="fast">快速</button>
+                <button type="button" class="ai-mode-btn" data-mode="deep">深度</button>
+            </div>
         </div>
         <div class="ai-ask-body" id="aiAskBody">
             <!-- 读完想问（从正文搬入弹框空态；LLM 生成本文可答问题，点击自动提问） -->

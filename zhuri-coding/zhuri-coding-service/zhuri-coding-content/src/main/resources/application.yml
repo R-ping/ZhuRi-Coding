@@ -71,6 +71,16 @@ spring:
               #    一旦指向 docs 根即可被诱导读取 → 勿改回 ../docs。
               # 可用系统环境变量 MCP_DOCS_PATH 覆盖（注意：需在服务进程启动前设置才生效）
               args: ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_DOCS_PATH:../docs/public}"]
+    # 统一问答：深度流式开关 / 锚点保留槽位 / 子块预算 / SSE 超时
+    ask:
+      deep-stream:
+        enabled: ${AI_ASK_DEEP_STREAM_ENABLED:true}
+      anchor:
+        reserved-slot: ${AI_ASK_ANCHOR_RESERVED_SLOT:true}
+      global:
+        chunks-per-article: ${AI_ASK_GLOBAL_CHUNKS_PER_ARTICLE:2}
+    sse:
+      timeout-ms: ${AI_SSE_TIMEOUT_MS:120000}
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/leadnews_article?useSSL=false&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true

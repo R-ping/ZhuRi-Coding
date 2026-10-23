@@ -5,6 +5,13 @@ import com.zhuri.coding.common.redis.CacheService;
 import com.zhuri.coding.content.mapper.article.ApArticleContentMapper;
 import com.zhuri.coding.content.mapper.article.ApArticleMapper;
 import com.zhuri.coding.content.service.ai.ArticleQaService;
+import com.zhuri.coding.content.service.ai.qa.AiAskCommand;
+import com.zhuri.coding.content.service.ai.qa.AiMode;
+import com.zhuri.coding.content.service.ai.qa.AiScope;
+import com.zhuri.coding.content.service.ai.qa.AiStage;
+import com.zhuri.coding.content.service.ai.qa.AiStageStatus;
+import com.zhuri.coding.content.service.ai.qa.AiStreamSink;
+import com.zhuri.coding.model.article.dtos.AiAnswerVo;
 import com.zhuri.coding.model.article.pojos.ApArticle;
 import com.zhuri.coding.model.article.pojos.ApArticle.Status;
 import com.zhuri.coding.model.article.pojos.ApArticleContent;
@@ -52,6 +59,15 @@ public class ArticleQaServiceImpl implements ArticleQaService {
             + "2. 随后提炼 2~4 个关键要点，用“；”分隔，不编号、不换行；\n"
             + "3. 全文 80~160 字，只依据正文，禁止编造文中没有的信息；\n"
             + "4. 正文过短或内容不足时，如实写“文章内容较简略”，并给出仅有的要点。";
+
+    /** 单篇问答 system 模板（{title} 运行时替换）；文档交互定位，不承诺技术问答。 */
+    private static final String ARTICLE_SYSTEM =
+        "你是《{title}》这篇文章的专属解读助手。请遵守：\n"
+            + "1. 只能依据【文章正文】回答，禁止使用正文之外的知识或编造内容；\n"
+            + "2. 正文没有的内容，明确回答“文中没有提到”，不要脑补；确需推断时说明这是基于正文的推断；\n"
+            + "3. 引用正文时可用双引号摘录原文关键句；\n"
+            + "4. 用简体中文、条理清晰，回答控制在 500 字以内；\n"
+            + "5. 若问题里有指代（如“它/上面/那一步”），结合对话历史理解，但回答依据仍只来自本篇正文。";
 
     /** 相关问题生成：读者读完最可能追问的 4 个问题（具体、可基于本文回答） */
     private static final String QUESTIONS_SYSTEM =
@@ -222,20 +238,62 @@ public class ArticleQaServiceImpl implements ArticleQaService {
     public String streamAskArticle(Long articleId, String question,
                                    List<Map<String, String>> history,
                                    Consumer<String> onDelta) {
-        String bodyText = loadArticleBody(articleId);
+        AiAskCommand command = new AiAskCommand(question, AiScope.ARTICLE, AiMode.FAST,
+            articleId, null, null, history, null, "normal");
+        Consumer<String> delta = onDelta == null ? text -> {
+        } : text -> {
+            try {
+                onDelta.accept(text);
+            } catch (Exception ignore) {
+                // 旧控制器在客户端断开时吞异常；保持原有语义，不影响服务端收尾
+            }
+        };
+        AiAnswerVo vo = streamAskArticle(command, delta::accept);
+        return vo == null ? null : vo.getAnswer();
+    }
+
+    @Override
+    public AiAnswerVo streamAskArticle(AiAskCommand command, AiStreamSink sink) {
+        long start = System.currentTimeMillis();
+        if (command == null || command.articleId() == null) {
+            throw new IllegalArgumentException("文章ID不能为空");
+        }
+        String question = command.question() == null ? "" : command.question().trim();
+        if (question.isEmpty()) {
+            throw new IllegalArgumentException("问题不能为空");
+        }
+        if (question.length() > 200) {
+            throw new IllegalArgumentException("问题过长（最多200字）");
+        }
+        sink.stage(AiStage.READ_ARTICLE, AiStageStatus.RUNNING);
+        String bodyText = loadArticleBody(command.articleId());
         if (bodyText == null) {
+            sink.stage(AiStage.READ_ARTICLE, AiStageStatus.DONE);
             throw new IllegalArgumentException("文章不存在或未发布");
         }
-        ApArticle article = apArticleMapper.selectById(articleId);
+        ApArticle article = apArticleMapper.selectById(command.articleId());
         String title = article != null && article.getTitle() != null ? article.getTitle() : "本文";
-        String system = "你是《" + title + "》这篇文章的专属解读助手。请遵守：\n"
-            + "1. 只能依据【文章正文】回答，禁止使用正文之外的知识或编造内容；\n"
-            + "2. 正文没有的内容，明确回答“文中没有提到”，不要脑补；确需推断时说明这是基于正文的推断；\n"
-            + "3. 引用正文时可用双引号摘录原文关键句；\n"
-            + "4. 用简体中文、条理清晰，回答控制在 500 字以内；\n"
-            + "5. 若问题里有指代（如“它/上面/那一步”），结合对话历史理解，但回答依据仍只来自本篇正文。";
+        sink.stage(AiStage.READ_ARTICLE, AiStageStatus.DONE);
+
+        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt articlePrompt =
+            prompt("qa_article", ARTICLE_SYSTEM);
+        String system = articlePrompt.content.replace("{title}", title);
         String user = "【文章正文】\n" + bodyText + "\n【问题】" + question;
-        return genStream(system, user, history, onDelta);
+        sink.stage(AiStage.GENERATE, AiStageStatus.RUNNING);
+        String answer = genStream(system, user, command.history(), sink::delta);
+        if (answer == null || answer.isBlank()) {
+            return null;
+        }
+        sink.stage(AiStage.GENERATE, AiStageStatus.DONE);
+        AiAnswerVo vo = new AiAnswerVo();
+        vo.setAnswer(answer.trim());
+        vo.setSources(java.util.Collections.emptyList());
+        vo.setScope("article");
+        vo.setMode("fast");
+        vo.setBasis("article");
+        vo.setLatencyMs(System.currentTimeMillis() - start);
+        vo.setPromptVersions(java.util.Map.of("qa_article", articlePrompt.version));
+        return vo;
     }
 
     /**

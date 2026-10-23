@@ -2420,6 +2420,11 @@
     var aiAskEmptyEl = document.getElementById('aiAskEmpty');
     var aiAskInput = document.getElementById('aiAskInput');
     var aiAskSendBtn = document.getElementById('aiAskSend');
+    var aiAskModeGroup = document.getElementById('aiAskModeGroup');
+    // 文章页默认“本文 + 快速”；范围切换常驻，切到全站后才允许深度
+    var aiAskScope = 'article';
+    var aiAskMode = 'fast';
+    var aiAskAbort = null;
 
     function openAiAsk() {
         if (!aiAskPanel) return;
@@ -2429,15 +2434,61 @@
         aiAskPanel.setAttribute('aria-hidden', 'false');
         if (aiAskMask) aiAskMask.classList.add('open');
         document.body.style.overflow = 'hidden';
+        updateAiAskControls();
         if (aiAskInput) setTimeout(function() { aiAskInput.focus(); }, 240);
     }
     function closeAiAsk() {
         if (!aiAskOpen) return;
+        abortAiAskStream();
         aiAskOpen = false;
         aiAskPanel.classList.remove('open');
         aiAskPanel.setAttribute('aria-hidden', 'true');
         if (aiAskMask) aiAskMask.classList.remove('open');
         document.body.style.overflow = '';
+    }
+    function abortAiAskStream() {
+        if (aiAskAbort) {
+            aiAskAbort.abort();
+            aiAskAbort = null;
+        }
+        aiAskStreaming = false;
+        if (aiAskSendBtn) aiAskSendBtn.disabled = false;
+    }
+    function updateAiAskControls() {
+        var scopeBtns = document.querySelectorAll('.ai-scope-btn');
+        for (var i = 0; i < scopeBtns.length; i++) {
+            var on = scopeBtns[i].getAttribute('data-scope') === aiAskScope;
+            scopeBtns[i].classList.toggle('active', on);
+        }
+        if (aiAskModeGroup) {
+            aiAskModeGroup.style.display = aiAskScope === 'global' ? 'flex' : 'none';
+        }
+        var modeBtns = document.querySelectorAll('.ai-mode-btn');
+        for (var j = 0; j < modeBtns.length; j++) {
+            var onMode = modeBtns[j].getAttribute('data-mode') === aiAskMode;
+            modeBtns[j].classList.toggle('active', onMode);
+        }
+        if (aiAskInput) {
+            aiAskInput.placeholder = aiAskScope === 'global'
+                ? '在全站范围提问…（Enter 发送）' : '针对这篇文章提问…（Enter 发送）';
+        }
+    }
+    function setAiAskScope(scope) {
+        if (scope === aiAskScope) return;
+        // 切换范围 = 新会话：中断在途生成，历史按 scope 重新计算
+        abortAiAskStream();
+        aiAskScope = scope;
+        if (scope === 'article') aiAskMode = 'fast';
+        updateAiAskControls();
+        if (aiAskInput && !aiAskInput.value.trim() && aiLastQuestion) {
+            aiAskInput.value = aiLastQuestion;
+            aiAskInput.style.height = '';
+        }
+    }
+    function setAiAskMode(mode) {
+        if (aiAskScope === 'article') return;
+        aiAskMode = mode;
+        updateAiAskControls();
     }
     if (aiAskFab) aiAskFab.addEventListener('click', openAiAsk);
     if (aiAskCloseBtn) aiAskCloseBtn.addEventListener('click', closeAiAsk);
@@ -2474,6 +2525,13 @@
                 node.textContent = msg.content;
             }
         }
+        if (msg.role !== 'user' && msg.scope) {
+            var label = document.createElement('div');
+            label.className = 'ai-msg-scope';
+            label.textContent = (msg.scope === 'global' ? '全站' : '本文')
+                + ' · ' + (msg.mode === 'deep' ? '深度' : '快速');
+            wrap.appendChild(label);
+        }
         wrap.appendChild(node);
         aiAskBodyEl.appendChild(wrap);
         aiAskScrollBottom();
@@ -2481,7 +2539,9 @@
     }
     function aiAskHistory() {
         var hist = [];
-        var recent = aiAskMsgs.slice(-6);
+        var recent = aiAskMsgs.filter(function(m) {
+            return m && m.scope === aiAskScope;
+        }).slice(-6);
         for (var i = 0; i < recent.length; i++) {
             var m = recent[i];
             if (!m) continue;
@@ -2495,21 +2555,37 @@
         var q = aiAskInput.value.trim();
         if (!q) return;
         if (!isLoggedIn()) { openLoginModal(); return; }
+        var scope = aiAskScope;
+        var mode = scope === 'article' ? 'fast' : aiAskMode;
         aiAskInput.value = '';
         aiAskInput.style.height = '';
-        aiAskMsgs.push({ role: 'user', content: q });
-        aiAskAppend({ role: 'user', content: q });
-        var lastEl = aiAskAppend({ role: 'assistant', content: '' });
+        aiLastQuestion = q;
+        aiAskMsgs.push({ role: 'user', content: q, scope: scope, mode: mode });
+        aiAskAppend({ role: 'user', content: q, scope: scope, mode: mode });
+        var lastEl = aiAskAppend({ role: 'assistant', content: '', scope: scope, mode: mode });
         aiAskStreaming = true;
         aiAskSendBtn.disabled = true;
         var acc = '';
-        aiLastQuestion = q;
-        var body = JSON.stringify({ articleId: articleId, question: q, history: aiAskHistory() });
-        fetch('/content/api/v1/ai/ask-article', {
+        var sources = [];
+        var gotDelta = false;
+        var body = JSON.stringify({
+            question: q,
+            scope: scope,
+            mode: mode,
+            articleId: scope === 'article' ? articleId : null,
+            anchorArticleId: scope === 'global' ? articleId : null,
+            source: scope === 'global' ? 'scope_switch' : 'normal',
+            history: aiAskHistory()
+        });
+        var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        aiAskAbort = controller;
+        var options = {
             method: 'POST',
             headers: getHeaders(),
             body: body
-        }).then(function(resp) {
+        };
+        if (controller) options.signal = controller.signal;
+        fetch('/content/api/v1/ai/ask/stream', options).then(function(resp) {
             if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
             var reader = resp.body.getReader();
             var decoder = new TextDecoder('utf-8');
@@ -2517,7 +2593,7 @@
             var eventName = '';
             var pump = function() {
                 return reader.read().then(function(r) {
-                    if (r.done) return aiAskFinish(acc, lastEl);
+                    if (r.done) return aiAskFinish(acc, lastEl, scope, mode, sources);
                     buffer += decoder.decode(r.value, { stream: true });
                     var lines = buffer.split('\n');
                     buffer = lines.pop();
@@ -2527,13 +2603,22 @@
                         if (t.indexOf('data:') === 0) {
                             var data = t.slice(5).trim();
                             if (eventName === 'delta') {
+                                gotDelta = true;
                                 acc += data;
                                 lastEl.textContent = acc;
                                 aiAskScrollBottom();
+                            } else if (eventName === 'stage') {
+                                try {
+                                    var st = JSON.parse(data);
+                                    if (!gotDelta && st.status === 'running') {
+                                        lastEl.textContent = aiAskStageLabel(st.stage) + '…';
+                                    }
+                                } catch (e) { /* ignore */ }
                             } else if (eventName === 'done') {
                                 try {
                                     var vo = JSON.parse(data);
                                     if (vo && vo.answer) { acc = vo.answer; lastEl.textContent = acc; }
+                                    sources = (vo && vo.sources) ? vo.sources : [];
                                 } catch (e) { /* ignore */ }
                             } else if (eventName === 'error') {
                                 aiAskFail(lastEl, data || 'AI 服务暂不可用');
@@ -2543,21 +2628,99 @@
                         }
                     }
                     return pump();
-                }).catch(function() { aiAskFail(lastEl, '流式响应中断，请重试'); });
+                }).catch(function(err) {
+                    if (err && err.name === 'AbortError') return;
+                    aiAskFail(lastEl, '流式响应中断，请重试');
+                });
             };
             return pump();
         }).catch(function(err) {
+            if (err && err.name === 'AbortError') return;
             aiAskFail(lastEl, 'AI 服务暂不可用（' + (err.message || '网络错误') + '）');
+        }).finally(function() {
+            if (aiAskAbort === controller) aiAskAbort = null;
         });
     }
-    function aiAskFinish(acc, lastEl) {
+    function aiAskFinish(acc, lastEl, scope, mode, sources) {
         aiAskStreaming = false;
+        aiAskAbort = null;
         if (aiAskSendBtn) aiAskSendBtn.disabled = false;
         var text = acc || '';
-        lastEl.textContent = text || '未获得回答，请重试';
-        if (text) aiAskMsgs.push({ role: 'assistant', content: text });
-        if (text) appendFeedbackBar(lastEl, aiLastQuestion || '', String(articleId), 'aiask_article');
+        renderAiAnswer(lastEl, text || '未获得回答，请重试', scope, sources);
+        if (text) {
+            aiAskMsgs.push({ role: 'assistant', content: text, scope: scope, mode: mode });
+            if (scope === 'article') {
+                appendAiBasis(lastEl);
+            } else if (sources && sources.length) {
+                appendAiSources(lastEl, sources);
+            }
+            appendFeedbackBar(lastEl, aiLastQuestion || '', String(articleId),
+                scope === 'article' ? 'aiask_article'
+                    : (mode === 'deep' ? 'ask_global_deep' : 'ask_global_fast'));
+        }
         aiAskScrollBottom();
+    }
+    function aiAskStageLabel(stage) {
+        var map = {
+            rewrite: '理解问题', recall: '检索资料', rerank: '筛选排序',
+            generate: '生成回答', read_article: '读取全文', locate: '定位段落'
+        };
+        return map[stage] || '处理中';
+    }
+    function appendAiBasis(answerEl) {
+        var link = document.createElement('a');
+        link.className = 'ai-msg-basis';
+        link.href = '#articleContent';
+        link.textContent = '依据本文';
+        answerEl.parentNode.appendChild(link);
+    }
+    /** 全局回答的 [n] 渲染为可点击来源；本文回答保持纯文本 */
+    function renderAiAnswer(answerEl, text, scope, sources) {
+        answerEl.textContent = '';
+        if (scope !== 'global' || !sources || !sources.length) {
+            answerEl.textContent = text;
+            return;
+        }
+        var re = /\[(\d{1,2})\]/g;
+        var last = 0;
+        var m;
+        while ((m = re.exec(text)) !== null) {
+            if (m.index > last) {
+                answerEl.appendChild(document.createTextNode(text.slice(last, m.index)));
+            }
+            var idx = parseInt(m[1], 10);
+            var src = sources[idx - 1];
+            if (src) {
+                var a = document.createElement('a');
+                a.className = 'ai-msg-ref';
+                a.href = '/content/article/' + src.articleId;
+                a.target = '_blank';
+                a.rel = 'noopener';
+                a.textContent = '[' + idx + ']';
+                answerEl.appendChild(a);
+            } else {
+                answerEl.appendChild(document.createTextNode(m[0]));
+            }
+            last = re.lastIndex;
+        }
+        if (last < text.length) {
+            answerEl.appendChild(document.createTextNode(text.slice(last)));
+        }
+    }
+    function appendAiSources(answerEl, sources) {
+        var wrap = document.createElement('div');
+        wrap.className = 'ai-msg-sources';
+        for (var i = 0; i < sources.length; i++) {
+            var s = sources[i] || {};
+            var a = document.createElement('a');
+            a.className = 'ai-msg-source';
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.href = '/content/article/' + s.articleId;
+            a.textContent = '[' + (i + 1) + '] ' + (s.anchor ? '原文 · ' : '') + (s.title || ('文章 ' + s.articleId));
+            wrap.appendChild(a);
+        }
+        answerEl.parentNode.appendChild(wrap);
     }
     // 回答反馈条（👍/👎 反馈闭环）
     function appendFeedbackBar(answerEl, q, sceneId, feature) {
@@ -2595,6 +2758,19 @@
         aiAskScrollBottom();
     }
     if (aiAskSendBtn) aiAskSendBtn.addEventListener('click', aiAskSend);
+    var aiScopeBtns = document.querySelectorAll('.ai-scope-btn');
+    for (var sbi = 0; sbi < aiScopeBtns.length; sbi++) {
+        aiScopeBtns[sbi].addEventListener('click', function() {
+            setAiAskScope(this.getAttribute('data-scope'));
+        });
+    }
+    var aiModeBtns = document.querySelectorAll('.ai-mode-btn');
+    for (var mbi = 0; mbi < aiModeBtns.length; mbi++) {
+        aiModeBtns[mbi].addEventListener('click', function() {
+            setAiAskMode(this.getAttribute('data-mode'));
+        });
+    }
+    updateAiAskControls();
     if (aiAskInput) {
         aiAskInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {

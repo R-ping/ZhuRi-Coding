@@ -89,10 +89,12 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    public AiAnswerVo lookup(String question, Integer userId, String promptStamp) {
+    public AiAnswerVo lookup(String question, Integer userId, String promptStamp, String scopeKey) {
         if (!enabled || userId == null || pgVectorJdbcTemplate == null || notCacheable(question)) {
             return null;
         }
+        String scope = scopeKey == null || scopeKey.isBlank()
+            ? com.zhuri.coding.content.service.ai.qa.AiCacheScope.LEGACY : scopeKey;
         try {
             double[] qEmb = embeddingService.generateEmbedding(question);
             if (qEmb == null || qEmb.length == 0) {
@@ -104,7 +106,7 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
                 "SELECT id, answer, sources_json, sources_hash_json, prompt_stamp, "
                     + "1 - (question_vec <=> CAST(? AS vector)) AS similarity "
                     + "FROM ap_ai_semantic_cache "
-                    + "WHERE user_id = ? AND created_time > ? "
+                    + "WHERE user_id = ? AND scope_key = ? AND created_time > ? "
                     + "AND 1 - (question_vec <=> CAST(? AS vector)) >= ? "
                     + "ORDER BY similarity DESC LIMIT 1",
                 rs -> {
@@ -116,7 +118,7 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
                         rs.getString("prompt_stamp"),
                         rs.getDouble("similarity")};
                 },
-                vecLiteral, userId, cutoff, vecLiteral, threshold);
+                vecLiteral, userId, scope, cutoff, vecLiteral, threshold);
             if (row == null) {
                 return null;
             }
@@ -160,10 +162,12 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
 
     @Override
     public void store(String question, Integer userId, String answer, List<AiSourceVo> sources,
-                      String promptStamp) {
+                      String promptStamp, String scopeKey) {
         if (!enabled || userId == null || pgVectorJdbcTemplate == null || notCacheable(question)) {
             return;
         }
+        String scope = scopeKey == null || scopeKey.isBlank()
+            ? com.zhuri.coding.content.service.ai.qa.AiCacheScope.LEGACY : scopeKey;
         if (answer == null || answer.trim().length() < MIN_ANSWER_LEN
                 || sources == null || sources.isEmpty()) {
             return;
@@ -179,10 +183,10 @@ public class AiSemanticCacheServiceImpl implements AiSemanticCacheService {
             pgVectorJdbcTemplate.update(
                 "INSERT INTO ap_ai_semantic_cache "
                     + "(user_id, question, question_vec, answer, sources_json, sources_hash_json, "
-                    + "prompt_stamp, created_time) "
-                    + "VALUES (?, ?, CAST(? AS vector), ?, ?, ?, ?, now())",
+                    + "prompt_stamp, scope_key, created_time) "
+                    + "VALUES (?, ?, CAST(? AS vector), ?, ?, ?, ?, ?, now())",
                 userId, brief(question), PgVectorUtil.toLiteral(qEmb), answer.trim(), sourcesJson,
-                sourcesHashJson, promptStamp == null ? "" : promptStamp);
+                sourcesHashJson, promptStamp == null ? "" : promptStamp, scope);
             // 单用户条数上限：超出则淘汰最旧（缓存是收益项，不做事务/重试）
             pgVectorJdbcTemplate.update(
                 "DELETE FROM ap_ai_semantic_cache WHERE user_id = ? AND id NOT IN "

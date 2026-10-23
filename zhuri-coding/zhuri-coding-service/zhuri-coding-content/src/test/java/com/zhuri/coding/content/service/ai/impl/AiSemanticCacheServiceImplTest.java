@@ -101,7 +101,7 @@ class AiSemanticCacheServiceImplTest {
         service.store("嗯", 7, "这是一段足够长的答案，字数不少于二十个字，用于验证过滤逻辑。",
             List.of(source(1L)), STAMP);
         verify(pgVectorJdbcTemplate, never()).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
-            any(), any(), any(), any(), any(), any(), any());
+            any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -116,7 +116,7 @@ class AiSemanticCacheServiceImplTest {
 
     private void stubLookupQuery(ResultSet rs) {
         when(pgVectorJdbcTemplate.query(anyString(), any(ResultSetExtractor.class),
-            any(), any(), any(), any(), any())).thenAnswer(inv -> {
+            any(), any(), any(), any(), any(), any())).thenAnswer(inv -> {
             ResultSetExtractor<Object> rse = inv.getArgument(1);
             return rse.extractData(rs);
         });
@@ -377,7 +377,7 @@ class AiSemanticCacheServiceImplTest {
         // 第 6 参为语料指纹快照 JSON（articleId -> contentHash）、第 7 参为 prompt 版本签名
         verify(pgVectorJdbcTemplate).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
             eq(7), eq(DECENT_QUESTION), any(), any(), any(),
-            contains("\"1\":\"hash-a\""), eq(STAMP));
+            contains("\"1\":\"hash-a\""), eq(STAMP), anyString());
         // 单用户条数上限裁剪（maxPerUser=50）
         verify(pgVectorJdbcTemplate).update(
             startsWith("DELETE FROM ap_ai_semantic_cache WHERE user_id = ? AND id NOT IN"), eq(7), eq(7), eq(50));
@@ -394,7 +394,7 @@ class AiSemanticCacheServiceImplTest {
             List.of(source(1L)), STAMP);
 
         verify(pgVectorJdbcTemplate).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
-            eq(7), eq(DECENT_QUESTION), any(), any(), any(), eq("{}"), eq(STAMP));
+            eq(7), eq(DECENT_QUESTION), any(), any(), any(), eq("{}"), eq(STAMP), anyString());
     }
 
     @Test
@@ -408,7 +408,7 @@ class AiSemanticCacheServiceImplTest {
         service.store(DECENT_QUESTION, 7, "这是一段足够长的问答答案，字数满足最小长度要求，用于验证缓存写入。",
             List.of(), STAMP);
         verify(pgVectorJdbcTemplate, never()).update(startsWith("INSERT INTO ap_ai_semantic_cache"),
-            any(), any(), any(), any(), any(), any(), any());
+            any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     // ==================== 辅助 ====================

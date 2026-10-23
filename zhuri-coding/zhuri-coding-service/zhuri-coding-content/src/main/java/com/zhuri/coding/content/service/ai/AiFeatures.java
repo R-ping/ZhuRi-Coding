@@ -19,6 +19,10 @@ public final class AiFeatures {
     public static final String ASK_FAST = "ask_fast";
     /** 流式问答 */
     public static final String ASK_STREAM = "ask_stream";
+    /** 统一入口：全站快速 */
+    public static final String ASK_GLOBAL_FAST = "ask_global_fast";
+    /** 统一入口：全站深度 */
+    public static final String ASK_GLOBAL_DEEP = "ask_global_deep";
     /** 单篇问答 */
     public static final String ASK_ARTICLE = "ask_article";
     /** 单篇文章 AI 摘要（详情页摘要卡；低成本高频场景，路由到 flash 快模型） */
