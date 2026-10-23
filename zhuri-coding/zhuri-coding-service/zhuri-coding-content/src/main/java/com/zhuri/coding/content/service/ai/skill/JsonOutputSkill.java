@@ -96,8 +96,13 @@ public class JsonOutputSkill implements AiSkill {
     }
 
     private AiPrecheckVo toVo(PrecheckBean b) {
+        // 安全结论必须是明确 boolean：缺失时返回 null，绝不能默认成"不违规"
+        if (b.violation() == null) {
+            log.warn("[AiSkill-{}] 预检产物缺少明确的 is_violation，按无结果处理", id());
+            return null;
+        }
         AiPrecheckVo vo = new AiPrecheckVo();
-        vo.setViolation(b.violation() != null ? b.violation() : Boolean.FALSE);
+        vo.setViolation(b.violation());
         vo.setViolationType(trimToNull(b.violationType()));
         vo.setViolationReason(trimToNull(b.violationReason()));
         // 模型可能返回越界值（>100 / <0）：钳制到 0–100，避免前端评分/进度条失真

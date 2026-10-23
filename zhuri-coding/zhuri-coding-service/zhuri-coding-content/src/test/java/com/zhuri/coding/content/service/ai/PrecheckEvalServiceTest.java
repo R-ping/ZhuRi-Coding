@@ -129,9 +129,12 @@ class PrecheckEvalServiceTest {
     void evaluatePrecheck_aggregation() {
         // case1 全中（通过），case2 安全维度未命中（不通过）
         when(workflow.run(anyString(), anyString(), any()))
-            .thenReturn(vo(false, List.of("MySQL", "索引"), 82, "本文讲解索引优化。"))   // 第 1 次调用：全中
-            .thenReturn(vo(true, List.of("Redis"), 70, "缓存穿透"))                      // 第 2 次调用：safety 未命中
-            .thenReturn(null);                                                          // 第 3 次调用：降级
+            .thenReturn(PrecheckWorkflow.Outcome.success(
+                vo(false, List.of("MySQL", "索引"), 82, "本文讲解索引优化。")))   // 第 1 次调用：全中
+            .thenReturn(PrecheckWorkflow.Outcome.success(
+                vo(true, List.of("Redis"), 70, "缓存穿透")))                        // 第 2 次调用：safety 未命中
+            .thenReturn(PrecheckWorkflow.Outcome.failed(
+                PrecheckWorkflow.Outcome.Failure.ORCHESTRATION_FAILED));           // 第 3 次调用：降级
         PrecheckEvalServiceImpl service = new PrecheckEvalServiceImpl(workflow);
 
         EvalCase c1 = new EvalCase("用例A", "正文A", expected(false, List.of("MySQL"), 60, "索引"));

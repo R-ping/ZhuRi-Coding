@@ -25,7 +25,7 @@ import reactor.core.publisher.Flux;
 /**
  * 提示词安全横切层（Spring AI Advisor 版）。
  *
- * <p>把此前散落在 AiAsk / PublishAssistant / AgentRunner 里逐方法手写的三层防御，
+ * <p>把此前散落在 AiAsk / PublishAssistant 里逐方法手写的三层防御，
  * 收敛为声明式的 BaseAdvisor，注册到 ChatClient.defaultAdvisors 后对所有模型调用统一生效：
  *
  * <ul>

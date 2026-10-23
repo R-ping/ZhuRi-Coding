@@ -47,6 +47,12 @@ public class AiPrecheckVo {
     private Boolean imageViolation;
     private String imageReason;
 
+    /** 结果来源：workflow=确定性工作流；direct=工作流未产出后的一次性直答 */
+    private String source;
+
+    /** 降级原因（source=direct 时非空，取值为 PrecheckWorkflow.Failure 名称） */
+    private String degradeReason;
+
     /** 总耗时 ms */
     private long latencyMs;
 }
