@@ -4,14 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhuri.coding.common.bailian.DashScopeClient;
 import com.zhuri.coding.content.service.ai.PublishAssistantService;
-import com.zhuri.coding.content.service.ai.agent.AgentResult;
-import com.zhuri.coding.content.service.ai.agent.AgentRunner;
 import com.zhuri.coding.content.service.ai.agent.tools.SimilaritySearchTool;
-import com.zhuri.coding.content.service.ai.agent.workers.CriticExpertWorker;
-import com.zhuri.coding.content.service.ai.agent.workers.QualityExpertWorker;
-import com.zhuri.coding.content.service.ai.agent.workers.SafetyExpertWorker;
-import com.zhuri.coding.content.service.ai.agent.workers.SeoExpertWorker;
-import com.zhuri.coding.content.service.ai.spring.PromptSafetyAdvisor;
+import com.zhuri.coding.content.service.ai.agent.workflow.PrecheckWorkflow;
 import com.zhuri.coding.content.service.ai.spring.SafetyGuardException;
 import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
 import java.util.ArrayList;
@@ -21,12 +15,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * AI 发布助手实现（v3：多智能体编排版 — Orchestrator-Workers + Evaluator-Optimizer）
+ * AI 发布预检实现（两层降级：确定性工作流 → 一次性直答 → null）。
  *
- * <p>主路径：{@link AgentRunner} 主编（Supervisor）ReAct 循环——拆解任务后并行调度
- * 安全/质量/SEO 三位专家 Worker（{@link com.zhuri.coding.content.service.ai.agent.workers}）与
- * 相似度查重工具，汇总草稿后可调用终审专家（Critic）复审修正，最终输出 FINAL JSON。
- * 兜底路径：循环异常/超步/解析失败时降级为一次性结构化调用（保证接口始终可用）。
+ * <p>主路径：{@link PrecheckWorkflow} 的 DAG 显式编排（安全 → 质量/SEO/查重并行 → 终审）。
+ * 兜底路径：工作流未产出结果（阻断性阶段失败/格式失败/编排异常）时，只做一次无工具的结构化
+ * 直答；直答仍失败则返回 null，由调用方提示可重试。
+ *
+ * <p><b>为什么不再有 Agent 循环兜底</b>：Agent 分支调用的是同一批专家工具、同一个模型、
+ * 同一个线程池，对同源失败没有信息增益；且其提示词允许"专家失败仍输出完整报告"，
+ * 会把安全结论缺失伪装成"不违规"。降级必须换失败域，而不是换一种编排重试同一个依赖。
  */
 @Slf4j
 @Service
@@ -36,38 +33,6 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     private static final int MAX_CONTENT = 20000;
     /** 提供给模型的正文上限（控制 token 成本） */
     private static final int LLM_CONTENT_CHARS = 8000;
-    private static final int AGENT_MAX_STEPS = 6;
-
-    /**
-     * 主编（Supervisor）系统提示词：多智能体编排（Orchestrator-Workers + Evaluator-Optimizer）。
-     *
-     * <p>主编持有 AgentRunner ReAct 循环，把文章拆解为安全/质量/SEO 三个专家 Worker 任务（可并行），
-     * 汇总草稿后可选调终审 Critic（review-optimize）再输出 FINAL JSON。
-     */
-    private static final String AGENT_SYSTEM_PROMPT = """
-            你是内容社区《逐日 Coding》的主编 Agent（多智能体编排）。作者提交文章，你负责拆解任务、调度专家团队协作评审，再汇总输出一份发布前预检报告。
-
-            专家团队（工具，同一轮可并行调用多个）：
-            - expert_safety(title, content)：安全审查专家 → {"is_violation":true/false,"violation_type":"","violation_reason":""}
-            - expert_quality(title, content)：质量评审专家 → {"quality_score":0,"is_tech":true,"suggestions":["建议1"]}
-            - expert_seo(title, content)：SEO/运营专家 → {"tags":["标签1"],"summary":"120字内摘要"}
-            - expert_critic(draftJson)：总编终审，检查一致性/完整性并输出修正后的同结构 JSON
-
-            执行方式：你拥有以上全部工具，需要时直接调用（框架自动执行并回传结果）。
-            工作流：
-            1. 第一轮尽量在同一回复内并行调用 expert_safety、expert_quality、expert_seo；
-            2. 汇总各专家输出形成预检草稿；如发现矛盾或字段缺失，可调用 expert_critic 做一次终审修正；
-            3. 输出最终报告（仅输出这一行）：
-            FINAL: {JSON}
-
-            FINAL 的 JSON 结构（严格遵守，字段不能缺失）：
-            {"is_violation":false,"violation_type":"","violation_reason":"","quality_score":0,"is_tech":true,"suggestions":["建议1"],"tags":["标签1"],"summary":"120字内摘要"}
-
-            规则：
-            1. is_violation 以 expert_safety 裁定为准；客观技术讨论（安全研究/科普/新闻）不算违规。
-            2. quality_score/suggestions/tags/summary 以对应专家输出为准，仅做格式整理，不得自行改写结论。
-            3. 禁止编造工具结果，未调用工具不得声称已评审；某专家异常返回 error 时据其余信息合理降级，仍输出完整 FINAL。
-            4. 相似文章预警不在你的输出范围内——它由系统在报告生成后独立检索数据库填充，与你的输出无关。""";
 
     private static final String DIRECT_SYSTEM_PROMPT = """
             你是内容社区《逐日 Coding》的资深编辑助手。请审阅作者文章，仅输出一个 JSON 对象（不要任何额外文字、不要 markdown 代码块），字段：
@@ -82,11 +47,12 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
               "summary": "不超过120字的一句话摘要"
             }
             要求：
-            1. is_violation：色情/暴力/政治敏感/违法/辱骂造谣等才为 true；讨论安全漏洞、渗透测试、行业动态等客观技术内容不算违规。
+            1. is_violation：必须是明确的 true 或 false。色情/暴力/政治敏感/违法/辱骂造谣等才为 true；讨论安全漏洞、渗透测试、行业动态等客观技术内容不算违规。
             2. quality_score：从原创性、逻辑性、表达清晰度综合评分 0-100。
             3. suggestions：2~4 条可执行的改进建议（针对性，禁止空话）。
             4. tags：3~5 个技术社区常用标签，粒度适中（如“MySQL”、“性能优化”）。
-            5. summary：准确概括全文要点的一句话（120 字内）。""";
+            5. summary：准确概括全文要点的一句话（120 字内）。
+            6. 安全结论无法判断时，is_violation 输出 null，禁止用 false 代替。""";
 
     private static final String USER_PROMPT = "标题：%s\n\n正文：%s";
 
@@ -97,42 +63,20 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
     @Autowired
     private com.zhuri.coding.content.service.ai.AiLlmGateway llmGateway;
 
+    /** 显式工作流编排器：安全/质量/SEO/查重并行 + 终审 + 结构化 */
     @Autowired
-    private AgentRunner agentRunner;
-
-    /** 显式工作流编排器（增量1）：安全/质量/SEO/查重并行 + 终审 + 结构化，取代主编 ReAct 作为主路径 */
-    @Autowired
-    private com.zhuri.coding.content.service.ai.agent.workflow.PrecheckWorkflow precheckWorkflow;
-
-    @Autowired
-    private SafetyExpertWorker safetyExpertWorker;
-
-    @Autowired
-    private QualityExpertWorker qualityExpertWorker;
-
-    @Autowired
-    private SeoExpertWorker seoExpertWorker;
-
-    @Autowired
-    private CriticExpertWorker criticExpertWorker;
-
-    @Autowired
-    private PromptSafetyAdvisor promptSafetyAdvisor;
+    private PrecheckWorkflow precheckWorkflow;
 
     @Autowired
     private SimilaritySearchTool similaritySearchTool;
 
-/** Prompt 注册表（P2-1 补齐）：主编主 prompt / 兜底直答 prompt 版本化 + 灰度 + 代码兜底；未装配时走代码常量 */
+    /** Prompt 注册表：兜底直答 prompt 版本化 + 灰度 + 代码兜底；未装配时走代码常量 */
     @Autowired(required = false)
     private com.zhuri.coding.content.service.ai.AiPromptRegistry promptRegistry;
 
     /** 结构化输出 Skill（P2）：FINAL JSON → Bean 化优先，失败回落容错解析 */
     @Autowired(required = false)
     private com.zhuri.coding.content.service.ai.skill.JsonOutputSkill jsonOutputSkill;
-
-    /** MCP 工具目录（P2-8）：README/文档读写、时间查询等社区 server 工具并入主编 Agent；未启用时 fail-open 为 null */
-    @Autowired(required = false)
-    private com.zhuri.coding.content.service.ai.mcp.McpToolCatalog mcpToolCatalog;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -176,55 +120,31 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
 
         AiPrecheckVo vo = null;
         String user = String.format(USER_PROMPT, t, truncate(c, LLM_CONTENT_CHARS));
-        // 提示词版本化（P2-1 补齐）：主编主 prompt / 兜底直答 prompt 接入注册表（可灰度 userId、可回滚）；
-        // DB 无行/异常/未装配时回落代码常量（version=0），行为零变化
-        com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt agentP =
-            prompt("publish_precheck_agent", AGENT_SYSTEM_PROMPT, currentUserId());
+        // 提示词版本化：兜底直答 prompt 接入注册表（可灰度 userId、可回滚），
+        // DB 无行/异常/未装配时回落代码常量（version=0）
         com.zhuri.coding.content.service.ai.AiPromptRegistry.ResolvedPrompt directP =
             prompt("publish_precheck_direct", DIRECT_SYSTEM_PROMPT, currentUserId());
-        // 提示词安全（净化 user + system 加固 + 输出护栏）由 PromptSafetyAdvisor 声明式处理；
-        // Agent 主路径走 AgentRunner 内嵌的 Advisor，兜底路径在下方 ChatClient 上注册同一 Advisor。
-        try {
-            // 主路径一（增量1）：显式工作流——安全/质量/SEO/查重并行 + 终审 Critic + 结构化。
-            // 相比主编 ReAct（让模型临场挑选工具），阶段顺序由代码确定，可独立降级、可观测；
-            // 成功即返回，失败（返回 null）则落入主编 ReAct 兜底。
-            try {
-                com.zhuri.coding.model.article.dtos.AiPrecheckVo wfVo =
-                    precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
-                if (wfVo != null) {
-                    vo = wfVo;
-                    log.info("[AiPrecheck-Workflow] 显式工作流产出成功");
-                }
-            } catch (Exception we) {
-                log.warn("[AiPrecheck-Workflow] 显式工作流异常，转主编 ReAct 兜底: {}", we.getMessage());
-            }
 
-            if (vo == null) {
-                // 主路径二（兜底）：主编 Agent 调度专家团队（安全/质量/SEO 并行 + 可选终审 Critic）。
-                // 查重刻意不交给模型：相似度是确定性事实，由下方 fillSimilarity 独立检索填充 ——
-                // 模型查出来的结果反正会被覆盖，交给它只会多一次编造的机会。
-                List<Object> tools = java.util.Arrays.asList(safetyExpertWorker, qualityExpertWorker,
-                    seoExpertWorker, criticExpertWorker);
-                // 透传 MCP provider：MCP 工具（文档读写等）并入工具回调集；未启用时 providerOrNull() 返回 null，
-                // AgentRunner 内部退化为仅方法型工具，行为与未接入 MCP 时一致（fail-open）
-                AgentResult result = agentRunner.run(agentP.content, user, tools,
-                    mcpToolCatalog == null ? null : mcpToolCatalog.providerOrNull(), AGENT_MAX_STEPS);
-                if (result.isCompleted() && result.getFinalAnswer() != null) {
-                    JsonNode root = parseJson(result.getFinalAnswer());
-                    if (root != null) {
-                        vo = fromJson(root);
-                        log.info("[AiPrecheck-Agent] steps={}, FINAL 解析成功", result.getSteps());
-                    }
-                } else {
-                    log.warn("[AiPrecheck-Agent] 未收敛(completed={}, steps={})，降级直答", result.isCompleted(), result.getSteps());
-                }
+        // 主路径：DAG 显式工作流。失败时带出具体原因，供降级归因与日志使用。
+        PrecheckWorkflow.Outcome.Failure workflowFailure = null;
+        try {
+            PrecheckWorkflow.Outcome outcome =
+                precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
+            if (outcome.vo() != null) {
+                vo = outcome.vo();
+                vo.setSource("workflow");
+                log.info("[AiPrecheck-Workflow] 显式工作流产出成功");
+            } else {
+                workflowFailure = outcome.failure();
+                log.warn("[AiPrecheck-Workflow] 工作流未产出结果，失败原因={}，降级一次性直答", workflowFailure);
             }
-        } catch (Exception e) {
-            log.warn("[AiPrecheck-Agent] 循环异常，降级直答", e);
+        } catch (Exception we) {
+            workflowFailure = PrecheckWorkflow.Outcome.Failure.ORCHESTRATION_FAILED;
+            log.warn("[AiPrecheck-Workflow] 显式工作流异常，降级一次性直答: {}", we.getMessage());
         }
 
         if (vo == null) {
-            // 兜底：一次性结构化调用（安全三层防御由 Advisor 横切处理）
+            // 兜底：一次性结构化调用（无工具、不同 prompt）。这是换失败域，不是重试同一依赖。
             try {
                 String raw = llmGateway.generateOrNull(
                     com.zhuri.coding.content.service.ai.AiFeatures.PRECHECK, directP.content, user, null, null);
@@ -238,6 +158,11 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
                         vo = fromJson(root);
                     }
                 }
+                if (vo != null) {
+                    vo.setSource("direct");
+                    vo.setDegradeReason(workflowFailure == null ? null : workflowFailure.name());
+                    log.info("[AiPrecheck-Direct] 降级直答产出成功，degradeReason={}", workflowFailure);
+                }
             } catch (SafetyGuardException e) {
                 log.warn("[AiPrecheck] 兜底输出护栏命中（顺从短语），丢弃该结果: {}", e.getMessage());
                 return null;
@@ -248,11 +173,11 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         }
 
         if (vo == null) {
-            log.warn("[AiPrecheck] Agent 与兜底均未产出预检结果，返回 null");
+            log.warn("[AiPrecheck] 工作流与直答均未产出预检结果（workflowFailure={}），返回 null", workflowFailure);
             return null;
         }
 
-        // 兜底补相似预警（无论 Agent 是否已查，双保险且排除自身）
+        // 兜底补相似预警（DAG 的成功路径已查过，这里保证直答路径同样有；排除自身）
         fillSimilarity(vo, c, articleId);
 
         // 封面图多模态审核（可选：提供 coverImageUrl 时执行）
@@ -261,11 +186,10 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         }
 
         vo.setLatencyMs(System.currentTimeMillis() - start);
-        // 归因：记录两处注册表 prompt 实际生效版本（workers 在各自 review() 内自行解析，未含于此）
-        log.info("[AiPrecheck] title={}, quality={}, violation={}, tags={}, agentPrompt=v{}, directPrompt=v{}, latency={}ms",
+        log.info("[AiPrecheck] title={}, quality={}, violation={}, tags={}, source={}, degradeReason={}, directPrompt=v{}, latency={}ms",
             truncate(t, 30), vo.getQualityScore(), vo.getViolation(),
             vo.getTags() == null ? 0 : vo.getTags().size(),
-            agentP.version, directP.version, vo.getLatencyMs());
+            vo.getSource(), vo.getDegradeReason(), directP.version, vo.getLatencyMs());
         return vo;
     }
 
@@ -298,8 +222,13 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
                 (type, supplier) -> onEvent.accept(type, supplier.get());
             precheckWorkflow.addStageListener(listener);
             try {
-                // 显式工作流主路径：成功即返回 VO；降级则返回 null（监听器侧已收到各阶段状态）
-                vo = precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
+                // 显式工作流主路径：成功即产出 VO；失败则 vo=null（监听器侧已收到各阶段状态）
+                PrecheckWorkflow.Outcome outcome =
+                    precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
+                vo = outcome.vo();
+                if (vo == null) {
+                    log.warn("[AiPrecheck-Workflow] 流式预检未产出结果，失败原因={}", outcome.failure());
+                }
             } catch (Exception e) {
                 log.warn("[AiPrecheck-Workflow] 流式预检异常: {}", e.getMessage());
             } finally {
@@ -308,7 +237,12 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
             }
         } else {
             try {
-                vo = precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
+                PrecheckWorkflow.Outcome outcome =
+                    precheckWorkflow.run(t, truncate(c, LLM_CONTENT_CHARS), articleId);
+                vo = outcome.vo();
+                if (vo == null) {
+                    log.warn("[AiPrecheck-Workflow] 流式预检未产出结果，失败原因={}", outcome.failure());
+                }
             } catch (Exception e) {
                 log.warn("[AiPrecheck-Workflow] 流式预检异常: {}", e.getMessage());
             }
@@ -329,10 +263,14 @@ public class PublishAssistantServiceImpl implements PublishAssistantService {
         }
     }
 
-    /** 将 FINAL JSON 映射为 VO（容错：字段缺失不报错） */
+    /** 将 FINAL JSON 映射为 VO；缺少明确的 is_violation 时返回 null（绝不默认成"不违规"） */
     private AiPrecheckVo fromJson(JsonNode root) {
+        if (root == null || !root.path("is_violation").isBoolean()) {
+            log.warn("[AiPrecheck] 直答产物缺少明确的 is_violation，按无结果处理");
+            return null;
+        }
         AiPrecheckVo vo = new AiPrecheckVo();
-        vo.setViolation(root.path("is_violation").asBoolean(false));
+        vo.setViolation(root.path("is_violation").asBoolean());
         vo.setViolationType(trimToNull(root.path("violation_type").asText()));
         vo.setViolationReason(trimToNull(root.path("violation_reason").asText()));
         vo.setQualityScore(root.path("quality_score").isInt() ? root.path("quality_score").asInt() : null);

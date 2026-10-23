@@ -29,10 +29,9 @@ import java.util.function.Consumer;
  *
  * <p><b>客户端装配（2026-09-30 修正）</b>：主路径的 ChatClient 由 {@link #client(ChatModel)}
  * 按 model <b>缓存复用</b>，不再每调用一次重建（改造后曾遗留的每请求 build 已消除）。
- * 仍需保留 builder 的地方只有三处，且均为<b>有意的例外</b>：
+ * 仍需保留 builder 的地方只有两处，且均为<b>有意的例外</b>：
  * <ul>
  *   <li>{@code AiExpertConfig#aiExpertChatClient} —— 单例 Bean，一次构建；</li>
- *   <li>{@code AgentRunner} 构造期 —— 一次构建；</li>
  *   <li>{@link #probeInternal} —— 探针要求"裸链路"，<b>刻意不挂</b> advisor，故不使用带安全横切的缓存客户端。</li>
  * </ul>
  *

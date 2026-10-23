@@ -98,8 +98,10 @@ public class PrecheckEvalServiceImpl implements PrecheckEvalService {
             return null;
         }
         try {
-            return workflow.run(c.getTitle() == null ? "" : c.getTitle(),
+            PrecheckWorkflow.Outcome outcome = workflow.run(
+                c.getTitle() == null ? "" : c.getTitle(),
                 c.getContent() == null ? "" : c.getContent(), null);
+            return outcome == null ? null : outcome.vo();
         } catch (Exception e) {
             log.warn("[PrecheckEval] 工作流执行异常，按降级处理: {}", e.getMessage());
             return null;

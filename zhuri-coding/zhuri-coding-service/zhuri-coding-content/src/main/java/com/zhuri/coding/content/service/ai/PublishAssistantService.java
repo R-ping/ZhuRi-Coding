@@ -4,10 +4,10 @@ import com.zhuri.coding.model.article.dtos.AiPrecheckVo;
 import com.zhuri.coding.content.service.ai.agent.workflow.StageType;
 
 /**
- * AI 发布助手（precheck）
+ * AI 发布预检。
  *
- * <p>作者提交审核前调用：一次大模型调用产出 违规预检 + 质量分 + 优化建议 + 推荐标签 + 摘要，
- * 叠加向量相似度预警，返回"发布前报告"供作者修改/采纳。
+ * <p>作者提交审核前调用：由确定性工作流产出 违规预检 + 质量分 + 优化建议 + 推荐标签 + 摘要，
+ * 叠加向量相似度预警，返回"发布前报告"供作者修改/采纳；工作流失败时降级为一次无工具直答。
  */
 public interface PublishAssistantService {
 

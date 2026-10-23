@@ -76,7 +76,8 @@ class PrecheckWorkflowTest {
                 + "\"tags\":[\"MySQL\",\"性能优化\"],\"summary\":\"本文讲解索引优化。\"}");
         when(similarityTool.searchSimilar(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of());
 
-        AiPrecheckVo vo = workflow().run("标题", "正文内容", 1L);
+        PrecheckWorkflow.Outcome outcome = workflow().run("标题", "正文内容", 1L);
+        AiPrecheckVo vo = outcome.vo();
 
         assertNotNull(vo);
         assertFalse(vo.getViolation());
@@ -103,7 +104,8 @@ class PrecheckWorkflowTest {
         SimilaritySearchTool.SimilarArticle hit = new SimilaritySearchTool.SimilarArticle(a, 0.93);
         when(similarityTool.searchSimilar(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of(hit));
 
-        AiPrecheckVo vo = workflow().run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = workflow().run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         assertNotNull(vo);
         assertEquals(99L, vo.getSimilarArticleId());
@@ -126,7 +128,8 @@ class PrecheckWorkflowTest {
         // 而确定性检索无命中
         when(similarityTool.searchSimilar(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of());
 
-        AiPrecheckVo vo = workflow().run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = workflow().run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         assertNotNull(vo);
         assertNull(vo.getSimilarArticleId(), "确定性未命中必须清空模型填的相似文章 ID（否则前端给错链接）");
@@ -149,7 +152,8 @@ class PrecheckWorkflowTest {
                 + "\"suggestions\":[\"建议\"],\"tags\":[],\"summary\":\"\"}");
         when(similarityTool.searchSimilar(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of());
 
-        AiPrecheckVo vo = workflow().run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = workflow().run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         // SEO 缺失不阻断整体：仍产出 VO（violation 与质量来自安全/质量阶段）
         assertNotNull(vo);
@@ -163,10 +167,13 @@ class PrecheckWorkflowTest {
         when(safetyWorker.review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
             .thenReturn("");
 
-        AiPrecheckVo vo = workflow().run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = workflow().run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         // 安全缺失属阻断：即便 quality/seo 可达也不产出 VO（DAG 短路 + FORMAT 判阻断）
         assertNull(vo);
+        assertEquals(PrecheckWorkflow.Outcome.Failure.SAFETY_UNAVAILABLE, outcome.failure(),
+            "失败原因必须可区分：安全结论缺失，而不是笼统的 null");
         verify(qualityWorker, never()).review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
         verify(seoWorker, never()).review(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
     }
@@ -181,9 +188,11 @@ class PrecheckWorkflowTest {
         when(criticWorker.review(org.mockito.ArgumentMatchers.anyString())).thenThrow(new RuntimeException("critic down"));
         when(similarityTool.searchSimilar(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of());
 
-        AiPrecheckVo vo = workflow().run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = workflow().run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         assertNull(vo);
+        assertEquals(PrecheckWorkflow.Outcome.Failure.CRITIC_FAILED, outcome.failure());
     }
 
     @Test
@@ -201,7 +210,8 @@ class PrecheckWorkflowTest {
                 + "\"suggestions\":[],\"tags\":[\"B\"],\"summary\":\"概要。\"}");
         when(similarityTool.searchSimilar(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of());
 
-        AiPrecheckVo vo = workflow().run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = workflow().run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         // 首次抛异常 → 重试（默认 stageMaxRetry=2）成功，未因瞬时故障而整体降级
         assertNotNull(vo);
@@ -223,7 +233,8 @@ class PrecheckWorkflowTest {
                 + "\"suggestions\":[],\"tags\":[\"C\"],\"summary\":\"概要。\"}");
         when(similarityTool.searchSimilar(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of());
 
-        AiPrecheckVo vo = workflow().run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = workflow().run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         // 质量（非阻断）重试耗尽仅 SKIPPED，质量字段走默认值，整体仍产出 VO
         assertNotNull(vo);
@@ -249,7 +260,8 @@ class PrecheckWorkflowTest {
             (type, detail) -> events.add(type + ":" + detail.get());
         wf.addStageListener(listener);
 
-        AiPrecheckVo vo = wf.run("标题", "正文", 1L);
+        PrecheckWorkflow.Outcome outcome = wf.run("标题", "正文", 1L);
+        AiPrecheckVo vo = outcome.vo();
 
         assertNotNull(vo);
         // 六个阶段都应出现 running 与 done
@@ -284,7 +296,7 @@ class PrecheckWorkflowTest {
             (type, detail) -> events.add(type + ":" + detail.get());
 
         wf.addStageListener(listener);
-        assertNotNull(wf.run("标题", "正文", 1L));
+        assertNotNull(wf.run("标题", "正文", 1L).vo());
         // 模拟 impl.precheckStream 的 finally：仅按对象引用移除本次监听器
         wf.removeStageListener(listener);
 
@@ -310,7 +322,8 @@ class PrecheckWorkflowTest {
             (type, detail) -> events.add(type + ":" + detail.get());
         wf.addStageListener(listener);
 
-        AiPrecheckVo vo = wf.run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = wf.run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         assertNull(vo);
         assertTrue(events.contains("CRITIC:running"));
@@ -333,7 +346,8 @@ class PrecheckWorkflowTest {
         java.util.List<String> events = new java.util.concurrent.CopyOnWriteArrayList<>();
         wf.addStageListener((type, detail) -> events.add(type + ":" + detail.get()));
 
-        AiPrecheckVo vo = wf.run("标题", "正文", null);
+        PrecheckWorkflow.Outcome outcome = wf.run("标题", "正文", null);
+        AiPrecheckVo vo = outcome.vo();
 
         assertNotNull(vo);
         assertTrue(vo.getViolation());

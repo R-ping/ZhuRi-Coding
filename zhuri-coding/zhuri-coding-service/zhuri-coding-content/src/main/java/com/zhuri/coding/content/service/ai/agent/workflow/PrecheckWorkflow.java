@@ -56,7 +56,7 @@ public class PrecheckWorkflow {
     private final SimilaritySearchTool similarityTool;
     private final Executor toolExecutor;
 
-    /** 各专家并行执行专用池（复用 AgentRunner 同一线程池，见 AiAsyncConfig#aiAgentToolExecutor） */
+    /** 各专家并行执行专用池（见 AiAsyncConfig#aiAgentToolExecutor） */
     public PrecheckWorkflow(SafetyExpertWorker safetyWorker,
                             QualityExpertWorker qualityWorker,
                             SeoExpertWorker seoWorker,
@@ -133,14 +133,48 @@ public class PrecheckWorkflow {
     private final DagExecutor<StageType> dagExecutor = new DagExecutor<>();
 
     /**
+     * 预检执行结果：VO 与失败原因一一对应。
+     *
+     * <p>此前用裸 {@code null} 表示失败，调用方无法区分"安全结论缺失"和"格式解析失败"，
+     * 只能统一走同一条降级链。现在把失败原因显式带出来，降级策略才能按类型区分。
+     */
+    public record Outcome(AiPrecheckVo vo, Failure failure) {
+
+        /** 失败原因；NONE 表示成功产出 VO */
+        public enum Failure {
+            NONE,
+            /** 安全阶段重试耗尽或产物缺失：阻断性，禁止输出任何"通过"结论 */
+            SAFETY_UNAVAILABLE,
+            /** 终审重试耗尽或崩溃：阻断性 */
+            CRITIC_FAILED,
+            /** 终审产物无法解析为 VO：无可用结论 */
+            FORMAT_FAILED,
+            /** 编排层异常（波次超时/线程池拒绝等） */
+            ORCHESTRATION_FAILED
+        }
+
+        public static Outcome success(AiPrecheckVo vo) {
+            return new Outcome(vo, Failure.NONE);
+        }
+
+        public static Outcome failed(Failure failure) {
+            return new Outcome(null, failure);
+        }
+
+        public boolean isSuccess() {
+            return vo != null;
+        }
+    }
+
+    /**
      * 运行 DAG 预检工作流。
      *
      * @param title   文章标题
      * @param content 文章正文（已截断）
      * @param articleId 文章 id（查重时排除自身）
-     * @return 预检 VO；任一步骤异常或整体失败时返回 null，调用方降级直答
+     * @return 预检结果；失败时 {@code vo == null}，并由 {@code failure} 标明具体原因
      */
-    public AiPrecheckVo run(String title, String content, Long articleId) {
+    public Outcome run(String title, String content, Long articleId) {
         StageContext ctx = new StageContext(title, content, articleId, null);
         long wfStart = System.currentTimeMillis();
         try {
@@ -148,24 +182,25 @@ public class PrecheckWorkflow {
             DagExecutor.DagResult<StageType> dag = executeDag(ctx);
             // FORMAT 终态序列化：在 DAG 全部完成后读取各阶段产物产最终 VO（须后于 CRITIC，故不入图）
             notifyStage(StageType.FORMAT, () -> "running");
-            AiPrecheckVo vo = buildFinalVo(ctx, dag);
+            Outcome outcome = buildFinalVo(ctx, dag);
+            AiPrecheckVo vo = outcome.vo();
             if (vo == null) {
-                // 阻断性阶段失败/安全缺失 → 整体降级（fail-open），降级前通知监听器进入 degraded 态
+                // 阻断性阶段失败/安全缺失 → 整体降级，降级前通知监听器进入 degraded 态
                 StageResult critic = ctx.get(StageType.CRITIC);
                 if (critic != null && critic.status() == StageResult.Status.FAILED) {
                     notifyStage(StageType.CRITIC, () -> "degraded");
                 }
-                log.warn("[PrecheckWorkflow] 预检未产出 VO（阻断性阶段失败/安全缺失），向下游降级");
-                return null;
+                log.warn("[PrecheckWorkflow] 预检未产出 VO，失败原因={}，向下游降级", outcome.failure());
+                return outcome;
             }
             vo.setLatencyMs(System.currentTimeMillis() - wfStart);
             notifyStage(StageType.FORMAT, () -> "done");
             log.info("[PrecheckWorkflow] 完成：violation={}, quality={}, tags={}",
                 vo.getViolation(), vo.getQualityScore(), vo.getTags() == null ? 0 : vo.getTags().size());
-            return vo;
+            return outcome;
         } catch (Exception e) {
             log.warn("[PrecheckWorkflow] DAG 编排异常，整体降级（fail-open）: {}", e.getMessage());
-            return null;
+            return Outcome.failed(Outcome.Failure.ORCHESTRATION_FAILED);
         }
     }
 
@@ -252,32 +287,45 @@ public class PrecheckWorkflow {
             .build();
     }
 
-    /** 安全门控：仅当 SAFETY 产出有效且未判定违规时才放行后续（非阻断）阶段。 */
+    /** 安全门控：仅当 SAFETY 产出有效且明确未违规时才放行后续（非阻断）阶段。 */
     private boolean safetyAllowsProceed(DagExecutor.DagResult<StageType> r) {
         Object s = r.valueOf(StageType.SAFETY);
         if (!(s instanceof StageResult sr) || sr.status() != StageResult.Status.OK) {
             return false; // 安全缺失：不放行
         }
         JsonNode safety = parseOnNull(sr.payload());
-        return safety != null && !safety.path("is_violation").asBoolean(true);
+        if (safety == null || !safety.path("is_violation").isBoolean()) {
+            return false; // 没有明确安全结论：按阻断处理，绝不默认放行
+        }
+        return !safety.path("is_violation").asBoolean();
     }
 
-    /** FORMAT 阶段产出 VO：安全缺失/终审阻断 → null（fail-open）；终审被裁剪（违规短路）→ 直接合成。 */
-    private AiPrecheckVo buildFinalVo(StageContext ctx, DagExecutor.DagResult<StageType> r) {
+    /** FORMAT 阶段产出 VO：安全缺失/终审阻断 → 失败并带原因；终审被裁剪（违规短路）→ 直接合成。 */
+    private Outcome buildFinalVo(StageContext ctx, DagExecutor.DagResult<StageType> r) {
         StageResult safety = stageResultOf(r, StageType.SAFETY);
-        // 安全缺失（SKIPPED/空）→ 阻断，无法产出 VO
-        if (safety == null || safety.status() != StageResult.Status.OK || parseOnNull(safety.payload()) == null) {
-            return null;
+        // 安全缺失（SKIPPED/空/崩溃）→ 阻断，无法产出 VO
+        if (safety == null || safety.status() != StageResult.Status.OK) {
+            return Outcome.failed(Outcome.Failure.SAFETY_UNAVAILABLE);
+        }
+        JsonNode safetyNode = parseOnNull(safety.payload());
+        // 安全产物必须是带明确 boolean 的 JSON：字段缺失不能被当成"不违规"
+        if (safetyNode == null || !safetyNode.path("is_violation").isBoolean()) {
+            return Outcome.failed(Outcome.Failure.SAFETY_UNAVAILABLE);
         }
         DagExecutor.DagResult.Status criticStatus = r.statusOf(StageType.CRITIC);
-        if (criticStatus == DagExecutor.DagResult.Status.FAILED) {
-            return null; // 终审阻断
+        StageResult critic = stageResultOf(r, StageType.CRITIC);
+        // 终审阻断有两种形态：节点 action 抛异常（DAG FAILED），或 runCritic 重试耗尽（StageResult FAILED）
+        if (criticStatus == DagExecutor.DagResult.Status.FAILED
+                || (critic != null && critic.status() == StageResult.Status.FAILED)) {
+            return Outcome.failed(Outcome.Failure.CRITIC_FAILED);
         }
         if (criticStatus == DagExecutor.DagResult.Status.OK) {
-            return formatVo(ctx); // 正常路径：解析终审产物
+            AiPrecheckVo vo = formatVo(ctx); // 正常路径：解析终审产物
+            return vo == null ? Outcome.failed(Outcome.Failure.FORMAT_FAILED)
+                : Outcome.success(vo);
         }
         // critic 被裁剪（违规短路）→ 用安全结果直接合成 VO（violation=true）
-        return formatShortCircuited(ctx);
+        return Outcome.success(formatShortCircuited(ctx));
     }
 
     private StageResult stageResultOf(DagExecutor.DagResult<StageType> r, StageType t) {
@@ -466,10 +514,19 @@ public class PrecheckWorkflow {
         }
     }
 
-    /** JSON → AiPrecheckVo（容错：字段缺失不报错，与旧路径 fromJson 语义一致） */
+    /**
+     * JSON → AiPrecheckVo。
+     *
+     * <p>唯一硬性要求：{@code is_violation} 必须是明确 boolean。安全结论缺失时返回 null，
+     * 由调用方按 FORMAT_FAILED 处理 —— 绝不能把"没判"默认成"不违规"。
+     */
     private AiPrecheckVo toVo(JsonNode root) {
+        if (!root.path("is_violation").isBoolean()) {
+            log.warn("[PrecheckWorkflow] 终审产物缺少明确的 is_violation，按格式失败处理");
+            return null;
+        }
         AiPrecheckVo vo = new AiPrecheckVo();
-        vo.setViolation(root.path("is_violation").asBoolean(false));
+        vo.setViolation(root.path("is_violation").asBoolean());
         vo.setViolationType(trimToNull(root.path("violation_type").asText()));
         vo.setViolationReason(trimToNull(root.path("violation_reason").asText()));
         vo.setQualityScore(root.path("quality_score").isInt() ? root.path("quality_score").asInt() : null);
