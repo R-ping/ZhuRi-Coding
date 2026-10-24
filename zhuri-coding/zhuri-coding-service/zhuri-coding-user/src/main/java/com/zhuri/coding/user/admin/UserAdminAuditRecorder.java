@@ -13,8 +13,8 @@ import org.springframework.stereotype.Component;
  * {@link AbstractAdminAuditSink}；本类只负责"往 leadnews_user 库这张表里写"。
  *
  * <p><b>审计表缺失时</b>：{@code recordSuccess} 抛异常 → 账号变更回滚。有意的 fail-closed ——
- * 「封了人但查不到是谁封的」比"这次封禁失败"严重得多（迁移脚本
- * {@code db/migrations/add_admin_audit_log.sql} 必须先执行）。
+ * 「封了人但查不到是谁封的」比"这次封禁失败"严重得多（表结构见 user 库
+ * {@code db/schema.sql}，部署时必须已存在 {@code ap_admin_audit_log}）。
  */
 @Component
 public class UserAdminAuditRecorder extends AbstractAdminAuditSink {

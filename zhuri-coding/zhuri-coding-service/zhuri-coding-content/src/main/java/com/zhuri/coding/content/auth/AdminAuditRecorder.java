@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
  * {@link AbstractAdminAuditSink}；本类只负责"往 content 库这张表里写"。
  *
  * <p><b>审计表缺失时</b>：成功路径会抛异常导致业务回滚。这是有意的 fail-closed ——
- * 「改了内容但没留痕」对内容治理是不可接受的状态（迁移脚本见
- * {@code db/migrations/add_admin_audit_log.sql}，必须先执行）。
+ * 「改了内容但没留痕」对内容治理是不可接受的状态（表结构见 content 库
+ * {@code db/schema.sql} 的 {@code ap_admin_audit_log}，部署时必须已存在）。
  */
 @Component
 public class AdminAuditRecorder extends AbstractAdminAuditSink {

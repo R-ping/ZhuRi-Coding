@@ -32,7 +32,7 @@ CREATE TABLE `lottery_daily_state` (
   `free_used` tinyint(1) DEFAULT '0' COMMENT '今日免费次数是否已用',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_user_date` (`user_id`,`stat_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户每日抽奖状态表';
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户每日抽奖状态表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -55,7 +55,7 @@ CREATE TABLE `lottery_draw_records` (
   PRIMARY KEY (`id`),
   KEY `idx_user_created` (`user_id`,`created_at` DESC),
   KEY `idx_batch` (`draw_batch_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户抽奖记录表';
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户抽奖记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -108,7 +108,7 @@ CREATE TABLE `sign_records` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_user_date` (`user_id`,`sign_date`),
   KEY `idx_user_date_desc` (`user_id`,`sign_date` DESC)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='签到记录表（新）';
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='签到记录表（新）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -171,8 +171,10 @@ CREATE TABLE `welfare_exchange_orders` (
   `address_expire_at` datetime DEFAULT NULL COMMENT '填写地址截止时间（实物，30天后）',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `idempotency_key` varchar(64) DEFAULT NULL COMMENT '璇锋眰骞傜瓑鍙凤紙鍚屼竴鐢ㄦ埛鍚屼竴 key 鍙?垚涓?崟锛',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_exchange_id` (`exchange_id`),
+  UNIQUE KEY `uk_user_idem` (`user_id`,`idempotency_key`),
   KEY `idx_user_created` (`user_id`,`created_at` DESC),
   KEY `idx_status_expire` (`status`,`address_expire_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='兑换订单表';

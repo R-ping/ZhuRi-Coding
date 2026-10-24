@@ -51,6 +51,29 @@ CREATE TABLE `ap_activity` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_admin_audit_log` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` int unsigned NOT NULL COMMENT '操作人账号ID',
+  `role_codes` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '操作时的角色快照（逗号分隔；角色可能事后被回收，故存快照）',
+  `module` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '业务模块：REPORT举报 / CONTENT内容 / USER用户 / OPS运营位 / ACCESS访问控制（越权尝试）',
+  `action` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '动作编码，如 REPORT_IGNORE / REPORT_TAKE_DOWN',
+  `target_type` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '对象类型：ARTICLE / COMMENT / PINS / USER；被拒访问时为 ENDPOINT',
+  `target_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '对象ID（用字符串以兼容不同主键形态）',
+  `reason` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '操作理由（必填，事后追溯的依据）',
+  `detail` text COLLATE utf8mb4_unicode_ci COMMENT '变更摘要（处置前后摘要，不含敏感明文）',
+  `result` tinyint NOT NULL DEFAULT '1' COMMENT '结果：1成功 0失败',
+  `error_msg` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '失败原因',
+  `ip` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '操作来源IP',
+  `cost_ms` int DEFAULT NULL COMMENT '耗时（毫秒）',
+  `created_time` datetime NOT NULL COMMENT '操作时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_user_time` (`user_id`,`created_time`),
+  KEY `idx_module_time` (`module`,`created_time`),
+  KEY `idx_target` (`target_type`,`target_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='运营操作审计日志（谁在何时对什么做了什么、为什么）';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `ap_ai_feedback` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` int NOT NULL COMMENT '反馈用户ID',
@@ -81,7 +104,7 @@ CREATE TABLE `ap_ai_prompt` (
   `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_key_version` (`prompt_key`,`version`)
-) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI Prompt 版本注册表（P2-1：版本化 + 灰度 + 归因）';
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI Prompt 版本注册表（P2-1：版本化 + 灰度 + 归因）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -163,6 +186,9 @@ CREATE TABLE `ap_article` (
   `static_url` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_time` datetime DEFAULT NULL COMMENT '创建时间',
   `publish_time` datetime DEFAULT NULL COMMENT '发布时间',
+  `update_time` datetime DEFAULT NULL COMMENT '最后实质更新时间（仅修订幅度达实质更新阈值时写入）',
+  `update_note` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '更新说明',
+  `pending_revision_id` bigint DEFAULT NULL COMMENT '待审核修订草稿ID（ap_article_draft.id）',
   `is_deleted` tinyint DEFAULT '0' COMMENT '是否删除 0未删除 1已删除',
   `reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `author_image` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -175,8 +201,9 @@ CREATE TABLE `ap_article` (
   KEY `idx_status_publish` (`status`,`publish_time`,`id`),
   KEY `idx_status_score` (`status`,`score`,`id`),
   KEY `idx_author_status_publish` (`author_id`,`status`,`publish_time`,`id`),
-  KEY `idx_column_status_publish` (`column_id`,`status`,`publish_time`,`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2091867593875820960 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='文章信息表，存储已发布的文章';
+  KEY `idx_column_status_publish` (`column_id`,`status`,`publish_time`,`id`),
+  KEY `idx_status_update` (`status`,`update_time`)
+) ENGINE=InnoDB AUTO_INCREMENT=2113546124120752130 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='文章信息表，存储已发布的文章';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -269,6 +296,7 @@ CREATE TABLE `ap_article_content` (
 CREATE TABLE `ap_article_draft` (
   `id` bigint NOT NULL COMMENT '主键',
   `article_id` bigint DEFAULT NULL COMMENT '关联文章ID',
+  `source_article_id` bigint DEFAULT NULL COMMENT '修订来源文章ID，NULL 表示普通草稿',
   `title` varchar(200) DEFAULT NULL COMMENT '标题',
   `author_id` bigint DEFAULT NULL COMMENT '作者id',
   `channel_id` int DEFAULT NULL COMMENT '频道id',
@@ -284,13 +312,16 @@ CREATE TABLE `ap_article_draft` (
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `status` tinyint DEFAULT '0' COMMENT '状态',
+  `revision_significant` tinyint DEFAULT NULL COMMENT '本次修订是否达实质更新阈值 1是 0否',
+  `update_note` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '更新说明',
   `is_deleted` tinyint DEFAULT '0' COMMENT '是否删除 0未删除 1已删除',
   `column_id` bigint DEFAULT NULL COMMENT '专栏ID',
   PRIMARY KEY (`id`),
   KEY `idx_author_id` (`author_id`),
   KEY `idx_article_id` (`article_id`),
   KEY `idx_channel_id` (`channel_id`),
-  KEY `idx_status` (`status`)
+  KEY `idx_status` (`status`),
+  KEY `idx_source_article` (`source_article_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章草稿表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -308,7 +339,7 @@ CREATE TABLE `ap_article_exposure` (
   PRIMARY KEY (`id`),
   KEY `idx_user_article` (`user_id`,`article_id`,`create_time`),
   KEY `idx_article_time` (`article_id`,`create_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=4949 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章推荐曝光记录（数据回流闭环）';
+) ENGINE=InnoDB AUTO_INCREMENT=5319 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章推荐曝光记录（数据回流闭环）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -322,9 +353,15 @@ CREATE TABLE `ap_article_report` (
   `image_urls` varchar(2000) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '举报图片URL（逗号分隔，最多4张）',
   `status` tinyint DEFAULT '0' COMMENT '处理状态：0待处理 1已处理',
   `created_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `handle_result` tinyint DEFAULT NULL COMMENT '处置结论：1驳回举报 2警告作者 3下架内容 4折叠评论',
+  `handle_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '处置说明（运营填写，会回执给举报人）',
+  `handler_id` int unsigned DEFAULT NULL COMMENT '处置人账号ID',
+  `handle_time` datetime DEFAULT NULL COMMENT '处置时间',
+  `notify_status` tinyint NOT NULL DEFAULT '0' COMMENT '回执通知状态：0未发 1已发 2发送失败（可重试）',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_article_id` (`article_id`),
-  KEY `idx_user_id` (`user_id`)
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_status_created` (`status`,`created_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章举报记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -337,7 +374,7 @@ CREATE TABLE `ap_article_tip_order` (
   `author_id` int NOT NULL COMMENT '作者用户ID',
   `amount` decimal(10,2) NOT NULL COMMENT '打赏金额',
   `message` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT '打赏留言',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-待支付 1-已支付',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-待支付 1-已支付 2-已关闭',
   `trade_no` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT '' COMMENT '支付宝交易号',
   `pay_time` datetime DEFAULT NULL COMMENT '支付时间',
   `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -383,6 +420,9 @@ CREATE TABLE `ap_audit_task` (
   `target_id` bigint DEFAULT NULL COMMENT '鐩?爣鍐呭?ID',
   `target_user_id` int DEFAULT NULL COMMENT '鐩?爣鍐呭?浣滆?ID',
   `status` tinyint NOT NULL DEFAULT '0' COMMENT '0-寰呭?鏍?1-瀹℃牳涓?2-瀹屾垚(閫氳繃) 3-瀹屾垚(杩濊?) 4-閲嶈瘯瓒呴檺闄嶇骇閫氳繃',
+  `violation_reason` varchar(500) DEFAULT NULL COMMENT '违规原因（调度器在违规终态时回填，供复核队列展示）',
+  `review_status` tinyint NOT NULL DEFAULT '0' COMMENT '人工复核状态：0-未复核（在队列中）1-复核放行（内容已恢复）2-维持违规',
+  `review_time` datetime DEFAULT NULL COMMENT '人工复核完成时间',
   `retry_count` int NOT NULL DEFAULT '0' COMMENT '閲嶈瘯娆℃暟锛堝?鐞嗗紓甯告椂绱??锛',
   `next_retry_time` datetime DEFAULT NULL COMMENT '涓嬫?鎵ц?鏃堕棿锛堟寚鏁伴?閬跨敤锛',
   `audit_time` datetime DEFAULT NULL COMMENT '瀹℃牳瀹屾垚鏃堕棿',
@@ -415,6 +455,23 @@ CREATE TABLE `ap_author_profile` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_banner` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `title` varchar(100) NOT NULL COMMENT '运营备注名（图上不该是唯一信息源，列表靠它辨认）',
+  `image_url` varchar(500) NOT NULL COMMENT '图片地址',
+  `link_url` varchar(500) NOT NULL COMMENT '跳转地址（站内路由 / 开头或 http(s) 外链，禁其他协议）',
+  `sort_order` int NOT NULL DEFAULT '0' COMMENT '展示顺序，小的在前',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0-停用 1-启用',
+  `start_time` datetime DEFAULT NULL COMMENT '生效开始，NULL=不限',
+  `end_time` datetime DEFAULT NULL COMMENT '生效结束，NULL=不限（长期挂）',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_status_sort` (`status`,`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='运营位Banner(首页轮播)';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `ap_behavior_config` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
   `action_code` varchar(50) NOT NULL COMMENT '行为编码（唯一）',
@@ -432,7 +489,7 @@ CREATE TABLE `ap_behavior_config` (
   `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_action_code` (`action_code`)
-) ENGINE=InnoDB AUTO_INCREMENT=24 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='行为项配置表（系统固定，所有用户一致）';
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='行为项配置表（系统固定，所有用户一致）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -528,6 +585,131 @@ CREATE TABLE `ap_circle_hot_config` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_coding_answer_record` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` int NOT NULL COMMENT '作答用户ID',
+  `pool_id` bigint NOT NULL COMMENT '题目池ID（ap_coding_daily_pool.id）',
+  `answer_date` date NOT NULL COMMENT '作答日期（按天限次与榜单统计维度）',
+  `user_answer` text NOT NULL COMMENT '用户作答文本',
+  `level` tinyint DEFAULT NULL COMMENT '综合等级 1-5（评估产出，未评估为 NULL）',
+  `feedback` text COMMENT '点评',
+  `covered` text COMMENT '已覆盖考点（JSON 数组）',
+  `missing` text COMMENT '未覆盖考点（JSON 数组）',
+  `elapsed_seconds` int DEFAULT NULL COMMENT '作答用时（秒）',
+  `score_awarded` int NOT NULL DEFAULT '0' COMMENT '本次获得的逐日分',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0=已发放未作答 1=已作答',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_date` (`user_id`,`answer_date`),
+  KEY `idx_user_question` (`user_id`,`pool_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='每日一题作答记录';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_coding_daily_pool` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `direction` varchar(64) NOT NULL COMMENT '方向（与模拟面试 direction 同口径）',
+  `stem` varchar(500) NOT NULL COMMENT '题干',
+  `key_points` text NOT NULL COMMENT '关键考点（JSON 数组，评分锚点）',
+  `reference_answer` text COMMENT '参考答案要点（仅喂模型参考，不下发用户）',
+  `difficulty` tinyint NOT NULL DEFAULT '2' COMMENT '1入门 2进阶 3挑战（池子自带，用户不选）',
+  `tags` varchar(128) DEFAULT NULL COMMENT '知识点标签（逗号分隔，用于领域分布累计）',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '1启用 0停用',
+  `use_count` int NOT NULL DEFAULT '0' COMMENT '被抽次数（轮转用，越小越优先）',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_direction_status_use` (`direction`,`status`,`use_count`)
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='每日一题题目池（简答，人工维护题干与评分锚点）';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_coding_interview` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` int NOT NULL COMMENT '用户ID',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：1进行中 2已完成 3已过期',
+  `direction` varchar(64) NOT NULL COMMENT '面试方向（技术栈/岗位，如 Java 后端）',
+  `difficulty` tinyint NOT NULL DEFAULT '2' COMMENT '难度：1入门 2进阶 3挑战',
+  `plan_snapshot` text NOT NULL COMMENT '面试提纲（JSON数组：[{topic,mainQuestion,keyPoints[],tag}]，含关键考点，仅服务端可见）',
+  `turns` text COMMENT '对话流水（JSON数组：[{role:interviewer|user, type:question|followup|answer, content, topicIndex, ts}]）',
+  `current_index` int NOT NULL DEFAULT '0' COMMENT '当前主题下标（从0起）',
+  `followup_count` int NOT NULL DEFAULT '0' COMMENT '当前主题已追问次数（服务端强制上限）',
+  `turn_count` int NOT NULL DEFAULT '0' COMMENT '用户作答轮数（turnSeq 防重基准）',
+  `report` text COMMENT '面试报告（JSON：逐题点评+三维等级+覆盖考点+总评建议；结构化失败时存模型原文）',
+  `overall_score` int DEFAULT NULL COMMENT '综合等级（1-5，报告生成后写入）',
+  `started_time` datetime NOT NULL COMMENT '开面时间',
+  `deadline_time` datetime NOT NULL COMMENT '截止时间（开面+限时）',
+  `last_active_time` datetime NOT NULL COMMENT '最近活动时间（每轮刷新）',
+  `finished_time` datetime DEFAULT NULL COMMENT '结束时间',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_started` (`user_id`,`started_time`),
+  KEY `idx_status` (`status`),
+  KEY `idx_user_status_id` (`user_id`,`status`,`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模拟面试记录（提纲+对话流水+报告，单表 JSON 快照）';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_coding_profile_setting` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` int NOT NULL COMMENT '用户ID',
+  `is_public` tinyint NOT NULL DEFAULT '0' COMMENT '总开关：0私有（默认） 1公开',
+  `public_domain` tinyint NOT NULL DEFAULT '1' COMMENT '技术领域分布是否公开',
+  `public_streak` tinyint NOT NULL DEFAULT '1' COMMENT '持续度是否公开',
+  `public_output` tinyint NOT NULL DEFAULT '1' COMMENT '输出能力是否公开',
+  `public_solve` tinyint NOT NULL DEFAULT '0' COMMENT '解决问题（依赖付费问答，预留）',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='能力档案隐私开关（默认私有，打开后逐项可控）';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_coding_question` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `stem` varchar(500) NOT NULL COMMENT '题干',
+  `question_type` tinyint NOT NULL DEFAULT '1' COMMENT '题型：1单选 2多选',
+  `options` text NOT NULL COMMENT '选项（JSON数组，元素为选项文本，如 ["A选项","B选项"]）',
+  `answer` varchar(50) NOT NULL COMMENT '正确选项下标（JSON数组，如 [0] 或 [0,2]）',
+  `explanation` varchar(1000) DEFAULT NULL COMMENT '答案解析',
+  `difficulty` tinyint NOT NULL DEFAULT '1' COMMENT '难度：1入门 2进阶 3挑战',
+  `tags` varchar(200) DEFAULT NULL COMMENT '知识点标签（逗号分隔，如 Redis,缓存）',
+  `stem_hash` char(32) NOT NULL COMMENT '题干MD5（全局去重）',
+  `source_type` tinyint NOT NULL DEFAULT '0' COMMENT '来源：0平台 1文章AI生成 2作者投稿',
+  `source_article_id` bigint DEFAULT NULL COMMENT '来源文章ID（做题解析后可跳转阅读）',
+  `source_user_id` bigint DEFAULT NULL COMMENT '出题人用户ID（投稿场景，用于归属与积分）',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0待审核 1已上架 2已驳回',
+  `reject_reason` varchar(200) DEFAULT NULL COMMENT '驳回原因',
+  `answer_count` int NOT NULL DEFAULT '0' COMMENT '累计作答次数（热度参考）',
+  `correct_count` int NOT NULL DEFAULT '0' COMMENT '累计答对次数',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_stem_hash` (`stem_hash`),
+  KEY `idx_status_difficulty` (`status`,`difficulty`),
+  KEY `idx_source_article` (`source_article_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='每日一题题库（Coding 延展第一层）';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_coding_user_stat` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` int NOT NULL COMMENT '用户ID',
+  `direction` varchar(64) DEFAULT NULL COMMENT '用户选择的练习方向（每日一题按此抽题）',
+  `total_count` int NOT NULL DEFAULT '0' COMMENT '每日一题累计作答数',
+  `tag_stats` text COMMENT '领域答题分布（JSON：{"Redis":{"total":3,"levelSum":11}}，levelSum 为累计等级）',
+  `first_answer_date` date DEFAULT NULL COMMENT '首次答题日期',
+  `last_answer_date` date DEFAULT NULL COMMENT '最近答题日期',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户编码统计（连续天数以签到体系为唯一来源，本表不重复存储）';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `ap_collection` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `entry_id` int unsigned DEFAULT NULL COMMENT '实体ID',
@@ -537,10 +719,27 @@ CREATE TABLE `ap_collection` (
   `published_time` datetime DEFAULT NULL COMMENT '发布时间',
   `user_id` int unsigned DEFAULT NULL,
   `created_time` datetime DEFAULT NULL,
+  `folder_id` bigint DEFAULT NULL COMMENT '所属收藏夹ID（NULL=默认收藏夹）',
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE KEY `uk_collection_user_article` (`user_id`,`article_id`),
-  KEY `idx_user_type` (`entry_id`,`article_id`)
+  KEY `idx_user_type` (`entry_id`,`article_id`),
+  KEY `idx_article_created` (`article_id`,`created_time`),
+  KEY `idx_user_folder_created` (`user_id`,`folder_id`,`created_time`)
 ) ENGINE=InnoDB AUTO_INCREMENT=437 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='APP收藏信息表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_collection_folder` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` int NOT NULL COMMENT '所属用户ID',
+  `name` varchar(20) NOT NULL COMMENT '收藏夹名称（1-20字）',
+  `sort_order` int NOT NULL DEFAULT '0' COMMENT '排序值（升序，越小越靠前）',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_folder_user_name` (`user_id`,`name`),
+  KEY `idx_folder_user_sort` (`user_id`,`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户收藏夹（F4）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -580,12 +779,14 @@ CREATE TABLE `ap_comment` (
   `reply_count` int DEFAULT '0' COMMENT '回复数',
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `is_hidden` tinyint NOT NULL DEFAULT '0' COMMENT '0正常 1已折叠',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '审核违规软删标记：1=违规删除（对所有人不可见，与 is_hidden 折叠正交；复核放行后回到 0）',
   PRIMARY KEY (`id`),
   KEY `idx_article_id` (`article_id`),
   KEY `idx_parent_id` (`parent_id`),
   KEY `idx_created_time` (`created_time`),
-  KEY `idx_article_parent_created` (`article_id`,`parent_id`,`created_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=1876 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章评论表';
+  KEY `idx_article_parent_created` (`article_id`,`parent_id`,`created_time`),
+  KEY `idx_hidden_id` (`is_hidden`,`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2118 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文章评论表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -596,7 +797,7 @@ CREATE TABLE `ap_comment_like` (
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_comment_user` (`comment_id`,`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=246 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='评论点赞记录表';
+) ENGINE=InnoDB AUTO_INCREMENT=367 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='评论点赞记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -610,7 +811,9 @@ CREATE TABLE `ap_content_appeal` (
   `status` tinyint NOT NULL DEFAULT '0' COMMENT '0-寰呬汉宸ョ粓瀹?1-宸茶В闄?allow) 2-宸查┏鍥?uphold缁存寔)',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `active_uniq` varchar(64) GENERATED ALWAYS AS (if((`status` = 0),concat(`appeal_type`,_gbk':',`content_id`),NULL)) STORED COMMENT '寰呭?鍞?竴閿?細status=0 鏃?type:contentId锛岀粓鎬佷负 NULL锛堝厑璁稿悗缁?啀娆＄敵璇夛級',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_active_uniq` (`active_uniq`),
   KEY `idx_applicant` (`applicant_id`),
   KEY `idx_type_content` (`appeal_type`,`content_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='内容治理申诉(AI预审+人工终审)';
@@ -862,8 +1065,9 @@ CREATE TABLE `ap_outbox_event` (
   `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间（PROCESSING 超时回收依据）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_event_key` (`event_key`),
-  KEY `idx_status_next_retry` (`status`,`next_retry_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='本地消息表（Transactional Outbox，支付联动等异步副作用）';
+  KEY `idx_status_next_retry` (`status`,`next_retry_at`),
+  KEY `idx_type_created` (`event_type`,`created_time`)
+) ENGINE=InnoDB AUTO_INCREMENT=559 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='本地消息表（Transactional Outbox，支付联动等异步副作用）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -934,10 +1138,13 @@ CREATE TABLE `ap_pins_comment` (
   `like_count` int DEFAULT '0' COMMENT '点赞数',
   `reply_count` int DEFAULT '0' COMMENT '回复数',
   `created_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `is_hidden` tinyint NOT NULL DEFAULT '0' COMMENT '0正常 1已折叠(AI社区治理)',
+  `is_deleted` tinyint NOT NULL DEFAULT '0' COMMENT '审核违规软删标记：1=违规删除（对所有人不可见，与 is_hidden 折叠正交；复核放行后回到 0）',
   PRIMARY KEY (`id`),
   KEY `idx_pins_id` (`pins_id`),
   KEY `idx_parent_id` (`parent_id`),
-  KEY `idx_created_time` (`created_time`)
+  KEY `idx_created_time` (`created_time`),
+  KEY `idx_hidden_id` (`is_hidden`,`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7788 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沸点评论表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -950,6 +1157,24 @@ CREATE TABLE `ap_pins_like` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_pins_user` (`pins_id`,`user_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4457 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='沸点帖子点赞记录表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ap_popup` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `title` varchar(100) NOT NULL COMMENT '弹窗标题',
+  `content` varchar(2000) DEFAULT NULL COMMENT '正文纯文本（不收 HTML：弹窗不是富文本场景，收了就要为 XSS 负责）',
+  `image_url` varchar(500) DEFAULT NULL COMMENT '可选配图',
+  `button_text` varchar(50) DEFAULT NULL COMMENT '动作按钮文案，NULL=只有关闭',
+  `link_url` varchar(500) DEFAULT NULL COMMENT '动作按钮跳转（站内路由 / 开头或 http(s) 外链，禁其他协议）',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0-停用 1-启用',
+  `start_time` datetime NOT NULL COMMENT '生效开始',
+  `end_time` datetime NOT NULL COMMENT '生效结束（关闭记录的 TTL 上限也取它）',
+  `created_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_status_time` (`status`,`start_time`,`end_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='运营位弹窗公告';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1016,7 +1241,7 @@ CREATE TABLE `ap_user_action_log` (
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_action_type` (`action_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=2096227351084847106 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户行为日志表';
+) ENGINE=InnoDB AUTO_INCREMENT=2108399769945632771 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户行为日志表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1075,7 +1300,7 @@ CREATE TABLE `ap_user_daily_progress` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_date_action` (`user_id`,`stat_date`,`action_code`),
   KEY `idx_user_date` (`user_id`,`stat_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户每日行为进度表';
+) ENGINE=InnoDB AUTO_INCREMENT=41 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户每日行为进度表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1127,7 +1352,7 @@ CREATE TABLE `ap_user_level` (
   `violation_score` int DEFAULT '0' COMMENT '违规扣分',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_id` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2101606414095929346 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户等级表';
+) ENGINE=InnoDB AUTO_INCREMENT=2113503123600257026 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户等级表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1269,7 +1494,7 @@ CREATE TABLE `user_score_details` (
   PRIMARY KEY (`id`),
   KEY `idx_user_category_created` (`user_id`,`category`,`created_at` DESC),
   KEY `idx_user_created` (`user_id`,`created_at` DESC)
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1285,7 +1510,7 @@ CREATE TABLE `user_score_summary` (
   `spec_score` decimal(10,1) DEFAULT '0.0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_user_date` (`user_id`,`stat_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;

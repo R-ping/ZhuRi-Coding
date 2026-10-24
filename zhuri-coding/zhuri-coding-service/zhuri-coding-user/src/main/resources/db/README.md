@@ -10,16 +10,13 @@
 
 ```
 db/
-├── schema.sql        # 全量建表 DDL（汇总，由 mysqldump --no-data 导出）
-├── migrations/       # 增量变更脚本（当前为空，按需添加）
+├── schema.sql        # 全量建表 DDL（由 mysqldump --no-data 导出）
 └── README.md
 ```
 
 ## 约定
 
-- **schema.sql**：全量建表结构汇总，**只读，勿直接改动**。
-- **migrations/**：表结构变更脚本，按时间/用途命名，执行一次即可。
-- 新增表或字段时，先写 migration，再（可选）重新导出更新 schema.sql。
+- **schema.sql**：唯一结构基线。表结构变更直接以数据库为准，随后重新导出；不再维护 `migrations/` 增量 DDL 脚本。
 
 ## 重新生成 schema.sql
 
