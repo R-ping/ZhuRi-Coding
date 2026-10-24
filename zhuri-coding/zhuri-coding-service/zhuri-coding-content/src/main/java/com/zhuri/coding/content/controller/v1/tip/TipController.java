@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 文章打赏控制器
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/tip")
+@Slf4j
 public class TipController {
 
     @Autowired
@@ -67,6 +69,21 @@ public class TipController {
         // 1. 先验签：验签失败直接拒绝，防止伪造打赏回调
         if (!alipayService.verifySign(params)) {
             return "fail";
+        }
+
+        // 2. 校验 app_id / seller_id 与本应用配置一致，防止跨应用/跨商户回调混淆
+        String notifyAppId = request.getParameter("app_id");
+        if (notifyAppId == null || !notifyAppId.equals(alipayService.getAppId())) {
+            log.warn("打赏回调 app_id 不匹配, notifyAppId={}, expect={}", notifyAppId, alipayService.getAppId());
+            return "fail";
+        }
+        String expectSellerId = alipayService.getSellerId();
+        if (expectSellerId != null && !expectSellerId.isEmpty()) {
+            String notifySellerId = request.getParameter("seller_id");
+            if (notifySellerId == null || !notifySellerId.equals(expectSellerId)) {
+                log.warn("打赏回调 seller_id 不匹配, notifySellerId={}, expect={}", notifySellerId, expectSellerId);
+                return "fail";
+            }
         }
 
         String tradeNo = request.getParameter("trade_no");

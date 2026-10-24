@@ -14,7 +14,8 @@ import org.springframework.stereotype.Component;
  * 退款失败重试定时任务（退款兜底闭环的兜底层）。
  * <p>
  * 触发条件：首次自动退款失败时通过 {@link OrderService#markRefundPending} 将订单
- * 标记为 {@code refund_pending=1}（状态仍为 CANCELLED）。本任务周期扫描这些订单，
+ * 标记为 {@code refund_pending=1}（状态可能为 CANCELLED 或 PAID：前者为关单后付款、
+ * 后者为券核销失败兜底）。本任务周期扫描这些订单，
  * 重新调用支付宝退款；成功则 {@code markRefunded}（REFUNDED + 清标记），失败则保留标记，
  * 由下一轮继续重试并打印告警，避免“付款但拿不到课程”的资损长期残留。
  * </p>

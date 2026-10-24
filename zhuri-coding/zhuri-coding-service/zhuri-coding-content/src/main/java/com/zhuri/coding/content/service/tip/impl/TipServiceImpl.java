@@ -18,6 +18,7 @@ import com.zhuri.coding.model.common.dtos.ResponseResult;
 import com.zhuri.coding.model.common.enums.AppHttpCodeEnum;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -132,7 +133,8 @@ public class TipServiceImpl implements TipService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean handleNotify(String tradeNo, String orderNo, String totalAmount, String status) {
-        if (!"TRADE_SUCCESS".equals(status)) {
+        // 官方规范：TRADE_SUCCESS / TRADE_FINISHED 均表示支付成功
+        if (!"TRADE_SUCCESS".equals(status) && !"TRADE_FINISHED".equals(status)) {
             log.warn("打赏支付状态非成功: {}", status);
             return false;
         }
@@ -142,8 +144,16 @@ public class TipServiceImpl implements TipService {
             log.error("打赏订单不存在: {}", orderNo);
             return false;
         }
-        if (order.getStatus() != ApArticleTipOrder.Status.PENDING.getCode()) {
-            log.warn("打赏订单状态异常: {}, status={}", orderNo, order.getStatus());
+        Integer currentStatus = order.getStatus();
+        // 已支付：重复通知幂等返回成功
+        if (currentStatus != null && currentStatus == ApArticleTipOrder.Status.PAID.getCode()) {
+            return true;
+        }
+        // 待支付，或已因超时关单但与付款并发（钱已到账）：继续入账，避免用户付款后无打赏记录
+        if (currentStatus == null
+                || (currentStatus != ApArticleTipOrder.Status.PENDING.getCode()
+                && currentStatus != ApArticleTipOrder.Status.CANCELLED.getCode())) {
+            log.warn("打赏订单状态异常: {}, status={}", orderNo, currentStatus);
             return true;
         }
 
@@ -152,12 +162,14 @@ public class TipServiceImpl implements TipService {
             return false;
         }
 
-        // ★ 幂等：用"条件更新"原子抢占 PENDING→PAID，
+        // ★ 幂等：用"条件更新"原子抢占 PENDING/CANCELLED→PAID，
         // 只有受影响行数==1 才继续发奖/加汇总，杜绝支付宝重复通知/并发回调导致的重复打赏流水、重复总额。
         Date now = new Date();
         int updated = tipOrderMapper.update(null, new LambdaUpdateWrapper<ApArticleTipOrder>()
                 .eq(ApArticleTipOrder::getOrderNo, orderNo)
-                .eq(ApArticleTipOrder::getStatus, ApArticleTipOrder.Status.PENDING.getCode())
+                .in(ApArticleTipOrder::getStatus,
+                        ApArticleTipOrder.Status.PENDING.getCode(),
+                        ApArticleTipOrder.Status.CANCELLED.getCode())
                 .set(ApArticleTipOrder::getStatus, ApArticleTipOrder.Status.PAID.getCode())
                 .set(ApArticleTipOrder::getTradeNo, tradeNo)
                 .set(ApArticleTipOrder::getPayTime, now)
@@ -270,6 +282,34 @@ public class TipServiceImpl implements TipService {
         result.put("totalCount", orders.size());
         result.put("list", orders);
         return ResponseResult.okResult(result);
+    }
+
+    @Override
+    public List<ApArticleTipOrder> listExpiredPendingOrders(int limit, Date createdBefore) {
+        if (createdBefore == null) {
+            return Collections.emptyList();
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        List<ApArticleTipOrder> list = tipOrderMapper.selectList(new LambdaQueryWrapper<ApArticleTipOrder>()
+                .eq(ApArticleTipOrder::getStatus, ApArticleTipOrder.Status.PENDING.getCode())
+                .lt(ApArticleTipOrder::getCreatedTime, createdBefore)
+                .orderByAsc(ApArticleTipOrder::getCreatedTime)
+                .last("LIMIT " + safeLimit));
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public boolean markClosed(String orderNo) {
+        if (orderNo == null || orderNo.isEmpty()) {
+            return false;
+        }
+        // 条件更新：仅 PENDING 可关闭，已支付订单不受影响
+        int updated = tipOrderMapper.update(null, new LambdaUpdateWrapper<ApArticleTipOrder>()
+                .eq(ApArticleTipOrder::getOrderNo, orderNo)
+                .eq(ApArticleTipOrder::getStatus, ApArticleTipOrder.Status.PENDING.getCode())
+                .set(ApArticleTipOrder::getStatus, ApArticleTipOrder.Status.CANCELLED.getCode())
+                .set(ApArticleTipOrder::getUpdatedTime, new Date()));
+        return updated == 1;
     }
 
     private ApArticleTipOrder getByOrderNo(String orderNo) {

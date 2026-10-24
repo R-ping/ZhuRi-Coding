@@ -24,6 +24,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -300,5 +301,51 @@ class TipServiceImplTest {
         Map<?, ?> data = (Map<?, ?>) tipService.getMyRevenue(99L).getData();
         assertEquals(0, new BigDecimal("12.5").compareTo(new BigDecimal(data.get("totalAmount").toString())));
         assertEquals(2, ((Number) data.get("totalCount")).intValue());
+    }
+
+    // ---------- TRADE_FINISHED / 超时关单 / 对账 ----------
+
+    @Test
+    @DisplayName("handleNotify 接受 TRADE_FINISHED 并完成入账")
+    void handleNotifyTradeFinished() {
+        when(tipOrderMapper.selectOne(any())).thenReturn(order(ApArticleTipOrder.Status.PENDING.getCode()));
+        when(tipOrderMapper.update(any(), any())).thenReturn(1);
+        when(tipRecordMapper.insert(any(ApArticleTipRecord.class))).thenReturn(1);
+        when(articleMapper.update(any(), any())).thenReturn(1);
+
+        assertTrue(tipService.handleNotify("TN", "T123", "5", "TRADE_FINISHED"));
+        verify(tipRecordMapper).insert(any(ApArticleTipRecord.class));
+    }
+
+    @Test
+    @DisplayName("已超时关闭的订单与付款并发：CANCELLED 也允许入账，避免用户付款无记录")
+    void handleNotifyCancelledOrderStillFulfills() {
+        when(tipOrderMapper.selectOne(any())).thenReturn(order(ApArticleTipOrder.Status.CANCELLED.getCode()));
+        when(tipOrderMapper.update(any(), any())).thenReturn(1);
+        when(tipRecordMapper.insert(any(ApArticleTipRecord.class))).thenReturn(1);
+        when(articleMapper.update(any(), any())).thenReturn(1);
+
+        assertTrue(tipService.handleNotify("TN", "T123", "5", "TRADE_SUCCESS"));
+        verify(tipOrderMapper).update(any(), any());
+        verify(tipRecordMapper).insert(any(ApArticleTipRecord.class));
+    }
+
+    @Test
+    @DisplayName("listExpiredPendingOrders 返回待支付超时订单")
+    void listExpiredPendingOrders() {
+        when(tipOrderMapper.selectList(any()))
+                .thenReturn(List.of(order(ApArticleTipOrder.Status.PENDING.getCode())));
+
+        assertEquals(1, tipService.listExpiredPendingOrders(10, new Date()).size());
+    }
+
+    @Test
+    @DisplayName("markClosed 条件更新 PENDING→CANCELLED")
+    void markClosed() {
+        when(tipOrderMapper.update(any(), any())).thenReturn(1);
+        assertTrue(tipService.markClosed("T123"));
+
+        when(tipOrderMapper.update(any(), any())).thenReturn(0);
+        assertFalse(tipService.markClosed("T123"));
     }
 }

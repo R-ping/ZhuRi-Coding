@@ -1,6 +1,7 @@
 package com.zhuri.coding.content.service.ai.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.zhuri.coding.content.mapper.ai.AiTopupOrderMapper;
 import com.zhuri.coding.content.service.ai.AiQuotaPackages;
@@ -18,8 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -120,7 +123,14 @@ public class AiTopupServiceImpl implements AiTopupService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean handleNotify(String orderNo, String totalAmount, String tradeNo) {
+    public boolean handleNotify(String orderNo, String totalAmount, String tradeNo, String tradeStatus) {
+        // 交易状态校验（资金安全红线）：仅支付成功才允许入账。
+        // 缺少该判断时，支付宝对「未付款超时关单」发出的 TRADE_CLOSED / WAIT_BUYER_PAY 通知
+        // 只要验签通过且金额一致，同样会命中下方逻辑并发放额度（等于免费充值）。
+        if (!"TRADE_SUCCESS".equals(tradeStatus) && !"TRADE_FINISHED".equals(tradeStatus)) {
+            log.warn("[AiTopup] 非成功交易状态，拒绝入账, orderNo={}, tradeStatus={}", orderNo, tradeStatus);
+            return false;
+        }
         AiTopupOrder order = topupOrderMapper.selectOne(new LambdaQueryWrapper<AiTopupOrder>()
             .eq(AiTopupOrder::getOrderNo, orderNo).last("LIMIT 1"));
         if (order == null) {
@@ -155,6 +165,34 @@ public class AiTopupServiceImpl implements AiTopupService {
         log.info("[AiTopup] 额度包支付成功并入账, orderNo={}, userId={}, +{} tokens",
             orderNo, order.getUserId(), order.getTokenAdded());
         return true;
+    }
+
+    @Override
+    public List<AiTopupOrder> listExpiredPendingOrders(int limit, Date createdBefore) {
+        if (createdBefore == null) {
+            return Collections.emptyList();
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        List<AiTopupOrder> list = topupOrderMapper.selectList(new LambdaQueryWrapper<AiTopupOrder>()
+            .eq(AiTopupOrder::getStatus, AiTopupOrder.STATUS_PENDING)
+            .lt(AiTopupOrder::getCreateTime, createdBefore)
+            .orderByAsc(AiTopupOrder::getCreateTime)
+            .last("LIMIT " + safeLimit));
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public boolean markClosed(String orderNo) {
+        if (orderNo == null || orderNo.isEmpty()) {
+            return false;
+        }
+        // 条件更新：仅 PENDING 可关闭，已支付订单不受影响
+        int updated = topupOrderMapper.update(null, new LambdaUpdateWrapper<AiTopupOrder>()
+            .eq(AiTopupOrder::getOrderNo, orderNo)
+            .eq(AiTopupOrder::getStatus, AiTopupOrder.STATUS_PENDING)
+            .set(AiTopupOrder::getStatus, AiTopupOrder.STATUS_CLOSED)
+            .set(AiTopupOrder::getUpdateTime, new Date()));
+        return updated == 1;
     }
 
     private AiTopupOrder findOwnOrder(String orderNo, Integer userId) {
