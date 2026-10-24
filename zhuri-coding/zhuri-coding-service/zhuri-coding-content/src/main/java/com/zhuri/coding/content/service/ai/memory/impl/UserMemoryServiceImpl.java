@@ -18,15 +18,15 @@ import org.springframework.stereotype.Service;
 /**
  * 语义长期记忆实现（PGVector 余弦检索，按用户隔离）。
  *
- * <p>建表依赖 resources/db/migrations/ai_memory_setup.sql；为防止「未迁移即启动」，
- * 首次使用（remember/recall）时执行幂等 CREATE TABLE IF NOT EXISTS 兜底，重复执行为 no-op。
- * 向量读写沿用 ap_article_embedding 的 JDBC 模式（float8[] ↔ vector 互转）。
+ * <p>建表结构见 {@code resources/db/schema-pgvector.sql}（{@code ap_user_memory}）；
+ * 为防止「未建表即启动」，首次使用（remember/recall）时执行幂等 CREATE TABLE IF NOT EXISTS 兜底，
+ * 重复执行为 no-op。向量读写沿用 ap_article_embedding 的 JDBC 模式（float8[] ↔ vector 互转）。
  */
 @Slf4j
 @Service
 public class UserMemoryServiceImpl implements UserMemoryService {
 
-    /** 幂等建表 DDL（与 ai_memory_setup.sql 保持一致） */
+    /** 幂等建表 DDL（与 schema-pgvector.sql 保持一致） */
     private static final String CREATE_TABLE_SQL =
         "CREATE TABLE IF NOT EXISTS ap_user_memory (" +
         " id BIGSERIAL PRIMARY KEY," +

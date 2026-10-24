@@ -9,8 +9,8 @@ import org.apache.ibatis.annotations.Mapper;
  *
  * <p><b>与 content 库那份是两张同名表</b>，不是一处集中存储：审计是绝对不允许丢的记录，
  * 跨服务写会引入"审计服务挂了、业务照常执行、于是没留痕"的窗口；本地表与业务同库，
- * 事务能覆盖。代价是查全量要跨库聚合，可以接受。DDL 见
- * {@code db/migrations/add_admin_audit_log.sql}。
+ * 事务能覆盖。代价是查全量要跨库聚合，可以接受。表结构见 user 库
+ * {@code db/schema.sql} 的 {@code ap_admin_audit_log}。
  *
  * <p>本表在本模块**既写又读**（与 content 侧"只写不读"不同）：用户处置的"警告"没有独立业务表，
  * 审计记录本身就是警告的台账 —— 封禁名单页要显示"被警告过几次"、处置记录页要列出历史，

@@ -1,6 +1,8 @@
 package com.zhuri.coding.content.service.order.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -22,6 +24,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -482,19 +485,71 @@ class OrderServiceImplTest {
     }
 
     @Test
-    @DisplayName("closePayChannel 将 PROCESSING 订单置为已取消")
+    @DisplayName("closePayChannel 将 PROCESSING 订单置为已取消并返回 true")
     void closePayChannel() {
         when(orderMapper.update(any(), any())).thenReturn(1);
-        orderService.closePayChannel(orderNo);
+        assertTrue(orderService.closePayChannel(orderNo));
         verify(orderMapper).update(any(), any());
     }
 
     @Test
-    @DisplayName("closePayChannel 已非 PROCESSING（如已支付）则不受影响不重复关单")
+    @DisplayName("closePayChannel 已非 PROCESSING（如已支付）则不受影响并返回 false")
     void closePayChannelNoEffect() {
         when(orderMapper.update(any(), any())).thenReturn(0);
-        orderService.closePayChannel(orderNo);
+        assertFalse(orderService.closePayChannel(orderNo));
         verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("closeExpiredOrder 命中 PENDING 返回 true；非待支付返回 false")
+    void closeExpiredOrder() {
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        assertTrue(orderService.closeExpiredOrder(orderNo));
+        when(orderMapper.update(any(), any())).thenReturn(0);
+        assertFalse(orderService.closeExpiredOrder(orderNo));
+    }
+
+    // ---------- 对账补偿查询 ----------
+
+    @Test
+    @DisplayName("listReconcilePendingOrders 只查 PENDING/PROCESSING 且更新时间早于阈值")
+    void listReconcilePendingOrders() {
+        ArgumentCaptor<LambdaQueryWrapper<ApCourseOrder>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(orderMapper.selectList(captor.capture()))
+                .thenReturn(java.util.List.of(order(ApCourseOrder.Status.PROCESSING.getCode(), "")));
+        Date updatedBefore = new Date();
+
+        assertEquals(1, orderService.listReconcilePendingOrders(10, updatedBefore).size());
+
+        String sql = captor.getValue().getSqlSegment();
+        Map<String, Object> params = captor.getValue().getParamNameValuePairs();
+        assertTrue(sql.contains("status"), "状态条件必须进 SQL：" + sql);
+        assertTrue(params.containsValue(ApCourseOrder.Status.PENDING.getCode()),
+                "必须扫描 PENDING：" + params);
+        assertTrue(params.containsValue(ApCourseOrder.Status.PROCESSING.getCode()),
+                "必须扫描 PROCESSING：" + params);
+        assertTrue(params.containsValue(updatedBefore), "必须带更新时间阈值：" + params);
+    }
+
+    @Test
+    @DisplayName("listCancelledForReconcile 只查 CANCELLED 且未进入退款流程的订单")
+    void listCancelledForReconcile() {
+        ArgumentCaptor<LambdaQueryWrapper<ApCourseOrder>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(orderMapper.selectList(captor.capture()))
+                .thenReturn(java.util.List.of(order(ApCourseOrder.Status.CANCELLED.getCode(), "")));
+        Date updatedAfter = new Date();
+
+        assertEquals(1, orderService.listCancelledForReconcile(10, updatedAfter).size());
+
+        String sql = captor.getValue().getSqlSegment();
+        Map<String, Object> params = captor.getValue().getParamNameValuePairs();
+        assertTrue(sql.contains("refund_pending"), "必须排除已进入退款流程的订单：" + sql);
+        assertTrue(params.containsValue(ApCourseOrder.Status.CANCELLED.getCode()),
+                "只扫描 CANCELLED：" + params);
+        assertTrue(params.containsValue(0), "refund_pending=0 也应参与对账：" + params);
+        assertTrue(params.containsValue(updatedAfter), "必须带回溯窗口：" + params);
     }
 
     // ---------- handlePaySuccess 返回值 / markRefunded 退款兜底 ----------
@@ -527,11 +582,29 @@ class OrderServiceImplTest {
     }
 
     @Test
-    @DisplayName("markRefunded 非 CANCELLED（已退款/已支付）不受影响")
+    @DisplayName("markRefunded 更新命中 0 行（已退款/处理中）不影响")
     void markRefundedNoEffect() {
         when(orderMapper.update(any(), any())).thenReturn(0);
         orderService.markRefunded(orderNo, "R1");
         verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("markRefunded 支持 PAID（券核销失败兜底退款）→ REFUNDED")
+    void markRefundedCoversPaidBranch() {
+        ArgumentCaptor<LambdaUpdateWrapper<ApCourseOrder>> captor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        when(orderMapper.update(any(), captor.capture())).thenReturn(1);
+
+        orderService.markRefunded(orderNo, "R1");
+
+        String sql = captor.getValue().getSqlSegment();
+        Map<String, Object> params = captor.getValue().getParamNameValuePairs();
+        assertTrue(sql.contains("status"), "状态条件必须进 SQL：" + sql);
+        assertTrue(params.containsValue(ApCourseOrder.Status.CANCELLED.getCode()),
+                "必须允许 CANCELLED 来源：" + params);
+        assertTrue(params.containsValue(ApCourseOrder.Status.PAID.getCode()),
+                "必须允许 PAID 来源（券核销失败）：" + params);
     }
 
     @Test
@@ -543,10 +616,44 @@ class OrderServiceImplTest {
     }
 
     @Test
-    @DisplayName("listPendingRefundOrders 查询待重试退款订单")
+    @DisplayName("listPendingRefundOrders SQL 同时覆盖 CANCELLED 与 PAID 待退款分支")
     void listPendingRefundOrders() {
-        when(orderMapper.selectList(any())).thenReturn(java.util.List.of(order(ApCourseOrder.Status.CANCELLED.getCode(), "")));
+        ArgumentCaptor<LambdaQueryWrapper<ApCourseOrder>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(orderMapper.selectList(captor.capture()))
+                .thenReturn(java.util.List.of(order(ApCourseOrder.Status.PAID.getCode(), "")));
+
         assertEquals(1, orderService.listPendingRefundOrders(10).size());
+
+        String sql = captor.getValue().getSqlSegment();
+        Map<String, Object> params = captor.getValue().getParamNameValuePairs();
+        assertTrue(sql.contains("status"), "状态条件必须进 SQL：" + sql);
+        // IN 会为两个状态值生成两个参数；旧的 eq(CANCELLED) 只有 2 个参数（状态 + refund_pending）
+        assertTrue(params.size() >= 3, "必须用 IN 覆盖两种待退款状态：" + params);
+        assertTrue(params.containsValue(ApCourseOrder.Status.CANCELLED.getCode()),
+                "必须扫描 CANCELLED 来源：" + params);
+    }
+
+    @Test
+    @DisplayName("markRefundRetryFailure 对 PAID 待退款订单同样累计重试次数")
+    void markRefundRetryFailureCoversPaidBranch() {
+        ApCourseOrder o = order(ApCourseOrder.Status.PAID.getCode(), "");
+        o.setRefundRetryCount(1);
+        when(orderMapper.selectOne(any())).thenReturn(o);
+        ArgumentCaptor<LambdaUpdateWrapper<ApCourseOrder>> captor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        when(orderMapper.update(any(), captor.capture())).thenReturn(1);
+
+        assertFalse(orderService.markRefundRetryFailure(orderNo, 3)); // 1+1=2 < 3
+
+        Map<String, Object> params = captor.getValue().getParamNameValuePairs();
+        // WHERE 参数只包含两个状态值 + updated_time（SET 值是 SQL 字面量，不进参数表）；
+        // 旧的 eq(CANCELLED) 只有 2 个参数且不含 PAID
+        assertTrue(params.size() >= 3, "状态条件必须覆盖 PAID：" + params);
+        assertTrue(params.containsValue(ApCourseOrder.Status.CANCELLED.getCode()),
+                "必须同时保留 CANCELLED 来源：" + params);
+        assertTrue(params.containsValue(ApCourseOrder.Status.PAID.getCode()),
+                "必须允许 PAID 来源：" + params);
     }
 
     @Test

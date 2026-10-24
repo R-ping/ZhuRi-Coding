@@ -159,9 +159,9 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public void closeExpiredOrder(String orderNo) {
+    public boolean closeExpiredOrder(String orderNo) {
         if (orderNo == null || orderNo.isEmpty()) {
-            return;
+            return false;
         }
         // 条件更新抢占：仅 PENDING 状态可被关闭；若期间已支付（PAID）则不受影响，保证幂等
         Date now = new Date();
@@ -172,7 +172,9 @@ public class OrderServiceImpl implements OrderService {
                 .set(ApCourseOrder::getUpdatedTime, now));
         if (updated == 1) {
             log.info("订单超时已关闭: orderNo={}", orderNo);
+            return true;
         }
+        return false;
     }
 
     @Override
@@ -268,9 +270,9 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public void closePayChannel(String orderNo) {
+    public boolean closePayChannel(String orderNo) {
         if (orderNo == null || orderNo.isEmpty()) {
-            return;
+            return false;
         }
         // 条件更新抢占：仅 PROCESSING 状态可被关闭（支付通道超时）；已支付/已关闭不受影响
         Date now = new Date();
@@ -281,7 +283,9 @@ public class OrderServiceImpl implements OrderService {
                 .set(ApCourseOrder::getUpdatedTime, now));
         if (updated == 1) {
             log.info("支付通道超时已关闭: orderNo={}", orderNo);
+            return true;
         }
+        return false;
     }
 
     @Override
@@ -430,11 +434,14 @@ public class OrderServiceImpl implements OrderService {
         if (orderNo == null || orderNo.isEmpty()) {
             return;
         }
-        // 条件更新抢占：仅 CANCELLED 状态可被置为 REFUNDED，防止并发/重复通知下重复标记退款
+        // 条件更新抢占：CANCELLED（订单已关单后退款）与 PAID（券核销失败兜底退款）均可置为 REFUNDED，
+        // 防止并发/重复通知下重复标记退款；其他状态（已退款/处理中）不受影响
         Date now = new Date();
         int updated = orderMapper.update(null, new LambdaUpdateWrapper<ApCourseOrder>()
                 .eq(ApCourseOrder::getOrderNo, orderNo)
-                .eq(ApCourseOrder::getStatus, ApCourseOrder.Status.CANCELLED.getCode())
+                .in(ApCourseOrder::getStatus,
+                        ApCourseOrder.Status.CANCELLED.getCode(),
+                        ApCourseOrder.Status.PAID.getCode())
                 .set(ApCourseOrder::getStatus, ApCourseOrder.Status.REFUNDED.getCode())
                 .set(ApCourseOrder::getRefundTradeNo, refundTradeNo)
                 .set(ApCourseOrder::getRefundTime, now)
@@ -491,7 +498,9 @@ public class OrderServiceImpl implements OrderService {
         boolean exhausted = maxRetries > 0 && newCount >= maxRetries;
         orderMapper.update(null, new LambdaUpdateWrapper<ApCourseOrder>()
                 .eq(ApCourseOrder::getOrderNo, orderNo)
-                .eq(ApCourseOrder::getStatus, ApCourseOrder.Status.CANCELLED.getCode())
+                .in(ApCourseOrder::getStatus,
+                        ApCourseOrder.Status.CANCELLED.getCode(),
+                        ApCourseOrder.Status.PAID.getCode())
                 .set(ApCourseOrder::getRefundRetryCount, newCount)
                 .set(ApCourseOrder::getRefundPending, exhausted ? 2 : 1)
                 .set(ApCourseOrder::getUpdatedTime, new Date()));
@@ -502,7 +511,11 @@ public class OrderServiceImpl implements OrderService {
     public List<ApCourseOrder> listPendingRefundOrders(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 200));
         LambdaQueryWrapper<ApCourseOrder> query = new LambdaQueryWrapper<>();
-        query.eq(ApCourseOrder::getStatus, ApCourseOrder.Status.CANCELLED.getCode())
+        // PAID 分支必须一并扫描：券核销失败时订单已被置为 PAID + refund_pending=1，
+        // 只查 CANCELLED 会让该分支的退款永远不被重试，形成「付款未放权且不退款」的资损黑洞。
+        query.in(ApCourseOrder::getStatus,
+                        ApCourseOrder.Status.CANCELLED.getCode(),
+                        ApCourseOrder.Status.PAID.getCode())
                 .eq(ApCourseOrder::getRefundPending, 1)
                 .orderByAsc(ApCourseOrder::getUpdatedTime)
                 .last("LIMIT " + safeLimit);
@@ -515,6 +528,44 @@ public class OrderServiceImpl implements OrderService {
         int safeLimit = Math.max(1, Math.min(limit, 200));
         LambdaQueryWrapper<ApCourseOrder> query = new LambdaQueryWrapper<>();
         query.eq(ApCourseOrder::getRefundPending, 2)
+                .orderByAsc(ApCourseOrder::getUpdatedTime)
+                .last("LIMIT " + safeLimit);
+        List<ApCourseOrder> list = orderMapper.selectList(query);
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<ApCourseOrder> listReconcilePendingOrders(int limit, Date updatedBefore) {
+        if (updatedBefore == null) {
+            return Collections.emptyList();
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        LambdaQueryWrapper<ApCourseOrder> query = new LambdaQueryWrapper<>();
+        // 仍处于待支付/支付处理中、且已超过支付超时：正常路径下延迟队列应已关单，
+        // 未被关掉说明消息丢失或消费失败，需主动查询支付宝真实状态兜底。
+        query.in(ApCourseOrder::getStatus,
+                        ApCourseOrder.Status.PENDING.getCode(),
+                        ApCourseOrder.Status.PROCESSING.getCode())
+                .lt(ApCourseOrder::getUpdatedTime, updatedBefore)
+                .orderByAsc(ApCourseOrder::getUpdatedTime)
+                .last("LIMIT " + safeLimit);
+        List<ApCourseOrder> list = orderMapper.selectList(query);
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<ApCourseOrder> listCancelledForReconcile(int limit, Date updatedAfter) {
+        if (updatedAfter == null) {
+            return Collections.emptyList();
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        LambdaQueryWrapper<ApCourseOrder> query = new LambdaQueryWrapper<>();
+        // 本地已关单但支付宝侧可能已付款（异步通知丢失）：
+        // 只扫描未进入退款流程的订单，避免与 RefundRetryTask 重复处理。
+        query.eq(ApCourseOrder::getStatus, ApCourseOrder.Status.CANCELLED.getCode())
+                .ge(ApCourseOrder::getUpdatedTime, updatedAfter)
+                .and(w -> w.isNull(ApCourseOrder::getRefundPending)
+                        .or().eq(ApCourseOrder::getRefundPending, 0))
                 .orderByAsc(ApCourseOrder::getUpdatedTime)
                 .last("LIMIT " + safeLimit);
         List<ApCourseOrder> list = orderMapper.selectList(query);

@@ -1,6 +1,7 @@
 package com.zhuri.coding.content.service.order.impl;
 
 import com.zhuri.coding.content.service.order.OrderService;
+import com.zhuri.coding.content.service.pay.AlipayService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.util.concurrent.ExecutorService;
@@ -38,6 +39,11 @@ public class OrderTimeoutTask {
     @Autowired
     @Lazy
     private OrderService orderService;
+
+    /** 延迟注入：AlipayService 依赖 OrderService，直接注入会与 OrderServiceImpl → OrderTimeoutTask 形成循环依赖 */
+    @Autowired
+    @Lazy
+    private AlipayService alipayService;
 
     /** 订单超时时间（毫秒），默认 30 分钟，可通过 app.order.timeout-ms 配置 */
     @Value("${app.order.timeout-ms:1800000}")
@@ -84,7 +90,10 @@ public class OrderTimeoutTask {
             try {
                 String orderNo = blockingQueue.take();
                 log.info("消费超时关单任务, orderNo={}", orderNo);
-                orderService.closeExpiredOrder(orderNo);
+                if (orderService.closeExpiredOrder(orderNo)) {
+                    // 本地关单成功后再关闭支付宝侧交易，缩小「本地已取消、支付宝仍可付款」的窗口
+                    closeAlipayTrade(orderNo);
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -101,13 +110,24 @@ public class OrderTimeoutTask {
             try {
                 String orderNo = payBlockingQueue.take();
                 log.info("消费支付通道超时关单任务, orderNo={}", orderNo);
-                orderService.closePayChannel(orderNo);
+                if (orderService.closePayChannel(orderNo)) {
+                    closeAlipayTrade(orderNo);
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
                 log.error("支付通道超时关单处理异常", e);
             }
+        }
+    }
+
+    /** 关闭支付宝侧未付款交易；失败不影响本地关单，由对账任务与退款兜底继续处理 */
+    private void closeAlipayTrade(String orderNo) {
+        try {
+            alipayService.closeTrade(orderNo);
+        } catch (Exception e) {
+            log.warn("关闭支付宝交易异常（本地已关单，交由对账/退款兜底）: orderNo={}", orderNo, e);
         }
     }
 

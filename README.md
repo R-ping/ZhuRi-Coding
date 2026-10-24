@@ -396,7 +396,7 @@ flowchart TB
 |---|---|
 | **单元测试** | **2201 个测试全部通过**：覆盖 AI 链路（缓存 / 熔断 / 注册表 / 评测门禁 / 治理队列）、Coding 两层（每日一题简答评估 / 面试控制行 / 报告降级）、业务核心（支付幂等 / 事件总线 / 一致性）与 API 层；关键分支均含正常 / 异常 / 降级路径用例 |
 | **设计先行** | 每个模块先设计后编码：RAG 检索、Agent 预检、AIGC 诚信治理、Coding 三层能力体系、商业化路线图均留有设计文档（含方案对比、数据模型、接入点清单、验收标准与已知边界） |
-| **数据库脚本** | 各服务 `src/main/resources/db/` 下按约定维护 `schema.sql`（全量）与 `migrations/`（增量变更） |
+| **数据库脚本** | 各服务 `src/main/resources/db/` 下以 `schema.sql` 为唯一结构基线（从当前数据库导出）；content 另含 `schema-pgvector.sql` 与 `data/` 初始化数据脚本，不再维护 `migrations/` 增量 DDL |
 | **可观测性** | Prometheus + Grafana 指标、Zipkin 链路追踪、结构化日志；AI 侧有 token 计量、调用漏斗（缓存命中率 / 生成成功率）、熔断状态等业务指标端点 |
 | **健壮性约定** | 降级策略分层（红线 fail-closed / 治理 fail-open）、外部依赖熔断、所有旁路能力（埋点 / 缓存 / 画像）失败不影响主链路 |
 
@@ -448,9 +448,9 @@ flowchart TB
 
 ```bash
 # 1) 后端：初始化数据库
-#    各服务 src/main/resources/db/ 下按顺序执行 schema.sql 与 migrations/ 脚本
-#    PostgreSQL 需先执行 pgvector 建表脚本（ap_article_embedding / ap_article_chunk /
-#    ap_ai_semantic_cache / ap_user_memory）
+#    各服务 src/main/resources/db/schema.sql 为结构基线，直接执行即可
+#    PostgreSQL 需先执行 content 服务的 schema-pgvector.sql（ap_article_embedding 等向量表）
+#    需要初始业务数据时，再执行各服务 db/data/ 下的数据脚本
 
 # 2) 后端：编译并启动（建议按 common → gateway → 各 service 顺序）
 cd zhuri-coding

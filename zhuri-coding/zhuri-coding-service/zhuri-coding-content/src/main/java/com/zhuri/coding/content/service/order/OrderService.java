@@ -41,11 +41,12 @@ public interface OrderService {
     /**
      * 超时关单：将待支付订单置为已取消。
      * <p>使用条件更新（WHERE status=PENDING）保证幂等——已支付/已取消的订单不受影响，
-     * 由延迟队列消费者在订单创建后到达超时时间时触发。
+     * 由延迟队列消费者在订单创建后到达超时时间时触发。</p>
      *
      * @param orderNo 订单号
+     * @return true=本次确实将订单由 PENDING 关闭；false=订单已非待支付态（已支付/已关闭）
      */
-    void closeExpiredOrder(String orderNo);
+    boolean closeExpiredOrder(String orderNo);
 
     /**
      * 去支付前的准备（原子抢占 PROCESSING + 核验优惠）：
@@ -65,16 +66,21 @@ public interface OrderService {
     /**
      * 关闭支付通道：将处于 {@code PROCESSING}（支付处理中）的订单置为已取消。
      * <p>条件更新（WHERE status=PROCESSING）保证幂等——已支付/已关闭的订单不受影响，
-     * 由「去支付」抢占成功后排程的支付通道超时消费者触发。
+     * 由「去支付」抢占成功后排程的支付通道超时消费者触发。</p>
      *
      * @param orderNo 订单号
+     * @return true=本次确实将订单由 PROCESSING 关闭；false=订单已非处理中态
      */
-    void closePayChannel(String orderNo);
+    boolean closePayChannel(String orderNo);
 
     /**
-     * 退款兜底：将因「支付成功但订单已关闭」触发自动退款后的订单置为已退款。
-     * <p>条件更新（WHERE status=CANCELLED）保证幂等，杜绝重复退款标记；
-     * 由支付宝回调在检测到「钱到账但订单已关」并退款成功后调用。同时清空待重试标记。</p>
+     * 退款兜底：将已退款成功的订单置为 REFUNDED。
+     * <p>条件更新（WHERE status IN (CANCELLED, PAID)）保证幂等：
+     * <ul>
+     *   <li>CANCELLED：支付成功但订单已关闭（超时关单窗口内付款）；</li>
+     *   <li>PAID：券核销失败（refund_pending=1）触发的资损兜底退款。</li>
+     * </ul>
+     * 由支付宝回调或退款重试任务在退款成功后调用，同时清空待重试标记。</p>
      *
      * @param orderNo       订单号
      * @param refundTradeNo 退款流水号
@@ -120,11 +126,32 @@ public interface OrderService {
      */
     boolean markRefundRetryFailure(String orderNo, int maxRetries);
 
-    /** 查询处于「已取消且待退款重试」的订单，供退款重试定时任务使用 */
+    /**
+     * 查询处于「待退款重试」的订单，供退款重试定时任务使用。
+     * <p>覆盖 CANCELLED（关单后付款）与 PAID（券核销失败）两类待退款分支。</p>
+     */
     java.util.List<ApCourseOrder> listPendingRefundOrders(int limit);
 
     /** 查询「已达退款重试上限并告警、需人工介入」的订单，供运维/监控使用 */
     java.util.List<ApCourseOrder> listAlertedRefundOrders(int limit);
+
+    /**
+     * 对账补偿：查询本地仍处于 PENDING/PROCESSING 且已超过订单超时时间的订单。
+     * <p>延迟队列丢消息时，这些订单不会自动关单；由对账任务主动查询支付宝真实状态后处理。</p>
+     *
+     * @param limit         单批上限
+     * @param updatedBefore 只取该时间之前更新的订单（通常为 now - orderTimeout）
+     */
+    java.util.List<ApCourseOrder> listReconcilePendingOrders(int limit, java.util.Date updatedBefore);
+
+    /**
+     * 对账补偿：查询最近被本地关闭、但仍可能已在支付宝付款的订单（通知丢失场景）。
+     * <p>只取未进入退款流程（refund_pending 为空或 0）的 CANCELLED 订单。</p>
+     *
+     * @param limit         单批上限
+     * @param updatedAfter  只取该时间之后更新的订单（回溯窗口）
+     */
+    java.util.List<ApCourseOrder> listCancelledForReconcile(int limit, java.util.Date updatedAfter);
 
     /** 根据订单号查询 */
     ApCourseOrder getByOrderNo(String orderNo);

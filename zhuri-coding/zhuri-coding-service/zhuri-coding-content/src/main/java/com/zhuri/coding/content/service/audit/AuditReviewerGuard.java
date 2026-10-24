@@ -32,9 +32,10 @@ import org.springframework.stereotype.Component;
  * 这与 {@code InternalAuthSigner} 的取舍一致 —— 漏配只会让终审暂时不可用
  * （运营可发现并补齐授权），不会退化为"任意用户可终审"。
  *
- * <p>⚠️ <b>上线依赖</b>：需先执行 {@code db/migrations/create_ap_admin_account.sql} 与
- * {@code create_ap_admin_account_role.sql}，并给做终审的人建运营账号、授予
- * AUDITOR 或 OPERATOR 角色。未授权时终审会对所有人返回 403，属预期行为而非故障。
+ * <p>⚠️ <b>上线依赖</b>：需确保 {@code ap_admin_account} 与
+ * {@code ap_admin_account_role} 表已存在（结构见 user 库 {@code db/schema.sql}），
+ * 并给做终审的人建运营账号、授予 AUDITOR 或 OPERATOR 角色。
+ * 未授权时终审会对所有人返回 403，属预期行为而非故障。
  */
 @Slf4j
 @Component

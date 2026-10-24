@@ -106,6 +106,14 @@ public class PayController {
             log.warn("支付宝回调 app_id 不匹配, notifyAppId={}, expect={}", notifyAppId, alipayService.getAppId());
             return "fail";
         }
+        String expectSellerId = alipayService.getSellerId();
+        if (expectSellerId != null && !expectSellerId.isEmpty()) {
+            String notifySellerId = request.getParameter("seller_id");
+            if (notifySellerId == null || !notifySellerId.equals(expectSellerId)) {
+                log.warn("支付宝回调 seller_id 不匹配, notifySellerId={}, expect={}", notifySellerId, expectSellerId);
+                return "fail";
+            }
+        }
 
         String tradeNo = request.getParameter("trade_no");
         String orderNo = request.getParameter("out_trade_no");
@@ -114,7 +122,7 @@ public class PayController {
 
         // AI 额度包订单（out_trade_no 前缀 "ai"）分发到充值服务；金额校验/幂等/入账在其内部完成
         if (orderNo != null && orderNo.startsWith(com.zhuri.coding.model.ai.pojos.AiTopupOrder.ORDER_PREFIX)) {
-            boolean aiOk = aiTopupService.handleNotify(orderNo, totalAmount, tradeNo);
+            boolean aiOk = aiTopupService.handleNotify(orderNo, totalAmount, tradeNo, status);
             if (!aiOk) {
                 log.warn("AI 额度包回调处理失败, orderNo={}", orderNo);
             }

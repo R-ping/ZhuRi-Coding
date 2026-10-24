@@ -311,7 +311,9 @@ alipay:
   app-id: ${ALIPAY_APP_ID:}
   private-key: ${ALIPAY_PRIVATE_KEY:}
   alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
-  gateway-url: https://openapi-sandbox.dl.alipaydev.com/gateway.do
+  # 可选：配置后异步回调会校验 seller_id（推荐生产环境配置，防止跨商户回调混淆）
+  seller-id: ${ALIPAY_SELLER_ID:}
+  gateway-url: ${ALIPAY_GATEWAY_URL:https://openapi-sandbox.dl.alipaydev.com/gateway.do}
   base-url: ${CPOlAR_BASE_URL:https://58c840b3.r40.cpolar.top}
   # 课程支付成功后的回跳地址前缀（课程页是前端 Vue SPA，指向前端对外地址，本地默认 9901）
   web-base-url: ${CPOlAR_BASE_URL_WEB:https://5bdb24b5.r40.cpolar.top}
@@ -335,6 +337,13 @@ app:
   # 本地开发为空 → 输出相对路径便于调试；正式部署用环境变量 SEO_BASE_URL 覆盖，如 https://www.zhuri-coding.com
   seo:
     base-url: ${SEO_BASE_URL:}
+  # 支付对账补偿（PaymentReconcileTask）：以 alipay.trade.query 的真实交易状态校准本地订单，
+  # 覆盖「异步通知丢失」「延迟队列丢消息」「本地已关单但支付宝仍可支付」三类异常。
+  pay:
+    reconcile:
+      batch-size: ${PAY_RECONCILE_BATCH_SIZE:50}                       # 单批处理上限
+      fixed-delay-ms: ${PAY_RECONCILE_FIXED_DELAY_MS:600000}           # 扫描周期（毫秒，默认 10 分钟）
+      cancelled-lookback-minutes: ${PAY_RECONCILE_LOOKBACK_MINUTES:120} # 已关单订单回溯窗口（分钟）
   # Coding 延展（能力测评 / 模拟面试）可调参数
   coding:
     interview:

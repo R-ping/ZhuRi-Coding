@@ -42,7 +42,7 @@ public class ApArticleTipOrder implements Serializable {
     /** 打赏留言 */
     private String message;
 
-    /** 状态: 0-待支付 1-已支付 */
+    /** 状态: 0-待支付 1-已支付 2-已关闭（超时未支付） */
     private Integer status;
 
     /** 支付宝交易号 */
@@ -63,7 +63,7 @@ public class ApArticleTipOrder implements Serializable {
 
     /** 订单状态枚举 */
     public enum Status {
-        PENDING(0), PAID(1);
+        PENDING(0), PAID(1), CANCELLED(2);
         final int code;
         Status(int code) { this.code = code; }
         public int getCode() { return code; }

@@ -18,32 +18,29 @@
 
 - 维度：**1024**（`spring.ai.openai.embedding.options.dimensions=1024`，也是该模型默认维度）
 
-- 已修复：`pgvector_setup.sql` 原误写 `vector(1536)`，与 1024 维写入/检索不匹配 → 已改为 `vector(1024)`，并留档 `alter_ap_article_embedding_dim_1024.sql`
+- 已修复：原脚本误写 `vector(1536)`，与 1024 维写入/检索不匹配，已统一为 `vector(1024)`。
 
-- 新增/变更向量列时，务必保持 `vector(N)` 中 N 与上述配置一致。
+- 向量表结构基线：`db/schema-pgvector.sql`（PostgreSQL），新增/变更向量列时直接改基线并同步数据库。
+
+- 历史上按次维护的增量脚本已移除，结构一律以当前数据库实际结构为准。
 
 ## 目录结构
 
 ```
 db/
-├── schema.sql        # 全量建表 DDL（汇总，由 mysqldump --no-data 导出）
-├── migrations/       # 增量变更脚本（按需执行）
-│   ├── add_root_id_to_ap_comment.sql
-│   ├── ai_review_migration.sql
-│   ├── create_ap_article_comment.sql
-│   ├── growth_level_tables.sql
-│   ├── init_creator_benefits.sql
-│   └── pgvector_setup.sql
+├── schema.sql          # MySQL 全量建表 DDL（由 mysqldump --no-data 导出）
+├── schema-pgvector.sql # PostgreSQL/pgvector 向量表结构基线
+├── data/               # 初始化/回填数据脚本（纯 DML，新环境按需执行）
 └── README.md
 ```
 
 ## 约定
 
-- **schema.sql**：全量建表结构汇总，**只读，勿直接改动**。需要重建/查看结构时读取此文件。
+- **schema.sql**：MySQL 唯一结构基线。表结构变更直接以数据库为准，随后重新导出；不再维护 `migrations/` 增量 DDL 脚本。
 
-- **migrations/**：表结构变更脚本，按时间/用途命名（如 `alter_ap_pins_add_view_count.sql`），执行一次即可。
+- **schema-pgvector.sql**：PostgreSQL 向量表结构基线（`CREATE EXTENSION / TABLE / INDEX`）。
 
-- 新增表或字段时，先写 migration，再（可选）重新导出更新 schema.sql。
+- **data/**：只放纯数据脚本（`INSERT / UPDATE / DELETE`），禁止包含 `CREATE / ALTER / DROP`；脚本应可重复执行（`INSERT IGNORE`、条件 `UPDATE`）。
 
 ## 主键（id）设计规范
 

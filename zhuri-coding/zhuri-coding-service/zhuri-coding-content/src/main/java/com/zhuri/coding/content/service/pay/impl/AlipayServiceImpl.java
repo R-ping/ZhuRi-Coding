@@ -4,11 +4,18 @@ import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.DefaultAlipayClient;
 import com.alipay.api.internal.util.AlipaySignature;
+import com.alipay.api.request.AlipayTradeCloseRequest;
+import com.alipay.api.request.AlipayTradeFastpayRefundQueryRequest;
 import com.alipay.api.request.AlipayTradePagePayRequest;
+import com.alipay.api.request.AlipayTradeQueryRequest;
 import com.alipay.api.request.AlipayTradeRefundRequest;
+import com.alipay.api.response.AlipayTradeCloseResponse;
+import com.alipay.api.response.AlipayTradeFastpayRefundQueryResponse;
+import com.alipay.api.response.AlipayTradeQueryResponse;
 import com.alipay.api.response.AlipayTradeRefundResponse;
 import com.zhuri.coding.content.service.order.OrderService;
 import com.zhuri.coding.content.service.pay.AlipayService;
+import com.zhuri.coding.content.service.pay.TradeQueryResult;
 import com.zhuri.coding.model.course.pojos.ApCourseOrder;
 import java.math.BigDecimal;
 import java.util.Map;
@@ -32,6 +39,10 @@ public class AlipayServiceImpl implements AlipayService {
 
     @Value("${alipay.app-id}")
     private String appId;
+
+    /** 支付宝卖家 ID（可选）：配置后异步回调会校验 seller_id，防止跨商户回调混淆 */
+    @Value("${alipay.seller-id:}")
+    private String sellerId;
 
     @Value("${alipay.gateway-url}")
     private String gatewayUrl;
@@ -74,14 +85,29 @@ public class AlipayServiceImpl implements AlipayService {
         return appId;
     }
 
+    @Override
+    public String getSellerId() {
+        return sellerId;
+    }
+
+    @Override
+    public boolean isConfigured() {
+        return isCredentialReady();
+    }
+
+    /** 创建支付宝客户端（抽出方法便于单测注入 mock 客户端） */
+    protected AlipayClient buildClient() {
+        return new DefaultAlipayClient(
+                gatewayUrl, appId, privateKey, "json", "UTF-8", alipayPublicKey, "RSA2");
+    }
+
     /**
      * 生成支付宝「电脑网站支付」签名表单（HTML，含自动提交脚本）。
      * 页面加载后表单自动 POST 到支付宝网关，用户即可在支付宝收银台完成支付。
      */
     private String buildAlipayPagePayForm(String orderNo, String subject, String amount,
                                           String notifyUrl, String returnUrl) throws Exception {
-        AlipayClient alipayClient = new DefaultAlipayClient(
-                gatewayUrl, appId, privateKey, "json", "UTF-8", alipayPublicKey, "RSA2");
+        AlipayClient alipayClient = buildClient();
         AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
         request.setNotifyUrl(notifyUrl);
         request.setReturnUrl(returnUrl);
@@ -142,7 +168,8 @@ public class AlipayServiceImpl implements AlipayService {
 
     @Override
     public boolean handleNotify(String tradeNo, String orderNo, String totalAmount, String status) {
-        if (!"TRADE_SUCCESS".equals(status)) {
+        // 官方规范：TRADE_SUCCESS / TRADE_FINISHED 均表示支付成功（后者常见于通知延迟/补发场景）
+        if (!"TRADE_SUCCESS".equals(status) && !"TRADE_FINISHED".equals(status)) {
             log.warn("支付状态非成功: {}", status);
             return false;
         }
@@ -206,8 +233,6 @@ public class AlipayServiceImpl implements AlipayService {
             return mockRefundNo;
         }
         try {
-            AlipayClient client = new DefaultAlipayClient(
-                    gatewayUrl, appId, privateKey, "json", "UTF-8", alipayPublicKey, "RSA2");
             AlipayTradeRefundRequest request = new AlipayTradeRefundRequest();
             // out_request_no 用订单号作幂等键，支付宝保证同一请求号仅能退一次款，防止重复退款
             String bizContent = "{"
@@ -217,21 +242,109 @@ public class AlipayServiceImpl implements AlipayService {
                     + "\"out_request_no\":\"" + orderNo + "\""
                     + "}";
             request.setBizContent(bizContent);
-            AlipayTradeRefundResponse response = client.execute(request);
+            AlipayTradeRefundResponse response = buildClient().execute(request);
             if (response.isSuccess()) {
-                // 以支付宝返回的交易号作为退款关联流水号（无则用订单号兜底）
-                String refundNo = response.getTradeNo();
-                if (refundNo == null || refundNo.isEmpty()) {
-                    refundNo = orderNo;
+                // 官方规范：fund_change=Y 才代表资金确实发生变动（退款成功）；
+                // 仅 isSuccess() 只能说明退款请求被受理。
+                if ("Y".equals(response.getFundChange())) {
+                    log.info("支付宝退款成功: orderNo={}, amount={}, fundChange={}", orderNo, amount, response.getFundChange());
+                    return orderNo;
                 }
-                log.info("支付宝退款成功: orderNo={}, amount={}, refundNo={}", orderNo, amount, refundNo);
-                return refundNo;
+                // fund_change=N / 缺失：可能是重复退款（资金早已退回），以退款查询结果为准
+                log.warn("支付宝退款受理但资金变动不明确, orderNo={}, fundChange={}, 尝试退款查询确认",
+                        orderNo, response.getFundChange());
+                if (queryRefundSuccess(orderNo)) {
+                    log.info("退款查询确认成功: orderNo={}, amount={}", orderNo, amount);
+                    return orderNo;
+                }
+                log.warn("退款查询未确认成功，保留待重试: orderNo={}, amount={}", orderNo, amount);
+                return null;
             }
             log.error("支付宝退款失败: orderNo={}, code={}, subMsg={}", orderNo, response.getCode(), response.getSubMsg());
             return null;
         } catch (Exception e) {
             log.error("支付宝退款异常: orderNo={}", orderNo, e);
             return null;
+        }
+    }
+
+    @Override
+    public boolean queryRefundSuccess(String orderNo) {
+        if (!isCredentialReady()) {
+            return false;
+        }
+        try {
+            AlipayTradeFastpayRefundQueryRequest request = new AlipayTradeFastpayRefundQueryRequest();
+            // out_request_no 与退款时保持一致的幂等键
+            request.setBizContent("{"
+                    + "\"out_trade_no\":\"" + orderNo + "\","
+                    + "\"out_request_no\":\"" + orderNo + "\""
+                    + "}");
+            AlipayTradeFastpayRefundQueryResponse response = buildClient().execute(request);
+            boolean refunded = response.isSuccess() && "REFUND_SUCCESS".equals(response.getRefundStatus());
+            if (!refunded) {
+                log.warn("退款查询未确认成功: orderNo={}, code={}, subCode={}, refundStatus={}",
+                        orderNo, response.getCode(), response.getSubCode(), response.getRefundStatus());
+            }
+            return refunded;
+        } catch (Exception e) {
+            log.error("退款查询异常: orderNo={}", orderNo, e);
+            return false;
+        }
+    }
+
+    @Override
+    public TradeQueryResult queryTrade(String orderNo) {
+        if (!isCredentialReady()) {
+            return TradeQueryResult.unknown();
+        }
+        try {
+            AlipayTradeQueryRequest request = new AlipayTradeQueryRequest();
+            request.setBizContent("{\"out_trade_no\":\"" + orderNo + "\"}");
+            AlipayTradeQueryResponse response = buildClient().execute(request);
+            if (response.isSuccess()) {
+                log.info("支付宝交易查询: orderNo={}, tradeStatus={}, tradeNo={}",
+                        orderNo, response.getTradeStatus(), response.getTradeNo());
+                return TradeQueryResult.of(response.getTradeStatus(), response.getTradeNo(), response.getTotalAmount());
+            }
+            if ("40004".equals(response.getCode()) && "ACQ.TRADE_NOT_EXIST".equals(response.getSubCode())) {
+                log.info("支付宝交易不存在: orderNo={}", orderNo);
+                return TradeQueryResult.notExist();
+            }
+            // 其他错误码（网络/权限/参数等）不能推断支付结果，交由下一轮重试
+            log.warn("支付宝交易查询失败: orderNo={}, code={}, subCode={}, subMsg={}",
+                    orderNo, response.getCode(), response.getSubCode(), response.getSubMsg());
+            return TradeQueryResult.unknown();
+        } catch (Exception e) {
+            log.error("支付宝交易查询异常: orderNo={}", orderNo, e);
+            return TradeQueryResult.unknown();
+        }
+    }
+
+    @Override
+    public boolean closeTrade(String orderNo) {
+        if (!isCredentialReady()) {
+            return false;
+        }
+        try {
+            AlipayTradeCloseRequest request = new AlipayTradeCloseRequest();
+            request.setBizContent("{\"out_trade_no\":\"" + orderNo + "\"}");
+            AlipayTradeCloseResponse response = buildClient().execute(request);
+            if (response.isSuccess()) {
+                log.info("支付宝交易已关闭: orderNo={}", orderNo);
+                return true;
+            }
+            // 交易不存在/已关闭：支付宝侧已无待支付交易，对本地关单而言等同成功
+            if ("ACQ.TRADE_NOT_EXIST".equals(response.getSubCode())) {
+                log.info("支付宝交易不存在，无需关闭: orderNo={}", orderNo);
+                return true;
+            }
+            log.warn("支付宝交易关闭失败: orderNo={}, code={}, subCode={}, subMsg={}",
+                    orderNo, response.getCode(), response.getSubCode(), response.getSubMsg());
+            return false;
+        } catch (Exception e) {
+            log.error("支付宝交易关闭异常: orderNo={}", orderNo, e);
+            return false;
         }
     }
 
